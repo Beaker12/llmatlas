@@ -61,7 +61,7 @@ The choice of tokenization granularity creates fundamental trade-offs:
 | Granularity | Vocabulary Size    | Sequence Length | OOV Handling | Semantic Coherence |
 | ----------- | ------------------ | --------------- | ------------ | ------------------ |
 | Word-level  | Very Large (>100k) | Short           | Poor         | High               |
-| Subword     | Moderate (32k-50k) | Medium          | Good         | Medium             |
+| Subword     | 32k-256k           | Medium          | Good         | Medium             |
 | Character   | Small (\<100)      | Very Long       | Perfect      | Low                |
 | Byte-level  | Fixed (256)        | Longest         | Perfect      | Lowest             |
 
@@ -142,12 +142,10 @@ class SimpleBPE:
         self.merges = []
 
     def get_pairs(self, word):
-        """Get all adjacent character pairs in a word."""
-        pairs = set()
-        prev_char = word[0]
-        for char in word[1:]:
-            pairs.add((prev_char, char))
-            prev_char = char
+        """Count adjacent symbol pairs in a word (a repeated pair counts each time)."""
+        pairs = {}
+        for a, b in zip(word, word[1:]):
+            pairs[(a, b)] = pairs.get((a, b), 0) + 1
         return pairs
 
     def train(self, corpus, num_merges):
@@ -166,9 +164,8 @@ class SimpleBPE:
         for i in range(num_merges):
             pairs = {}
             for word, freq in words.items():
-                word_pairs = self.get_pairs(word)
-                for pair in word_pairs:
-                    pairs[pair] = pairs.get(pair, 0) + freq
+                for pair, n in self.get_pairs(word).items():
+                    pairs[pair] = pairs.get(pair, 0) + n * freq
 
             if not pairs:
                 break
@@ -224,9 +221,10 @@ print(f"Tokens: {tokens}")
 
 **BPE Evolution**:
 
-1. **Original BPE**: Merges frequent character pairs
-1. **WordPiece**: Google's variant using likelihood maximization
-1. **SentencePiece**: Unigram language model approach
+1. **Original BPE** {cite}`sennrich2015neural`: merges the most frequent adjacent pair
+1. **WordPiece**: Google's variant that merges the pair which most increases the training corpus likelihood
+1. **Unigram LM** {cite}`kudo2018subword`: starts from a large candidate vocabulary and prunes it, keeping the segmentation with the highest probability
+1. **SentencePiece** {cite}`kudo2018sentencepiece` is a *toolkit*, not an algorithm: it implements both BPE and unigram on raw text without pre-tokenization
 
 #### SentencePiece
 
@@ -267,262 +265,12 @@ print(f"IDs: {ids}")
 
 ```{admonition} Tokenization Implementation
 :class: tip
-The notebook's tokenization section ({ref}`nb-attn-tokenization`) builds a tiny word-level vocabulary and runs the BPE merge loop step by step, printing the splits after every merge. For WordPiece, unigram and SentencePiece in practice, see the tokenization sections later in this chapter (§1.3-1.7).
+The notebook's tokenization section ({ref}`nb-attn-tokenization`) builds a tiny word-level vocabulary and runs the BPE merge loop step by step, printing the splits after every merge. For WordPiece, unigram and SentencePiece in practice, see {doc}`tokenization-deep-dive`.
 ```
 
-### 1.3 Modern Tokenization Strategies
+### 1.3 Embeddings and Positional Encoding
 
-#### Tiktoken (OpenAI's Tokenizer)
-
-GPT models use a sophisticated tokenizer that:
-
-- Handles regex patterns for different text types
-- Uses byte-level BPE
-- Includes special tokens for different contexts
-
-```python
-# Example with tiktoken (conceptual)
-import tiktoken
-
-# Load GPT-4 tokenizer
-enc = tiktoken.get_encoding("cl100k_base")
-
-text = "Hello, world! Here's some code: `print('hi')`"
-tokens = enc.encode(text)
-decoded = enc.decode(tokens)
-
-print(f"Original: {text}")
-print(f"Tokens: {tokens}")
-print(f"Token count: {len(tokens)}")
-print(f"Decoded: {decoded}")
-```
-
-#### Multi-Modal Tokenization
-
-Modern models handle multiple modalities:
-
-- **Text tokens**: Standard subword tokens
-- **Image tokens**: Patch embeddings or discrete visual tokens
-- **Audio tokens**: Spectogram or audio codebook tokens
-- **Special tokens**: Task indicators, separators, padding
-
-#### Vocabulary Construction Strategies
-
-**Frequency-based**: Include most common tokens
-
-```python
-def build_vocab_frequency(corpus, vocab_size):
-    from collections import Counter
-
-    # Count token frequencies
-    token_counts = Counter()
-    for text in corpus:
-        tokens = tokenize(text)  # Your tokenization function
-        token_counts.update(tokens)
-
-    # Select top tokens
-    vocab = [token for token, count in token_counts.most_common(vocab_size)]
-    return vocab
-```
-
-**Coverage-based**: Ensure vocabulary covers percentage of corpus
-
-```python
-def build_vocab_coverage(corpus, coverage_threshold=0.95):
-    from collections import Counter
-
-    token_counts = Counter()
-    total_tokens = 0
-
-    for text in corpus:
-        tokens = tokenize(text)
-        token_counts.update(tokens)
-        total_tokens += len(tokens)
-
-    # Sort by frequency
-    sorted_tokens = token_counts.most_common()
-
-    vocab = []
-    covered_tokens = 0
-
-    for token, count in sorted_tokens:
-        vocab.append(token)
-        covered_tokens += count
-
-        if covered_tokens / total_tokens >= coverage_threshold:
-            break
-
-    return vocab
-```
-
-### 1.4 Tokenization Impact on Model Behavior
-
-#### Length and Efficiency
-
-Different tokenization schemes produce different sequence lengths:
-
-```python
-# Example text
-text = "The transformer architecture revolutionized natural language processing."
-
-# Word-level (hypothetical)
-word_tokens = text.lower().split()
-print(f"Word tokens ({len(word_tokens)}): {word_tokens}")
-
-# Character-level
-char_tokens = list(text)
-print(f"Character tokens ({len(char_tokens)}): {char_tokens[:20]}...")
-
-# Subword (GPT-style, approximate)
-# This would typically be: ["The", " transform", "er", " architect", "ure", ...]
-subword_tokens = [
-    "The",
-    " transform",
-    "er",
-    " architect",
-    "ure",
-    " revolution",
-    "ized",
-    " natural",
-    " language",
-    " processing",
-    ".",
-]
-print(f"Subword tokens ({len(subword_tokens)}): {subword_tokens}")
-```
-
-**Computational implications**:
-
-- Sequence length affects attention computation: O(n²) for self-attention
-- Longer sequences require more memory
-- Processing time scales with sequence length
-
-#### Linguistic Bias
-
-Tokenization can introduce linguistic biases:
-
-```python
-# Example showing tokenization bias
-texts = [
-    "Hello world",  # English
-    "Bonjour le monde",  # French
-    "Hola mundo",  # Spanish
-    "こんにちは世界",  # Japanese
-    "مرحبا بالعالم",  # Arabic
-]
-
-# English-centric tokenizer might produce:
-# English: ["Hello", " world"] (2 tokens)
-# Japanese: ["こ", "ん", "に", "ち", "は", "世", "界"] (7 tokens)
-# This creates unfair computational costs for non-English text
-```
-
-#### Out-of-Vocabulary Handling
-
-Different strategies for unknown tokens:
-
-1. **UNK token**: Replace unknown words with `<UNK>`
-1. **Subword fallback**: Break unknown words into subwords
-1. **Character fallback**: Fall back to character-level for unknown segments
-1. **Byte fallback**: Ultimate fallback to byte representation
-
-### 1.5 Special Tokens and Their Roles
-
-#### Common Special Tokens
-
-```python
-SPECIAL_TOKENS = {
-    "<BOS>": "Beginning of sequence",
-    "<EOS>": "End of sequence",
-    "<UNK>": "Unknown token",
-    "<PAD>": "Padding token",
-    "<MASK>": "Masked token (for BERT-style training)",
-    "<SEP>": "Separator between segments",
-    "<CLS>": "Classification token",
-    "<|endoftext|>": "Document boundary (GPT)",
-    "<|im_start|>": "Start of instruction/message",
-    "<|im_end|>": "End of instruction/message",
-}
-```
-
-#### Token IDs and Embeddings
-
-Each token maps to a unique integer ID:
-
-```python
-class Tokenizer:
-    def __init__(self, vocab):
-        self.vocab = vocab
-        self.token_to_id = {token: i for i, token in enumerate(vocab)}
-        self.id_to_token = {i: token for token, i in self.token_to_id.items()}
-
-    def encode(self, text):
-        tokens = self.tokenize(text)  # Your tokenization logic
-        return [
-            self.token_to_id.get(token, self.token_to_id["<UNK>"]) for token in tokens
-        ]
-
-    def decode(self, ids):
-        tokens = [self.id_to_token[id] for id in ids]
-        return self.detokenize(tokens)  # Your detokenization logic
-```
-
-### 1.6 Practical Considerations
-
-#### Choosing Vocabulary Size
-
-Common vocabulary sizes and their trade-offs:
-
-- **Small (1K-8K)**: Fast, memory-efficient, poor representation
-- **Medium (16K-32K)**: Balanced performance, most common choice
-- **Large (50K-100K)**: Rich representation, expensive computation
-- **Very Large (100K+)**: Diminishing returns, rarely used
-
-#### Tokenization Efficiency
-
-```python
-import time
-
-
-def benchmark_tokenization(texts, tokenizer):
-    start_time = time.time()
-
-    total_tokens = 0
-    for text in texts:
-        tokens = tokenizer.encode(text)
-        total_tokens += len(tokens)
-
-    end_time = time.time()
-
-    return {
-        "total_time": end_time - start_time,
-        "texts_processed": len(texts),
-        "total_tokens": total_tokens,
-        "tokens_per_second": total_tokens / (end_time - start_time),
-        "texts_per_second": len(texts) / (end_time - start_time),
-    }
-```
-
-#### Reversibility and Information Loss
-
-Good tokenizers should be reversible:
-
-```python
-def test_reversibility(tokenizer, texts):
-    """Test if tokenization is reversible."""
-    failures = []
-
-    for text in texts:
-        tokens = tokenizer.encode(text)
-        reconstructed = tokenizer.decode(tokens)
-
-        if text != reconstructed:
-            failures.append(
-                {"original": text, "reconstructed": reconstructed, "tokens": tokens}
-            )
-
-    return failures
-```
+For vocabulary construction, special tokens, cross-lingual issues and a full tokenizer implementation, see {doc}`tokenization-deep-dive`.
 
 #### Embedding Spaces
 
@@ -582,9 +330,10 @@ class TokenEmbedding(nn.Module):
 
 #### Embedding Sharing and Tying
 
-Modern architectures often share embeddings between input and output:
+Many architectures share the input embedding matrix with the output projection (GPT-2, T5, Gemma do; the LLaMA and Mistral families keep them separate):
 
 ```python
+# pseudo-code: `TransformerStack` stands for the model body; illustrates weight tying only
 class TransformerWithTiedEmbeddings(nn.Module):
     def __init__(self, vocab_size, d_model):
         super().__init__()
@@ -623,6 +372,7 @@ class TransformerWithTiedEmbeddings(nn.Module):
 For subword tokens, embeddings must compose meaningfully:
 
 ```python
+# pseudo-code: `embedding_matrix` and `token_to_id` come from a trained model
 # Example: How "unhappiness" might be tokenized and embedded
 text = "unhappiness"
 tokens = ["un", "happiness"]  # Example BPE tokenization
@@ -639,6 +389,7 @@ happiness_embedding = embedding_matrix[token_to_id["happiness"]]  # [d_model]
 #### Embedding Visualization and Analysis
 
 ```python
+# pseudo-code: needs a trained `model`, its `tokenizer`, and scikit-learn
 import numpy as np
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
@@ -720,7 +471,7 @@ where:
 - Deterministic (same encoding for same position)
 - Bounded values (between -1 and 1)
 - Different frequencies for different dimensions
-- Enables extrapolation to longer sequences
+- Defined for any position, so a model *can* be run past its training length, although in practice quality degrades quickly there
 
 ```python
 import torch
@@ -778,6 +529,10 @@ visualize_positional_encoding()
 Many models use learned positional embeddings instead:
 
 ```python
+import torch
+import torch.nn as nn
+
+
 class LearnedPositionalEmbedding(nn.Module):
     def __init__(self, max_seq_length, d_model):
         super().__init__()
@@ -791,95 +546,108 @@ class LearnedPositionalEmbedding(nn.Module):
         return x + position_embeddings
 ```
 
+
 **Learned vs. Sinusoidal**:
 
 | Aspect         | Sinusoidal    | Learned                     |
 | -------------- | ------------- | --------------------------- |
 | Parameters     | 0 additional  | max_seq_len × d_model       |
-| Extrapolation  | Good          | Poor beyond training length |
-| Training Speed | Fast          | Slower (more parameters)    |
+| Beyond training length | Defined, but degrades in practice | Undefined (no embedding) |
+| Used by        | Original transformer | BERT, GPT-2, GPT-3 |
 | Flexibility    | Fixed pattern | Adaptive to data            |
 
 ##### Advanced Positional Encodings
 
-**Relative Positional Encoding**: Instead of absolute positions, encode relative distances:
+**Relative Positional Encoding** {cite}`shaw2018self`: instead of adding absolute positions to the input, add a learned bias that depends only on the distance $i-j$ to the attention scores:
 
 ```python
-def relative_position_encoding(seq_len, d_model, max_relative_distance=128):
-    """Create relative positional encodings."""
-    # Create relative position matrix
-    positions = torch.arange(seq_len)
-    relative_positions = positions.unsqueeze(0) - positions.unsqueeze(1)
+import torch
+import torch.nn as nn
 
-    # Clip to maximum distance
-    relative_positions = torch.clamp(
-        relative_positions, -max_relative_distance, max_relative_distance
-    )
 
-    # Convert to positive indices
-    relative_positions += max_relative_distance
+class RelativePositionBias(nn.Module):
+    """Learned bias b[i-j] added to the attention scores (Shaw et al., 2018; T5).
 
-    # Create embedding table for relative positions
-    relative_embedding = nn.Embedding(2 * max_relative_distance + 1, d_model)
+    One scalar per (head, clipped offset). The table is a module parameter, so it is
+    learned; building a fresh nn.Embedding on every call would give random, unlearnable values.
+    """
 
-    return relative_embedding(relative_positions)
+    def __init__(self, num_heads, max_relative_distance=128):
+        super().__init__()
+        self.max_relative_distance = max_relative_distance
+        self.table = nn.Embedding(2 * max_relative_distance + 1, num_heads)
+
+    def forward(self, seq_len):
+        positions = torch.arange(seq_len)
+        relative = positions.unsqueeze(0) - positions.unsqueeze(1)           # [seq, seq]
+        relative = relative.clamp(-self.max_relative_distance, self.max_relative_distance)
+        bias = self.table(relative + self.max_relative_distance)             # [seq, seq, heads]
+        return bias.permute(2, 0, 1)                                         # [heads, seq, seq]
+
+
+# Inside attention: scores = Q @ K.transpose(-2, -1) / sqrt(d_k) + bias
+bias = RelativePositionBias(num_heads=8)(seq_len=16)
+print(bias.shape)  # torch.Size([8, 16, 16])
 ```
 
-**Rotary Position Embedding (RoPE)**: Used in modern models like LLaMA:
+
+**Rotary Position Embedding (RoPE)** {cite}`su2021roformer`: used by LLaMA, Mistral, Qwen and Gemma. It is applied to the queries and keys *inside* attention, not to the input embeddings:
 
 ```python
-def apply_rotary_position_embedding(x, position_ids):
-    """Apply RoPE to input embeddings."""
+import torch
 
-    def get_rotation_matrix(seq_len, dim, base=10000):
-        inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
-        t = torch.arange(seq_len).float()
-        freqs = torch.outer(t, inv_freq)
 
-        cos_vals = torch.cos(freqs)
-        sin_vals = torch.sin(freqs)
+def apply_rope(x, positions, base=10000.0):
+    """Rotary position embedding (Su et al., 2021), applied to queries and keys.
 
-        return cos_vals, sin_vals
+    x: [..., seq, d]; positions: [seq]. Consecutive pairs of features are rotated by an
+    angle m * theta_i, where m is the position and theta_i = base^(-2i/d). Because a rotation
+    preserves norms and q_m . k_n then depends only on m - n, RoPE encodes relative position
+    without any parameters.
+    """
+    d = x.size(-1)
+    inv_freq = 1.0 / (base ** (torch.arange(0, d, 2).float() / d))   # [d/2]
+    angles = positions.float()[:, None] * inv_freq[None, :]           # [seq, d/2]
+    cos, sin = torch.cos(angles), torch.sin(angles)
+    x1, x2 = x[..., 0::2], x[..., 1::2]
+    out = torch.empty_like(x)
+    out[..., 0::2] = x1 * cos - x2 * sin
+    out[..., 1::2] = x1 * sin + x2 * cos
+    return out
 
-    # Split features into pairs for rotation
-    x1, x2 = x[..., ::2], x[..., 1::2]
-    cos_vals, sin_vals = get_rotation_matrix(x.size(-2), x.size(-1))
 
-    # Apply rotation
-    rotated_x1 = x1 * cos_vals - x2 * sin_vals
-    rotated_x2 = x1 * sin_vals + x2 * cos_vals
-
-    # Recombine
-    return torch.stack([rotated_x1, rotated_x2], dim=-1).flatten(-2)
+# Usage inside attention: rotate q and k, never v, then take the dot products as usual
+q = torch.randn(16, 64)
+k = torch.randn(16, 64)
+positions = torch.arange(16)
+scores = apply_rope(q, positions) @ apply_rope(k, positions).T / 64**0.5
 ```
 
 ##### Position Encoding Trade-offs
 
 ```python
+import matplotlib.pyplot as plt
+
+
 def compare_position_encodings():
-    """Compare different positional encoding strategies."""
+    """Extra parameters each positional scheme adds, as a function of maximum length."""
     seq_lens = [128, 512, 1024, 2048, 4096]
-    d_model = 512
+    d_model, num_heads, max_relative_distance = 512, 8, 128
 
-    results = {"Sinusoidal": [], "Learned": [], "Relative": [], "RoPE": []}
+    results = {
+        "Sinusoidal": [0 for _ in seq_lens],                                        # no parameters
+        "Learned absolute": [n * d_model for n in seq_lens],                        # one vector per position
+        "Relative bias": [(2 * max_relative_distance + 1) * num_heads for _ in seq_lens],  # per (offset, head)
+        "RoPE": [0 for _ in seq_lens],                                              # no parameters
+    }
 
-    for seq_len in seq_lens:
-        # Calculate parameter counts
-        results["Sinusoidal"].append(0)  # No additional parameters
-        results["Learned"].append(seq_len * d_model)  # One embedding per position
-        results["Relative"].append(256 * d_model)  # Fixed relative distance vocabulary
-        results["RoPE"].append(0)  # No additional parameters
-
-    # Plot parameter growth
     plt.figure(figsize=(10, 6))
     for method, params in results.items():
         plt.plot(seq_lens, params, marker="o", label=method)
-
-    plt.xlabel("Maximum Sequence Length")
-    plt.ylabel("Additional Parameters")
-    plt.title("Positional Encoding Parameter Requirements")
+    plt.xlabel("Maximum sequence length")
+    plt.ylabel("Additional parameters")
+    plt.title("Positional encoding parameter cost (sinusoidal and RoPE add none)")
     plt.legend()
-    plt.yscale("log")
     plt.grid(True)
     plt.show()
 
@@ -887,589 +655,22 @@ def compare_position_encodings():
 compare_position_encodings()
 ```
 
-Modern variants often use learned positional embeddings or relative position encodings for improved performance on longer sequences.
+
+Models since 2022 almost all use RoPE {cite}`su2021roformer` or ALiBi {cite}`press2022train`, both of which encode relative position inside attention without per-position parameters; learned absolute embeddings are now mostly found in BERT- and GPT-2-era models.
 
 ```{admonition} Embeddings and Positional Encoding
 :class: note
 The notebook ({ref}`nb-attn-positional`) visualises sinusoidal and learned encodings, implements a learned relative-position bias and a rotary (RoPE) transform, and asserts RoPE's two defining properties: rotation preserves vector norms, and query-key dot products depend only on the relative offset.
 ```
 
-### 1.7 Tokenization Challenges and Solutions
-
-#### Cross-Lingual Tokenization
-
-Different languages present unique tokenization challenges:
-
-**Morphologically Rich Languages** (German, Turkish, Finnish):
-
-```python
-# German compound words
-examples = {
-    "Donaudampfschifffahrtsgesellschaftskapitän": "Danube steamship company captain",
-    "Rindfleischetikettierungsüberwachungsaufgabenübertragungsgesetz": "Beef labeling supervision task transfer law",
-}
-
-# Traditional word tokenization would treat these as single rare tokens
-# Subword tokenization can break them into meaningful components:
-# ["Donau", "dampf", "schiff", "fahrt", "s", "gesellschaft", "s", "kapitän"]
-```
-
-**Agglutinative Languages** (Turkish, Finnish):
-
-```python
-# Turkish example: "evlerimizde" = "in our houses"
-# Morphological breakdown:
-# ev (house) + ler (plural) + imiz (our) + de (in/at)
-
-# Good tokenization preserves morphological structure:
-turkish_tokens = ["ev", "ler", "imiz", "de"]  # Ideal
-suboptimal_tokens = ["evl", "erimiz", "de"]  # Suboptimal
-```
-
-**Languages Without Spaces** (Chinese, Japanese, Thai):
-
-```python
-# Chinese doesn't use spaces between words
-chinese_text = "我喜欢学习自然语言处理"
-# Meaning: "I like learning natural language processing"
-
-# Character-level: ["我", "喜", "欢", "学", "习", "自", "然", "语", "言", "处", "理"]
-# Word-level (with segmentation): ["我", "喜欢", "学习", "自然语言处理"]
-# Subword: ["我", "喜欢", "学", "习", "自然", "语言", "处理"]
-```
-
-#### Handling Special Cases
-
-**Code and Technical Text**:
-
-```python
-code_example = """
-def fibonacci(n):
-    if n <= 1:
-        return n
-    return fibonacci(n-1) + fibonacci(n-2)
-"""
-
-# Challenges:
-# - Preserving code structure
-# - Handling indentation
-# - Function/variable names
-# - Special characters (:, (), +, -, etc.)
-
-# Good tokenization for code:
-# ["def", " fibonacci", "(", "n", "):", "\n", "    if", " n", " <=", " 1", ":", ...]
-```
-
-**URLs and Email Addresses**:
-
-```python
-web_examples = [
-    "https://www.example.com/path/to/page?param=value",
-    "user.name+tag@example.co.uk",
-    "file:///home/user/document.pdf",
-]
-
-# Challenges:
-# - Preserving URL structure
-# - Handling domain names
-# - Special characters (., @, /, ?, =, etc.)
-# - Email format preservation
-```
-
-**Numbers and Dates**:
-
-```python
-numerical_examples = [
-    "3.14159",  # Pi
-    "1,234,567.89",  # Large number with commas
-    "2023-12-25",  # ISO date
-    "12/25/2023",  # US date format
-    "25th December",  # Written date
-    "$1,250.00",  # Currency
-    "42%",  # Percentage
-    "1.2e-5",  # Scientific notation
-]
-
-# Different tokenization strategies:
-# Option 1: Preserve whole numbers
-# ["3.14159", "1,234,567.89", "2023-12-25"]
-
-# Option 2: Split on punctuation
-# ["3", ".", "14159", "1", ",", "234", ",", "567", ".", "89"]
-
-# Option 3: Smart number handling
-# ["3.14159", "1,234,567.89", "2023", "-", "12", "-", "25"]
-```
-
-#### Domain Adaptation
-
-**Medical Text**:
-
-```python
-medical_text = (
-    "Patient presents with myocardial infarction and diabetes mellitus type 2"
-)
-
-# Domain-specific vocabulary:
-medical_tokens = [
-    "Patient",
-    " presents",
-    " with",
-    " myocardial",
-    " infarction",
-    " and",
-    " diabetes",
-    " mellitus",
-    " type",
-    " 2",
-]
-
-# Generic tokenizer might split medical terms poorly:
-generic_tokens = [
-    "Patient",
-    " presents",
-    " with",
-    " my",
-    "ocard",
-    "ial",
-    " inf",
-    "arc",
-    "tion",
-    " and",
-    " diab",
-    "etes",
-    " mell",
-    "itus",
-    " type",
-    " 2",
-]
-```
-
-**Legal Text**:
-
-```python
-legal_text = "The aforementioned clause notwithstanding the heretofore provisions"
-
-# Legal language has specific terminology patterns
-# Need specialized vocabulary for legal corpus
-```
-
-#### Quality Metrics for Tokenization
-
-```python
-def evaluate_tokenization_quality(tokenizer, corpus, language="en"):
-    """Evaluate tokenization quality using multiple metrics."""
-
-    metrics = {
-        "compression_ratio": 0,
-        "oov_rate": 0,
-        "morphological_consistency": 0,
-        "reversibility_errors": 0,
-        "cross_lingual_equity": 0,
-    }
-
-    total_chars = 0
-    total_tokens = 0
-    oov_count = 0
-    reversibility_errors = 0
-
-    for text in corpus:
-        # Compression ratio
-        tokens = tokenizer.encode(text)
-        total_chars += len(text)
-        total_tokens += len(tokens)
-
-        # OOV rate
-        oov_count += sum(1 for token in tokens if token == tokenizer.unk_token_id)
-
-        # Reversibility
-        reconstructed = tokenizer.decode(tokens)
-        if text != reconstructed:
-            reversibility_errors += 1
-
-    metrics["compression_ratio"] = total_chars / total_tokens
-    metrics["oov_rate"] = oov_count / total_tokens
-    metrics["reversibility_errors"] = reversibility_errors / len(corpus)
-
-    return metrics
-
-
-def compare_tokenizers(tokenizers, test_corpus):
-    """Compare multiple tokenizers on the same corpus."""
-    results = {}
-
-    for name, tokenizer in tokenizers.items():
-        results[name] = evaluate_tokenization_quality(tokenizer, test_corpus)
-
-    # Create comparison table
-    import pandas as pd
-
-    df = pd.DataFrame(results).T
-    print("Tokenizer Comparison:")
-    print(df.round(3))
-
-    return df
-```
-
-#### Best Practices for Tokenization
-
-**1. Vocabulary Size Selection**:
-
-```python
-def find_optimal_vocab_size(corpus, vocab_sizes, validation_corpus=None):
-    """Find optimal vocabulary size through validation."""
-    results = {}
-
-    for vocab_size in vocab_sizes:
-        # Train tokenizer
-        tokenizer = train_bpe_tokenizer(corpus, vocab_size)
-
-        # Evaluate on validation set
-        if validation_corpus:
-            metrics = evaluate_tokenization_quality(tokenizer, validation_corpus)
-            results[vocab_size] = metrics
-
-    return results
-
-
-# Typical ranges to test:
-vocab_sizes = [1000, 2000, 4000, 8000, 16000, 32000, 50000, 64000]
-```
-
-**2. Preprocessing Strategies**:
-
-```python
-def preprocess_for_tokenization(text, strategy="conservative"):
-    """Apply preprocessing before tokenization."""
-
-    if strategy == "conservative":
-        # Minimal preprocessing
-        return text.strip()
-
-    elif strategy == "aggressive":
-        # Normalize whitespace
-        text = re.sub(r"\s+", " ", text)
-
-        # Handle special cases
-        text = re.sub(r"([.!?])\s+", r"\1 ", text)  # Normalize punctuation spacing
-        text = re.sub(r"\s+([,.!?])", r"\1", text)  # Remove space before punctuation
-
-        return text.strip()
-
-    elif strategy == "code_aware":
-        # Preserve code structure
-        # Don't normalize indentation
-        # Keep special programming characters
-        return text
-
-    return text
-```
-
-**3. Handling Rare Tokens**:
-
-```python
-def analyze_token_frequency(corpus, tokenizer):
-    """Analyze token frequency distribution."""
-    from collections import Counter
-
-    all_tokens = []
-    for text in corpus:
-        tokens = tokenizer.encode(text)
-        all_tokens.extend(tokens)
-
-    token_counts = Counter(all_tokens)
-
-    # Calculate statistics
-    total_tokens = len(all_tokens)
-    unique_tokens = len(token_counts)
-
-    # Find rare tokens (appear < 5 times)
-    rare_threshold = 5
-    rare_tokens = sum(1 for count in token_counts.values() if count < rare_threshold)
-
-    print(f"Total tokens: {total_tokens:,}")
-    print(f"Unique tokens: {unique_tokens:,}")
-    print(
-        f"Rare tokens (< {rare_threshold}): {rare_tokens:,} ({rare_tokens/unique_tokens:.1%})"
-    )
-
-    # Plot frequency distribution
-    frequencies = sorted(token_counts.values(), reverse=True)
-    plt.figure(figsize=(10, 6))
-    plt.loglog(range(1, len(frequencies) + 1), frequencies)
-    plt.xlabel("Token Rank")
-    plt.ylabel("Frequency")
-    plt.title("Token Frequency Distribution (Zipf's Law)")
-    plt.grid(True)
-    plt.show()
-
-    return token_counts
-```
-
-**4. Multi-Domain Tokenization**:
-
-```python
-def create_multi_domain_tokenizer(domain_corpora, vocab_size=32000):
-    """Create tokenizer that works well across multiple domains."""
-
-    # Combine corpora with domain balancing
-    combined_corpus = []
-    min_size = min(len(corpus) for corpus in domain_corpora.values())
-
-    for domain, corpus in domain_corpora.items():
-        # Sample equally from each domain
-        sampled = random.sample(corpus, min_size)
-        combined_corpus.extend(sampled)
-
-    # Train on balanced corpus
-    tokenizer = train_tokenizer(combined_corpus, vocab_size)
-
-    # Evaluate on each domain
-    domain_performance = {}
-    for domain, corpus in domain_corpora.items():
-        metrics = evaluate_tokenization_quality(tokenizer, corpus[:1000])
-        domain_performance[domain] = metrics
-
-    return tokenizer, domain_performance
-```
-
-### 1.8 Practical Implementation
-
-This section provides hands-on implementation of tokenization and embedding concepts:
-
-#### Complete Tokenization Pipeline
-
-```python
-import torch
-import torch.nn as nn
-import math
-import re
-from collections import Counter, defaultdict
-from typing import List, Dict, Tuple
-
-
-class ComprehensiveTokenizer:
-    """A complete tokenizer implementation with multiple strategies."""
-
-    def __init__(self, vocab_size=32000, min_frequency=2):
-        self.vocab_size = vocab_size
-        self.min_frequency = min_frequency
-        self.vocab = {}
-        self.merges = []
-        self.special_tokens = {
-            "<PAD>": 0,
-            "<UNK>": 1,
-            "<BOS>": 2,
-            "<EOS>": 3,
-            "<MASK>": 4,
-        }
-
-    def preprocess_text(self, text: str) -> str:
-        """Preprocess text before tokenization."""
-        # Normalize whitespace
-        text = re.sub(r"\s+", " ", text)
-
-        # Add spaces around punctuation for better splitting
-        text = re.sub(r"([.!?,:;])", r" \1 ", text)
-        text = re.sub(r"\s+", " ", text)
-
-        return text.strip()
-
-    def get_word_frequencies(self, corpus: List[str]) -> Dict[str, int]:
-        """Count word frequencies in corpus."""
-        word_freq = Counter()
-
-        for text in corpus:
-            text = self.preprocess_text(text)
-            words = text.lower().split()
-            word_freq.update(words)
-
-        return word_freq
-
-    def get_character_level_vocab(self, corpus: List[str]) -> set:
-        """Build character-level vocabulary."""
-        chars = set()
-        for text in corpus:
-            chars.update(text)
-        return chars
-
-    def train_bpe(self, corpus: List[str]) -> None:
-        """Train Byte Pair Encoding tokenizer."""
-        print("Training BPE tokenizer...")
-
-        # Get word frequencies
-        word_freq = self.get_word_frequencies(corpus)
-
-        # Filter by frequency
-        word_freq = {
-            word: freq for word, freq in word_freq.items() if freq >= self.min_frequency
-        }
-
-        # Initialize vocabulary with characters + special tokens
-        vocab = set()
-        for text in corpus:
-            vocab.update(text)
-
-        # Add special tokens
-        vocab.update(self.special_tokens.keys())
-
-        # Convert words to character sequences
-        word_splits = {}
-        for word, freq in word_freq.items():
-            word_splits[tuple(word) + ("</w>",)] = freq
-
-        # Iteratively merge most frequent pairs
-        target_vocab_size = self.vocab_size - len(self.special_tokens)
-
-        while len(vocab) < target_vocab_size:
-            # Count all adjacent pairs
-            pairs = defaultdict(int)
-            for word, freq in word_splits.items():
-                for i in range(len(word) - 1):
-                    pairs[(word[i], word[i + 1])] += freq
-
-            if not pairs:
-                break
-
-            # Find most frequent pair
-            best_pair = max(pairs, key=pairs.get)
-
-            # Merge the pair in all words
-            new_word_splits = {}
-            for word, freq in word_splits.items():
-                new_word = self._merge_pair(word, best_pair)
-                new_word_splits[new_word] = freq
-
-            word_splits = new_word_splits
-
-            # Add merged token to vocabulary
-            merged_token = "".join(best_pair)
-            vocab.add(merged_token)
-            self.merges.append(best_pair)
-
-            if len(vocab) % 1000 == 0:
-                print(f"Vocabulary size: {len(vocab)}")
-
-        # Create final vocabulary mapping
-        vocab_list = list(self.special_tokens.keys()) + sorted(list(vocab))
-        self.vocab = {token: i for i, token in enumerate(vocab_list)}
-        self.reverse_vocab = {i: token for token, i in self.vocab.items()}
-
-        print(f"Training complete. Final vocabulary size: {len(self.vocab)}")
-
-    def _merge_pair(
-        self, word: Tuple[str, ...], pair: Tuple[str, str]
-    ) -> Tuple[str, ...]:
-        """Merge a specific pair in a word."""
-        new_word = []
-        i = 0
-        while i < len(word):
-            if i < len(word) - 1 and word[i] == pair[0] and word[i + 1] == pair[1]:
-                new_word.append("".join(pair))
-                i += 2
-            else:
-                new_word.append(word[i])
-                i += 1
-        return tuple(new_word)
-
-    def encode(self, text: str) -> List[int]:
-        """Encode text to token IDs."""
-        text = self.preprocess_text(text)
-        words = text.lower().split()
-
-        token_ids = [self.special_tokens["<BOS>"]]
-
-        for word in words:
-            # Convert word to character tuple
-            word_tokens = tuple(word) + ("</w>",)
-
-            # Apply BPE merges
-            for pair in self.merges:
-                word_tokens = self._merge_pair(word_tokens, pair)
-
-            # Convert to IDs
-            for token in word_tokens:
-                token_id = self.vocab.get(token, self.special_tokens["<UNK>"])
-                token_ids.append(token_id)
-
-        token_ids.append(self.special_tokens["<EOS>"])
-        return token_ids
-
-    def decode(self, token_ids: List[int]) -> str:
-        """Decode token IDs back to text."""
-        tokens = []
-        for token_id in token_ids:
-            if token_id in self.reverse_vocab:
-                token = self.reverse_vocab[token_id]
-                if token not in self.special_tokens:
-                    tokens.append(token)
-
-        # Join tokens and clean up
-        text = "".join(tokens)
-        text = text.replace("</w>", " ")
-        return text.strip()
-
-    def get_vocab_size(self) -> int:
-        return len(self.vocab)
-
-    def save(self, filepath: str):
-        """Save tokenizer to file."""
-        import pickle
-
-        with open(filepath, "wb") as f:
-            pickle.dump(
-                {
-                    "vocab": self.vocab,
-                    "merges": self.merges,
-                    "special_tokens": self.special_tokens,
-                    "vocab_size": self.vocab_size,
-                },
-                f,
-            )
-
-    @classmethod
-    def load(cls, filepath: str):
-        """Load tokenizer from file."""
-        import pickle
-
-        with open(filepath, "rb") as f:
-            data = pickle.load(f)
-
-        tokenizer = cls(data["vocab_size"])
-        tokenizer.vocab = data["vocab"]
-        tokenizer.merges = data["merges"]
-        tokenizer.special_tokens = data["special_tokens"]
-        tokenizer.reverse_vocab = {i: token for token, i in tokenizer.vocab.items()}
-
-        return tokenizer
-
-
-# Example usage
-sample_corpus = [
-    "The quick brown fox jumps over the lazy dog",
-    "A journey of a thousand miles begins with a single step",
-    "To be or not to be that is the question",
-    "The only thing we have to fear is fear itself",
-    "Ask not what your country can do for you",
-] * 100  # Repeat for better training
-
-# Train tokenizer
-tokenizer = ComprehensiveTokenizer(vocab_size=1000)
-tokenizer.train_bpe(sample_corpus)
-
-# Test encoding/decoding
-test_text = "The quick brown fox"
-encoded = tokenizer.encode(test_text)
-decoded = tokenizer.decode(encoded)
-
-print(f"Original: {test_text}")
-print(f"Encoded: {encoded}")
-print(f"Decoded: {decoded}")
-```
-
 #### Advanced Embedding Implementation
 
 ```python
+import math
+
+import torch
+import torch.nn as nn
+
 class PositionalEncoding(nn.Module):
     """Enhanced positional encoding with multiple strategies."""
 
@@ -1495,9 +696,9 @@ class PositionalEncoding(nn.Module):
             self.position_embeddings = nn.Embedding(max_seq_length, d_model)
 
         elif encoding_type == "relative":
-            self.max_relative_distance = 128
-            self.relative_embeddings = nn.Embedding(
-                2 * self.max_relative_distance + 1, d_model
+            raise ValueError(
+                "relative position bias is added to the attention scores, not to the input; "
+                "see RelativePositionBias above"
             )
 
     def forward(self, x, position_ids=None):
@@ -1508,24 +709,6 @@ class PositionalEncoding(nn.Module):
             if position_ids is None:
                 position_ids = torch.arange(x.size(1), device=x.device)
             return x + self.position_embeddings(position_ids)
-
-        elif self.encoding_type == "relative":
-            # Implement relative positioning
-            seq_len = x.size(1)
-            positions = torch.arange(seq_len, device=x.device)
-            relative_positions = positions.unsqueeze(0) - positions.unsqueeze(1)
-            relative_positions = (
-                torch.clamp(
-                    relative_positions,
-                    -self.max_relative_distance,
-                    self.max_relative_distance,
-                )
-                + self.max_relative_distance
-            )
-
-            relative_encodings = self.relative_embeddings(relative_positions)
-            # This is simplified - in practice, relative encodings are applied in attention
-            return x
 
         return x
 
@@ -1615,66 +798,6 @@ print(f"Output shape: {embeddings.shape}")
 print(f"Embedding norm: {embeddings.norm(dim=-1).mean():.3f}")
 ```
 
-#### Tokenization Analysis Tools
-
-```python
-def analyze_tokenization_efficiency(tokenizer, corpus):
-    """Analyze tokenization efficiency and patterns."""
-
-    results = {
-        "compression_ratios": [],
-        "token_lengths": [],
-        "oov_rates": [],
-        "subword_patterns": Counter(),
-    }
-
-    for text in corpus:
-        # Encode text
-        token_ids = tokenizer.encode(text)
-        tokens = [tokenizer.reverse_vocab.get(tid, "<UNK>") for tid in token_ids]
-
-        # Calculate compression ratio
-        char_count = len(text)
-        token_count = len(token_ids)
-        compression_ratio = char_count / token_count if token_count > 0 else 0
-        results["compression_ratios"].append(compression_ratio)
-
-        # Track token lengths
-        for token in tokens:
-            if token not in tokenizer.special_tokens:
-                results["token_lengths"].append(len(token))
-
-                # Analyze subword patterns
-                if token.endswith("</w>"):
-                    results["subword_patterns"]["word_final"] += 1
-                elif len(token) == 1:
-                    results["subword_patterns"]["character"] += 1
-                else:
-                    results["subword_patterns"]["subword"] += 1
-
-        # Calculate OOV rate
-        oov_count = sum(
-            1 for tid in token_ids if tid == tokenizer.special_tokens["<UNK>"]
-        )
-        oov_rate = oov_count / len(token_ids) if len(token_ids) > 0 else 0
-        results["oov_rates"].append(oov_rate)
-
-    # Summary statistics
-    print("Tokenization Analysis Results:")
-    print(f"Average compression ratio: {np.mean(results['compression_ratios']):.2f}")
-    print(f"Average token length: {np.mean(results['token_lengths']):.2f}")
-    print(f"Average OOV rate: {np.mean(results['oov_rates']):.3f}")
-    print(f"Subword pattern distribution: {dict(results['subword_patterns'])}")
-
-    return results
-
-
-# Run analysis
-analysis_results = analyze_tokenization_efficiency(tokenizer, sample_corpus)
-```
-
-This practical implementation provides a complete foundation for understanding and working with tokenization and embeddings in transformer models.
-
 ```{admonition} Hands-On Practice
 :class: tip
 For runnable versions of the ideas in this section, see the accompanying notebook: [Attention Mechanisms Demo](examples/attention_mechanisms_demo.ipynb). Its sections are linked from each part of this chapter.
@@ -1701,7 +824,7 @@ Self-attention computes a weighted representation of the input sequence, where w
 1. **Attention scores**:
    $$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V$$
 
-The scaling factor $\sqrt{d_k}$ prevents the softmax from saturating for large embedding dimensions {cite}`vaswani2017attention`.
+The scaling factor $\sqrt{d_k}$, where $d_k$ is the per-head key dimension, keeps the dot products at unit variance so the softmax does not saturate {cite}`vaswani2017attention`.
 
 #### Multi-Head Attention
 
@@ -1723,6 +846,11 @@ Different attention heads learn to capture various linguistic phenomena:
 Visualization tools like attention maps provide insights into model behavior, though interpreting attention patterns requires caution {cite}`jain2019attention`.
 
 ```python
+import math
+
+import torch
+import torch.nn as nn
+
 class MultiHeadAttention(nn.Module):
     def __init__(self, d_model, num_heads):
         super().__init__()
@@ -1809,6 +937,8 @@ While the original transformer was designed for machine translation, different v
 - **T5** {cite}`raffel2019exploring`: Encoder-decoder architecture treating all tasks as text-to-text
 
 ```python
+# pseudo-code: uses MultiHeadAttention from Section 2.2
+import torch.nn as nn
 class TransformerBlock(nn.Module):
     def __init__(self, d_model, num_heads, d_ff, dropout=0.1):
         super().__init__()
@@ -1839,6 +969,63 @@ class TransformerBlock(nn.Module):
 The notebook ({ref}`nb-attn-transformer`) assembles one post-LN transformer block from multi-head attention, a position-wise feed-forward network, layer normalization and residual connections, and shows what layer normalization does to activations of different scales. It does not train a model; that is left as an exercise.
 ```
 
+### 3.3 What Changed Since 2017
+
+The block above is the 2017 design. Every widely used LLM since GPT-2 differs from it in a handful of ways, all aimed at training stability or inference cost:
+
+- **Pre-LN instead of post-LN.** Normalization is applied *before* each sublayer, so the residual stream is never normalized: $x \leftarrow x + \mathrm{MHA}(\mathrm{Norm}(x))$. Post-LN transformers have large gradients at initialization and need learning-rate warm-up to train at all; pre-LN removes most of that sensitivity {cite}`xiong2020layer`.
+- **RMSNorm instead of LayerNorm.** Dropping the mean subtraction and the bias, $\mathrm{RMSNorm}(x) = \gamma \odot x / \sqrt{\tfrac{1}{d}\sum_i x_i^2 + \epsilon}$, is cheaper and trains just as well {cite}`zhang2019root`. LLaMA, Mistral, Qwen and Gemma all use it.
+- **Gated activations.** The feed-forward network becomes $\mathrm{FFN}(x) = (\mathrm{SiLU}(xW_1) \odot xW_3)W_2$ (SwiGLU), with the hidden width reduced to about $\tfrac{8}{3}d$ to keep the parameter count unchanged {cite}`shazeer2020glu`.
+- **Rotary position embeddings.** Positions enter through RoPE on the queries and keys (Section 1.3), not through vectors added to the input {cite}`su2021roformer`.
+- **Grouped-query attention.** Several query heads share one key/value head, shrinking the KV cache that dominates inference memory at long context {cite}`ainslie2023gqa`.
+- **No biases, tied or untied embeddings, larger vocabularies.** Linear layers usually drop their bias terms; vocabularies grew from 32k to 128k-256k (Section 1.6).
+
+```python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class RMSNorm(nn.Module):
+    def __init__(self, d_model, eps=1e-6):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(d_model))
+
+    def forward(self, x):
+        rms = torch.sqrt(x.pow(2).mean(dim=-1, keepdim=True) + self.eps)
+        return self.weight * x / rms
+
+
+class SwiGLU(nn.Module):
+    def __init__(self, d_model, hidden=None):
+        super().__init__()
+        hidden = hidden or int(8 * d_model / 3)
+        self.w1 = nn.Linear(d_model, hidden, bias=False)
+        self.w3 = nn.Linear(d_model, hidden, bias=False)
+        self.w2 = nn.Linear(hidden, d_model, bias=False)
+
+    def forward(self, x):
+        return self.w2(F.silu(self.w1(x)) * self.w3(x))
+
+
+class PreLNBlock(nn.Module):
+    """A LLaMA-style block: pre-norm, RMSNorm, SwiGLU. Attention is any module with
+    forward(x, x, x) -> output (RoPE and grouped-query attention live inside it)."""
+
+    def __init__(self, d_model, attention):
+        super().__init__()
+        self.attention = attention
+        self.norm1 = RMSNorm(d_model)
+        self.norm2 = RMSNorm(d_model)
+        self.ffn = SwiGLU(d_model)
+
+    def forward(self, x):
+        h = self.norm1(x)
+        x = x + self.attention(h, h, h)
+        return x + self.ffn(self.norm2(x))
+```
+
 ## 4. Language Modeling Objective
 
 ### 4.1 Next-Token Prediction
@@ -1854,6 +1041,8 @@ This autoregressive formulation enables text generation and captures the statist
 To prevent the model from "seeing the future," causal masking ensures attention only flows from earlier to later positions:
 
 ```python
+import torch
+
 def create_causal_mask(seq_length):
     mask = torch.triu(torch.ones(seq_length, seq_length), diagonal=1)
     return mask == 0  # True for allowed positions
@@ -1877,7 +1066,7 @@ where $h_{i-1}$ is the final-layer hidden state at position $i-1$, which under c
 
 $$\text{Perplexity} = \exp\left(-\frac{1}{N} \sum_{i=1}^{N} \log P(x_i | x_{<i})\right)$$
 
-Lower perplexity indicates better modeling of the data distribution. However, perplexity doesn't always correlate with downstream task performance {cite}`jelinek1977perplexity`.
+Perplexity was introduced as the effective branching factor of a language model {cite}`jelinek1977perplexity`; lower is better. It correlates only loosely with downstream task accuracy, so large-scale evaluations report both {cite}`liang2022holistic`.
 
 ```{admonition} Language Modeling in Practice
 :class: note
@@ -1914,14 +1103,14 @@ The transformer's success in machine translation led to its adoption for languag
 
 - **GPT** (2018) showed the power of unsupervised pre-training
 - **BERT** (2018) demonstrated bidirectional representations
-- **GPT-2** (2019) revealed emergent capabilities at scale
-- **GPT-3** (2020) achieved few-shot learning with 175B parameters
+- **GPT-2** (2019) showed zero-shot transfer to many tasks from language modeling alone {cite}`radford2019language`
+- **GPT-3** (2020) achieved few-shot learning with 175B parameters {cite}`brown2020language`
 
 This progression established the foundation for today's LLMs and their remarkable capabilities.
 
 ## Exercises
 
-1. **Tokenization Analysis**: Compare BPE and SentencePiece tokenization on multilingual text. How do vocabulary sizes affect model performance?
+1. **Tokenization Analysis**: Compare BPE and unigram tokenization (both available in SentencePiece) on multilingual text. How do vocabulary sizes affect model performance?
 
 1. **Attention Visualization**: Implement attention map visualization and analyze patterns in a small transformer model.
 
@@ -1969,13 +1158,13 @@ This progression established the foundation for today's LLMs and their remarkabl
 **Scaling Laws and Training:**
 
 - [Scaling Laws for Neural Language Models](https://arxiv.org/abs/2001.08361) {cite}`kaplan2020scaling` - Understanding model scaling behavior
-- [Training Compute-Optimal Large Language Models](https://arxiv.org/abs/2203.15556) - Chinchilla scaling laws
+- [Training Compute-Optimal Large Language Models](https://arxiv.org/abs/2203.15556) {cite}`hoffmann2022training` - Chinchilla scaling laws
 
 **Technical Deep Dives:**
 
-- [A Primer on Neural Network Architectures](https://arxiv.org/abs/1807.10854) {cite}`rogers2020primer` - Comprehensive BERT analysis
+- [A Primer in BERTology](https://arxiv.org/abs/2002.12327) {cite}`rogers2020primer` - What probing studies found about how BERT works
 - [Pre-trained Models for Natural Language Processing](https://arxiv.org/abs/2003.08271) {cite}`qiu2020pre` - Survey of pre-trained models
-- [BERT Rediscovers the Classical NLP Pipeline](https://arxiv.org/abs/1905.05950) {cite}`kenton2019bert` - BERT implementation details
+- [BERT Rediscovers the Classical NLP Pipeline](https://arxiv.org/abs/1905.05950) {cite}`tenney2019bert` - Probing which layers of BERT encode which linguistic structure
 
 **Optimization and Efficiency:**
 
@@ -1985,7 +1174,7 @@ This progression established the foundation for today's LLMs and their remarkabl
 
 ### Books and Comprehensive Resources
 
-1. **[Natural Language Processing with Transformers](https://transformersbook.com/)** by Lewis Tunstall, Leandro von Werra, and Thomas Wolf
+1. **[Natural Language Processing with Transformers](https://github.com/nlp-with-transformers/notebooks)** by Lewis Tunstall, Leandro von Werra, and Thomas Wolf
 1. **[Deep Learning](https://www.deeplearningbook.org/)** by Ian Goodfellow, Yoshua Bengio, and Aaron Courville - Mathematical foundations
 1. **[Speech and Language Processing](https://web.stanford.edu/~jurafsky/slp3/)** by Dan Jurafsky and James H. Martin - NLP fundamentals
 
@@ -2000,13 +1189,11 @@ This progression established the foundation for today's LLMs and their remarkabl
 
 - [PyTorch Transformer Tutorial](https://pytorch.org/tutorials/beginner/transformer_tutorial.html)
 - [TensorFlow Transformer Tutorial](https://www.tensorflow.org/text/tutorials/transformer)
-- [Weights & Biases Model Training Guides](https://docs.wandb.ai/guides/models)
+- [Weights & Biases documentation](https://docs.wandb.ai/)
 
 ### Research Communities and Updates
 
-- [Papers With Code - Transformers](https://paperswithcode.com/methods/category/transformers) - Latest research with code
 - [Hugging Face Papers](https://huggingface.co/papers) - Curated ML research papers
-- [Towards Data Science](https://towardsdatascience.com/tagged/transformers) - Medium articles on transformers
 
 ______________________________________________________________________
 

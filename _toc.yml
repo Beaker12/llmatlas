@@ -8,6 +8,8 @@ parts:
       - file: chapters/01-foundations/index
         title: "LLM Foundations"
         sections:
+          - file: chapters/01-foundations/tokenization-deep-dive
+            title: "Tokenization in Depth"
           - file: chapters/01-foundations/examples/attention_mechanisms_demo
             title: "Attention Mechanisms Demo"
       - file: chapters/02-mathematics/index
