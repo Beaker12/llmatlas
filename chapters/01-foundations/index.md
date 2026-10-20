@@ -534,9 +534,9 @@ def test_reversibility(tokenizer, texts):
 
 #### Embedding Spaces
 
-Once tokenized, each token is mapped to a high-dimensional vector through an **embedding matrix** $E \\in \\mathbb{R}^{V \\times d}$, where $V$ is the vocabulary size and $d$ is the embedding dimension.
+Once tokenized, each token is mapped to a high-dimensional vector through an **embedding matrix** $E \in \mathbb{R}^{V \times d}$, where $V$ is the vocabulary size and $d$ is the embedding dimension.
 
-$$\\mathbf{x}\_i = E\[\\text{token}\_i\]$$
+$$\mathbf{x}_i = E[\text{token}_i]$$
 
 These embeddings are learned during training to capture semantic relationships. Similar tokens develop similar vector representations, enabling the model to generalize across related concepts {cite}`mikolov2013efficient`.
 
@@ -714,8 +714,8 @@ Without positional information, a transformer would see these as identical sets 
 
 The original transformer uses sinusoidal positional encodings {cite}`vaswani2017attention`:
 
-$$PE\_{(pos, 2i)} = \\sin\\left(\\frac{pos}{10000^{2i/d}}\\right)$$
-$$PE\_{(pos, 2i+1)} = \\cos\\left(\\frac{pos}{10000^{2i/d}}\\right)$$
+$$PE_{(pos, 2i)} = \sin\left(\frac{pos}{10000^{2i/d}}\right)$$
+$$PE_{(pos, 2i+1)} = \cos\left(\frac{pos}{10000^{2i/d}}\right)$$
 
 where:
 
@@ -1715,24 +1715,24 @@ The accompanying notebook demonstrates attention mechanisms with working code an
 
 #### Self-Attention Fundamentals
 
-Self-attention computes a weighted representation of the input sequence, where weights indicate the relevance of each position to the current position. Given input embeddings $X \\in \\mathbb{R}^{n \\times d}$:
+Self-attention computes a weighted representation of the input sequence, where weights indicate the relevance of each position to the current position. Given input embeddings $X \in \mathbb{R}^{n \times d}$:
 
 1. **Query, Key, Value projections**:
-   $$Q = XW_Q, \\quad K = XW_K, \\quad V = XW_V$$
+   $$Q = XW_Q, \quad K = XW_K, \quad V = XW_V$$
 
 1. **Attention scores**:
-   $$\\text{Attention}(Q, K, V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V$$
+   $$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V$$
 
-The scaling factor $\\sqrt{d_k}$ prevents the softmax from saturating for large embedding dimensions {cite}`vaswani2017attention`.
+The scaling factor $\sqrt{d_k}$ prevents the softmax from saturating for large embedding dimensions {cite}`vaswani2017attention`.
 
 #### Multi-Head Attention
 
 Multi-head attention runs multiple attention mechanisms in parallel, allowing the model to attend to different types of relationships:
 
-$$\\text{MultiHead}(Q, K, V) = \\text{Concat}(\\text{head}\_1, ..., \\text{head}\_h)W_O$$
+$$\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, ..., \text{head}_h)W_O$$
 
 where each head is:
-$$\\text{head}\_i = \\text{Attention}(QW_i^Q, KW_i^K, VW_i^V)$$
+$$\text{head}_i = \text{Attention}(QW_i^Q, KW_i^K, VW_i^V)$$
 
 ### 2.2 Attention Patterns and Interpretability
 
@@ -1804,21 +1804,21 @@ The transformer architecture {cite}`vaswani2017attention` combines attention mec
 
 Layer normalization stabilizes training by normalizing inputs across the feature dimension:
 
-$$\\text{LayerNorm}(x) = \\gamma \\odot \\frac{x - \\mu}{\\sigma} + \\beta$$
+$$\text{LayerNorm}(x) = \gamma \odot \frac{x - \mu}{\sigma} + \beta$$
 
-where $\\mu$ and $\\sigma$ are the mean and standard deviation computed across the feature dimension.
+where $\mu$ and $\sigma$ are the mean and standard deviation computed across the feature dimension (with a small $\epsilon$ added inside the square root of $\sigma$ for numerical stability), and $\gamma$, $\beta$ are learned per-feature scale and shift.
 
 #### Residual Connections
 
 Residual connections help gradient flow in deep networks:
 
-$$\\text{output} = \\text{LayerNorm}(x + \\text{Sublayer}(x))$$
+$$\text{output} = \text{LayerNorm}(x + \text{Sublayer}(x))$$
 
 #### Feed-Forward Networks
 
 Each transformer layer includes a position-wise feed-forward network:
 
-$$\\text{FFN}(x) = \\max(0, xW_1 + b_1)W_2 + b_2$$
+$$\text{FFN}(x) = \max(0, xW_1 + b_1)W_2 + b_2$$
 
 This provides non-linear transformations and typically uses a hidden dimension 4× larger than the model dimension.
 
@@ -1874,7 +1874,7 @@ This hands-on implementation solidifies understanding of how all transformer com
 
 Modern LLMs are trained on the **causal language modeling** objective, predicting the next token given previous tokens:
 
-$$P(x\_{t+1} | x_1, x_2, ..., x_t)$$
+$$P(x_{t+1} | x_1, x_2, ..., x_t)$$
 
 This autoregressive formulation enables text generation and captures the statistical structure of language.
 
@@ -1892,17 +1892,19 @@ def create_causal_mask(seq_length):
 
 The training objective maximizes the likelihood of the training data:
 
-$$\\mathcal{L} = -\\sum\_{i=1}^{N} \\log P(x_i | x\_{\<i})$$
+$$\mathcal{L} = -\sum_{i=1}^{N} \log P(x_i | x_{<i})$$
 
 Where the model outputs probability distributions over the vocabulary:
 
-$$P(x_i | x\_{\<i}) = \\text{softmax}(W\_{\\text{out}} h_i + b\_{\\text{out}})$$
+$$P(x_i | x_{<i}) = \text{softmax}(W_{\text{out}} h_{i-1} + b_{\text{out}})$$
+
+where $h_{i-1}$ is the final-layer hidden state at position $i-1$, which under causal masking has seen exactly $x_{<i}$.
 
 ### 4.3 Evaluation Metrics
 
 **Perplexity** measures how well the model predicts the test data:
 
-$$\\text{Perplexity} = \\exp\\left(-\\frac{1}{N} \\sum\_{i=1}^{N} \\log P(x_i | x\_{\<i})\\right)$$
+$$\text{Perplexity} = \exp\left(-\frac{1}{N} \sum_{i=1}^{N} \log P(x_i | x_{<i})\right)$$
 
 Lower perplexity indicates better modeling of the data distribution. However, perplexity doesn't always correlate with downstream task performance {cite}`jelinek1977perplexity`.
 
@@ -1974,8 +1976,9 @@ This progression established the foundation for today's LLMs and their remarkabl
 1. [Andrej Karpathy's Neural Networks: Zero to Hero](https://karpathy.ai/zero-to-hero.html) - Video series building transformers from scratch
 
 **Mathematical Foundations:**
-4\. [Understanding the Transformer](https://magazine.sebastianraschka.com/p/understanding-large-language-models) by Sebastian Raschka
-5\. [Linear Algebra for Machine Learning](https://www.deeplearningbook.org/contents/linear_algebra.html) - Deep Learning Book Chapter 2
+
+4. [Understanding Large Language Models](https://magazine.sebastianraschka.com/p/understanding-large-language-models) by Sebastian Raschka
+5. [Linear Algebra for Machine Learning](https://www.deeplearningbook.org/contents/linear_algebra.html) - Deep Learning Book Chapter 2
 
 ### Foundational Papers
 
@@ -2040,12 +2043,6 @@ This progression established the foundation for today's LLMs and their remarkabl
 - [Papers With Code - Transformers](https://paperswithcode.com/methods/category/transformers) - Latest research with code
 - [Hugging Face Papers](https://huggingface.co/papers) - Curated ML research papers
 - [Towards Data Science](https://towardsdatascience.com/tagged/transformers) - Medium articles on transformers
-
-## Bibliography
-
-```{bibliography}
-:filter: docname in docnames
-```
 
 ______________________________________________________________________
 

@@ -1,70 +1,65 @@
-# LLM Atlas Configuration
+# LLM Atlas configuration (Jupyter Book 1.x)
 
-title: "LLM Atlas: A Comprehensive Guide to Large Language Models"
+title: "LLM Atlas: A Guide to Large Language Models"
 author: "Stuart W. Parkhurst"
+copyright: "Educational resource by Stuart W. Parkhurst | MIT License"
+logo: _static/logo.svg
 
-# Book settings
+only_build_toc_files: true
+
 execute:
+  # Notebooks are executed in CI (see .github/workflows/pages.yml); the book build
+  # uses the cache so that a notebook that has not changed is not re-run.
   execute_notebooks: cache
-  timeout: 60
+  timeout: 120
 
-# Bibliography
+parse:
+  myst_enable_extensions:
+    - amsmath
+    - colon_fence
+    - deflist
+    - dollarmath
+    - linkify
+    - substitution
+    - tasklist
+
 bibtex_bibfiles:
   - references.bib
 
-# Repository
 repository:
   url: https://github.com/Beaker12/llmatlas
   branch: main
 
-# HTML-specific options
 html:
+  favicon: _static/favicon.svg
   home_page_in_navbar: false
-  use_edit_page_button: false
+  use_edit_page_button: true
   use_repository_button: true
   use_issues_button: true
   baseurl: "https://beaker12.github.io/llmatlas/"
-  extra_css:
-    - _static/custom.css
+  announcement: "Work in progress: chapters 1 and 2 are written. See the Roadmap for what is planned."
 
-# Copyright and License
-copyright: "Educational resource by Stuart W. Parkhurst | MIT License"
-
-# LaTeX settings
-latex:
-  latex_engine: pdflatex
-  latex_documents:
-    targetname: llmatlas.tex
-
-# Sphinx settings
 sphinx:
+  recursive_update: true
+  extra_extensions:
+    - sphinxext.opengraph
   config:
     html_show_sourcelink: false
+    bibtex_reference_style: author_year
+    bibtex_default_style: plain
+    ogp_site_url: "https://beaker12.github.io/llmatlas/"
+    ogp_social_cards:
+      enable: false
     exclude_patterns:
-      - ".github/**"
-      - ".policy/**"
-      - "README.md"
-      - "docs/**"
       - "_build/**"
       - ".jupyter_cache/**"
+      - ".pytest_cache/**"
+      - ".claude/**"
+      - ".superpowers/**"
+      - ".github/**"
       - ".venv/**"
       - "venv/**"
-      - "env/**"
-      - "__pycache__/**"
-      - "*.pyc"
-      - ".git/**"
-      - ".pytest_cache/**"
-      - "node_modules/**"
-      - ".pre-commit-config.yaml"
-      - "Makefile"
-      - "requirements.txt"
-      - "*.toml"
-      - "*.cfg"
-      - ".gitignore"
-      - ".gitattributes"
-      - "*.log"
-      - "*.tmp"
-      - "temp/**"
-      - "tmp/**"
-      - ".DS_Store"
-      - "Thumbs.db"
+      - "tests/**"
+      - "tools/**"
+      - "README.md"
+      - "**/.ipynb_checkpoints"
