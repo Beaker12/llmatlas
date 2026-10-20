@@ -8,11 +8,9 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -30,11 +28,20 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install "jupyter-book>=1,<2" sphinx-copybutton sphinx-design sphinxext-opengraph \
-            numpy pandas matplotlib seaborn scipy plotly ipykernel
+          pip install -r requirements.txt
 
-      - name: Build the book
-        run: jupyter-book build .
+      - name: Run repository tests
+        run: pytest tests/
+
+      - name: Execute notebooks
+        run: |
+          for nb in chapters/*/examples/*.ipynb; do
+            jupyter nbconvert --to notebook --execute --ExecutePreprocessor.timeout=120 \
+              --output-dir /tmp/executed-notebooks "$nb"
+          done
+
+      - name: Build the book (warnings are errors)
+        run: jupyter-book build . -W --keep-going
 
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -44,6 +51,9 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

@@ -1,34 +1,18 @@
-# Jupyter Book and documentation dependencies
-jupyter-book>=0.15.0
-sphinx>=4.0.0
-myst-parser>=0.18.0
-
-# Additional useful extensions
+# Runtime dependencies for building and testing the book.
+# Install torch first from the CPU index (see README / make install):
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+jupyter-book>=1,<2
 sphinx-copybutton
-sphinx-external-toc
 sphinx-design
 sphinxext-opengraph
-
-# Development and quality tools
-pre-commit
-black
-flake8
-mypy
-
-# Data science and visualization (for examples)
 numpy
 pandas
 matplotlib
 seaborn
+scipy
 plotly
-
-# Machine learning libraries (for LLM examples)
-torch
-transformers
-datasets
-huggingface_hub
-
-# Utilities
-requests
-tqdm
+ipykernel
+nbconvert
 pyyaml
+pytest
+pyflakes

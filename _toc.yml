@@ -1,6 +1,4 @@
-# Table of Contents for LLMatlas
-# Comprehensive Guide to Large Language Models - 50+ Chapters
-
+# Table of Contents for LLM Atlas
 format: jb-book
 root: intro
 
@@ -10,151 +8,19 @@ parts:
       - file: chapters/01-foundations/index
         title: "LLM Foundations"
         sections:
+          - file: chapters/01-foundations/tokenization-deep-dive
+            title: "Tokenization in Depth"
           - file: chapters/01-foundations/examples/attention_mechanisms_demo
             title: "Attention Mechanisms Demo"
       - file: chapters/02-mathematics/index
-        title: "Mathematical Principles"
+        title: "Mathematical Foundations"
         sections:
           - file: chapters/02-mathematics/examples/mathematical_foundations_demo
             title: "Mathematical Foundations Demo"
 
-  - caption: "Data and Preprocessing"
+  - caption: "Planned"
     chapters:
-      - file: chapters/03-data-acquisition/index
-        title: "Data Acquisition and Sources"
-      - file: chapters/04-preprocessing/index
-        title: "Data Preprocessing and Cleaning"
-      - file: chapters/05-dataset-management/index
-        title: "Dataset Management and Versioning"
-
-  - caption: "Model Architectures and Training"
-    chapters:
-      - file: chapters/06-architectures/index
-        title: "Modern Transformer Architectures"
-      - file: chapters/07-training-objectives/index
-        title: "Training Objectives and Methodologies"
-      - file: chapters/08-distributed-training/index
-        title: "Distributed and Efficient Training"
-      - file: chapters/09-specialized-training/index
-        title: "Specialized Training Regimes"
-
-  - caption: "Post-Training and Alignment"
-    chapters:
-      - file: chapters/10-supervised-finetuning/index
-        title: "Supervised Fine-tuning"
-      - file: chapters/11-parameter-efficient/index
-        title: "Parameter-Efficient Fine-tuning"
-      - file: chapters/12-rlhf/index
-        title: "Reinforcement Learning from Human Feedback"
-      - file: chapters/13-alignment/index
-        title: "Direct Preference Optimization and Alignment"
-
-  - caption: "Inference and Deployment"
-    chapters:
-      - file: chapters/14-model-compression/index
-        title: "Model Compression and Optimization"
-      - file: chapters/15-serving-architectures/index
-        title: "Serving Architectures and Systems"
-      - file: chapters/16-distributed-deployment/index
-        title: "Distributed and Edge Deployment"
-      - file: chapters/17-production-operations/index
-        title: "Production Operations and Monitoring"
-
-  - caption: "Retrieval-Augmented Generation"
-    chapters:
-      - file: chapters/18-rag-fundamentals/index
-        title: "RAG Fundamentals and Architecture"
-      - file: chapters/19-advanced-retrieval/index
-        title: "Advanced Retrieval Techniques"
-      - file: chapters/20-rag-optimization/index
-        title: "RAG Optimization and Engineering"
-      - file: chapters/21-rag-evaluation/index
-        title: "RAG Evaluation and Applications"
-
-  - caption: "Code Generation and Programming"
-    chapters:
-      - file: chapters/22-code-understanding/index
-        title: "Code Understanding and Representation"
-      - file: chapters/23-code-generation/index
-        title: "Code Generation and Completion"
-      - file: chapters/24-advanced-code-ai/index
-        title: "Advanced Code AI Applications"
-      - file: chapters/25-code-evaluation/index
-        title: "Code AI Evaluation and Integration"
-
-  - caption: "Multimodal AI"
-    chapters:
-      - file: chapters/26-multimodal-foundations/index
-        title: "Multimodal Foundations and Architectures"
-      - file: chapters/27-vision-language/index
-        title: "Vision-Language Models"
-      - file: chapters/28-audio-speech/index
-        title: "Audio and Speech Integration"
-      - file: chapters/29-multimodal-applications/index
-        title: "Advanced Multimodal Applications"
-
-  - caption: "Agent Systems and Tool Use"
-    chapters:
-      - file: chapters/30-agent-foundations/index
-        title: "Agent Foundations and Architectures"
-      - file: chapters/31-tool-integration/index
-        title: "Tool Use and Function Calling"
-      - file: chapters/32-multi-agent-systems/index
-        title: "Multi-Agent Systems"
-      - file: chapters/33-agent-applications/index
-        title: "Advanced Agent Applications"
-
-  - caption: "Specialized Applications"
-    chapters:
-      - file: chapters/34-engineering-cad/index
-        title: "Engineering and CAD Applications"
-      - file: chapters/35-scientific-computing/index
-        title: "Scientific Computing and Research"
-      - file: chapters/36-healthcare-lifesciences/index
-        title: "Healthcare and Life Sciences"
-      - file: chapters/37-finance-legal-business/index
-        title: "Finance, Legal, and Business"
-
-  - caption: "Cutting-Edge Research"
-    chapters:
-      - file: chapters/38-novel-architectures/index
-        title: "Novel Architectures and Training"
-      - file: chapters/39-advanced-reasoning/index
-        title: "Advanced Capabilities and Reasoning"
-      - file: chapters/40-emerging-training/index
-        title: "Emerging Training Techniques"
-      - file: chapters/41-future-directions/index
-        title: "Future Directions and Research Frontiers"
-
-  - caption: "Safety and Governance"
-    chapters:
-      - file: chapters/42-ai-safety/index
-        title: "AI Safety Fundamentals"
-      - file: chapters/43-bias-fairness/index
-        title: "Bias, Fairness, and Representation"
-      - file: chapters/44-privacy-security/index
-        title: "Privacy, Security, and Misuse Prevention"
-      - file: chapters/45-societal-governance/index
-        title: "Societal Impact and Governance"
-
-  - caption: "Performance and Infrastructure"
-    chapters:
-      - file: chapters/46-compute-optimization/index
-        title: "Compute Optimization and Hardware"
-      - file: chapters/47-distributed-scaling/index
-        title: "Distributed Systems and Scaling"
-      - file: chapters/48-cloud-infrastructure/index
-        title: "Cloud Infrastructure and Deployment"
-      - file: chapters/49-cost-resource-management/index
-        title: "Cost Analysis and Resource Management"
-
-  - caption: "Evaluation and Monitoring"
-    chapters:
-      - file: chapters/50-evaluation-methodologies/index
-        title: "Evaluation Methodologies and Frameworks"
-      - file: chapters/51-benchmarking/index
-        title: "Comprehensive Benchmarking"
-      - file: chapters/52-production-monitoring/index
-        title: "Production Monitoring and Observability"
-      - file: chapters/53-continuous-evaluation/index
-        title: "Continuous Evaluation and Improvement"
+      - file: roadmap
+        title: "Roadmap"
+      - file: bibliography
+        title: "Bibliography"
