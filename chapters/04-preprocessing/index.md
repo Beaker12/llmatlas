@@ -67,10 +67,10 @@ Most of the text, usually well over 90%, is thrown away, and the discarded porti
 
 The scaling laws of Chapter 2 treat tokens as interchangeable, but they are not. Several results show that a smaller, cleaner corpus beats a larger, dirtier one at fixed compute:
 
-- **Gopher** {cite}`rae2021scaling` found that the combination of heuristic quality filters and deduplication improved downstream performance across the board, and that the improvement persisted at every model size tested.
+- **Gopher** {cite}`rae2021scaling` found that the combination of heuristic quality filters and deduplication improved downstream performance across the board in ablations on a 1.4B-parameter model.
 - **Deduplication alone** {cite}`lee2022deduplicating` lets a model reach the same validation perplexity in fewer steps and reduces the fraction of generated text that is copied verbatim from the training set by an order of magnitude.
 - **Textbook-quality data** {cite}`gunasekar2023textbooks` allowed a 1.3B-parameter model trained on 7B tokens of filtered and synthetic code to outperform models trained on hundreds of times more unfiltered data on HumanEval.
-- **Classifier-filtered web text**, in both FineWeb-Edu {cite}`penedo2024fineweb` and DataComp-LM {cite}`li2024datacomp`, gave the largest single gain of any intervention the authors tested, larger than any choice of heuristic rules or deduplication strategy.
+- **Classifier-filtered web text** was the strongest single intervention in DataComp-LM's controlled comparison {cite}`li2024datacomp`, ahead of every heuristic rule set and deduplication strategy tested, and FineWeb-Edu {cite}`penedo2024fineweb` reports large gains on knowledge and reasoning benchmarks from the same idea.
 
 The caveat, which Section 4.5 returns to, is that "better" is measured on a fixed set of benchmarks. A filter that keeps educational prose and drops forum conversation will raise scores on knowledge benchmarks and may lower the model's ability to handle informal text. Preprocessing is a design decision, not a neutral clean-up.
 
@@ -179,15 +179,15 @@ Pipelines that split a document into chunks before filtering (for example, to sc
 
 ### 3.1 Classifiers and thresholds
 
-Language identification is a solved problem for long documents in well-resourced languages and an open one for short texts, closely related languages, and code-switched text. The standard tool is a fastText classifier {cite}`joulin2017bag` trained on character n-grams: the `lid.176` model distinguishes 176 languages at microsecond speed, and the later GlotLID and OpenLID models cover several hundred.
+Language identification is a solved problem for long documents in well-resourced languages and an open one for short texts, closely related languages, and code-switched text. The standard tool is a fastText classifier {cite}`joulin2017bag` trained on character n-grams: the `lid.176` model distinguishes 176 languages at microsecond speed, and the later OpenLID and GlotLID models cover several hundred and well over a thousand languages respectively.
 
 The classifier returns a distribution over languages. Pipelines keep a document if the top language is the target and its score exceeds a threshold. The threshold trades recall for precision:
 
 - C4 kept pages scored at least 0.99 English by `langdetect`, which is strict enough to drop much multilingual and dialectal content.
-- RefinedWeb and FineWeb keep pages scored at least 0.65 by fastText, chosen after inspecting what fell between 0.5 and 0.9.
-- Dolma keeps pages scored at least 0.5 and reports that the band between 0.5 and 0.65 is mostly short pages and boilerplate.
+- RefinedWeb and FineWeb keep pages scored at least 0.65 by fastText.
+- Dolma keeps pages scored at least 0.5, trading some precision for recall on short pages.
 
-Multilingual corpora run the same classifier and route each document to a per-language pipeline, because the quality thresholds in Section 4 (mean word length, stop-word counts, terminal punctuation) are language-specific. ROOTS {cite}`laurenccon2022bigscience` and the CulturaX and MADLAD corpora apply per-language parameter tables produced with native-speaker review.
+Multilingual corpora run the same classifier and route each document to a per-language pipeline, because the quality thresholds in Section 4 (mean word length, stop-word counts, terminal punctuation) are language-specific. ROOTS {cite}`laurenccon2022bigscience` applies per-language parameter tables produced with native-speaker review.
 
 ### 3.2 A character n-gram identifier from scratch
 
@@ -266,7 +266,8 @@ Rule-based filters are cheap, interpretable and surprisingly effective. The two 
 - Keep only lines that end in a terminal punctuation mark (period, exclamation mark, question mark or closing quotation mark).
 - Drop lines with fewer than five words.
 - Drop pages with fewer than three sentences.
-- Drop pages containing any word from a blocklist, the string "lorem ipsum", the word "javascript" (a proxy for "please enable JavaScript" pages), or a curly brace (a proxy for code).
+- Drop lines containing the word "javascript" (a proxy for "please enable JavaScript" notices).
+- Drop pages containing any word from a blocklist, the string "lorem ipsum", or a curly brace (a proxy for code).
 
 The terminal-punctuation rule is the most consequential: it removes almost every heading, list item and table cell, which is why C4 contains little structured text and why later corpora relaxed it to a page-level fraction.
 
@@ -374,7 +375,7 @@ A page that repeats itself, whether because of a template, a scraper bug or a sp
 | Fraction of characters in duplicate 9-grams    | 0.11      |
 | Fraction of characters in duplicate 10-grams   | 0.10      |
 
-The n-gram measures are computed over words. "Fraction of characters in the most common n-gram" is the number of occurrences of the most frequent n-gram, times its character length, divided by the document's character count. "Fraction of characters in duplicate n-grams" counts the characters of every n-gram occurrence that is not the first occurrence of that n-gram.
+The n-gram measures are computed over words. "Fraction of characters in the most common n-gram" is the number of occurrences of the most frequent n-gram, times its character length, divided by the document's character count. "Fraction of characters in duplicate n-grams" scans the document left to right; when an n-gram has been seen before, its characters are counted and the scan skips ahead by $n$ words, so a repeated passage is counted once per repeat rather than once per overlapping window. This follows the public implementations in datatrove and Dolma.
 
 ```python
 from collections import Counter
@@ -403,11 +404,15 @@ def repetition_stats(text: str) -> dict:
     for n in range(5, 11):
         seen = set()
         dup_chars = 0
-        for i in range(len(words) - n + 1):
+        i = 0
+        while i < len(words) - n + 1:
             gram = tuple(words[i : i + n])
             if gram in seen:
                 dup_chars += sum(map(len, gram))
-            seen.add(gram)
+                i += n  # count a repeat once, then move past it
+            else:
+                seen.add(gram)
+                i += 1
         stats[f"dup_{n}gram_char_frac"] = dup_chars / total_chars
 
     return stats
@@ -440,7 +445,7 @@ varied = (
 assert passes_repetition_filter(varied)
 ```
 
-The duplicate n-gram measure is deliberately crude: it counts overlapping occurrences, so a phrase repeated twice contributes its characters once per repetition at every n from 5 to 10. That is intended. The thresholds were tuned with this definition, and a cleaner definition would need re-tuned thresholds.
+The duplicate n-gram measure is deliberately simple: a passage repeated once contributes its characters once at every $n$ from 5 to 10, and the decreasing thresholds reflect that longer repeats are rarer in genuine prose. Changing the counting rule, for instance to count overlapping windows, changes what the thresholds mean, so a reimplementation should match the reference definition or re-tune them.
 
 ### 4.3 Perplexity-based filtering
 
@@ -452,7 +457,7 @@ The appeal is that one scoring function replaces dozens of rules. The problems a
 - Short, formulaic text (boilerplate again) scores well because it is predictable.
 - The reference corpus's biases, including which topics and demographics Wikipedia covers, become the filter's biases.
 
-Marion et al. {cite}`marion2023less` tested several pruning criteria and found that keeping the *middle* of the perplexity distribution, rather than the head, gave the best downstream models at a fixed token budget. The extremes are both suspicious: the most predictable text is boilerplate and the least predictable is noise.
+Marion et al. {cite}`marion2023less` tested several pruning criteria and found that keeping the *middle* of the perplexity distribution, rather than the head, gave the best downstream models at a fixed token budget, for the reference models they tested. The extremes are both suspicious: the most predictable text is boilerplate and the least predictable is noise.
 
 A smoothed unigram model is enough to see how the ranking behaves. Perplexity of a document with tokens $w_1, \dots, w_N$ under a model $q$ is
 
@@ -508,11 +513,11 @@ The last assertion is the reason perplexity is rarely used as a hard filter on i
 
 The strongest results in recent corpus construction come from training a classifier to recognise the kind of text you want and keeping documents it scores highly. Three generations of this idea:
 
-**GPT-3** {cite}`brown2020language` trained a logistic regression on fastText features to separate Common Crawl pages from a positive set of WebText, Wikipedia and books. Rather than thresholding, each page was kept if
+**GPT-3** {cite}`brown2020language` trained a logistic regression on hashed word features (Spark's tokenizer and HashingTF) to separate Common Crawl pages from a positive set of WebText, Wikipedia and books. Rather than thresholding, each page was kept if
 
 $$\text{np.random.pareto}(9) > 1 - \text{score}$$
 
-which keeps essentially all high-scoring documents and a decaying fraction of low-scoring ones, so that the corpus stays diverse. The same positive-versus-crawl approach, with the same Pareto sampling, was reused for several later models.
+which keeps a document with a probability that rises steeply with its score, so that the corpus stays diverse without a hard cut-off. The same positive-versus-crawl approach, with the same Pareto sampling, was reused for several later models.
 
 **FineWeb-Edu** {cite}`penedo2024fineweb` annotated 460,000 FineWeb documents with a 0 to 5 "educational value" score produced by Llama 3 70B with a rubric prompt, trained a small regression head on embeddings from a 110M-parameter encoder to predict the score, and kept documents scoring 3 or higher. The result was a 1.3T-token subset that outperformed the 15T-token parent on knowledge and reasoning benchmarks at every training budget tested.
 
@@ -527,8 +532,8 @@ import numpy as np
 def pareto_keep(scores: np.ndarray, shape: float = 9.0, seed: int = 0) -> np.ndarray:
     """GPT-3's stochastic filter: keep a document when a Pareto draw exceeds 1 - score.
 
-    With shape 9 almost every document scoring above 0.9 survives, about a
-    third of those scoring 0.5 do, and a few per cent of those scoring near 0.
+    NumPy's pareto is the Lomax distribution, so the keep probability at score s
+    is (2 - s)**-9: 1.0 at s = 1, about 0.42 at 0.9, 0.026 at 0.5, 0.002 at 0.
     """
     rng = np.random.default_rng(seed)
     return rng.pareto(shape, size=scores.shape) > (1.0 - scores)
@@ -545,7 +550,7 @@ Because the expected keep rate at score $s$ is $P(X > 1 - s)$ for $X \sim \text{
 
 ### 4.5 Measuring whether a filter helps
 
-Every filter in this section was validated the same way, and so should any filter you add: train small models on data with and without it, at the same token budget, and compare on a fixed benchmark suite. FineWeb's protocol, which is typical, trains a 1.7B-parameter model on about 30B tokens per variant and reports the average of a set of benchmarks that show a clear signal at that scale (HellaSwag, ARC, PIQA, MMLU, OpenBookQA, CommonsenseQA and a few others), using several seeds because the differences are often within noise.
+Every filter in this section was validated the same way, and so should any filter you add: train small models on data with and without it, at the same token budget, and compare on a fixed benchmark suite. FineWeb's protocol, which is typical, trains a 1.8B-parameter model on about 28B tokens per variant and reports the average of a set of benchmarks that show a clear signal at that scale (HellaSwag, ARC, PIQA, MMLU, OpenBookQA, CommonsenseQA and a few others), using several seeds because the differences are often within noise.
 
 Three things to watch for:
 
@@ -573,7 +578,7 @@ The flip side, established by Muennighoff et al. {cite}`muennighoff2023scaling`,
 
 ### 5.2 Exact deduplication
 
-Exact deduplication hashes each document after normalisation and keeps one document per hash. It catches syndicated content and mirrored sites, costs one hash per document and one global set, and is the first thing every pipeline does. The choice of hash is about speed and collision rate rather than security; a 64-bit non-cryptographic hash such as xxHash has a negligible collision probability at a few billion documents, but SHA-1 is common because it is in every standard library.
+Exact deduplication hashes each document after normalisation and keeps one document per hash. It catches syndicated content and mirrored sites, costs one hash per document and one global set, and is the first thing every pipeline does. The choice of hash is about speed and collision rate rather than security; a 64-bit non-cryptographic hash such as xxHash has a real chance of one or two collisions among a few billion documents (the birthday bound), each of which costs one wrongly dropped document; a 128-bit hash removes even that, and SHA-1 is common because it is in every standard library.
 
 ```python
 import hashlib
@@ -613,7 +618,7 @@ $$P(\text{candidate}) = 1 - (1 - s^r)^b$$
 
 which is a steep S-curve with its midpoint near $(1/b)^{1/r}$. Choosing $b$ and $r$ sets the similarity threshold.
 
-Gopher used 13-word shingles with 450 hash functions at a 0.8 threshold; RefinedWeb used 5-word shingles with 9,000 hash functions in 20 bands of 450 rows at the same threshold; FineWeb used 5-word shingles with 112 hash functions in 14 bands of 8 rows, which puts its threshold near 0.75. Dolma relied on exact matching of URLs, documents and paragraphs through a Bloom filter rather than MinHash. The implementation below uses a universal hash family $h_i(x) = (a_i x + b_i) \bmod p$ over a 32-bit shingle hash, which is what most production implementations do.
+Gopher used 13-word shingles with 450 hash functions at a 0.8 threshold; RefinedWeb used 5-word shingles with 9,000 hash functions at the same threshold; FineWeb used 5-word shingles with 112 hash functions in 14 bands of 8 rows, which puts its threshold near 0.75. Dolma relied on exact matching of URLs, documents and paragraphs through a Bloom filter rather than MinHash. The implementation below uses a universal hash family $h_i(x) = (a_i x + b_i) \bmod p$ over a 32-bit shingle hash, which is what most production implementations do.
 
 ```python
 import hashlib
@@ -732,7 +737,8 @@ def repeated_spans(tokens, min_len: int = 50):
         while i + lcp < n and j + lcp < n and tokens[i + lcp] == tokens[j + lcp]:
             lcp += 1
         if lcp >= min_len:
-            spans.append((j, j + lcp))  # the later occurrence is the one to remove
+            later = max(i, j)  # remove the occurrence that comes later in the text
+            spans.append((later, later + lcp))
     return sorted(set(spans))
 
 
@@ -767,7 +773,7 @@ The notebook section {ref}`nb-prep-dedup` runs exact and MinHash deduplication o
 Pretrained models reproduce personal data that was in their training set, and the risk grows with duplication {cite}`carlini2021extracting`. Pipelines therefore detect and either remove or mask personally identifiable information (PII) in the final text. The categories and methods used by Dolma {cite}`soldaini2024dolma` and The Stack {cite}`kocetkov2022stack` are representative:
 
 - **Email addresses, phone numbers and IP addresses** are found with regular expressions and replaced with placeholder tokens (`|||EMAIL_ADDRESS|||` in Dolma). Precision is high, recall is good for well-formatted values.
-- **Names, usernames, keys and passwords** in code need a named-entity model; StarCoder's StarPII is a small encoder fine-tuned for the purpose, run only over source code, where the regular expressions are weakest.
+- **Names, usernames, keys and passwords** in code need a named-entity model; StarPII, from the StarCoder pipeline that built on The Stack, is a small encoder fine-tuned for the purpose, run only over source code, where the regular expressions are weakest.
 - **Documents dense with PII** (more than five matches in Dolma's pipeline) are dropped outright on the assumption that they are directories, contact lists or scraped forms rather than prose.
 
 Replacement rather than deletion keeps the surrounding sentence grammatical, and a fixed placeholder lets the model learn that such a token exists without learning any value for it.
@@ -837,8 +843,8 @@ The notebook section {ref}`nb-prep-pii` runs the redaction patterns over documen
 An evaluation benchmark is useful only if the model has not seen it. Since benchmarks are published on the web and copied into forums, tutorials and GitHub repositories, they are in every crawl, and a pipeline has to look for them. The standard method is $n$-gram overlap:
 
 - **GPT-3** {cite}`brown2020language` marked a training document as contaminated if it shared any 13-gram with a benchmark example, with special handling for short examples, and reported results on both the full and the "clean" subsets of each benchmark.
-- **Llama 2** {cite}`touvron2023llama2` tokenized both sides and marked a token as contaminated if it fell in any 10-gram shared with a benchmark; an example was contaminated if more than 80% of its tokens were, and the paper reports performance separately for clean, dirty and "not clean" examples.
-- **Dolma** removed any training *paragraph* that overlapped a benchmark, rather than the whole document, to minimise collateral loss.
+- **Llama 2** {cite}`touvron2023llama2` tokenized both sides and marked a token as contaminated if it fell in any 10-gram shared with a benchmark; an example was contaminated if more than 80% of its tokens were. This was an analysis of the evaluation sets rather than a training-data filter: the paper reports performance separately on clean, "not clean", "not dirty" and dirty subsets.
+- **Dolma** matched at the paragraph level, using a Bloom filter over benchmark paragraphs, and removed training documents containing a matching paragraph.
 
 The implementation is a set of hashed $n$-grams built from the benchmark and a scan over the training text.
 
@@ -851,22 +857,27 @@ def ngram_set(text: str, n: int) -> set:
     return {tuple(words[i : i + n]) for i in range(max(0, len(words) - n + 1))}
 
 
-def contamination_index(benchmark_examples, n: int = 13) -> set:
-    index = set()
+def contamination_index(benchmark_examples, n: int = 13) -> dict:
+    """Map n -> set of n-grams. An example shorter than n words is indexed whole,
+    under its own length, so that it can still be matched."""
+    index: dict = {}
     for example in benchmark_examples:
-        grams = ngram_set(example, n)
-        if not grams:  # example shorter than n words: use the whole example
-            grams = {tuple(re.findall(r"\w+", example.lower()))}
-        index |= grams
+        words = re.findall(r"\w+", example.lower())
+        size = min(n, len(words))
+        if size:
+            index.setdefault(size, set()).update(ngram_set(example, size))
     return index
 
 
-def contaminated_fraction(doc: str, index: set, n: int = 13) -> float:
-    """Fraction of the document's n-grams that appear in the benchmark index."""
-    grams = ngram_set(doc, n)
-    if not grams:
-        return 0.0
-    return len(grams & index) / len(grams)
+def contaminated_fraction(doc: str, index: dict) -> float:
+    """Largest fraction, over the index's n-gram sizes, of the document's n-grams
+    that appear in the benchmark index."""
+    best = 0.0
+    for n, grams in index.items():
+        doc_grams = ngram_set(doc, n)
+        if doc_grams:
+            best = max(best, len(doc_grams & grams) / len(doc_grams))
+    return best
 
 
 benchmark = [
@@ -880,7 +891,9 @@ leaked = (
     "city is Istanbul and whose currency is the lira? The answer, of course, is Ankara."
 )
 innocent = "Istanbul is the largest city in Turkey, and the lira is its currency."
+short_leak = "Pub quiz round two. Which element has atomic number 26? Iron, as most tables knew."
 assert contaminated_fraction(leaked, index) > 0
+assert contaminated_fraction(short_leak, index) > 0  # the 6-word example is indexed whole
 assert contaminated_fraction(innocent, index) == 0.0
 ```
 
@@ -952,15 +965,15 @@ Putting the stages together, this is the order FineWeb runs them in, with decont
 1. URL filtering against a blocklist (metadata only; no text read).
 1. Text extraction from WARC with a boilerplate-aware extractor.
 1. Language identification; keep the target language above threshold.
-1. Gopher repetition rules.
-1. C4 quality rules (relaxed line rule) and Gopher quality rules.
+1. Gopher repetition and quality rules.
 1. MinHash deduplication, per snapshot.
+1. C4 quality rules (with the line rule relaxed).
 1. FineWeb's additional rules.
 1. PII redaction.
 1. Decontamination against the evaluation suite.
 1. Optional classifier scoring (the FineWeb-Edu step).
 
-The principles behind the order: cheap before expensive; rules that depend on a property (language) after the stage that establishes it; deduplication after the text has been normalised but before classifier scoring, so the classifier is not run on copies; redaction last among the content stages so that placeholders do not affect filters; decontamination last of all, against the final text.
+The principles behind the order: cheap before expensive; rules that depend on a property (language) after the stage that establishes it; deduplication after the text has been normalised and the cheapest filters have shrunk it, but before classifier scoring, so the classifier is not run on copies; redaction last among the content stages so that placeholders do not affect filters; decontamination last of all, against the final text.
 
 ### 9.2 Sharding, streaming and idempotence
 
