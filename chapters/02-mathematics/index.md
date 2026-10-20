@@ -220,7 +220,7 @@ $$\eta_t = \eta_{\min} + \frac{1}{2}(\eta_{\max} - \eta_{\min})\left(1 + \cos\le
 
 Large language models are susceptible to exploding gradients. **Gradient clipping** prevents this by rescaling gradients:
 
-$$g_{\text{clipped}} = \min\left(1, \frac{\tau}{||g||}\right) g$$
+$$g_{\text{clipped}} = \min\left(1, \frac{\tau}{\|g\|}\right) g$$
 
 where $\tau$ is the clipping threshold (typically 1.0) {cite}`pascanu2013difficulty`.
 
@@ -295,7 +295,7 @@ In deep networks, gradients can become exponentially small:
 
 $$\frac{\partial \mathcal{L}}{\partial \theta_1} = \frac{\partial \mathcal{L}}{\partial h_L} \prod_{l=2}^{L} \frac{\partial h_l}{\partial h_{l-1}} \frac{\partial h_1}{\partial \theta_1}$$
 
-If $||\frac{\partial h_l}{\partial h_{l-1}}|| < 1$, gradients vanish as depth increases.
+If $\left\|\frac{\partial h_l}{\partial h_{l-1}}\right\| < 1$, gradients vanish as depth increases.
 
 #### Residual Connections
 
@@ -448,7 +448,7 @@ For long sequences, attention dominates; for large models, linear layers dominat
 Memory usage includes:
 
 - **Parameters**: $\approx 12 L d^2 + V d$ where $L$ is the number of layers (each layer holds $4d^2$ attention and $8d^2$ feed-forward weights) and $V d$ is the embedding table
-- **Activations**: $O(B \cdot n \cdot d \cdot L)$ for the residual stream, plus the $O(B \cdot h \cdot n^2 \cdot L)$ attention scores and the $4d$-wide feed-forward intermediates, where $B$ is batch size and $h$ the number of heads; without recomputation each layer stores about $s\,b\,d\,(34 + 5\,h\,s/d)$ bytes for sequence length $s$ {cite}`korthikanti2022reducing`
+- **Activations**: $O(B \cdot n \cdot d \cdot L)$ for the residual stream, plus the $O(B \cdot h \cdot n^2 \cdot L)$ attention scores and the $4d$-wide feed-forward intermediates, where $B$ is batch size and $h$ the number of heads; without recomputation each layer stores about $B\,n\,d\,(34 + 5\,h\,n/d)$ bytes {cite}`korthikanti2022reducing`
 - **Optimizer and gradient state**: with mixed precision and Adam, each parameter costs about 16 bytes in total: a 2-byte weight, a 2-byte gradient, a 4-byte fp32 master copy and two 4-byte Adam moments
 
 ```python
@@ -640,4 +640,4 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 
 ______________________________________________________________________
 
-*Part of the LLM Atlas - A Comprehensive Guide to Large Language Models*
+*Part of LLM Atlas: A Guide to Large Language Models*

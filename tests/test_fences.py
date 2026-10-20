@@ -1,5 +1,6 @@
 """Every ```python fence in a chapter either passes pyflakes (no undefined names,
 no syntax errors) or is marked on its first line as pseudo-code."""
+import ast
 import re
 import subprocess
 import sys
@@ -26,8 +27,13 @@ def fences():
 def test_fence_is_runnable_or_marked_pseudo_code(rel, line, code):
     if code.lstrip().startswith(MARKER):
         pytest.skip("marked pseudo-code")
+    try:
+        ast.parse(code)
+    except SyntaxError as e:
+        raise AssertionError(f"{rel}:{line}: syntax error: {e}") from None
     proc = subprocess.run([sys.executable, "-m", "pyflakes"], input=code,
                           capture_output=True, text=True)
-    problems = [l for l in proc.stdout.splitlines()
-                if "undefined name" in l or "invalid syntax" in l or "SyntaxError" in l]
+    assert proc.returncode in (0, 1) and not proc.stderr, (
+        f"pyflakes did not run (rc={proc.returncode}): {proc.stderr.strip()[:200]}")
+    problems = [l for l in proc.stdout.splitlines() if "undefined name" in l]
     assert not problems, f"{rel}:{line}:\n" + "\n".join(problems)

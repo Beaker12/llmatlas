@@ -85,3 +85,16 @@ def test_apply_rope_preserves_norm_and_depends_only_on_relative_offset():
     assert torch.allclose(qr.norm(dim=-1), q.norm(dim=-1), atol=1e-5)
     qs, ks = ns["apply_rope"](q, pos + 7), ns["apply_rope"](k, pos + 7)
     assert torch.allclose(qr @ kr.T, qs @ ks.T, atol=1e-4)
+    # a no-op would pass both checks above; the rotation must actually move position 1+
+    assert not torch.allclose(qr[1:], q[1:], atol=1e-3)
+    # and position 0 (angle 0) must be untouched
+    assert torch.allclose(qr[0], q[0], atol=1e-6)
+
+
+def test_evaluate_tokenization_quality_reports_only_measured_metrics():
+    ns = {"torch": torch, "np": np, "math": math}
+    exec(ch01_fence("class ComprehensiveTokenizer"), ns)  # noqa: S102
+    exec(ch01_fence("def evaluate_tokenization_quality"), ns)  # noqa: S102
+    metrics = ns["evaluate_tokenization_quality"](ns["tokenizer"], ["The quick brown fox", "hello world"])
+    assert set(metrics) == {"compression_ratio", "oov_rate", "reversibility_errors"}
+    assert metrics["reversibility_errors"] == 0.0

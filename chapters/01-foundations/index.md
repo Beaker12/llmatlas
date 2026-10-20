@@ -558,7 +558,7 @@ class LearnedPositionalEmbedding(nn.Module):
 
 ##### Advanced Positional Encodings
 
-**Relative Positional Encoding** {cite}`shaw2018self`: instead of adding absolute positions to the input, add a learned bias that depends only on the distance $i-j$ to the attention scores:
+**Relative Positional Encoding**: instead of adding absolute positions to the input, make attention depend on the offset $i-j$. Shaw et al. {cite}`shaw2018self` add learned relative-position *vectors* to the keys and values; T5 {cite}`raffel2019exploring` simplifies this to one learned scalar bias $b_{i-j}$ per head added to the scores, which is what the module below implements:
 
 ```python
 import torch
@@ -566,7 +566,7 @@ import torch.nn as nn
 
 
 class RelativePositionBias(nn.Module):
-    """Learned bias b[i-j] added to the attention scores (Shaw et al., 2018; T5).
+    """Learned scalar bias b[i-j] per head, added to the attention scores (T5-style).
 
     One scalar per (head, clipped offset). The table is a module parameter, so it is
     learned; building a fresh nn.Embedding on every call would give random, unlearnable values.
@@ -579,7 +579,7 @@ class RelativePositionBias(nn.Module):
 
     def forward(self, seq_len):
         positions = torch.arange(seq_len)
-        relative = positions.unsqueeze(0) - positions.unsqueeze(1)           # [seq, seq]
+        relative = positions.unsqueeze(1) - positions.unsqueeze(0)           # [seq, seq], entry (i, j) = i - j
         relative = relative.clamp(-self.max_relative_distance, self.max_relative_distance)
         bias = self.table(relative + self.max_relative_distance)             # [seq, seq, heads]
         return bias.permute(2, 0, 1)                                         # [heads, seq, seq]
@@ -981,7 +981,7 @@ The block above is the 2017 design. Every widely used LLM since GPT-2 differs fr
 - **Gated activations.** The feed-forward network becomes $\mathrm{FFN}(x) = (\mathrm{SiLU}(xW_1) \odot xW_3)W_2$ (SwiGLU), with the hidden width reduced to about $\tfrac{8}{3}d$ to keep the parameter count unchanged {cite}`shazeer2020glu`.
 - **Rotary position embeddings.** Positions enter through RoPE on the queries and keys (Section 1.3), not through vectors added to the input {cite}`su2021roformer`.
 - **Grouped-query attention.** Several query heads share one key/value head, shrinking the KV cache that dominates inference memory at long context {cite}`ainslie2023gqa`.
-- **No biases, tied or untied embeddings, larger vocabularies.** Linear layers usually drop their bias terms; vocabularies grew from 32k to 128k-256k (Section 1.6).
+- **No biases, tied or untied embeddings, larger vocabularies.** Linear layers usually drop their bias terms; vocabularies grew from 32k to 128k-256k (see {doc}`tokenization-deep-dive`, T.4).
 
 ```python
 import torch
@@ -1199,4 +1199,4 @@ This progression established the foundation for today's LLMs and their remarkabl
 
 ______________________________________________________________________
 
-*Part of the LLM Atlas - A Comprehensive Guide to Large Language Models*
+*Part of LLM Atlas: A Guide to Large Language Models*

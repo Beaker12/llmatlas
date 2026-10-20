@@ -421,16 +421,12 @@ legal_text = "The aforementioned clause notwithstanding the heretofore provision
 ### Quality Metrics for Tokenization
 
 ```python
-def evaluate_tokenization_quality(tokenizer, corpus, language="en"):
-    """Evaluate tokenization quality using multiple metrics."""
+def evaluate_tokenization_quality(tokenizer, corpus):
+    """Evaluate a ComprehensiveTokenizer-style tokenizer (encode/decode/special_tokens)."""
 
-    metrics = {
-        "compression_ratio": 0,
-        "oov_rate": 0,
-        "morphological_consistency": 0,
-        "reversibility_errors": 0,
-        "cross_lingual_equity": 0,
-    }
+    # Only metrics this function actually measures are reported. Morphological consistency
+    # and cross-lingual equity need linguistic annotations or parallel corpora.
+    metrics = {"compression_ratio": 0, "oov_rate": 0, "reversibility_errors": 0}
 
     total_chars = 0
     total_tokens = 0
@@ -444,7 +440,7 @@ def evaluate_tokenization_quality(tokenizer, corpus, language="en"):
         total_tokens += len(tokens)
 
         # OOV rate
-        oov_count += sum(1 for token in tokens if token == tokenizer.unk_token_id)
+        oov_count += sum(1 for token in tokens if token == tokenizer.special_tokens["<UNK>"])
 
         # Reversibility
         reconstructed = tokenizer.decode(tokens)
@@ -804,8 +800,8 @@ class ComprehensiveTokenizer:
         return tokenizer
 
 
-# Example usage (printed output: 'Training complete. Final vocabulary size: 57', then an
-# exact round trip of 'The quick brown fox')
+# Example usage. Printed output: 'Training complete. Final vocabulary size: 153', then
+# Encoded: [2, 12, 110, 26, 49, 3] and an exact round trip of 'The quick brown fox'
 sample_corpus = [
     "The quick brown fox jumps over the lazy dog",
     "A journey of a thousand miles begins with a single step",
