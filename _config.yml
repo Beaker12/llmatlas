@@ -51,6 +51,10 @@ sphinx:
     ogp_site_url: "https://beaker12.github.io/llmatlas/"
     ogp_social_cards:
       enable: false
+    linkcheck_ignore:
+      - "https://doi.org/10.1162/.*"      # direct.mit.edu returns 403 to non-browser clients
+      - "https://doi.org/10.1121/.*"      # pubs.aip.org returns 403 to non-browser clients
+    linkcheck_timeout: 20
     exclude_patterns:
       - "_build/**"
       - ".jupyter_cache/**"

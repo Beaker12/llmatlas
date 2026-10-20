@@ -304,6 +304,7 @@ Residual connections provide direct gradient pathways:
 $$h_{l+1} = h_l + F(h_l)$$
 
 The gradient becomes:
+
 $$\frac{\partial h_{l+1}}{\partial h_l} = I + \frac{\partial F(h_l)}{\partial h_l}$$
 
 The identity term gives every layer a direct path for the gradient, so a deep stack no longer multiplies a long chain of possibly small Jacobians {cite}`he2016deep`. It does not by itself bound the gradient's magnitude: where normalization sits relative to the residual branch matters, and the original post-LN transformer needs learning-rate warm-up precisely because its gradients at initialization are not well behaved, which is why most later models normalize before each sublayer (pre-LN) {cite}`xiong2020layer`.
@@ -590,7 +591,7 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 
 **Start Here - Intuitive Explanations:**
 
-1. [3Blue1Brown: Neural Networks](https://www.3blue1brown.com/topics/neural-networks) - Visual explanations of backpropagation and gradient descent
+1. [3Blue1Brown: Neural Networks](https://www.3blue1brown.com/?topic=neural-networks) - Visual explanations of backpropagation and gradient descent
 1. [Distill: Momentum](https://distill.pub/2017/momentum/) - Interactive visualization of optimization algorithms
 1. [The Matrix Calculus You Need For Deep Learning](https://explained.ai/matrix-calculus/) - Essential calculus for understanding backpropagation
 

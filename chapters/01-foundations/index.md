@@ -819,9 +819,11 @@ The notebook implements scaled dot-product and multi-head attention in eval mode
 Self-attention computes a weighted representation of the input sequence, where weights indicate the relevance of each position to the current position. Given input embeddings $X \in \mathbb{R}^{n \times d}$:
 
 1. **Query, Key, Value projections**:
+
    $$Q = XW_Q, \quad K = XW_K, \quad V = XW_V$$
 
-1. **Attention scores**:
+2. **Attention scores**:
+
    $$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V$$
 
 The scaling factor $\sqrt{d_k}$, where $d_k$ is the per-head key dimension, keeps the dot products at unit variance so the softmax does not saturate {cite}`vaswani2017attention`.
@@ -833,6 +835,7 @@ Multi-head attention runs multiple attention mechanisms in parallel, allowing th
 $$\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, ..., \text{head}_h)W_O$$
 
 where each head is:
+
 $$\text{head}_i = \text{Attention}(QW_i^Q, KW_i^K, VW_i^V)$$
 
 ### 2.2 Attention Patterns and Interpretability
@@ -1150,7 +1153,7 @@ This progression established the foundation for today's LLMs and their remarkabl
 **Interactive Learning:**
 
 - [Transformer Explainer](https://poloclub.github.io/transformer-explainer/) - Interactive visualization tool
-- [OpenAI Tokenizer](https://platform.openai.com/tokenizer) - Explore tokenization with GPT models
+- [Tiktokenizer](https://tiktokenizer.vercel.app/) - Explore how GPT and other tokenizers split text
 - [Attention Patterns](https://github.com/jessevig/bertviz) - Visualize attention in BERT and GPT models
 
 ### Advanced Topics and Recent Research
@@ -1187,9 +1190,8 @@ This progression established the foundation for today's LLMs and their remarkabl
 
 ### Documentation and APIs
 
-- [PyTorch Transformer Tutorial](https://pytorch.org/tutorials/beginner/transformer_tutorial.html)
+- [PyTorch Transformer Tutorial](https://docs.pytorch.org/tutorials/beginner/transformer_tutorial.html)
 - [TensorFlow Transformer Tutorial](https://www.tensorflow.org/text/tutorials/transformer)
-- [Weights & Biases documentation](https://docs.wandb.ai/)
 
 ### Research Communities and Updates
 
