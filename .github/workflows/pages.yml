@@ -33,8 +33,15 @@ jobs:
       - name: Run repository tests
         run: pytest tests/
 
-      - name: Build the book
-        run: jupyter-book build .
+      - name: Execute notebooks
+        run: |
+          for nb in chapters/*/examples/*.ipynb; do
+            jupyter nbconvert --to notebook --execute --ExecutePreprocessor.timeout=120 \
+              --output-dir /tmp/executed-notebooks "$nb"
+          done
+
+      - name: Build the book (warnings are errors)
+        run: jupyter-book build . -W --keep-going
 
       - uses: actions/upload-pages-artifact@v3
         with:

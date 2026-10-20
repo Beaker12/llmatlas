@@ -8,9 +8,10 @@ logo: _static/logo.svg
 only_build_toc_files: true
 
 execute:
-  # Notebooks are executed in CI (see .github/workflows/pages.yml); the book build
-  # uses the cache so that a notebook that has not changed is not re-run.
-  execute_notebooks: cache
+  # Notebooks are committed with executed outputs and re-executed by the CI
+  # nbconvert step (see .github/workflows/pages.yml); the book build only runs a
+  # notebook that is missing outputs.
+  execute_notebooks: auto
   timeout: 120
 
 parse:

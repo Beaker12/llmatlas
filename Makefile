@@ -1,6 +1,6 @@
 # LLM Atlas: local development commands
 
-.PHONY: help install build build-strict serve clean test lint linkcheck notebooks status
+.PHONY: help install build build-lenient serve clean test lint linkcheck notebooks status
 
 VENV_DIR   = .venv
 PYTHON     = $(VENV_DIR)/bin/python
@@ -11,8 +11,8 @@ NOTEBOOKS  = $(wildcard chapters/*/examples/*.ipynb)
 help:
 	@echo "make install       create .venv and install torch (CPU) + requirements"
 	@echo "make test          YAML check + pytest + strict book build + notebook execution"
-	@echo "make build         build the HTML book"
-	@echo "make build-strict  build with warnings as errors"
+	@echo "make build         build the HTML book (warnings are errors, as in CI)"
+	@echo "make build-lenient build without -W"
 	@echo "make serve         build and serve on http://localhost:8000"
 	@echo "make notebooks     execute every notebook headlessly"
 	@echo "make linkcheck     check external links"
@@ -31,10 +31,10 @@ install: $(VENV_DIR)/pyvenv.cfg
 	@echo "Installed. Run 'make test'."
 
 build:
-	$(JB) build . --builder html
-
-build-strict:
 	$(JB) build . --builder html -W --keep-going
+
+build-lenient:
+	$(JB) build . --builder html
 
 serve: build
 	@echo "Serving http://localhost:8000"
@@ -46,7 +46,7 @@ clean:
 test:
 	$(PYTHON) -c "import yaml; yaml.safe_load(open('_config.yml')); yaml.safe_load(open('_toc.yml'))"
 	$(PYTHON) -m pytest tests/
-	$(MAKE) build-strict
+	$(MAKE) build
 	$(MAKE) notebooks
 
 notebooks:

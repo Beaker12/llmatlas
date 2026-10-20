@@ -32,14 +32,14 @@ These mathematical principles work together to enable LLMs to learn patterns fro
 
 For interactive implementations and visualizations of the mathematical concepts in this chapter, see the accompanying Jupyter notebook: [Mathematical Foundations Demo](examples/mathematical_foundations_demo.ipynb)
 
-The notebook provides executable code examples for:
+The notebook provides executable, assertion-checked code for:
 
-- Probability distributions, entropy, and KL divergence calculations
-- Implementation of optimization algorithms (SGD, Momentum, Adam)
-- Learning rate scheduling strategies
-- Gradient flow analysis through attention and layer normalization
-- Scaling law visualizations and memory/compute estimation
-- Numerical stability demonstrations (mixed precision, gradient clipping, initialization)
+- Entropy, cross-entropy and KL divergence in bits ({ref}`nb-math-information-theory`)
+- SGD, momentum and Adam from scratch, checked against `torch.optim`, on the Rosenbrock function ({ref}`nb-math-optimizers`)
+- Warm-up and decay schedules ({ref}`nb-math-schedules`)
+- Attention gradients, layer normalization, residual connections and initialisation scale ({ref}`nb-math-backprop`)
+- Kaplan and Chinchilla scaling laws, parameter counts and training memory ({ref}`nb-math-scaling`)
+- fp16/bf16 precision, loss scaling, gradient clipping and initialisation ({ref}`nb-math-numerics`)
 
 ## 1. Probability and Information Theory
 
@@ -136,13 +136,7 @@ def kl_divergence(p, q):
 
 ```{admonition} Hands-On Practice
 :class: tip
-For interactive implementations and visualizations of probability and information theory concepts, see the accompanying Jupyter notebook: [Mathematical Foundations Demo](examples/mathematical_foundations_demo.ipynb)
-
-The notebook provides (Section 2):
-- Working implementations of entropy, cross-entropy, and KL divergence
-- Visualization of entropy vs distribution concentration
-- Language model metrics demonstrations (perplexity calculation)
-- Comparative analysis of different probability distributions
+The notebook section {ref}`nb-math-information-theory` implements entropy, cross-entropy and KL divergence in bits, shows how entropy falls as a softmax sharpens, and computes the perplexity of an untrained model.
 ```
 
 ## 2. Optimization Fundamentals
@@ -271,11 +265,7 @@ class AdamWithWarmup:
 
 ```{admonition} Interactive Exploration
 :class: note
-The accompanying notebook (Section 3-4) demonstrates optimization algorithms with working code and visualizations:
-- Implementation of SGD, Momentum, and Adam optimizers from scratch
-- Comparison on the Rosenbrock optimization benchmark
-- Learning rate scheduling (warmup, cosine decay, inverse sqrt)
-- Visualization of optimization trajectories and convergence rates
+The notebook section {ref}`nb-math-optimizers` implements SGD, momentum and Adam from scratch (Adam is asserted to match `torch.optim.Adam`), compares them on the Rosenbrock function ({ref}`nb-math-rosenbrock`), and plots warm-up with cosine, inverse-square-root and constant schedules ({ref}`nb-math-schedules`).
 ```
 
 ## 3. Backpropagation Through Transformers
@@ -373,11 +363,7 @@ def attention_gradients(Q, K, V, grad_output):
 
 ```{admonition} Gradient Flow Analysis
 :class: tip
-The notebook (Section 5) provides detailed analysis of backpropagation through transformers:
-- Scaled dot-product attention implementation with gradient computation
-- Layer normalization and its impact on gradient stability
-- Comparison of gradient flow with and without residual connections
-- Visualization of attention weights and gradient magnitudes across layers
+The notebook section {ref}`nb-math-backprop` implements scaled dot-product attention and reports its input gradients, and {ref}`nb-math-layernorm` compares gradient norms through twelve linear layers with and without layer normalization, with residual connections, and with a Xavier-scaled initialisation, so you can see which of these actually prevents vanishing.
 ```
 
 ## 4. Scaling Laws and Compute
@@ -477,12 +463,7 @@ print(f"Estimated memory usage: {gpt3_memory}")
 
 ```{admonition} Scaling Laws Visualization
 :class: note
-The notebook (Section 6) provides comprehensive scaling law analysis:
-- Implementation of Kaplan and Chinchilla scaling laws
-- Visualization of parameter, data, and compute scaling relationships
-- Memory and compute requirements estimation for various model sizes
-- Interactive plots showing optimal model/data allocation for compute budgets
-- Comparison of notable models (GPT-2, GPT-3, LLaMA) on scaling curves
+The notebook section {ref}`nb-math-scaling` plots the Kaplan parameter, data and compute laws (with GPT-2, GPT-3 and LLaMA-70B placed on the parameter curve) and the Chinchilla allocation derived from C = 6ND and D = 20N, and {ref}`nb-math-memory` computes parameter counts, training memory and FLOPs per step for the GPT-2 and GPT-3 model sizes, asserting that the 175B configuration comes out at 175B.
 ```
 
 ## 5. Numerical Stability Considerations
@@ -557,12 +538,7 @@ def train_with_gradient_accumulation(
 
 ```{admonition} Numerical Stability Demonstrations
 :class: tip
-The notebook (Section 7) explores numerical stability in detail:
-- FP16 vs FP32 precision comparison and underflow demonstrations
-- Gradient clipping implementation and visualization
-- Initialization strategies (Xavier, He) with distribution analysis
-- Dynamic loss scaling for mixed precision training
-- Practical examples of numerical stability techniques in action
+The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surviving it), clips a global gradient norm and plots before/after, compares Xavier and He initialisation statistics, and {ref}`nb-math-loss-scaling` simulates dynamic loss scaling.
 ```
 
 ## Exercises

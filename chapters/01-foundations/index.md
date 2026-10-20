@@ -16,14 +16,13 @@ By the end of this chapter, you will understand:
 
 For interactive implementations and visualizations of the foundational concepts in this chapter, see the accompanying Jupyter notebook: [Attention Mechanisms Demo](examples/attention_mechanisms_demo.ipynb)
 
-The notebook provides executable code examples for:
+The notebook provides executable, assertion-checked code for:
 
-- Tokenization algorithms (BPE, WordPiece, SentencePiece)
-- Token embedding and positional encoding implementations
-- Scaled dot-product attention mechanisms
-- Multi-head attention with visualization
-- Self-attention, cross-attention, and masked attention patterns
-- Complete transformer encoder and decoder layers
+- A word-level tokenizer and the BPE merge loop ({ref}`nb-attn-tokenization`)
+- Token embeddings with sinusoidal, learned, relative-bias and rotary positions ({ref}`nb-attn-positional`)
+- Scaled dot-product and multi-head attention with attention maps ({ref}`nb-attn-attention`)
+- A post-LN transformer block ({ref}`nb-attn-transformer`)
+- The causal mask and the next-token objective with perplexity ({ref}`nb-attn-lm`)
 
 ## Chapter Overview
 
@@ -268,14 +267,7 @@ print(f"IDs: {ids}")
 
 ```{admonition} Tokenization Implementation
 :class: tip
-The accompanying notebook (Sections 1-2) demonstrates practical tokenization implementations:
-- BPE (Byte Pair Encoding) algorithm step-by-step
-- WordPiece and SentencePiece tokenizers
-- Comparing different tokenization strategies
-- Building custom vocabularies from scratch
-- Handling special tokens and edge cases
-
-Experiment with different tokenization approaches to see how they affect sequence length and representation quality.
+The notebook's tokenization section ({ref}`nb-attn-tokenization`) builds a tiny word-level vocabulary and runs the BPE merge loop step by step, printing the splits after every merge. For WordPiece, unigram and SentencePiece in practice, see the tokenization sections later in this chapter (§1.3-1.7).
 ```
 
 ### 1.3 Modern Tokenization Strategies
@@ -899,14 +891,7 @@ Modern variants often use learned positional embeddings or relative position enc
 
 ```{admonition} Embeddings and Positional Encoding
 :class: note
-The notebook (Sections 3-4) provides interactive demonstrations of:
-- Token embedding initialization strategies (Xavier, He, scaled)
-- Positional encoding visualization (sinusoidal vs learned)
-- Embedding similarity analysis and semantic relationships
-- Effect of embedding dimension on model capacity
-- Combining token embeddings with positional information
-
-Understanding these concepts is crucial for transformer model design and debugging training issues.
+The notebook ({ref}`nb-attn-positional`) visualises sinusoidal and learned encodings, implements a learned relative-position bias and a rotary (RoPE) transform, and asserts RoPE's two defining properties: rotation preserves vector norms, and query-key dot products depend only on the relative offset.
 ```
 
 ### 1.7 Tokenization Challenges and Solutions
@@ -1692,14 +1677,7 @@ This practical implementation provides a complete foundation for understanding a
 
 ```{admonition} Hands-On Practice
 :class: tip
-For interactive examples and visualizations of these concepts, see the accompanying Jupyter notebook: [Attention Mechanisms Demo](examples/attention_mechanisms_demo.ipynb)
-
-The notebook provides:
-- Working tokenization implementations
-- Interactive attention visualizations
-- Embedding similarity analysis
-- Complete transformer components
-- Mathematical concept demonstrations
+For runnable versions of the ideas in this section, see the accompanying notebook: [Attention Mechanisms Demo](examples/attention_mechanisms_demo.ipynb). Its sections are linked from each part of this chapter.
 ```
 
 ## 2. Attention Mechanisms
@@ -1710,7 +1688,7 @@ Attention mechanisms revolutionized sequence modeling by allowing models to focu
 
 ```{admonition} Interactive Exploration
 :class: note
-The accompanying notebook demonstrates attention mechanisms with working code and visualizations. See cells 8-11 for multi-head attention implementation and attention pattern analysis.
+The notebook implements scaled dot-product and multi-head attention in eval mode, asserts that every row of attention weights sums to 1, and plots per-head attention maps and entropies ({ref}`nb-attn-attention`).
 ```
 
 #### Self-Attention Fundamentals
@@ -1858,14 +1836,7 @@ class TransformerBlock(nn.Module):
 
 ```{admonition} Transformer Architecture Implementation
 :class: tip
-The notebook (Sections 12-13) walks through building a complete transformer:
-- Layer normalization and residual connections
-- Position-wise feed-forward networks
-- Complete encoder and decoder blocks
-- Training a small transformer on a simple task
-- Visualizing attention patterns across layers
-
-This hands-on implementation solidifies understanding of how all transformer components work together.
+The notebook ({ref}`nb-attn-transformer`) assembles one post-LN transformer block from multi-head attention, a position-wise feed-forward network, layer normalization and residual connections, and shows what layer normalization does to activations of different scales. It does not train a model; that is left as an exercise.
 ```
 
 ## 4. Language Modeling Objective
@@ -1910,14 +1881,7 @@ Lower perplexity indicates better modeling of the data distribution. However, pe
 
 ```{admonition} Language Modeling in Practice
 :class: note
-The notebook (Section 14) demonstrates language modeling concepts:
-- Implementing the causal language modeling objective
-- Computing cross-entropy loss and perplexity
-- Masked self-attention for autoregressive generation
-- Comparing teacher forcing vs autoregressive sampling
-- Evaluating model predictions with perplexity metrics
-
-These implementations connect theory to practical language model training and evaluation.
+The notebook ({ref}`nb-attn-lm`) builds the causal mask, applies it inside attention, adds a language-model head, and computes cross-entropy and perplexity for an untrained model so you can see what "no better than guessing" looks like. Optimization, schedules and gradient flow are in the Chapter 2 notebook ({ref}`nb-math-optimizers`, {ref}`nb-math-backprop`).
 ```
 
 ## 5. Historical Context
