@@ -1,0 +1,70 @@
+# LLM Atlas Configuration
+
+title: "LLM Atlas: A Comprehensive Guide to Large Language Models"
+author: "Stuart W. Parkhurst"
+
+# Book settings
+execute:
+  execute_notebooks: cache
+  timeout: 60
+
+# Bibliography
+bibtex_bibfiles:
+  - references.bib
+
+# Repository
+repository:
+  url: https://github.com/Beaker12/llmatlas
+  branch: main
+
+# HTML-specific options
+html:
+  home_page_in_navbar: false
+  use_edit_page_button: false
+  use_repository_button: true
+  use_issues_button: true
+  baseurl: "https://beaker12.github.io/llmatlas/"
+  extra_css:
+    - _static/custom.css
+
+# Copyright and License
+copyright: "Educational resource by Stuart W. Parkhurst | MIT License"
+
+# LaTeX settings
+latex:
+  latex_engine: pdflatex
+  latex_documents:
+    targetname: llmatlas.tex
+
+# Sphinx settings
+sphinx:
+  config:
+    html_show_sourcelink: false
+    exclude_patterns:
+      - ".github/**"
+      - ".policy/**"
+      - "README.md"
+      - "docs/**"
+      - "_build/**"
+      - ".jupyter_cache/**"
+      - ".venv/**"
+      - "venv/**"
+      - "env/**"
+      - "__pycache__/**"
+      - "*.pyc"
+      - ".git/**"
+      - ".pytest_cache/**"
+      - "node_modules/**"
+      - ".pre-commit-config.yaml"
+      - "Makefile"
+      - "requirements.txt"
+      - "*.toml"
+      - "*.cfg"
+      - ".gitignore"
+      - ".gitattributes"
+      - "*.log"
+      - "*.tmp"
+      - "temp/**"
+      - "tmp/**"
+      - ".DS_Store"
+      - "Thumbs.db"
