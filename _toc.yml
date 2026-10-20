@@ -18,6 +18,14 @@ parts:
           - file: chapters/02-mathematics/examples/mathematical_foundations_demo
             title: "Mathematical Foundations Demo"
 
+  - caption: "Data and Preprocessing"
+    chapters:
+      - file: chapters/03-data-acquisition/index
+        title: "Data Acquisition and Sources"
+        sections:
+          - file: chapters/03-data-acquisition/examples/data_acquisition_demo
+            title: "Data Acquisition Demo"
+
   - caption: "Planned"
     chapters:
       - file: roadmap
