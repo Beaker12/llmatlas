@@ -1,0 +1,17 @@
+{
+ "crawl": "CC-MAIN-2026-39",
+ "num_warc_files": 100000,
+ "first_paths": [
+  "crawl-data/CC-MAIN-2026-39/segments/1788492699475.64/warc/CC-MAIN-20260904131603-20260904161603-00000.warc.gz",
+  "crawl-data/CC-MAIN-2026-39/segments/1788492699475.64/warc/CC-MAIN-20260904131603-20260904161603-00001.warc.gz",
+  "crawl-data/CC-MAIN-2026-39/segments/1788492699475.64/warc/CC-MAIN-20260904131603-20260904161603-00002.warc.gz",
+  "crawl-data/CC-MAIN-2026-39/segments/1788492699475.64/warc/CC-MAIN-20260904131603-20260904161603-00003.warc.gz",
+  "crawl-data/CC-MAIN-2026-39/segments/1788492699475.64/warc/CC-MAIN-20260904131603-20260904161603-00004.warc.gz"
+ ],
+ "first_file_bytes": [
+  938695574,
+  950350257,
+  958855601
+ ],
+ "fetched": "2026-10-20"
+}

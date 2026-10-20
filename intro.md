@@ -4,7 +4,7 @@ LLM Atlas is a Jupyter Book about how large language models work, from tokenizat
 
 ## Status
 
-Chapters 1 and 2 are written. The remaining chapters are planned and not yet written; see the [Roadmap](roadmap.md).
+Chapters 1 to 3 are written. The remaining chapters are planned and not yet written; see the [Roadmap](roadmap.md).
 
 **Chapter 1: LLM Foundations**
 
@@ -21,6 +21,15 @@ Chapters 1 and 2 are written. The remaining chapters are planned and not yet wri
 - Backpropagation through layer normalization and attention
 - Scaling laws and compute-optimal training
 - Numerical stability: mixed precision, loss scaling, initialization
+
+**Chapter 3: Data Acquisition and Sources**
+
+- What the published pretraining mixtures are made of, and how much is enough
+- Common Crawl: snapshots, WARC files and reading a slice of the crawl
+- Crawling responsibly: robots.txt, politeness and the economics of fetching
+- Curated sources: Wikipedia, books, papers, code and dialogue
+- Rights, licences, consent and the shrinking data commons
+- Multilingual and synthetic sources, mixture planning and provenance
 
 ## How to use this book
 

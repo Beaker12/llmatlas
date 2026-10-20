@@ -1,0 +1,15 @@
+{
+ "generated": "2026-10-20",
+ "sha256": {
+  "cc_manifest.json": "95d0e43c9f6cea228a16867485eb4105b50aafadb458219c38c6324b261e274a",
+  "cc_warc_slice.json": "8cbd3af0cc1c0e7fd38e8dfd70de3f3319def397e3f65a7045a5a808b7fc446d",
+  "hf_c4.json": "3b6ec1c2a5895d17ce38597df0ea814da35acfa893c5169abc51753ab2878f7f",
+  "hf_fineweb.json": "794846cf3ba10b3c987bbbf7c0bf639b06972c835499f4e698d706444ca911f1",
+  "hf_fineweb2_fra.json": "f440c519986632c452a073fbfefc4bbaa37660b746e025293f3eb91ba27eb5db",
+  "hf_fineweb_edu.json": "018bb57842d0d05c22e4bb6b56e3ff3bca06e1051ca892eb240d6e3f1af8eb07",
+  "hf_wikipedia.json": "65a5db3219c3a6d9cdc98f1e53839d7653913d528b6821663abdc2065169b225",
+  "news_robots.txt": "04dee26f145ee77839c65ff45a4e1b887ae06be06b3b91fbc5043dc37277fcea",
+  "news_robots_host.txt": "09d2cabca276fe84541c5b2ae216e23bf0d9b0df3ce1290c58033cd95d9c9201",
+  "wikipedia_robots.txt": "48b98d80c8444d37cdf50cc9a4d2257b66039477e581066d2356062a4cbd678f"
+ }
+}

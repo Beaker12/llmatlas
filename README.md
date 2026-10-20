@@ -2,7 +2,7 @@
 
 A Jupyter Book about large language models: tokenization, attention, transformers, and the mathematics of training, with runnable PyTorch examples and companion notebooks.
 
-**Status:** chapters 1 (LLM Foundations) and 2 (Mathematical Foundations) are written. The remaining chapters are planned; see `roadmap.md`.
+**Status:** chapters 1 (LLM Foundations), 2 (Mathematical Foundations) and 3 (Data Acquisition and Sources) are written. The remaining chapters are planned; see `roadmap.md`.
 
 Published at <https://beaker12.github.io/llmatlas/>.
 
