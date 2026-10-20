@@ -1115,12 +1115,6 @@ The notebook section {ref}`nb-prep-pipeline` assembles normalisation, language i
 - [fastText language identification](https://fasttext.cc/docs/en/language-identification.html) - the `lid.176` models
 - [ftfy](https://ftfy.readthedocs.io/) - mojibake repair
 
-## Bibliography
-
-```{bibliography}
-:filter: docname in docnames
-```
-
 ______________________________________________________________________
 
-*Part of the LLM Atlas - A Comprehensive Guide to Large Language Models*
+*Part of LLM Atlas: A Guide to Large Language Models*
