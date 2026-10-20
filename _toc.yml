@@ -25,6 +25,11 @@ parts:
         sections:
           - file: chapters/03-data-acquisition/examples/data_acquisition_demo
             title: "Data Acquisition Demo"
+      - file: chapters/04-preprocessing/index
+        title: "Data Preprocessing and Cleaning"
+        sections:
+          - file: chapters/04-preprocessing/examples/preprocessing_pipeline_demo
+            title: "Preprocessing Pipeline Demo"
 
   - caption: "Planned"
     chapters:

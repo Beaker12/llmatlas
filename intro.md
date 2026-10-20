@@ -4,7 +4,7 @@ LLM Atlas is a Jupyter Book about how large language models work, from tokenizat
 
 ## Status
 
-Chapters 1 to 3 are written. The remaining chapters are planned and not yet written; see the [Roadmap](roadmap.md).
+Chapters 1 to 4 are written. The remaining chapters are planned and not yet written; see the [Roadmap](roadmap.md).
 
 **Chapter 1: LLM Foundations**
 
@@ -30,6 +30,15 @@ Chapters 1 to 3 are written. The remaining chapters are planned and not yet writ
 - Curated sources: Wikipedia, books, papers, code and dialogue
 - Rights, licences, consent and the shrinking data commons
 - Multilingual and synthetic sources, mixture planning and provenance
+
+**Chapter 4: Data Preprocessing and Cleaning**
+
+- Why most raw web text is discarded, and what the retained fraction looks like
+- Extraction, Unicode normalisation and language identification
+- Heuristic, perplexity-based and classifier-based quality filters, and how to measure them
+- Exact, near-duplicate (MinHash and LSH) and substring deduplication
+- Personal data, toxicity and benchmark decontamination
+- Assembling a reproducible pipeline with per-stage drop accounting
 
 ## How to use this book
 
