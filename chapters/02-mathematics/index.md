@@ -14,7 +14,7 @@ By the end of this chapter, you will understand:
 
 ## Chapter Overview
 
-The mathematics underlying Large Language Models can be understood through several interconnected concepts that build upon each other:
+The mathematics underlying Large Language Models can be understood through several interconnected concepts that build upon each other. A short linear-algebra primer (Section 0) fixes notation first.
 
 **Probability and Information Theory** form the foundation of how LLMs understand and generate text. Think of it like predicting the next word in a sentence - the model assigns probabilities to different possibilities based on what it has learned. Information theory measures how "surprising" or "informative" each word choice is, helping the model learn which predictions are better.
 
@@ -40,6 +40,26 @@ The notebook provides executable, assertion-checked code for:
 - Attention gradients, layer normalization, residual connections and initialisation scale ({ref}`nb-math-backprop`)
 - Kaplan and Chinchilla scaling laws, parameter counts and training memory ({ref}`nb-math-scaling`)
 - fp16/bf16 precision, loss scaling, gradient clipping and initialisation ({ref}`nb-math-numerics`)
+
+## 0. Linear Algebra You Need
+
+Everything a transformer does is a sequence of matrix products followed by simple element-wise functions. Three facts carry most of the weight.
+
+### 0.1 A matrix is a map between spaces
+
+A weight matrix $W \in \mathbb{R}^{d_{\text{in}} \times d_{\text{out}}}$ turns a row vector $x \in \mathbb{R}^{d_{\text{in}}}$ into $xW \in \mathbb{R}^{d_{\text{out}}}$. Stacking $n$ inputs as the rows of $X \in \mathbb{R}^{n \times d_{\text{in}}}$ applies the same map to all of them at once, $XW$, which is why a batch of tokens costs one matrix product rather than $n$ separate ones. A query-key score matrix $QK^T \in \mathbb{R}^{n \times n}$ is the table of all pairwise dot products $q_i \cdot k_j$; the $\sqrt{d_k}$ scaling keeps those dot products at unit variance when $q$ and $k$ have unit-variance entries, since a sum of $d_k$ such products has variance $d_k$.
+
+### 0.2 The softmax Jacobian
+
+For $p = \mathrm{softmax}(z)$, $p_i = e^{z_i}/\sum_j e^{z_j}$,
+
+$$\frac{\partial p_i}{\partial z_j} = p_i(\delta_{ij} - p_j), \qquad \text{so for an upstream gradient } g: \quad \frac{\partial \mathcal{L}}{\partial z} = p \odot \left(g - \langle g, p\rangle \mathbf{1}\right)$$
+
+This is the identity behind the attention gradient in Section 3.3 and behind cross-entropy's gradient $p - y$ (take $g = -y/p$ for a one-hot target $y$). It also explains saturation: if one $p_i \approx 1$ then every factor $p_i(\delta_{ij} - p_j)$ is near zero, and no gradient flows through that softmax.
+
+### 0.3 Norms, conditioning and why scale matters
+
+The operator norm $\|W\|_2$ is the largest factor by which $W$ can stretch a vector. A stack of $L$ layers multiplies these factors, which is why gradients vanish or explode geometrically with depth unless each layer is kept near norm 1, by initialization scale (Section 5.2), by normalization (Section 3.2) or by residual connections (Section 3.1). The Chapter 2 notebook measures all three on a twelve-layer stack.
 
 ## 1. Probability and Information Theory
 
@@ -77,7 +97,7 @@ $$H(X) = -\sum_{x} P(x) \log P(x)$$
 
 Using $\log_2$ gives entropy in bits; the natural logarithm gives nats. The code in this chapter uses natural logarithms, so its values are in nats.
 
-For language, entropy measures the average information content per symbol. Natural language has entropy around 1-2 bits per character, indicating substantial predictability {cite}`shannon1951prediction`.
+For language, entropy measures the average information content per symbol. Shannon's experiments put the entropy of printed English at roughly 0.6 to 1.3 bits per character, far below the ~4.7 bits of a uniform choice over the alphabet, which is what makes language predictable {cite}`shannon1951prediction`.
 
 #### Cross-Entropy and KL Divergence
 
@@ -97,7 +117,7 @@ Minimizing cross-entropy loss is equivalent to minimizing KL divergence between 
 
 $$I(X; Y) = \sum_{x,y} P(x,y) \log \frac{P(x,y)}{P(x)P(y)}$$
 
-In transformers, mutual information helps understand how attention mechanisms capture dependencies between positions {cite}`kovaleva2019revealing`.
+Mutual information is the quantity that language modeling implicitly exploits: a context that shares a lot of information with the next token makes that token predictable.
 
 ### 1.3 Practical Applications
 
@@ -205,62 +225,57 @@ $$g_{\text{clipped}} = \min\left(1, \frac{\tau}{||g||}\right) g$$
 where $\tau$ is the clipping threshold (typically 1.0) {cite}`pascanu2013difficulty`.
 
 ```python
-class AdamWithWarmup:
-    def __init__(
-        self,
-        params,
-        lr=1e-3,
-        betas=(0.9, 0.999),
-        eps=1e-8,
-        warmup_steps=1000,
-        max_steps=10000,
-    ):
-        self.params = list(params)
-        self.lr = lr
-        self.betas = betas
-        self.eps = eps
-        self.warmup_steps = warmup_steps
-        self.max_steps = max_steps
-        self.step_count = 0
+import math
 
+import torch
+
+
+class AdamWWithWarmup:
+    """Adam with decoupled weight decay (AdamW), linear warm-up, cosine decay to lr_min,
+    and global-norm gradient clipping. Written out in full to mirror the equations above;
+    in practice use torch.optim.AdamW with a scheduler."""
+
+    def __init__(self, params, lr=1e-3, lr_min=0.0, betas=(0.9, 0.999), eps=1e-8,
+                 weight_decay=0.01, warmup_steps=1000, max_steps=10000, max_grad_norm=1.0):
+        self.params = list(params)
+        self.lr, self.lr_min = lr, lr_min
+        self.beta1, self.beta2 = betas
+        self.eps = eps
+        self.weight_decay = weight_decay
+        self.warmup_steps, self.max_steps = warmup_steps, max_steps
+        self.max_grad_norm = max_grad_norm
+        self.step_count = 0
         self.m = [torch.zeros_like(p) for p in self.params]
         self.v = [torch.zeros_like(p) for p in self.params]
 
-    def get_lr(self):
-        if self.step_count < self.warmup_steps:
-            return self.lr * (self.step_count / self.warmup_steps)
-        else:
-            progress = (self.step_count - self.warmup_steps) / (
-                self.max_steps - self.warmup_steps
-            )
-            return self.lr * 0.5 * (1 + np.cos(np.pi * progress))
+    def get_lr(self, step=None):
+        step = self.step_count if step is None else step
+        if step < self.warmup_steps:
+            # (step + 1) so that the very first update is not a no-op
+            return self.lr * (step + 1) / self.warmup_steps
+        progress = min((step - self.warmup_steps) / (self.max_steps - self.warmup_steps), 1.0)
+        return self.lr_min + 0.5 * (self.lr - self.lr_min) * (1 + math.cos(math.pi * progress))
 
+    @torch.no_grad()
     def step(self):
-        current_lr = self.get_lr()
-
-        for i, param in enumerate(self.params):
-            if param.grad is None:
-                continue
-
-            grad = param.grad.data
-
-            # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(param, max_norm=1.0)
-
-            beta1, beta2 = self.betas
-
-            # Update moments
-            self.m[i] = beta1 * self.m[i] + (1 - beta1) * grad
-            self.v[i] = beta2 * self.v[i] + (1 - beta2) * grad.pow(2)
-
-            # Bias correction
-            m_hat = self.m[i] / (1 - beta1 ** (self.step_count + 1))
-            v_hat = self.v[i] / (1 - beta2 ** (self.step_count + 1))
-
-            # Update parameters
-            param.data -= current_lr * m_hat / (torch.sqrt(v_hat) + self.eps)
-
+        lr = self.get_lr()
         self.step_count += 1
+        t = self.step_count
+
+        # Global-norm clipping across ALL parameters, as in Section 2.3
+        torch.nn.utils.clip_grad_norm_(self.params, self.max_grad_norm)
+
+        for i, p in enumerate(self.params):
+            if p.grad is None:
+                continue
+            g = p.grad
+            self.m[i].mul_(self.beta1).add_(g, alpha=1 - self.beta1)
+            self.v[i].mul_(self.beta2).addcmul_(g, g, value=1 - self.beta2)
+            m_hat = self.m[i] / (1 - self.beta1 ** t)
+            v_hat = self.v[i] / (1 - self.beta2 ** t)
+            # Decoupled weight decay: shrink the weights directly, not through the gradient
+            p.mul_(1 - lr * self.weight_decay)
+            p.addcdiv_(m_hat, v_hat.sqrt() + self.eps, value=-lr)
 ```
 
 ```{admonition} Interactive Exploration
@@ -291,7 +306,7 @@ $$h_{l+1} = h_l + F(h_l)$$
 The gradient becomes:
 $$\frac{\partial h_{l+1}}{\partial h_l} = I + \frac{\partial F(h_l)}{\partial h_l}$$
 
-This ensures gradient magnitudes remain stable even in very deep networks {cite}`he2016deep`.
+The identity term gives every layer a direct path for the gradient, so a deep stack no longer multiplies a long chain of possibly small Jacobians {cite}`he2016deep`. It does not by itself bound the gradient's magnitude: where normalization sits relative to the residual branch matters, and the original post-LN transformer needs learning-rate warm-up precisely because its gradients at initialization are not well behaved, which is why most later models normalize before each sublayer (pre-LN) {cite}`xiong2020layer`.
 
 ### 3.2 Layer Normalization Mathematics
 
@@ -331,6 +346,11 @@ $$\frac{\partial \mathcal{L}}{\partial Q} = \frac{1}{\sqrt{d_k}}\frac{\partial \
 The $P \odot (\cdot)$ factor is why saturated attention (one weight near 1) passes almost no gradient to the other positions; it is also the reason for the $\sqrt{d_k}$ scaling.
 
 ```python
+import numpy as np
+import torch
+import torch.nn.functional as F
+
+
 def attention_gradients(Q, K, V, grad_output):
     """
     Compute gradients for scaled dot-product attention.
@@ -378,7 +398,7 @@ The relationship between model parameters $N$ and loss $L$ follows a power law {
 
 $$L(N) = \left(\frac{N_c}{N}\right)^{\alpha_N}$$
 
-where $N_c$ is a characteristic scale and $\alpha_N \approx 0.076$ for language modeling.
+where $N$ counts non-embedding parameters, $N_c \approx 8.8 \times 10^{13}$ is a fitted scale and $\alpha_N \approx 0.076$ for language modeling.
 
 #### Data Scaling
 
@@ -390,9 +410,11 @@ with $\alpha_D \approx 0.095$.
 
 #### Compute Scaling
 
-Training compute $C$ (measured in FLOPs) also follows scaling laws:
+Training compute also follows a power law. On the compute-efficient frontier (the best loss reachable with a given budget), Kaplan et al. report
 
-$$L(C) = \left(\frac{C_c}{C}\right)^{\alpha_C}$$
+$$L(C_{\min}) = \left(\frac{C_c^{\min}}{C_{\min}}\right)^{\alpha_C^{\min}}, \qquad C_c^{\min} \approx 3.1 \times 10^{8}\ \text{PF-days},\quad \alpha_C^{\min} \approx 0.050$$
+
+where compute is measured in petaflop/s-days (one PF-day is $8.64 \times 10^{19}$ FLOPs).
 
 ### 4.2 Chinchilla Scaling Laws
 
@@ -414,8 +436,9 @@ Chinchilla scaling implies that many large models are "undertrained"—better pe
 
 Training a transformer requires $O(n \cdot d^2 + n^2 \cdot d)$ operations per layer:
 
-- $O(n \cdot d^2)$: Linear projections (Q, K, V, output)
-- $O(n^2 \cdot d)$: Attention computation
+- $O(n \cdot d^2)$: the four attention projections (Q, K, V, output), $4nd^2$ multiply-adds
+- $O(n \cdot d^2)$: the feed-forward network with a $4d$ hidden width, $8nd^2$ multiply-adds, about two thirds of the linear-layer cost
+- $O(n^2 \cdot d)$: the attention scores and their application to the values
 
 For long sequences, attention dominates; for large models, linear layers dominate.
 
@@ -423,43 +446,47 @@ For long sequences, attention dominates; for large models, linear layers dominat
 
 Memory usage includes:
 
-- **Parameters**: $O(L \cdot d^2)$ where $L$ is number of layers
-- **Activations**: $O(B \cdot n \cdot d \cdot L)$ where $B$ is batch size
-- **Optimizer states**: Additional $2\times$ parameters for Adam
+- **Parameters**: $\approx 12 L d^2 + V d$ where $L$ is the number of layers (each layer holds $4d^2$ attention and $8d^2$ feed-forward weights) and $V d$ is the embedding table
+- **Activations**: $O(B \cdot n \cdot d \cdot L)$ for the residual stream, plus the $O(B \cdot h \cdot n^2 \cdot L)$ attention scores and the $4d$-wide feed-forward intermediates, where $B$ is batch size and $h$ the number of heads; without recomputation each layer stores about $s\,b\,d\,(34 + 5\,h\,s/d)$ bytes for sequence length $s$ {cite}`korthikanti2022reducing`
+- **Optimizer and gradient state**: with mixed precision and Adam, each parameter costs about 16 bytes in total: a 2-byte weight, a 2-byte gradient, a 4-byte fp32 master copy and two 4-byte Adam moments
 
 ```python
-def estimate_memory_usage(num_layers, d_model, seq_length, batch_size, vocab_size):
-    """Estimate memory usage for transformer training."""
+def estimate_memory_usage(num_layers, d_model, seq_length, batch_size, vocab_size, num_heads=None):
+    """Estimate parameters, memory and compute for mixed-precision Adam training.
 
-    # Parameters (in millions)
+    Parameters per layer: 4*d^2 (attention projections) + 8*d^2 (feed-forward, 4d wide).
+    Memory per parameter: 2 (fp16 weight) + 2 (fp16 grad) + 4 (fp32 master) + 8 (Adam m, v).
+    Activations per layer without recomputation (Korthikanti et al., 2022):
+        s*b*h*(34 + 5*a*s/h) bytes for sequence s, batch b, hidden h, heads a.
+    """
+    num_heads = num_heads or max(1, d_model // 128)
+    layer_params = num_layers * 12 * d_model**2
     embedding_params = vocab_size * d_model
-    layer_params = num_layers * (4 * d_model**2 + 8 * d_model)  # Attention + FFN
-    total_params = (embedding_params + layer_params) / 1e6
+    total_params = layer_params + embedding_params
 
-    # Activations (in GB, assuming fp16)
-    activation_memory = (batch_size * seq_length * d_model * num_layers * 2) / 1e9
+    bytes_per_param = 2 + 2 + 4 + 8
+    param_state_gb = total_params * bytes_per_param / 1e9
 
-    # Optimizer states (2x parameters for Adam)
-    optimizer_memory = total_params * 2 * 4 / 1000  # 4 bytes per parameter
-
-    # Parameter memory
-    param_memory = total_params * 2 / 1000  # 2 bytes per parameter (fp16)
+    s, b, h, a = seq_length, batch_size, d_model, num_heads
+    activation_gb = num_layers * s * b * h * (34 + 5 * a * s / h) / 1e9
 
     return {
-        "parameters_M": total_params,
-        "activation_memory_GB": activation_memory,
-        "optimizer_memory_GB": optimizer_memory,
-        "parameter_memory_GB": param_memory,
-        "total_memory_GB": activation_memory + optimizer_memory + param_memory,
+        "parameters_B": total_params / 1e9,
+        "param_and_optimizer_GB": param_state_gb,
+        "activation_GB": activation_gb,
+        "total_memory_GB": param_state_gb + activation_gb,
+        "flops_per_step": 6 * total_params * batch_size * seq_length,
     }
 
 
-# Example: GPT-3 scale model
-gpt3_memory = estimate_memory_usage(
-    num_layers=96, d_model=12288, seq_length=2048, batch_size=8, vocab_size=50257
-)
-print(f"Estimated memory usage: {gpt3_memory}")
+# Example: the GPT-3 175B configuration (96 layers, d_model 12288, 50257-token vocabulary)
+gpt3 = estimate_memory_usage(num_layers=96, d_model=12288, seq_length=2048, batch_size=8, vocab_size=50257)
+print(f"parameters: {gpt3['parameters_B']:.1f} B")               # ~174.6 B
+print(f"weights + optimizer state: {gpt3['param_and_optimizer_GB']:.0f} GB")  # ~2800 GB
+print(f"activations (batch 8, no recomputation): {gpt3['activation_GB']:.0f} GB")
 ```
+
+Weights and optimizer state alone are close to three terabytes, which is why a 175B-parameter model is trained across hundreds of accelerators with the parameters, gradients and optimizer state sharded between them.
 
 ```{admonition} Scaling Laws Visualization
 :class: note
@@ -486,6 +513,10 @@ where $s$ is the scale factor.
 
 Dynamic loss scaling adjusts the scale factor to maximize gradient precision without overflow.
 
+#### bfloat16
+
+**bf16** keeps fp32's 8 exponent bits and gives up mantissa bits instead, so it covers the same range as fp32 and needs no loss scaling at all. Nearly every large model trained since 2022 (PaLM, the LLaMA family and their successors) uses bf16 for activations and gradients with an fp32 master copy of the weights; fp16 with loss scaling remains the choice on hardware without bf16 support.
+
 ### 5.2 Initialization Strategies
 
 Proper initialization is crucial for stable training:
@@ -504,36 +535,36 @@ $$W \sim \mathcal{N}\left(0, \frac{2}{n_{\text{in}}}\right)$$
 
 #### Transformer-Specific Initialization
 
-Modern transformers often use scaled initialization to account for residual connections and layer normalization {cite}`zhang2019fixup`.
+Deep residual networks also scale their initialization with depth: Fixup {cite}`zhang2019fixup` shows that with the right depth-dependent scaling of the residual branches a transformer can be trained with no normalization layers at all, and GPT-2 scales the residual-branch weights by $1/\sqrt{2L}$ for the same reason.
 
 ### 5.3 Gradient Accumulation
 
 When memory constraints limit batch size, **gradient accumulation** simulates larger batches:
 
 ```python
-def train_with_gradient_accumulation(
-    model, data_loader, optimizer, accumulation_steps=4
-):
+import torch
+
+
+def train_with_gradient_accumulation(model, data_loader, optimizer, accumulation_steps=4):
+    """Average gradients over `accumulation_steps` micro-batches before each update."""
     model.train()
     optimizer.zero_grad()
 
-    total_loss = 0
-    for i, batch in enumerate(data_loader):
-        # Forward pass
+    running_loss, num_batches = 0.0, 0
+    for i, batch in enumerate(data_loader, start=1):
         outputs = model(batch["input_ids"])
-        loss = outputs.loss / accumulation_steps  # Scale loss
-
-        # Backward pass
+        loss = outputs.loss / accumulation_steps  # scale so the accumulated gradient is a mean
         loss.backward()
-        total_loss += loss.item()
+        running_loss += outputs.loss.item()
+        num_batches += 1
 
-        # Update parameters every accumulation_steps
-        if (i + 1) % accumulation_steps == 0:
+        last = i == len(data_loader)
+        if i % accumulation_steps == 0 or last:  # do not drop a final partial accumulation
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             optimizer.zero_grad()
 
-    return total_loss * accumulation_steps
+    return running_loss / max(num_batches, 1)  # mean per-batch loss, unscaled
 ```
 
 ```{admonition} Numerical Stability Demonstrations
