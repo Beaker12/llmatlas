@@ -58,7 +58,7 @@ Reproducing a model means reproducing the third from the second, which means the
 
 ### 1.2 The scale of the problem
 
-A 15-trillion-token corpus is roughly 60 TB of UTF-8 text or 30 TB as 16-bit token ids. Stored as 100 MB shards, it is a few hundred thousand files. A training run over it with a 4-million-token global batch takes about four million steps, each of which must fetch the right batch in well under the time the accelerators take to process the previous one, from storage that is usually a network object store rather than a local disk.
+A 15-trillion-token corpus is roughly 60 TB of UTF-8 text, 30 TB as 16-bit token ids, or 60 TB as the 32-bit ids that vocabularies above 65,536 entries need. Stored as 100 MB shards, it is a few hundred thousand files. A training run over it with a 4-million-token global batch takes nearly four million steps, each of which must fetch the right batch in well under the time the accelerators take to process the previous one, from storage that is usually a network object store rather than a local disk.
 
 Those numbers drive the design choices in the rest of the chapter: shards rather than files small enough to list, token arrays rather than text that needs parsing, indexes that locate a document without scanning, and sampling that computes the next batch's location arithmetically rather than by maintaining a queue.
 
@@ -76,7 +76,7 @@ Those numbers drive the design choices in the rest of the chapter: shards rather
 
 Most pipelines use two of these: a text format for everything up to and including the released corpus, and a tokenized binary for training. The text format is what gets versioned and documented; the binary is derived from it and the tokenizer, and is rebuilt rather than versioned.
 
-The Hugging Face hub hosts most public corpora as Parquet, which is why `datasets` can stream them without downloading everything {cite}`lhoest2021datasets`. Megatron-LM, GPT-NeoX and their descendants train from an indexed binary format, a flat array of token ids alongside an array of document offsets {cite}`shoeybi2019megatron`. Mosaic's streaming format and WebDataset shards exist for the case where training reads directly from object storage and sequential throughput matters more than random access.
+The Hugging Face hub converts hosted corpora to Parquet for its viewer and `datasets` streams Parquet, JSON Lines and other formats from the hub without downloading everything {cite}`lhoest2021datasets`. The Megatron-LM codebase {cite}`shoeybi2019megatron` (the paper is about model parallelism; the data format lives in the repository), GPT-NeoX and their descendants train from an indexed binary format, a flat array of token ids alongside an array of document offsets. Mosaic's streaming format and WebDataset shards exist for the case where training reads directly from object storage and sequential throughput matters more than random access.
 
 ### 2.2 Sharding
 
@@ -240,13 +240,13 @@ The notebook section {ref}`nb-dm-formats` writes a corpus as JSON Lines shards a
 
 ### 3.1 A version is a set of hashes
 
-Git works for source code because a commit is a hash of a tree of hashes of file contents. The same structure works for datasets at any scale, and the tools that do it well (DVC, lakeFS, the Hugging Face hub's storage layer, and Git LFS for the small cases) all reduce to it:
+Git works for source code because a commit is a hash of a tree of hashes of file contents. The same structure works for datasets at any scale, and the tools that do it well expose the same model, whether they store the objects themselves by content hash (DVC, Git LFS, the Hugging Face hub's storage layer) or keep content-addressed commit metadata over ordinary object storage (lakeFS):
 
 - Each shard is content-addressed: its identity is the hash of its bytes, and it is stored under that hash.
 - A **manifest** lists the shards of a version by path, hash and size. The manifest is small enough to keep in Git.
 - The **version root** is the hash of the manifest, or a Merkle root over the shard hashes, so that one short string identifies the whole dataset.
 
-Because shards are stored by hash, two versions that share most of their shards share the storage, and the diff between them is the diff between their manifests. A corpus rebuilt with one filter changed differs in the shards that filter touched and nowhere else, and the manifest diff says exactly which.
+Because shards are stored by hash, two versions that share most of their shards share the storage, and the diff between them is the diff between their manifests. A corpus rebuilt with one filter changed differs in the shards that filter touched and nowhere else, and the manifest diff says exactly which. This holds only if shard membership is stable: a document must land in the same shard in both builds. Shards cut by running count do not have that property, since removing one document shifts every later shard by one; shards cut by source and by a hash of the document identifier do, which is why pipelines bucket by key rather than by count.
 
 ```python
 import hashlib
@@ -310,9 +310,9 @@ The notebook section {ref}`nb-dm-versioning` builds a manifest for the corpus wr
 
 A transformer trains on sequences of a fixed length $L$ (2,048 to 128,000 tokens in current models), and documents are whatever length they are. Three ways to reconcile them:
 
-- **Concatenate and chunk.** Join all documents with an end-of-document token between them into one stream, and cut it into consecutive windows of length $L$. No padding, no waste, and the method GPT-2, GPT-3, LLaMA and most pretraining runs use. The cost: a document is split across windows wherever the cut falls, and a window usually contains the tail of one document and the head of the next.
+- **Concatenate and chunk.** Join all documents with an end-of-document token between them into one stream, and cut it into consecutive windows of length $L$. No padding, no waste, and the method the GPT-3 paper describes and most pretraining codebases default to. The cost: a document is split across windows wherever the cut falls, and a window usually contains the tail of one document and the head of the next.
 - **Pad.** One document per sequence, padded to $L$. No cross-document contamination, but with a long-tailed length distribution most of each sequence is padding, which is compute spent on nothing. Used for fine-tuning on short examples, rarely for pretraining.
-- **Pack.** Fit whole documents into sequences like boxes into a container (a bin-packing problem) so that most sequences are nearly full and documents are rarely cut. Best-fit packing {cite}`ding2024fewer` reduced truncation substantially relative to chunking, with measurable gains in reading comprehension and faithfulness and less hallucination, at the cost of a sort and an index.
+- **Pack.** Fit whole documents into sequences like boxes into a container (a bin-packing problem) so that most sequences are nearly full and documents are rarely cut. Best-fit packing {cite}`ding2024fewer` first splits any document longer than $L$ into pieces of at most $L$, then places each piece into the sequence with the least remaining room that still fits it, processing pieces longest first. It reduced truncation substantially relative to chunking, with measurable gains in reading comprehension and faithfulness and less hallucination, at the cost of a sort and an index.
 
 ```python
 import numpy as np
@@ -334,9 +334,15 @@ def concat_and_chunk(token_docs, seq_len: int, eod: int = 0):
 
 
 def best_fit_pack(token_docs, seq_len: int, eod: int = 0, pad: int = -1):
-    """First-fit-decreasing packing: each document (plus EOD) goes into the fullest
-    sequence it still fits in. Documents longer than seq_len are truncated."""
-    docs = sorted((list(d)[: seq_len - 1] + [eod] for d in token_docs), key=len, reverse=True)
+    """Best-fit-decreasing packing: documents longer than seq_len are split into
+    pieces first; each piece (plus EOD) then goes into the sequence with the least
+    remaining room that still fits it, longest pieces first."""
+    pieces = []
+    for d in token_docs:
+        d = list(d)
+        for start in range(0, max(1, len(d)), seq_len - 1):
+            pieces.append(d[start : start + seq_len - 1] + [eod])
+    docs = sorted(pieces, key=len, reverse=True)
     bins, free = [], []
     for doc in docs:
         best = None
@@ -365,8 +371,10 @@ packed, pad_frac = best_fit_pack(docs, seq_len=256)
 assert split_frac > 0.1  # chunking splits many documents
 assert pad_frac < 0.05  # packing wastes little
 assert packed.shape[1] == 256 and chunked.shape[1] == 256
-# Sequence counts agree to within the padding plus the tokens packing truncated
-assert abs(packed.shape[0] - chunked.shape[0]) <= 0.1 * chunked.shape[0]
+# Packing needs more sequences than chunking, by about the padding fraction (nothing is dropped)
+assert chunked.shape[0] <= packed.shape[0] <= chunked.shape[0] * 1.1
+n_pieces = sum(max(1, -(-len(d) // 255)) for d in docs)  # pieces of at most 255 tokens plus EOD
+assert (packed != -1).sum() == sum(len(d) for d in docs) + n_pieces  # every token kept, one EOD per piece
 ```
 
 ### 4.2 Cross-document attention
@@ -403,7 +411,7 @@ Whether to mask is a choice. Many pretraining runs did not, on the grounds that 
 
 ```{admonition} Packing and Masking
 :class: tip
-The notebook section {ref}`nb-dm-packing` packs the same corpus by chunking and by best-fit, plots the distribution of documents per sequence and the truncation and padding rates, and renders the document-causal mask for one packed sequence.
+The notebook section {ref}`nb-dm-packing` packs the same corpus by chunking and by best-fit, reports the split and padding rates, plots the distribution of documents per sequence, and renders the document-causal mask for the fullest packed sequence.
 ```
 
 ## 5. Mixing and Sampling
@@ -417,7 +425,7 @@ Given weights $w_s$ that sum to one, the sampler draws each document's source wi
 - **Temperature** flattens or sharpens the weights: $p_s \propto w_s^{1/T}$. With $T = 1$ the weights are used as given; $T > 1$ upsamples small sources, which is how multilingual models give low-resource languages more than their share {cite}`xue2021mt5`. The same scheme is used on domain weights.
 - **Epoch caps** bound how many times a source is repeated. If source $s$ has $N_s$ tokens and the run needs $D$ tokens, source $s$ is seen $p_s D / N_s$ times; beyond about four repetitions the marginal token is worth much less {cite}`muennighoff2023scaling`. A cap re-normalises the weights of the uncapped sources once a capped one has used its budget.
 
-Learned weights (DoReMi {cite}`xie2023doremi`) and curricula that change the mixture over training are variations on the same sampler with $w_s$ a function of the step.
+Learned weights (DoReMi {cite}`xie2023doremi`, which fits static $w_s$ with a small proxy model) and curricula that change the mixture over training are both consumed by the same sampler, the latter with $w_s$ a function of the step. The cap is stated in tokens; the sampler below counts documents, which production samplers replace with token counts from the index.
 
 ### 5.2 Determinism and resumption
 
@@ -489,15 +497,15 @@ assert [next(b) for _ in range(200)] == stream[300:]  # resumption is exact
 
 # Within a source, every document is seen once before any is repeated
 wiki_docs = [d for s, d in stream if s == "wiki"]
-first_epoch = wiki_docs[:50]
-assert sorted(first_epoch) == list(range(50)) if len(wiki_docs) >= 50 else True
+assert len(wiki_docs) >= 50  # about 75 draws expected from 500 at weight 0.15
+assert sorted(wiki_docs[:50]) == list(range(50))
 
 # Temperature > 1 flattens the mixture toward the small sources
 flat = MixtureSampler(sizes, weights, seed=1, temperature=3.0)
 assert flat.probs[flat.names.index("wiki")] > a.probs[a.names.index("wiki")]
 ```
 
-The `seek` method replays draws, which is fine for millions of steps and a few sources. Production samplers avoid even that by making the source draw at slot $t$ a hash of `(seed, t)` and the within-source cursor a count that can be derived from a prefix sum over source draws, so that any step is $O(1)$.
+The `seek` method replays draws, which is fine for millions of steps and a few sources. Production samplers are designed differently so that no replay is needed: the mixture is fixed in advance as a schedule of phases (the caps are applied when the schedule is computed, not as the run proceeds), the source for slot $t$ is a hash of `(seed, t)` under that schedule, and the within-source cursor at step $t$ is a count obtainable from a prefix sum, so that any step is $O(1)$. The price is that the schedule must be recomputed if the weights change mid-run.
 
 ### 5.3 Shuffling at the right granularity
 
@@ -511,7 +519,7 @@ Streaming loaders compromise with a shuffle buffer: read shards in a seeded orde
 
 ```{admonition} The Sampler
 :class: note
-The notebook section {ref}`nb-dm-sampler` runs the mixture sampler, plots the realised source fractions against the target weights at several temperatures, shows the epoch cap re-normalising the mixture once the smallest source is exhausted, and checks resumption at a hundred random steps.
+The notebook section {ref}`nb-dm-sampler` runs the mixture sampler, plots the realised source fractions at several temperatures with the tempered target weights marked, shows the epoch cap re-normalising the mixture once the smallest source is exhausted, and checks resumption at a hundred random steps.
 ```
 
 ## 6. Distributed Loading
@@ -520,10 +528,10 @@ The notebook section {ref}`nb-dm-sampler` runs the mixture sampler, plots the re
 
 A training job with $W$ processes (data-parallel ranks) needs each step's global batch of $B$ sequences split into $W$ micro-batches of $B / W$, with every rank reading different data and no rank reading what another reads. Two designs:
 
-- **Shard assignment.** Shards are partitioned among ranks, rank $r$ gets every $W$-th shard, and each rank samples within its own shards. Simple and the common choice for streaming formats. The drawback is that the global batch at step $t$ depends on $W$: change the number of GPUs and the data order changes, so a run resumed on a different cluster size is not the same run.
+- **Shard assignment.** Shards are partitioned among ranks, rank $r$ gets every $W$-th shard, and each rank samples within its own shards. Simple, and what a WebDataset-style loader does. The drawback is that the global batch at step $t$ depends on $W$: change the number of GPUs and the data order changes, so a run resumed on a different cluster size is not the same run.
 - **Global indexing.** The sampler produces a single global sequence of samples; the sample at global position $t B + i$ goes to rank $i \bmod W$ (or rank $\lfloor i W / B \rfloor$). Every rank runs the same sampler and takes its slice. The global batch is then independent of $W$, and a run can be resumed with a different number of ranks and see the same data in the same order.
 
-The second property, that the stream is a function of `(seed, step)` and nothing else, is what makes a large run reproducible across hardware changes, and it costs nothing beyond requiring that every rank can read any shard.
+The second property, that the stream is a function of `(seed, step)` and nothing else, is what makes a large run reproducible across hardware changes, and it costs nothing beyond requiring that every rank can read any shard. Mosaic Streaming is built around it: its sample order is fixed by the seed and does not change with the number of GPUs.
 
 ```python
 import numpy as np
@@ -542,12 +550,23 @@ def global_batch_slice(step: int, global_batch: int, rank: int, world_size: int)
     return np.arange(start, start + per_rank)
 
 
+def shard_assignment_batch(step, global_batch, world_size, num_shards, docs_per_shard):
+    """The set of document ids the whole job sees at `step` under shard assignment:
+    each rank reads its own shards in order and takes the next per-rank slice."""
+    per_rank = global_batch // world_size
+    batch = []
+    for r in range(world_size):
+        mine = [s * docs_per_shard + i for s in rank_shards(num_shards, r, world_size) for i in range(docs_per_shard)]
+        batch += mine[step * per_rank : (step + 1) * per_rank]
+    return sorted(batch)
+
+
 # Shard assignment covers every shard exactly once ...
 assigned = [s for r in range(4) for s in rank_shards(10, r, 4)]
 assert sorted(assigned) == list(range(10))
 
-# ... but the global batch at a step depends on the world size (compare rank 0's shards)
-assert rank_shards(10, 0, 4) != rank_shards(10, 0, 2)
+# ... but the documents in the global batch at a step depend on the world size
+assert shard_assignment_batch(3, 8, 2, 10, 16) != shard_assignment_batch(3, 8, 4, 10, 16)
 
 # Global indexing: the union over ranks at step t is the same set for any world size
 step, B = 7, 64
@@ -558,7 +577,7 @@ for W in (1, 2, 4, 8, 16):
 
 ### 6.2 Throughput
 
-The loader's job is to never make the accelerator wait. The arithmetic for a modern run: a step over a 4-million-token batch on a large cluster takes a few seconds; the batch is 8 MB of `uint16` ids; the required read rate is a few megabytes per second per rank, trivial for local disk and comfortable for object storage with a few requests in flight. Text formats change the picture, since the same batch is 16 MB of UTF-8 that must be decompressed and tokenized, and tokenization at a few megabytes per second per core becomes the bottleneck at a few hundred ranks. This is the practical argument for pre-tokenized binaries: not storage, but keeping CPU work off the critical path.
+The loader's job is to never make the accelerator wait. The arithmetic for a modern run: a step over a 4-million-token batch on a large cluster takes a few seconds; the batch is 8 MB of `uint16` ids (16 MB as `uint32`), spread over all ranks, so each rank reads kilobytes per step, trivial for local disk and comfortable for object storage with a few requests in flight. Text formats change the picture less in volume than in work: the same batch is some 16 MB of UTF-8 that must be decompressed, parsed and tokenized, which is CPU time on the step's critical path unless it is prefetched, and whose output depends on the tokenizer library's version at run time. This is the practical argument for pre-tokenized binaries: not storage (gzip-compressed text is comparable in size to 16-bit ids), but zero parsing, random access, and a token stream fixed when the dataset is built rather than when it is read.
 
 The remaining ingredients are standard: a few worker processes per rank that prefetch the next batches, reads of whole shards or large ranges rather than per-document requests, and a local cache for shards that will be read again in a later epoch.
 
@@ -580,7 +599,7 @@ A dataset version ships with its statistics, computed by the build and stored ne
 - Language distribution, and for code the distribution over languages and licences
 - Overlap with the evaluation suite after decontamination, per benchmark, reported as a number even when it is zero
 
-Elazar et al. {cite}`elazar2024whats` built exactly this kind of inspection tooling for the public corpora and found, among other things, that benchmark contamination and duplicated content were common even in corpora whose documentation claimed otherwise. Statistics that are computed rather than asserted are the defence.
+Elazar et al. {cite}`elazar2024whats` built exactly this kind of inspection tooling for the public corpora and found, among other things, that benchmark contamination and duplicated content were common across them. Statistics that are computed rather than asserted are the defence.
 
 ### 7.2 Data contracts
 
@@ -668,7 +687,7 @@ A dataset version is accompanied by a document that says what it is for someone 
 - **Datasheets for Datasets** {cite}`gebru2021datasheets`: a questionnaire covering motivation, composition, collection process, preprocessing, uses, distribution and maintenance. It was written to make the people assembling a dataset answer the questions a user will have, and it remains the reference.
 - **Data cards** {cite}`pushkarna2022data`: a structured summary intended to be published with the dataset, with an emphasis on what a downstream team needs to decide whether to use it.
 
-The pretraining corpora that are well documented (The Pile {cite}`gao2020pile`, Dolma {cite}`soldaini2024dolma`, FineWeb {cite}`penedo2024fineweb`) publish a datasheet or card, the per-source statistics, the pipeline code and the ablation results together, and that combination is what allows anyone else to build on them. C4's post-hoc documentation {cite}`dodge2021documenting`, written by a different team years after release, found that the corpus contained machine-generated text, benchmark test sets and a skew in whose text had been filtered out, none of which its original description mentioned.
+The pretraining corpora that are well documented (The Pile {cite}`gao2020pile`, Dolma {cite}`soldaini2024dolma`, FineWeb {cite}`penedo2024fineweb`) publish a datasheet or card, the per-source statistics, the pipeline code and the ablation results together, and that combination is what allows anyone else to build on them. C4's post-hoc documentation {cite}`dodge2021documenting`, written by a different team about eighteen months after release, found that the corpus contained machine-generated text, benchmark test sets and a skew in whose text had been filtered out, none of which its original description mentioned.
 
 Croissant, a machine-readable metadata vocabulary built on schema.org, is becoming the common format for the card's structured part (sources, licences, fields, splits) so that hubs and loaders can read it; the prose part still needs a person.
 
@@ -739,8 +758,8 @@ Everything a training run needs is then a tag. A run's configuration names the t
 The pieces exist as libraries, and most teams assemble rather than write them:
 
 - **Hugging Face `datasets`** {cite}`lhoest2021datasets` for Parquet and Arrow handling, streaming from the hub, and memory-mapped local caches; the hub itself for hosting versioned datasets with per-commit manifests.
-- **Mosaic Streaming (MDS)** and **WebDataset** for shard formats designed to stream from object storage with deterministic, resumable shuffling across ranks.
-- **Megatron-LM, GPT-NeoX and their derivatives** for the indexed tokenized binary and the blended-dataset sampler that implements weighted, epoch-capped mixing.
+- **Mosaic Streaming (MDS)** for a shard format that streams from object storage with a deterministic, resumable sample order that does not depend on the number of ranks; **WebDataset** for tar shards streamed sequentially with a seeded shard order and a shuffle buffer.
+- **Megatron-LM, GPT-NeoX and their derivatives** for the indexed tokenized binary and the blended-dataset sampler that implements weighted mixing; epoch caps are set when the blend is planned.
 - **DVC** and **lakeFS** for content-addressed versioning with lineage, in a Git-like workflow; **Git LFS** when the data is small enough.
 - **Great Expectations** and similar for data contracts, though a few hundred lines of assertions in the build script are usually enough.
 - **Croissant** for machine-readable dataset metadata.
@@ -753,7 +772,7 @@ What no tool supplies is the discipline: that every version is produced by the b
 1. **Manifest diff.** Rebuild the notebook's corpus with the Chapter 4 repetition filter's thresholds changed by 10%. Diff the manifests. How many shards changed, and could you have predicted which ones from the shard naming scheme?
 1. **Packing efficiency.** For document length distributions with means of 100, 1,000 and 10,000 tokens and a sequence length of 4,096, measure the truncation rate of chunking and the padding rate of best-fit packing. When does packing stop being worth its complexity?
 1. **The mask's effect.** Train two small models on packed sequences with and without the document mask (the Chapter 1 notebook's transformer is enough). Compare the loss on the first tokens of each document, which are the ones the mask changes.
-1. **O(1) seeking.** Replace the `seek` method of `MixtureSampler` with one that computes the state at step $t$ without replaying: hash `(seed, t)` for the source draw and derive the per-source cursor from counts. Verify it against the replaying version at a thousand random steps.
+1. **O(1) seeking.** Design a sampler whose state at step $t$ is computed without replaying: a fixed schedule of mixture phases, a hash of `(seed, t)` for the source draw, and per-source cursors from prefix counts. Its stream will differ from `MixtureSampler`'s, so verify it against itself: iterating to step $t$ and seeking to step $t$ must agree at a thousand random steps.
 1. **World-size invariance.** Implement a loader under both designs of Section 6.1 and resume a simulated run at step 500 with the world size changed from 8 to 4. Which design gives the same batches, and what does the other one skip or repeat?
 1. **A removal request.** Pick a document in the notebook's corpus and carry out the three steps of Section 8.3: locate it, cut a new version without it, and list the versions (and, hypothetically, the models) affected. How long did each step take, and which would have been impossible without the index?
 
