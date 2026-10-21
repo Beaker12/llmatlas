@@ -38,7 +38,7 @@ html:
   use_repository_button: true
   use_issues_button: true
   baseurl: "https://beaker12.github.io/llmatlas/"
-  announcement: "Work in progress: chapters 1 to 5 are written. See the Roadmap for what is planned."
+  announcement: "Work in progress: chapters 1 to 6 are written. See the Roadmap for what is planned."
 
 sphinx:
   recursive_update: true

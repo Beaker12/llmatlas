@@ -1,0 +1,23 @@
+{
+ "meta-llama/Llama-3.1-8B": {
+  "sha": "d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
+  "elements_total": 8030261248,
+  "by_dtype": {
+   "BF16": 8030261248
+  }
+ },
+ "meta-llama/Llama-3.1-70B": {
+  "sha": "349b2ddb53ce8f2849a6c168a81980ab25258dac",
+  "elements_total": 70553706496,
+  "by_dtype": {
+   "BF16": 70553706496
+  }
+ },
+ "google/gemma-2-9b": {
+  "sha": "33c193028431c2fde6c6e51f29e6f17b60cbfac6",
+  "elements_total": 9241705984,
+  "by_dtype": {
+   "F32": 9241705984
+  }
+ }
+}

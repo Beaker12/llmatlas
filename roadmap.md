@@ -1,10 +1,9 @@
 # Roadmap
 
-LLM Atlas is a work in progress. Chapters 1 to 5 are written; everything below is planned and not yet written. Part and chapter titles follow the original outline and may change.
+LLM Atlas is a work in progress. Chapters 1 to 6 are written; everything below is planned and not yet written. Part and chapter titles follow the original outline and may change.
 
 ## Model Architectures and Training
 
-- Modern Transformer Architectures
 - Training Objectives and Methodologies
 - Distributed and Efficient Training
 - Specialized Training Regimes
