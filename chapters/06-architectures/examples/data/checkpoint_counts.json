@@ -1,0 +1,74 @@
+{
+ "Qwen/Qwen2.5-7B": {
+  "sha": "d149729398750b98c0af14eb82c78cfe92750796",
+  "shards": 4,
+  "elements_counted": 7615616512,
+  "elements_mtp_layer": 0,
+  "elements_fp8_scales": 0,
+  "elements_by_dtype": {
+   "BF16": 7615616512
+  }
+ },
+ "allenai/OLMo-2-1124-7B": {
+  "sha": "7df9a82518afdecae4e8c026b27adccc8c1f0032",
+  "shards": 6,
+  "elements_counted": 7298617344,
+  "elements_mtp_layer": 0,
+  "elements_fp8_scales": 0,
+  "elements_by_dtype": {
+   "F32": 7298617344
+  }
+ },
+ "allenai/OLMoE-1B-7B-0924": {
+  "sha": "6d84c48581ece794365f2b8e9cfb043c68ade9c5",
+  "shards": 3,
+  "elements_counted": 6919161856,
+  "elements_mtp_layer": 0,
+  "elements_fp8_scales": 0,
+  "elements_by_dtype": {
+   "BF16": 6919161856
+  }
+ },
+ "deepseek-ai/DeepSeek-V2-Lite": {
+  "sha": "604d5664dddd88a0433dbae533b7fe9472482de0",
+  "shards": 4,
+  "elements_counted": 15706484224,
+  "elements_mtp_layer": 0,
+  "elements_fp8_scales": 0,
+  "elements_by_dtype": {
+   "BF16": 15706484224
+  }
+ },
+ "deepseek-ai/DeepSeek-V3": {
+  "sha": "e815299b0bcbac849fa540c768ef21845365c9eb",
+  "shards": 163,
+  "elements_counted": 671026419200,
+  "elements_mtp_layer": 13463426304,
+  "elements_fp8_scales": 41540496,
+  "elements_by_dtype": {
+   "BF16": 3918786560,
+   "F8_E4M3": 680571043840,
+   "F32": 41555600
+  }
+ },
+ "mistralai/Mistral-7B-v0.1": {
+  "sha": "27d67f1b5f57dc0953326b2601d68371d40ea8da",
+  "shards": 2,
+  "elements_counted": 7241732096,
+  "elements_mtp_layer": 0,
+  "elements_fp8_scales": 0,
+  "elements_by_dtype": {
+   "BF16": 7241732096
+  }
+ },
+ "mistralai/Mixtral-8x7B-v0.1": {
+  "sha": "fc7ac94680e38d7348cfa806e51218e6273104b0",
+  "shards": 19,
+  "elements_counted": 46702792704,
+  "elements_mtp_layer": 0,
+  "elements_fp8_scales": 0,
+  "elements_by_dtype": {
+   "BF16": 46702792704
+  }
+ }
+}

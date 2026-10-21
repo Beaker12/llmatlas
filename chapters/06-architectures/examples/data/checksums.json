@@ -1,0 +1,16 @@
+{
+ "generated": "2026-10-21",
+ "sha256": {
+  "checkpoint_counts.json": "810b1d80aace75633e3cdd834e60bf4c85a379acc2f2233670b3a82c76e25cb2",
+  "configs/Qwen__Qwen2.5-7B.json": "267ce68584c5f24c3b267d934db2de68dd21d1ca677fb78ed809eb60067f7642",
+  "configs/allenai__OLMo-2-1124-7B.json": "f1e210de0ba704c579768c154bf57e36e170868ffecb060a6e0d3f2e6b0b9710",
+  "configs/allenai__OLMoE-1B-7B-0924.json": "3643aa880d2f1c9b418156269ae791c73e5612d6b6b6fde0724d927cf89b6335",
+  "configs/deepseek-ai__DeepSeek-V2-Lite.json": "f346286b0f1c8b044252fd54cb4fa78b9fab6472a6e8bebb9edfe03d414ea03d",
+  "configs/deepseek-ai__DeepSeek-V3.json": "cbf0b95dc614de208a109bb5fd4e7eed11385e9c68411d2c17db5319443035d9",
+  "configs/mistralai__Mistral-7B-v0.1.json": "cf25cdf4719f181d1d1d371973285d9afe9afde0d0c6a6fd48de857555ce1e0d",
+  "configs/mistralai__Mixtral-8x7B-v0.1.json": "9d56d04b36d0fd12ff54ae4c5bac769cc176e254e64ff71144614b6318b40793",
+  "hub_totals.json": "32d55b342d5cb82580ae1562d0228a0fa795e9d89dd626ed50f0a77450850944",
+  "pins.json": "f509b86a37882e306040b67a3418a03f08c6799b483b27fcf611e1e4d2623f39",
+  "pride_and_prejudice_150k.txt": "8c394b472b75396071e8d70d0c2f7bb4dfb76565aeca62c127961960d4f57560"
+ }
+}

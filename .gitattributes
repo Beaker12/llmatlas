@@ -5,3 +5,5 @@
 *.yaml text eol=lf
 *.py text eol=lf
 *.svg text eol=lf
+# Sample data is hashed byte for byte (checksums.json); never normalise it.
+chapters/06-architectures/examples/data/** -text

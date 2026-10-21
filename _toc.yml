@@ -36,6 +36,14 @@ parts:
           - file: chapters/05-dataset-management/examples/dataset_management_demo
             title: "Dataset Management Demo"
 
+  - caption: "Model Architectures and Training"
+    chapters:
+      - file: chapters/06-architectures/index
+        title: "Modern Transformer Architectures"
+        sections:
+          - file: chapters/06-architectures/examples/architecture_demo
+            title: "Modern Architectures Demo"
+
   - caption: "Planned"
     chapters:
       - file: roadmap

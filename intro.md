@@ -4,7 +4,7 @@ LLM Atlas is a Jupyter Book about how large language models work, from tokenizat
 
 ## Status
 
-Chapters 1 to 5 are written. The remaining chapters are planned and not yet written; see the [Roadmap](roadmap.md).
+Chapters 1 to 6 are written. The remaining chapters are planned and not yet written; see the [Roadmap](roadmap.md).
 
 **Chapter 1: LLM Foundations**
 
@@ -48,6 +48,14 @@ Chapters 1 to 5 are written. The remaining chapters are planned and not yet writ
 - Deterministic, resumable mixture sampling with temperature and epoch caps
 - Sharding across ranks without the global batch depending on the world size
 - Statistics, data contracts, canaries, data cards and handling removal requests
+
+**Chapter 6: Modern Transformer Architectures**
+
+- The 2025 decoder block: pre-norm, RMSNorm, QK-norm, gated feed-forward networks
+- Multi-head, grouped-query and latent attention, and the KV cache each implies
+- Sliding-window attention, RoPE scaling and what a context length promises
+- Mixture of experts: routing, load balancing, total versus active parameters
+- Exact parameter counts from real model configurations, validated against checkpoints
 
 ## How to use this book
 
