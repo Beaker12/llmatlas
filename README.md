@@ -57,4 +57,7 @@ Pushes to `main` build and deploy to GitHub Pages. Pull requests are built and t
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+LLM Atlas is dual-licensed:
+
+- **Text, figures and other content** are licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). See [LICENSE-CONTENT](LICENSE-CONTENT).
+- **Code**, meaning the code in the chapters and notebooks, `tools/` and `tests/`, is licensed under the MIT License. See [LICENSE](LICENSE).
