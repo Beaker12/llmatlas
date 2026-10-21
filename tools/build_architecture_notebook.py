@@ -51,7 +51,7 @@ def code(text: str) -> None:
 md(r"""
 # Modern Architectures Demo
 
-**Purpose**: This notebook builds the pieces of Chapter 6 and checks each against an independent reference: the parameter count of ten real models from their configuration files, a grouped-query attention layer, a KV cache, a simplified latent cache, rotary-frequency scaling, a mixture-of-experts router, and a seeded comparison of post-norm and pre-norm training. Every section ends in assertions, so a silent change to any formula fails the notebook.
+**Purpose**: This notebook builds the pieces of Chapter 6 and checks each against an independent reference: the parameter count of ten real models from their configuration files (seven downloaded, three transcribed from papers), a grouped-query attention layer, a KV cache, a simplified latent cache, rotary-frequency scaling, a mixture-of-experts router, and a seeded comparison of post-norm and pre-norm training. Every section ends in assertions, so a silent change to any formula fails the notebook.
 
 **Data**: model configurations are read from the Hugging Face hub at pinned commits when a network is available, and from copies committed in `data/` otherwise; set `LLMATLAS_OFFLINE=1` to skip the network. Both sources are verified against the committed checksums, so the results do not depend on which one is used. The training text is Jane Austen's *Pride and Prejudice*, public domain, from Project Gutenberg.
 """)
@@ -209,7 +209,7 @@ for repo, (total, tol, active, convention, tol_active) in PUBLISHED.items():
 
 # Coverage: the set contains a dense, a sparse and a latent-attention model
 kinds = {cfg["model_type"] for cfg in CONFIGS.values()}
-assert {"qwen2", "mixtral", "deepseek_v3"} <= kinds
+assert {"qwen2", "mixtral", "deepseek_v2", "deepseek_v3"} <= kinds
 ''')
 
 md(r"""
