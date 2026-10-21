@@ -4,7 +4,7 @@ LLM Atlas is a Jupyter Book about how large language models work, from tokenizat
 
 ## Status
 
-Chapters 1 to 4 are written. The remaining chapters are planned and not yet written; see the [Roadmap](roadmap.md).
+Chapters 1 to 5 are written. The remaining chapters are planned and not yet written; see the [Roadmap](roadmap.md).
 
 **Chapter 1: LLM Foundations**
 
@@ -39,6 +39,15 @@ Chapters 1 to 4 are written. The remaining chapters are planned and not yet writ
 - Exact, near-duplicate (MinHash and LSH) and substring deduplication
 - Personal data, toxicity and benchmark decontamination
 - Assembling a reproducible pipeline with per-stage drop accounting
+
+**Chapter 5: Dataset Management and Versioning**
+
+- Storage formats: JSON Lines, Parquet, tar shards and tokenized binaries with a document index
+- Versioning by content hash: manifests, version roots, diffs and lineage
+- Packing documents into sequences and masking attention across document boundaries
+- Deterministic, resumable mixture sampling with temperature and epoch caps
+- Sharding across ranks without the global batch depending on the world size
+- Statistics, data contracts, canaries, data cards and handling removal requests
 
 ## How to use this book
 

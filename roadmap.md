@@ -1,10 +1,6 @@
 # Roadmap
 
-LLM Atlas is a work in progress. Chapters 1 to 4 are written; everything below is planned and not yet written. Part and chapter titles follow the original outline and may change.
-
-## Data and Preprocessing
-
-- Dataset Management and Versioning
+LLM Atlas is a work in progress. Chapters 1 to 5 are written; everything below is planned and not yet written. Part and chapter titles follow the original outline and may change.
 
 ## Model Architectures and Training
 

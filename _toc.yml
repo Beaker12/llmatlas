@@ -30,6 +30,11 @@ parts:
         sections:
           - file: chapters/04-preprocessing/examples/preprocessing_pipeline_demo
             title: "Preprocessing Pipeline Demo"
+      - file: chapters/05-dataset-management/index
+        title: "Dataset Management and Versioning"
+        sections:
+          - file: chapters/05-dataset-management/examples/dataset_management_demo
+            title: "Dataset Management Demo"
 
   - caption: "Planned"
     chapters:
