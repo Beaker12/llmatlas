@@ -2,7 +2,7 @@
 
 title: "LLM Atlas: A Guide to Large Language Models"
 author: "Stuart W. Parkhurst"
-copyright: "Educational resource by Stuart W. Parkhurst | MIT License"
+copyright: "Stuart W. Parkhurst | Text and figures CC BY-NC-SA 4.0, code MIT"
 logo: _static/logo.svg
 
 only_build_toc_files: true

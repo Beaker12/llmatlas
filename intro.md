@@ -61,4 +61,4 @@ Read a chapter, then run its notebook (linked at the top of each chapter) and ch
 
 ## Contributing
 
-Corrections and suggestions are welcome as issues or pull requests on [GitHub](https://github.com/Beaker12/llmatlas). The book is published under the MIT License.
+Corrections and suggestions are welcome as issues or pull requests on [GitHub](https://github.com/Beaker12/llmatlas). The text and figures are licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/), and the code under the [MIT License](https://github.com/Beaker12/llmatlas/blob/main/LICENSE).
