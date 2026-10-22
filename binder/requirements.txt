@@ -1,0 +1,6 @@
+# Binder (mybinder.org) environment. repo2docker installs this file instead of
+# the top-level requirements.txt, so it pulls in the CPU-only PyTorch build
+# (the default PyPI wheel bundles multi-GB CUDA libraries) plus everything else.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+-r ../requirements.txt

@@ -24,6 +24,20 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt -r requirements-dev.txt
 ```
 
+## Run the notebooks on Binder
+
+The demo notebooks in `chapters/*/examples/` also run on [mybinder.org](https://mybinder.org) with no local install. Binder builds its environment from `binder/requirements.txt`, which adds the CPU build of PyTorch to `requirements.txt`. Open a notebook with:
+
+```text
+https://mybinder.org/v2/gh/Beaker12/llmatlas/<ref>?labpath=<notebook path>
+```
+
+where `<ref>` is a branch, tag or commit and `<notebook path>` is relative to the repository root. For example, chapter 1's demo on `main`:
+
+<https://mybinder.org/v2/gh/Beaker12/llmatlas/main?labpath=chapters/01-foundations/examples/attention_mechanisms_demo.ipynb>
+
+The first launch of a new ref builds the image, which takes several minutes.
+
 ## Build and test
 
 ```bash
