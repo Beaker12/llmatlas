@@ -112,7 +112,8 @@ def write_jsonl_shards(docs, out_dir: Path, docs_per_shard: int, prefix: str = "
         path = out_dir / f"{prefix}_{shard_idx:05d}.jsonl.gz"
         tmp = path.with_suffix(".tmp")
         raw = b"".join(json.dumps(d, ensure_ascii=False).encode("utf-8") + b"\n" for d in batch)
-        with gzip.open(tmp, "wb", compresslevel=6) as f:
+        # mtime=0: without it the gzip header records the time of writing
+        with open(tmp, "wb") as out, gzip.GzipFile(fileobj=out, mode="wb", compresslevel=6, mtime=0) as f:
             f.write(raw)
         tmp.rename(path)  # a shard exists only once it is complete
         manifest.append(
@@ -152,6 +153,8 @@ with tempfile.TemporaryDirectory() as tmp:
     assert [d["id"] for d in read_jsonl_shards(Path(tmp), manifest)] == [d["id"] for d in docs]
     assert not list(Path(tmp).glob("*.tmp"))
 ```
+
+The `mtime=0` argument matters more than it looks. A gzip header records a modification time, and `gzip.open` fills it with the current time, so the same documents compressed a second apart produce different bytes and different hashes. A shard's hash has to be a function of its content alone, or every rebuild looks like a new version. Zstandard frames carry no timestamp; tar and zip archives do, and need the same treatment.
 
 ### 2.3 Tokenized binaries and the document index
 
