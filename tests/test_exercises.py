@@ -1,11 +1,13 @@
 """Page order, exercises with solutions, and section size.
 
 `exercises` (one test per chapter; tokenization-deep-dive.md is exempt from this check)
-  The `##` headings of the page contain, in this order: "Overview", "Learning Objectives", "Hands-On", then one or
-  more numbered sections ("1. ...", "2 ..."), then "Summary", "Exercises", "Further Reading" (case-insensitive,
-  first heading containing the phrase). Under "Exercises", the k-th numbered exercise (a list item starting `N.`)
-  is followed, before the next exercise, by an admonition titled `Solution k` with `:class: dropdown`, and the
-  number of exercises equals the number of solutions.
+  The `##` headings of the page are, in this order: an overview ("Overview" or "Chapter Overview"), "Learning
+  Objectives", "Hands-On" (or "Hands-On Learning"), one or more numbered sections ("1. ...", "2 ..."), "Summary",
+  "Exercises", "Further Reading". Titles are matched whole, case-insensitively, after stripping a leading section
+  number ("10. Summary" is the Summary). The Exercises section has at least one exercise, written either as numbered
+  list items directly under the heading or as `### Exercise N` / `#### Exercise N` headings (not both). Each exercise
+  is followed, before the next one, by an admonition titled `Solution N` with `:class: dropdown` (N is the heading's
+  number, or the item's position), and the numbers of exercises and solutions are equal.
 `structure` (one test per chapter, every page including the deep-dive)
   No `##` section exceeds 35% of the page's lines (lines from its heading to the next `##` heading or the end).
 """
@@ -20,6 +22,15 @@ from tests._pages import blank_code, pages
 DEEP_DIVE = "tokenization-deep-dive.md"
 FRONT = ["Overview", "Learning Objectives", "Hands-On"]
 BACK = ["Summary", "Exercises", "Further Reading"]
+TITLES = {"Overview": {"overview", "chapter overview"}, "Learning Objectives": {"learning objectives"},
+          "Hands-On": {"hands-on", "hands-on learning"}, "Summary": {"summary"}, "Exercises": {"exercises"},
+          "Further Reading": {"further reading"}}
+EXERCISE_HEADING = re.compile(r"^#{3,4}[ \t]+Exercise[ \t]+(\d+)\b")
+
+
+def canonical(title):
+    """The title without a leading section number, case-folded."""
+    return re.sub(r"^\d+(?:\.\d+)*\.?[ \t]+", "", title).strip().casefold()
 MAX_SHARE = 0.35
 HEADING = re.compile(r"^(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$")
 NUMBERED = re.compile(r"^\d+(?:\.|\s)")
@@ -44,12 +55,13 @@ def order_failures(name, text):
     position = {}
     for phrase in FRONT + BACK:
         for i, title in enumerate(titles):
-            if phrase.lower() in title.lower():
+            if canonical(title) in TITLES[phrase]:
                 position[phrase] = i
                 break
         else:
-            return [f"{name}:L1: no '##' heading containing {phrase!r}"]
-    numbered = [i for i, t in enumerate(titles) if NUMBERED.match(t)]
+            return [f"{name}:L1: no '##' heading titled {phrase!r}"]
+    named = set().union(*TITLES.values())
+    numbered = [i for i, t in enumerate(titles) if NUMBERED.match(t) and canonical(t) not in named]
     if not numbered:
         return [f"{name}:L1: no numbered '##' sections"]
     failures = []
@@ -67,27 +79,36 @@ def order_failures(name, text):
 
 def exercise_failures(name, text):
     top = headings(text)
-    start = next((i for i, (_, t) in enumerate(top) if "exercises" in t.lower()), None)
+    start = next((i for i, (_, t) in enumerate(top) if canonical(t) in TITLES["Exercises"]), None)
     if start is None:
         return []                      # reported by order_failures
     first = top[start][0]
     last = top[start + 1][0] - 1 if start + 1 < len(top) else len(text.split("\n"))
     lines = text.split("\n")
     shown = blank_code(text, directives=True).split("\n")
-    events = []                        # (line, "exercise"|"solution", number)
+    events = []                        # (line, "item"|"heading"|"solution", number)
     for number in range(first + 1, last + 1):
+        heading = EXERCISE_HEADING.match(shown[number - 1])
         if ITEM.match(shown[number - 1]):
-            events.append((number, "exercise", None))
+            events.append((number, "item", None))
+        elif heading:
+            events.append((number, "heading", int(heading.group(1))))
         elif SOLUTION.match(lines[number - 1]):
             events.append((number, "solution", int(SOLUTION.match(lines[number - 1]).group(1))))
     failures = []
-    exercises = [e for e in events if e[1] == "exercise"]
+    exercises = [e for e in events if e[1] != "solution"]
     solutions = [e for e in events if e[1] == "solution"]
-    for k, (line, _, _) in enumerate(exercises, start=1):
-        position = events.index((line, "exercise", None))
+    if not exercises:
+        return [f"{name}:L{first}: the Exercises section has no exercises (numbered list items or 'Exercise N' headings)"]
+    if {kind for _, kind, _ in exercises} == {"item", "heading"}:
+        return [f"{name}:L{first}: the Exercises section mixes numbered list items and 'Exercise N' headings; use one form"]
+    for k, event in enumerate(exercises, start=1):
+        line, kind, written = event
+        wanted = written if kind == "heading" else k
+        position = events.index(event)
         after = events[position + 1] if position + 1 < len(events) else None
-        if not after or after[1] != "solution" or after[2] != k:
-            failures.append(f"{name}:L{line}: exercise {k} is not followed by a 'Solution {k}' admonition")
+        if not after or after[1] != "solution" or after[2] != wanted:
+            failures.append(f"{name}:L{line}: exercise {wanted} is not followed by a 'Solution {wanted}' admonition")
     for line, _, k in solutions:
         options = []
         for text_line in lines[line:line + 6]:
@@ -135,7 +156,7 @@ def test_page_order_and_exercise_solutions(chapter_dir):
 
 
 @pytest.mark.parametrize("chapter_dir", CHAPTER_DIRS, ids=CHAPTER_IDS)
-def test_no_section_exceeds_a_third_of_the_page(chapter_dir):
+def test_no_section_exceeds_35_percent_of_the_page(chapter_dir):
     chapter_check("structure")(chapter_dir, size_failures(chapter_dir))
 
 
@@ -169,6 +190,43 @@ def test_a_missing_solution_is_reported():
     failures = exercise_failures("p.md", text)
     assert len(failures) == 2 and failures[0].endswith("3 exercises but 2 solutions")
     assert "exercise 2 is not followed by a 'Solution 2' admonition" in failures[1]
+
+
+def test_a_page_with_no_exercises_fails():
+    failures = exercise_failures("p.md", page(exercises="Think about it.\n"))
+    assert len(failures) == 1 and "has no exercises" in failures[0]
+
+
+def heading_exercises(*solved):
+    return "\n".join(f"### Exercise {n}\n\nDo the work.\n\n" + (solution(n) if ok else "") for n, ok in enumerate(solved, 1))
+
+
+@pytest.mark.parametrize("marks", ["###", "####"])
+def test_exercise_headings_with_solutions_pass(marks):
+    text = page(exercises=heading_exercises(True, True).replace("###", marks))
+    assert exercise_failures("p.md", text) == [] and order_failures("p.md", text) == []
+
+
+def test_an_exercise_heading_without_its_solution_fails():
+    failures = exercise_failures("p.md", page(exercises=heading_exercises(True, False, True)))
+    assert len(failures) == 2 and failures[0].endswith("3 exercises but 2 solutions")
+    assert "exercise 2 is not followed by a 'Solution 2' admonition" in failures[1]
+
+
+def test_mixed_exercise_forms_fail_with_a_clear_message():
+    text = page(exercises="1. A list item.\n\n" + solution(1) + "\n### Exercise 2\n\nText.\n\n" + solution(2))
+    failures = exercise_failures("p.md", text)
+    assert len(failures) == 1 and "mixes numbered list items and 'Exercise N' headings" in failures[0]
+
+
+def test_headings_are_matched_whole_after_a_section_number():
+    sections = ["Chapter Overview", "Learning Objectives", "Hands-On Learning", "1. First", "10. Summary",
+                "Exercises", "Further Reading"]
+    assert order_failures("p.md", page(sections=sections)) == []
+    for old, wrong in (("10. Summary", "Summary of results"), ("10. Summary", "Executive Summary"),
+                       ("Exercises", "More Exercises")):
+        replaced = [wrong if s == old else s for s in sections]
+        assert order_failures("p.md", page(sections=replaced))[0].startswith("p.md:L1: no '##' heading titled")
 
 
 def test_a_solution_without_dropdown_is_reported():
