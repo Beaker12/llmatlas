@@ -30,7 +30,8 @@ def _directive_name(role):
     return words[0] if words else ""
 
 
-def blank_code(text: str) -> str:
+def blank_code(text: str, directives: bool = False) -> str:
+    """Blank the lines of code fences; with `directives`, also those of every directive (admonition, figure...)."""
     out, code, stack = [], None, []
     for line in text.split("\n"):
         if code:
@@ -47,7 +48,7 @@ def blank_code(text: str) -> str:
         if not role and not rest.strip() and stack and stack[-1][0] == char and size >= stack[-1][1]:
             stack.pop()
             out.append(line)
-        elif char == ":" or (role and _directive_name(role) not in CODE_DIRECTIVES):
+        elif not directives and (char == ":" or (role and _directive_name(role) not in CODE_DIRECTIVES)):
             if role:
                 stack.append((char, size))
             out.append(line)
