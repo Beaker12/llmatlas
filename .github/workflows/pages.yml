@@ -33,15 +33,14 @@ jobs:
           pip install torch --extra-index-url https://download.pytorch.org/whl/cpu -c constraints.txt
           pip install -r requirements.txt -c constraints.txt
 
+      # Runs everything except tests marked live, including the slow notebook tests.
+      # tests/test_notebook_outputs.py executes every chapter notebook offline
+      # (600 s per cell) and compares the outputs, so a separate nbconvert pass would
+      # execute each notebook a second time and check nothing more.
       - name: Run repository tests
+        env:
+          LLMATLAS_OFFLINE: "1"
         run: pytest tests/
-
-      - name: Execute notebooks
-        run: |
-          for nb in chapters/*/examples/*.ipynb; do
-            jupyter nbconvert --to notebook --execute --ExecutePreprocessor.timeout=120 \
-              --output-dir /tmp/executed-notebooks "$nb"
-          done
 
       - name: Build the book (warnings are errors)
         run: jupyter-book build . -W --keep-going
@@ -49,6 +48,62 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _build/html
+
+  pdf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements*.txt
+            constraints.txt
+
+      - name: Install TeX Live and fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            texlive-xetex texlive-latex-extra texlive-fonts-extra \
+            texlive-lang-chinese texlive-lang-arabic latexmk poppler-utils \
+            fonts-freefont-otf fonts-noto-cjk fonts-noto-core
+          kpsewhich bbm.sty xeCJK.sty ucharclasses.sty bidi.sty
+
+      - name: Assert the required LaTeX packages are installed
+        run: |
+          for f in bbm.sty xeCJK.sty ucharclasses.sty bidi.sty; do
+            kpsewhich "$f" || { echo "missing $f"; exit 1; }
+          done
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --extra-index-url https://download.pytorch.org/whl/cpu -c constraints.txt
+          pip install -r requirements.txt -c constraints.txt
+
+      - name: Compile the font smoke document
+        run: |
+          mkdir -p _build/smoke
+          xelatex -interaction=nonstopmode -halt-on-error -output-directory _build/smoke \
+            tools/latex_smoke/fonts.tex
+          bash tools/latex_smoke/check_pdf.sh _build/smoke/fonts.pdf
+
+      - name: Build the book as LaTeX
+        run: jupyter-book build . --builder latex
+
+      - name: Compile the book
+        working-directory: _build/latex
+        run: latexmk -xelatex -interaction=nonstopmode -halt-on-error llmatlas.tex
+
+      - name: Check the book PDF
+        run: bash tools/latex_smoke/check_pdf.sh _build/latex/llmatlas.pdf
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: llmatlas-pdf
+          path: _build/latex/llmatlas.pdf
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

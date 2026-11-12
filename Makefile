@@ -54,8 +54,8 @@ test:
 notebooks:
 	@for nb in $(NOTEBOOKS); do \
 	  echo "Executing $$nb"; \
-	  $(VENV_DIR)/bin/jupyter nbconvert --to notebook --execute \
-	    --ExecutePreprocessor.timeout=120 --output-dir _build/notebooks $$nb || exit 1; \
+	  LLMATLAS_OFFLINE=1 $(VENV_DIR)/bin/jupyter nbconvert --to notebook --execute \
+	    --ExecutePreprocessor.timeout=600 --output-dir _build/notebooks $$nb || exit 1; \
 	done
 
 linkcheck:
