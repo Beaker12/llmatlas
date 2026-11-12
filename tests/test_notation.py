@@ -13,6 +13,8 @@ Check name `notation`, one test per chapter. Failures, in what each layer does a
   example of each.
 - "O(" in prose; a symbol in neither notation_global.txt nor the chapter's notation-local.md; a symbol with
   two different defining phrases ("where $x$ is ...") in the chapter.
+Paper notes: math after the verb of a sentence such as "The YaRN paper writes the ramp as $\\gamma$" names the
+paper's own symbol (tools.notation_tables.paper_note_spans); bans and the undeclared-symbol check skip it.
 Book-wide: no symbol has two meanings across the tables unless notation_exceptions.txt lists it or a chapter's
 local row for it fills the "Also means" column; every table symbol is in normal form. None of this confirms what a symbol means in a sentence: for a finished chapter a
 person reads `python tools/list_symbols.py <chapter-dir> --concordance` against the tables.
@@ -26,7 +28,8 @@ import pytest
 
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check, chapter_constants
 from tests._pages import blank_code, blank_inline_code, blank_math
-from tools.notation_tables import GLOBAL, _rows, global_rows, local_also_means, local_rows, prose_sentences
+from tools.notation_tables import (GLOBAL, _rows, global_rows, local_also_means, local_rows, paper_note_math,
+                                   paper_note_spans, prose_sentences)
 from tools.list_symbols import LOCAL_LIST, definitions, is_transpose, normalise, pages, symbols, symbols_in_math
 from tools.unescape_math import math_regions
 
@@ -255,6 +258,7 @@ def banned_failures(chapter_dir, number=None):
     failures = []
     for page in pages(chapter_dir):
         text = page.read_text(encoding="utf-8")
+        exempt = paper_note_spans(text)
         headings = [(m.start(), m.group(1)) for m in HEADING.finditer(blank_code(text))]
         for start, end in math_regions(text):
             region = text[start:end]
@@ -267,6 +271,8 @@ def banned_failures(chapter_dir, number=None):
                 for m in pattern.finditer(region):
                     if keep and not keep(region, m):
                         continue
+                    if any(a <= start + m.start() < b for a, b in exempt):
+                        continue  # a paper's own symbol, named in a paper note
                     if exact and any(a <= m.start() < b for a, b in spans):
                         continue  # an older, more specific pattern already reported this span
                     if not exact:
@@ -294,11 +300,12 @@ def phrase_hits(text, entries):
     """(line, entry index, math, unit) for each banned use in a page's text (see BANNED_PHRASES)."""
     for line, sentence in prose_sentences(text):
         words = _words(sentence)
+        exempt = set(paper_note_math(sentence))
         for index, (_chapter, symbol, wrong, right, _row, _instead) in entries:
             wrong_re = re.compile(wrong, re.I)
             right_re = re.compile(right, re.I) if right else None
             for k, (a, _b, math, is_math) in enumerate(words):
-                if not is_math or symbol not in normalise(math):
+                if not is_math or (a, _b) in exempt or symbol not in normalise(math):
                     continue
                 near = words[max(0, k - WRONG_WORDS):k + WRONG_WORDS + 1]
                 close = words[max(0, k - RIGHT_WORDS):k + RIGHT_WORDS + 1]
@@ -347,9 +354,22 @@ def prose_failures(chapter_dir):
 
 
 def membership_failures(chapter_dir, global_path=GLOBAL):
+    """Symbols in neither table; an occurrence inside a paper note's exempt math does not count."""
     known = {sym for sym, _ in global_rows(global_path)} | {sym for sym, _ in local_rows(chapter_dir)}
+    found: dict[str, list[tuple[str, int]]] = {}
+    for page in pages(chapter_dir):
+        text = page.read_text(encoding="utf-8")
+        exempt = paper_note_spans(text)
+        for start, end in math_regions(text):
+            if any(a <= start < b for a, b in exempt):
+                continue
+            region, line0 = text[start:end], text.count("\n", 0, start) + 1
+            for sym, off in symbols_in_math(region):
+                where = (page.name, line0 + region.count("\n", 0, off))
+                if where not in found.setdefault(sym, []):
+                    found[sym].append(where)
     failures = []
-    for sym, places in symbols(chapter_dir).items():
+    for sym, places in sorted(found.items()):
         if sym not in known:
             page, line = places[0]
             failures.append(f"{page}:L{line}: symbol {sym!r} is in neither notation_global.txt nor "
@@ -860,3 +880,41 @@ def test_the_auxiliary_loss_weight_alpha_is_banned_in_chapter_6(tmp_path):
             "{cite}`fedus2022switch`.")
     chapter = chapter_with(tmp_path, line + "\n")
     assert [f for f in banned_failures(chapter, 6) if "Auxiliary-loss weight" in f]
+
+
+# --- notes that name a paper's own symbols ------------------------------------------------------------------
+
+@pytest.mark.parametrize("number,note", [
+    (6, "The RoFormer paper writes the frequencies as $\\theta_i$."),
+    (6, "The YaRN paper writes the wavelength as $\\lambda$, the ratio as $r$ and the ramp as $\\gamma$, with bounds "
+        "$\\alpha$ and $\\beta$."),
+    (6, "The papers write the scale factor as $s$."),
+    (2, "Hoffmann et al. write the exponents as $a$ and $b$."),
+])
+def test_a_paper_note_passes_the_notation_check(tmp_path, number, note):
+    chapter = chapter_with(tmp_path, f"Intro.\n\n{note}\n")
+    assert notation_failures(chapter, number) == []
+
+
+@pytest.mark.parametrize("number,text,expected", [
+    (6, "We write $\\theta_i$ for the frequencies.", "RoPE frequencies"),
+    (6, "With $d_{model}$ fixed, the paper writes the width as $d$.", "d_model"),
+    (6, "The paper writes $$\\theta_i = b^{-2i/d}$$ for the frequencies.", "RoPE frequencies"),
+])
+def test_math_outside_a_paper_note_is_still_banned(tmp_path, number, text, expected):
+    chapter = chapter_with(tmp_path, f"Intro.\n\n{text}\n")
+    assert [f for f in banned_failures(chapter, number) if expected in f], banned_failures(chapter, number)
+
+
+def test_paper_note_spans_cover_the_math_after_the_verb_only():
+    text = ("# T\n\nWe use $d$. The YaRN paper writes the ramp as $\\gamma$ and,\n  on a wrapped line, the ratio as "
+            "$r$.\n\n- {cite:t}`peng2023yarn` wrote $s$ for it.\n\nKaplan and Hoffmann write $x$; Smith et al. "
+            "wrote $y$.\n\nThe paper writes $$z$$ here.\n")
+    assert [text[a:b] for a, b in paper_note_spans(text)] == ["$\\gamma$", "$r$", "$s$", "$x$", "$y$"]
+
+
+def test_an_undeclared_symbol_only_in_a_paper_note_is_not_reported(tmp_path):
+    chapter = chapter_with(tmp_path, "Intro.\n\nThe authors write the ramp as $\\Xi$.\n\nLater $\\Psi$ and "
+                                     "the authors write $\\Psi$.\n")
+    assert membership_failures(chapter) == [
+        "index.md:L5: symbol '\\\\Psi' is in neither notation_global.txt nor notation-local.md (1 place(s))"]

@@ -2,13 +2,16 @@
 
 The prose unit splitter (prose_sentences: list items and paragraphs outside code, cut into sentences), used by
 tests/test_notebook_prose.py, the phrase layer of tests/test_notation.py and the concordance of
-tools/list_symbols.py; and the readers of the notation tables (tests/notation_global.txt and each chapter's
-notation-local.md).
+tools/list_symbols.py; paper_note_spans, the math a note gives as a paper's own symbols ("The YaRN paper writes
+the ramp as $\\gamma$"), which tests/test_notation.py exempts; and the readers of the notation tables
+(tests/notation_global.txt and each chapter's notation-local.md).
 """
 from __future__ import annotations
 
 import re
 from pathlib import Path
+
+from tools.unescape_math import math_regions
 
 ROOT = Path(__file__).resolve().parents[1]
 GLOBAL = ROOT / "tests" / "notation_global.txt"
@@ -96,6 +99,63 @@ def prose_sentences(text):
             sentence = piece.strip()
             if sentence:
                 yield start + unit.count("\n", 0, a), sentence
+
+
+# --- notes that name a paper's own symbols ------------------------------------------------------------------
+
+# The verb of a paper note: "the (RoFormer) paper writes", "the papers write", "the authors write", "<Surname> et
+# al. write", "<Surname> and <Surname> write", or a {cite:t} role followed by write, writes or wrote.
+PAPER_NOTE = re.compile(
+    r"\b[Tt]he\s+(?:[\w-]+\s+){0,3}?(?:paper\s+(?:writes|wrote)|papers\s+(?:write|wrote)|authors\s+(?:write|wrote))\b"
+    r"|\b[A-Z][\w'-]+\s+et\s+al\.\s+(?:write|wrote)\b"
+    r"|\b[A-Z][\w'-]+\s+and\s+[A-Z][\w'-]+\s+(?:write|wrote)\b"
+    r"|\{cite:t\}`[^`\n]*`\s+(?:writes?|wrote)\b")
+
+
+def paper_note_math(sentence):
+    """(start, end) in `sentence` of each inline math span after the verb of a paper note; display math never."""
+    regions = math_regions(sentence)
+    masked = list(sentence)
+    for a, b in regions:
+        masked[a:b] = " " * (b - a)
+    m = PAPER_NOTE.search("".join(masked))
+    if not m:
+        return []
+    return [(a, b) for a, b in regions if a >= m.end() and not sentence.startswith("$$", a)]
+
+
+def paper_note_spans(text):
+    """(start, end) character spans in `text` of the math after the verb in each paper-note sentence.
+
+    Sentences come from prose_sentences, which joins a unit's wrapped lines stripped; each sentence is found
+    again in the text and its characters mapped back, a joined line break to the next line's first non-blank.
+    """
+    starts = [0]
+    for line in text.split("\n"):
+        starts.append(starts[-1] + len(line) + 1)
+    spans, cursor = [], 0
+    for line, sentence in prose_sentences(text):
+        first = sentence.split("\n", 1)[0]
+        pos = text.find(first, max(cursor, starts[line - 1]))
+        if pos < 0:
+            continue
+        local = paper_note_math(sentence)
+        if not local:
+            cursor = pos + len(first)
+            continue
+        mapping, t = [], pos
+        for ch in sentence:
+            if ch == "\n":
+                t = text.index("\n", t) + 1
+                while t < len(text) and text[t] in " \t":
+                    t += 1
+                mapping.append(t)
+                continue
+            mapping.append(t)
+            t += 1
+        cursor = t
+        spans += [(mapping[a], mapping[b - 1] + 1) for a, b in local]
+    return spans
 
 
 # --- the notation tables ------------------------------------------------------------------------------------
