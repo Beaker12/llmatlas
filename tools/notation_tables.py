@@ -118,16 +118,28 @@ PAPER_NOTE = re.compile(
     r"|\{cite:t\}`[^`\n]*`\s+(?:writes?|wrote)\b")
 
 
+# Where the exempt region of a paper note ends: a colon, a semicolon, a dash used as punctuation, or a word that
+# turns from the paper to the book.
+NOTE_END = re.compile(r"[:;]|\s[-\u2013\u2014]{1,3}\s|\u2014|---|"
+                      r"\b(?:we|our|us|which|where|so|because|throughout|below|above|here)\b", re.I)
+NOTE_MAX_SPANS = 6
+
+
 def paper_note_math(sentence):
-    """(start, end) in `sentence` of each inline math span after the verb of a paper note; display math never."""
+    """(start, end) in `sentence` of the inline math a paper note names as the paper's own: the spans after the
+    verb and before NOTE_END (or the end of the sentence), at most NOTE_MAX_SPANS of them; display math never."""
     regions = math_regions(sentence)
     masked = list(sentence)
     for a, b in regions:
         masked[a:b] = " " * (b - a)
-    m = PAPER_NOTE.search("".join(masked))
+    masked = "".join(masked)
+    m = PAPER_NOTE.search(masked)
     if not m:
         return []
-    return [(a, b) for a, b in regions if a >= m.end() and not sentence.startswith("$$", a)]
+    stop = NOTE_END.search(masked, m.end())
+    end = stop.start() if stop else len(sentence)
+    spans = [(a, b) for a, b in regions if m.end() <= a and b <= end and not sentence.startswith("$$", a)]
+    return spans[:NOTE_MAX_SPANS]
 
 
 def paper_note_spans(text):

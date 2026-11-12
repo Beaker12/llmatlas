@@ -198,43 +198,43 @@ def no_meaning_bans(chapter_dir, number) -> list[tuple]:
 # Right cues are the words of the symbol's global meaning; None when the symbol has no meaning in that chapter.
 # tests/fixtures/banned_phrase_lines.txt holds, per entry index, the chapter lines each entry is for.
 BANNED_PHRASES: list[tuple[int, str, str, str | None, str, str]] = [
-    (1, "V", r"vocabular|\bsize\b", r"(?-i:^\s*[QK]\s*$)|\bvalue", "Vocabulary: V as a size at CH1:277",
+    (1, "V", r"vocabular|\bsize\b", r"(?-i:^\s*[QK]\s*$)|\bvalue", "Vocabulary: V as a size",
      "$|\\mathcal{V}|$"),
-    (2, "P", r"distribution|\bcode|encod|entropy", None, "Data and model distributions: P at CH2:104", "$p$"),
-    (2, "Q", r"distribution|\bcode|encod|entropy", r"(?-i:^\s*[KV]\s*$)|\bquer", "Data and model distributions: Q at CH2:104",
+    (2, "P", r"distribution|\bcode|encod|entropy", None, "Data and model distributions: P", "$p$"),
+    (2, "Q", r"distribution|\bcode|encod|entropy", r"(?-i:^\s*[KV]\s*$)|\bquer", "Data and model distributions: Q",
      "$q$"),
-    (2, "\\beta", r"momentum|velocity", r"\bshift|layernorm|normaliz", "Momentum coefficient: beta at CH2:183",
+    (2, "\\beta", r"momentum|velocity", r"\bshift|layernorm|normaliz", "Momentum coefficient: beta",
      "$\\beta_{\\text{mom}}$"),
-    (2, "\\tau", r"\bclip|threshold|\bnorm\b", r"temperature|softmax|sampl", "Gradient-clipping threshold: tau at CH2:225",
+    (2, "\\tau", r"\bclip|threshold|\bnorm\b", r"temperature|softmax|sampl", "Gradient-clipping threshold: tau",
      "$g_{\\max}$"),
-    (2, "g", r"\\frac\{1\}\{\\sigma\}", r"upstream", "Upstream gradient: g_i, g_j in the LayerNorm gradient at CH2:325",
+    (2, "g", r"\\frac\{1\}\{\\sigma\}", r"upstream", "Upstream gradient: g_i, g_j in the LayerNorm gradient",
      "$\\tilde{g}_i$, $\\tilde{g}_j$"),
-    (2, "L", r"\bloss", r"\blayers?\b|\bdepth", "Loss: L at CH2:398", "$\\mathcal{L}$"),
-    (2, "V", r"vocabular|embedding", r"(?-i:^\s*[QK]\s*$)|\bvalue", "Vocabulary: V as a size at CH2:450",
+    (2, "L", r"\bloss", r"\blayers?\b|\bdepth", "Loss: L", "$\\mathcal{L}$"),
+    (2, "V", r"vocabular|embedding", r"(?-i:^\s*[QK]\s*$)|\bvalue", "Vocabulary: V as a size",
      "$|\\mathcal{V}| d$"),
-    (2, "h", r"\bheads?\b", r"hidden|\bstate|(?-i:h\^)", "Attention heads: h at CH2:451", "$n_h$"),
-    (2, "s", r"scal", r"\bsource", "Loss-scaling factor: s at CH2:511-513", "$\\zeta$"),
-    (4, "C", r"\bcount|\btotal|reference", r"compute|flop|budget", "(proposed) Reference total: C at CH4:466",
+    (2, "h", r"\bheads?\b", r"hidden|\bstate|(?-i:h\^)", "Attention heads: h", "$n_h$"),
+    (2, "s", r"scal", r"\bsource", "Loss-scaling factor: s", "$\\zeta$"),
+    (4, "C", r"\bcount|\btotal|reference", r"compute|flop|budget", "(proposed) Reference total: C",
      "$T_{\\text{ref}}$"),
-    (4, "k", r"\bhash|signature|position|\bband", r"\bkeys?\b|(?-i:k_)", "(proposed) MinHash: k at CH4:613-615",
+    (4, "k", r"\bhash|signature|position|\bband", r"\bkeys?\b|(?-i:k_)", "(proposed) MinHash: k",
      "$n_{\\text{hash}}$"),
-    (4, "k", r"means", r"\bkeys?\b", "Index letters: k in k-means at CH4:760", "k-means, outside math"),
+    (4, "k", r"means", r"\bkeys?\b", "Index letters: k in k-means", "k-means, outside math"),
     (5, "L", r"length|sequences?\b|window|\bpad|longer|chunk|tokens?\b", r"\blayers?\b",
      "Sequence or context length: L in ch. 5", "$n$"),
-    (6, "N", r"residual|\blayers?\b", r"parameter|\bcount|\brule|(?-i:\d\s*N)", "Layers: N at CH6:139",
+    (6, "N", r"residual|\blayers?\b", r"parameter|\bcount|\brule|(?-i:\d\s*N)", "Layers: N",
      "$2L$, the number of residual layers"),
     (6, "W", r"window|previous|attend|receptive|\bspan", r"weight|matri|projection|(?-i:W_|W\^)",
-     "Sliding-window span: W at CH6:246", "$n_{\\text{win}}$"),
+     "Sliding-window span: W", "$n_{\\text{win}}$"),
     (6, "n", r"\bkey\b|\bpositions?\b", r"\btokens?\b|length|context|sequence|cache",
-     "Positions: n as key position at CH6:261", "$m'$"),
+     "Positions: n as key position", "$m'$"),
     (6, "L", r"\btrained\b|\bseen\b|sequences?\b|beyond|\bup\b|\btokens\b", r"\blayers?\b|\bdepth",
-     "Trained context length: L at CH6:265", "$n_{\\text{train}}$"),
-    (6, "s", r"scale|context|frequenc|length", r"\bsource", "Context scale factor and context length: s at CH6:271-275, :502",
+     "Trained context length: L", "$n_{\\text{train}}$"),
+    (6, "s", r"scale|context|frequenc|length", r"\bsource", "Context scale factor and context length: s",
      "$s_{\\text{ctx}}$ (scale factor), $n$ (context length)"),
     (6, "k", r"expert|select|(?<!\\)\btop\b|top-|best|rout|choos", r"\bkeys?\b|query|(?-i:k_)",
-     "Experts active per token: k at CH6:320-362", "$n_{\\text{act}}$"),
-    (6, "c", r"capacity", r"latent|(?-i:c_)", "Capacity factor: c at CH6:354", "$\\phi$"),
-    (5, "r", r"\brank|worker|process", r"router|logit", "Index letters: r as a worker rank at CH5:534", "worker $j$"),
+     "Experts active per token: k", "$n_{\\text{act}}$"),
+    (6, "c", r"capacity", r"latent|(?-i:c_)", "Capacity factor: c", "$\\phi$"),
+    (5, "r", r"\brank|worker|process", r"router|logit", "Index letters: r as a worker rank", "worker $j$"),
 ]
 WRONG_WORDS = 6
 RIGHT_WORDS = 3
@@ -257,7 +257,7 @@ def banned_failures(chapter_dir, number=None):
                re.compile(entry[4], re.I) if len(entry) > 4 else None)
               for entry in BANNED + no_meaning_bans(chapter_dir, number) if number in entry[2]]
     active.sort(key=lambda entry: hasattr(entry[2], "symbol"))  # exact bans last, after the older patterns
-    failures = []
+    found = []  # (page:line, report, column)
     for page in pages(chapter_dir):
         text = page.read_text(encoding="utf-8")
         exempt = paper_note_spans(text)
@@ -280,8 +280,14 @@ def banned_failures(chapter_dir, number=None):
                         continue  # an earlier (older, more specific) pattern already reported this place
                     spans.append((m.start(), end))
                     line = text.count("\n", 0, start) + 1 + region.count("\n", 0, m.start())
-                    failures.append(f"{page.name}:L{line}: banned {exact or m.group(0)!r} ({row})")
-    return failures
+                    column = start + m.start() - (text.rfind("\n", 0, start + m.start()) + 1) + 1
+                    found.append((f"{page.name}:L{line}", f"banned {exact or m.group(0)!r} ({row})", column))
+    # One row reported more than once on a line: give each place its column, so two places read as two.
+    seen = defaultdict(int)
+    for where, what, _column in found:
+        seen[(where, what)] += 1
+    return [f"{where}:C{column}: {what}" if seen[(where, what)] > 1 else f"{where}: {what}"
+            for where, what, column in found]
 
 
 def _words(sentence):
@@ -375,7 +381,8 @@ def membership_failures(chapter_dir, global_path=GLOBAL):
         if sym not in known:
             page, line = places[0]
             failures.append(f"{page}:L{line}: symbol {sym!r} is in neither notation_global.txt nor "
-                            f"{LOCAL_LIST} ({len(places)} place(s))")
+                            f"{LOCAL_LIST} ({len(places)} place(s)); use the global symbol for this quantity, or "
+                            f"declare it in chapters/{Path(chapter_dir).name}/{LOCAL_LIST}")
     return failures
 
 
@@ -726,7 +733,7 @@ def test_the_transpose_ban_spares_upper_limits(tmp_path, math, banned):
 
 def test_a_banned_phrase_is_reported_only_in_its_chapter(tmp_path):
     chapter = chapter_with(tmp_path, "Intro.\n\nEach buffer at capacity factor $c$ drops tokens.\n")
-    assert phrase_failures(chapter, 6) == ["index.md:L3: banned use of '$c$' (Capacity factor: c at CH6:354); "
+    assert phrase_failures(chapter, 6) == ["index.md:L3: banned use of '$c$' (Capacity factor: c); "
                                            "write $\\phi$"]
     assert phrase_failures(chapter, 4) == []
 
@@ -747,7 +754,8 @@ def test_an_undeclared_symbol_is_reported(tmp_path):
                            local="| Symbol | Meaning | First used | Rename |\n|---|---|---|---|\n"
                                  "| $J$ | Jaccard similarity | index.md:L3 |  |\n")
     assert membership_failures(chapter) == [
-        "index.md:L3: symbol '\\\\chi' is in neither notation_global.txt nor notation-local.md (1 place(s))"]
+        "index.md:L3: symbol '\\\\chi' is in neither notation_global.txt nor notation-local.md (1 place(s)); use the "
+        f"global symbol for this quantity, or declare it in chapters/{tmp_path.name}/notation-local.md"]
 
 
 def test_a_symbol_defined_twice_is_reported(tmp_path):
@@ -971,7 +979,7 @@ def test_math_outside_a_paper_note_is_still_banned(tmp_path, number, text, expec
 
 def test_paper_note_spans_cover_the_math_after_the_verb_only():
     text = ("# T\n\nWe use $d$. The YaRN paper writes the ramp as $\\gamma$ and,\n  on a wrapped line, the ratio as "
-            "$r$.\n\n- {cite:t}`peng2023yarn` wrote $s$ for it.\n\nKaplan and Hoffmann write $x$; Smith et al. "
+            "$r$.\n\n- {cite:t}`peng2023yarn` wrote $s$ for it.\n\nKaplan and Hoffmann write $x$. Smith et al. "
             "wrote $y$.\n\nThe paper writes $$z$$ here.\n")
     assert [text[a:b] for a, b in paper_note_spans(text)] == ["$\\gamma$", "$r$", "$s$", "$x$", "$y$"]
 
@@ -980,4 +988,27 @@ def test_an_undeclared_symbol_only_in_a_paper_note_is_not_reported(tmp_path):
     chapter = chapter_with(tmp_path, "Intro.\n\nThe authors write the ramp as $\\Xi$.\n\nLater $\\Psi$ and "
                                      "the authors write $\\Psi$.\n")
     assert membership_failures(chapter) == [
-        "index.md:L5: symbol '\\\\Psi' is in neither notation_global.txt nor notation-local.md (1 place(s))"]
+        "index.md:L5: symbol '\\\\Psi' is in neither notation_global.txt nor notation-local.md (1 place(s)); use the "
+        f"global symbol for this quantity, or declare it in chapters/{tmp_path.name}/notation-local.md"]
+
+
+
+@pytest.mark.parametrize("number,text,expected", [
+    (6, "The paper writes $m\\,\\theta_i$ and we use that below: $m\\,\\theta_i$ grows with position.",
+     ["index.md:L3: banned '\\\\theta_'"]),
+    (6, "The paper writes the base as $b$, which we call $\\theta_i$.", ["index.md:L3: banned '\\\\theta_'"]),
+    (6, "The paper writes " + ", ".join(f"$x_{k}$" for k in range(6)) + " and $\\theta_i$ and $d_h$.",
+     ["index.md:L3: banned '\\\\theta_'", "index.md:L3: banned 'd_h'"]),
+])
+def test_the_paper_note_region_ends_at_a_turn_to_the_book_and_after_six_spans(tmp_path, number, text, expected):
+    failures = banned_failures(chapter_with(tmp_path, f"Intro.\n\n{text}\n"), number)
+    assert [f.split(" (")[0] for f in failures] == expected, failures
+
+
+def test_two_matches_of_one_row_on_a_line_carry_their_columns(tmp_path):
+    failures = banned_failures(chapter_with(tmp_path, "Here $P(x)$ and $P(y)$ differ.\n"), 2)
+    assert [f.split(": banned")[0] for f in failures] == ["index.md:L1:C7", "index.md:L1:C18"], failures
+
+
+def test_no_phrase_entry_names_a_stale_chapter_line():
+    assert not [row for *_x, row, _w in BANNED_PHRASES if re.search(r"CH\\d:\\d", row)]

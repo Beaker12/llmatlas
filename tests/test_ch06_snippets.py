@@ -31,6 +31,7 @@ FENCE = re.compile(r"```python\n([\s\S]*?)```")
 # INTERFACE_LABELS  label -> text of the heading the label sits directly above, for the section labels other
 #                   chapters link to. Example: {"sec-ch2-flops": "Training Complexity"}
 # A NOT_A_RESULT or NOTATION_OK entry that matches nothing is a failure: remove it with the sentence it was for.
+# The chapter's checker reads every exemption with `python tools/list_exemptions.py chapters/<dir>`.
 SYNC_EXEMPT: dict[str, str] = {}  # name -> reason it may differ between the chapter and its notebook
 
 # (chapter regex, notebook-output regex, comparator); each regex has exactly one capture group.

@@ -145,8 +145,10 @@ def interface_label_failures(chapter_dir, declared, names=None):
     chapter is declared, each declared one is an interface label of the chapter, and each sits directly above a
     heading with the declared text in the chapter's pages."""
     names = INTERFACE_LABEL_NAMES if names is None else names
+    fix = f"update INTERFACE_LABELS in tests/test_ch{Path(chapter_dir).name[:2]}_snippets.py"
     expected = {label for label, chapter in names.items() if chapter == Path(chapter_dir).name}
-    failures = [f"interface label {label!r} is not declared in INTERFACE_LABELS" for label in sorted(expected - set(declared))]
+    failures = [f"interface label {label!r} is not declared in INTERFACE_LABELS; {fix}"
+                for label in sorted(expected - set(declared))]
     failures += [f"INTERFACE_LABELS declares {label!r}, which is not an interface label of this chapter"
                  for label in sorted(set(declared) - expected)]
     found = heading_labels(chapter_dir)
@@ -154,7 +156,7 @@ def interface_label_failures(chapter_dir, declared, names=None):
         places = found.get(label, [])
         if heading not in [h for _page, h in places]:
             where = f"it is above {places[0][1]!r} in {places[0][0]}" if places else "no heading carries it"
-            failures.append(f"interface label {label!r} is not above {heading!r} ({where})")
+            failures.append(f"interface label {label!r} is not above {heading!r} ({where}); {fix}")
     return failures
 
 
@@ -178,16 +180,17 @@ def test_a_moved_undeclared_or_unlisted_interface_label_is_reported(tmp_path):
                                       "## Other\n", encoding="utf-8")
     names = {"sec-ch2-flops": "02-x", "sec-ch2-gone": "02-x", "sec-ch1-x": "01-y"}
     ok = {"sec-ch2-flops": "Training Complexity", "sec-ch2-gone": "Other"}
+    fix = "; update INTERFACE_LABELS in tests/test_ch02_snippets.py"
     assert interface_label_failures(chapter, ok, names) == [
-        "interface label 'sec-ch2-gone' is not above 'Other' (no heading carries it)"]
+        "interface label 'sec-ch2-gone' is not above 'Other' (no heading carries it)" + fix]
     moved = {"sec-ch2-flops": "Other", "sec-ch2-gone": "Other", "sec-ch2-a": "Other"}
     assert interface_label_failures(chapter, moved, names) == [
         "INTERFACE_LABELS declares 'sec-ch2-a', which is not an interface label of this chapter",
-        "interface label 'sec-ch2-flops' is not above 'Other' (it is above 'Training Complexity' in index.md)",
-        "interface label 'sec-ch2-gone' is not above 'Other' (no heading carries it)"]
+        "interface label 'sec-ch2-flops' is not above 'Other' (it is above 'Training Complexity' in index.md)" + fix,
+        "interface label 'sec-ch2-gone' is not above 'Other' (no heading carries it)" + fix]
     assert interface_label_failures(chapter, {}, names) == [
-        "interface label 'sec-ch2-flops' is not declared in INTERFACE_LABELS",
-        "interface label 'sec-ch2-gone' is not declared in INTERFACE_LABELS"]
+        "interface label 'sec-ch2-flops' is not declared in INTERFACE_LABELS" + fix,
+        "interface label 'sec-ch2-gone' is not declared in INTERFACE_LABELS" + fix]
 
 
 FURTHER_READING = re.compile(r"further reading", re.I)
