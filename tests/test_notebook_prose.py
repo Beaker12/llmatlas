@@ -170,19 +170,27 @@ NOT_A_RESULT = [re.compile(p, re.I) for p in (
     r"\bSections?\s+\d+(?:\.\d+)*",
     r"\bParts?\s+\d+", r"\bExercises?\s+\d+", r"\bFigures?\s+\d+", r"\bTables?\s+\d+", r"\bSteps?\s+\d+",
 )]
-# A four-digit number 1900-2099 is a year (not a result) only in these positions. "of" is not in the list of
-# preceding words: "a context of 2048" states a number.
-YEAR = r"(?:19|20)\d{2}"
-MONTHS = "January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec"
-YEAR_CONTEXTS = [re.compile(p, re.I) for p in (
-    rf"\b(?:in|since|by|from|until|before|after|during|early|late|{MONTHS})\.?\s+{YEAR}(?!\d)",
-    rf"\bmid-{YEAR}(?!\d)",
-    rf"[(\[]\s*{YEAR}[a-z]?\s*[)\]]",
-    rf"(?<!\d){YEAR}[a-z]?(?=[,\s]*\{{cite)",
-    rf"\bet al\.,?\s+{YEAR}(?!\d)",
-)]
-# A whitespace-free chunk with a letter/digit junction (fp16, 13-gram, top-2, o200k, fp16/bf16) is a name.
-NAME_CHUNK = re.compile(r"\S*(?:[A-Za-z]\d|\d(?![eE][-+]?\d)[A-Za-z]|[A-Za-z]-\d|\d-[A-Za-z])\S*")
+# Rules A-D of counted_numbers (rule (c)): quantities first, then names, then years.
+NUM = r"\d+(?:[.,]\d+)*"
+QUANTITY = re.compile(                                  # rule A: always counted, searched inside a token
+    r"(?<![A-Za-z0-9_.])\d+(?:\.\d+)?[eE][+-]?\d+(?![A-Za-z0-9_])"      # scientific notation
+    rf"|(?<![A-Za-z0-9_.,]){NUM}[kKMBTx\u00d7%](?![A-Za-z0-9_])"          # magnitude or multiplier suffix
+    r"|(?<![A-Za-z0-9_.])x\d+(?:\.\d+)?(?![A-Za-z0-9_.])")               # multiplier prefix, x2
+LETTER_NAME = re.compile(r"[A-Za-z][\w.]*\d\w*")      # rule B: begins with a letter, contains a digit
+DIGITS = re.compile(NUM)
+ALPHA = re.compile(r"[A-Za-z]+")
+YEAR = re.compile(r"(?:19|20)\d{2}")
+BRACKETED_YEAR = re.compile(r"[(\[](?:19|20)\d{2}[a-z]?[)\]]")
+MID_YEAR = re.compile(r"mid-((?:19|20)\d{2})", re.I)
+MONTHS = {"january", "february", "march", "april", "may", "june", "july", "august", "september", "october",
+          "november", "december", "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov",
+          "dec"}
+YEAR_BEFORE = {"in", "since", "by", "from", "until", "before", "after", "during", "early", "late"} | MONTHS
+YEAR_AFTER = {"the", "a", "an", "and", "or", "to", "onward", "onwards", "when", "with", "as", "it", "we", "this",
+              "that", "there", "has", "have", "had", "was", "were", "is", "are"}
+CITE = "\x00cite"                                      # stands in for a {cite} role while tokens are classified
+LEAD = "([{\"'\u201c\u2018*_"
+TRAIL = ")]}\"'\u201d\u2019.,;:!?*_"
 ABBREVIATION = re.compile(r"(?:\be\.g|\bi\.e|\betc|\bvs|\bcf|\bal|\bFig|\bEq|\bSec|\bapprox|\bNo|(?<![A-Za-z])[A-Z])\.$")
 
 
@@ -260,20 +268,98 @@ def prose_sentences(text):
                 yield start + unit.count("\n", 0, a), sentence
 
 
+def core(chunk):
+    """A whitespace-free chunk without its surrounding brackets, quotes, emphasis, punctuation and possessive."""
+    return re.sub(r"['\u2019]s$", "", chunk.lstrip(LEAD).rstrip(TRAIL)).rstrip(TRAIL)
+
+
+def is_name(token):
+    """Rule B: fp16, GPT2, cl100k_base; 13-gram, top-2, Llama-3, 2-D; and such names joined by a slash."""
+    def hyphen_name(part):
+        segments = part.split("-")
+        if not all(ALPHA.fullmatch(x) or DIGITS.fullmatch(x) or LETTER_NAME.fullmatch(x) for x in segments):
+            return False
+        if all(LETTER_NAME.fullmatch(x) or ALPHA.fullmatch(x) for x in segments):
+            return any(LETTER_NAME.fullmatch(x) for x in segments)
+        alpha = [bool(ALPHA.fullmatch(x)) for x in segments]
+        return all(any(alpha[j] for j in (i - 1, i + 1) if 0 <= j < len(segments))
+                   for i, x in enumerate(segments) if DIGITS.fullmatch(x))
+    return all(part and hyphen_name(part) for part in token.split("/"))
+
+
+def is_year_position(chunks, i, year_core):
+    """Rule C for the chunk at index i whose core is a year (or mid-year)."""
+    chunk = chunks[i]
+    after = chunks[i + 1] if i + 1 < len(chunks) else None
+    if after == CITE:
+        return True
+    if BRACKETED_YEAR.fullmatch(chunk.rstrip(".,;:!?")):
+        return True
+    before = [c.lower() for c in chunks[max(0, i - 2):i]]
+    if before[-2:] == ["et", "al."] or before[-2:] == ["et", "al.,"]:
+        return True
+    preceded = MID_YEAR.fullmatch(year_core) or (before and before[-1].rstrip(".") in YEAR_BEFORE)
+    if not preceded or chunk.lstrip(LEAD) != chunk:
+        return False
+    if after is None or chunk.rstrip(TRAIL) != chunk:     # end of sentence, punctuation or closing bracket
+        return True
+    first = after[0]
+    return not first.isalnum() or first.isupper() or core(after).lower() in YEAR_AFTER
+
+
+def counted_numbers(text):
+    """The number tokens of `text` that state a number, in order (digits only; number words are separate).
+
+    The text is split at white space and each chunk is classified, quantities first, then names; whatever is
+    left and contains a digit is a number.
+    A. Always counted: scientific notation (1e-3, 2.5E6), a number with a magnitude or multiplier suffix at a
+       word end (5k, 7B, 10x, 1.5x, 2\u00d7, 12.5%), the multiplier prefix x2, ranges and arithmetic between
+       numbers (3-4, 10-15%, 1/2, 2 - 1) and a leading minus (-2).
+    B. A name, not counted, only when no part was claimed by A: a token that begins with a letter and contains
+       digits (fp16, GPT2, o200k, cl100k_base), a digit sequence joined by a hyphen to an alphabetic word on
+       either side (13-gram, top-2, Llama-3, 2-D, FineWeb-2), and such names joined by a slash (fp16/bf16).
+    C. A year 1900-2099 is not counted only directly after in/since/by/from/until/before/after/during/early/
+       late/mid-/a month name when followed by the end, punctuation, a closing bracket, a capitalised word or
+       one of YEAR_AFTER (`of` is not a preceding word: "a context of 2048" counts); alone in brackets
+       ((2019), [2020a]); directly before a {cite} role; or directly after `et al.` / `et al.,`.
+    D. Chapter/Section/Part/Exercise/Figure/Table/Step references are removed before this (NOT_A_RESULT in
+       states_a_number), list markers by prose_units, and inline code by states_a_number.
+    """
+    chunks = text.split()
+    counted = []
+    for i, chunk in enumerate(chunks):
+        token = core(chunk)
+        if not DIGIT.search(token):
+            continue
+        quantities = QUANTITY.findall(token)
+        if quantities:
+            counted += quantities
+            continue
+        if is_name(token):
+            continue
+        is_year = (YEAR.fullmatch(token) or MID_YEAR.fullmatch(token)
+                   or BRACKETED_YEAR.fullmatch(chunk.rstrip(".,;:!?")))
+        if is_year and is_year_position(chunks, i, token):
+            continue
+        counted.append(token)
+    return counted
+
+
 def states_a_number(sentence, nouns=()):
-    """Whether the sentence states a number: a digit or number word outside roles, inline code, link targets,
-    proper nouns, years in citation-like positions, `Chapter 2`-style references and names such as `fp16`,
-    `13-gram` or `top-2` (names exempt digits only; number words always count)."""
-    rest = sentence
-    for pattern in YEAR_CONTEXTS:       # before roles are removed: a year may be followed by {cite}
-        rest = pattern.sub(" ", rest)
+    """Whether the sentence states a number (rule (c)): a digit counted by counted_numbers or a number word.
+
+    Roles (a {cite} role is kept as a marker for the year rule), inline code, link targets, proper nouns and
+    `Chapter 2`-style references (NOT_A_RESULT) are removed first. Names exempt digits only; number words
+    always count.
+    """
+    rest = re.sub(r"\{cite(?::\w+)?\}`[^`]*`", f" {CITE} ", sentence)
     rest = ROLE.sub(" ", rest)
     rest = re.sub(INLINE_CODE, " ", rest)
     rest = re.sub(r"\]\([^)\n]*\)", "]", rest)
     rest = strip_nouns(rest, nouns)
     for pattern in NOT_A_RESULT:
         rest = pattern.sub(" ", rest)
-    return bool(DIGIT.search(NAME_CHUNK.sub(" ", rest)) or WORD.search(rest))
+    return bool(counted_numbers(rest) or WORD.search(rest))
 
 
 def check_admonitions(chapter_dir, claims, nouns=(), declared=None):
@@ -555,11 +641,11 @@ def flagged(tmp_path, sentence, declared=None):
 @pytest.mark.parametrize("text", ["Since 2020 it grew ({ref}`nb-a`).", "In 2017 it was proposed ({ref}`nb-a`).",
                                   "It ({ref}`nb-a`) was proposed (2019).", "Vaswani et al., 2017 ({ref}`nb-a`).",
                                   "Vaswani et al. 2017 ({ref}`nb-a`).", "Released in June 2025 ({ref}`nb-a`).",
-                                  "By 2030 nothing ({ref}`nb-a`) changed, mid-2024 aside, as in [2020a].",
+                                  "By 2030 the stock ({ref}`nb-a`) changed in mid-2024, as in [2020a].",
                                   "Attention 2017 {cite}`vaswani2017` shows {ref}`nb-a`.",
                                   "Attention 2017, {cite}`vaswani2017` shows {ref}`nb-a`."])
 def test_years_in_citation_positions_are_not_results(tmp_path, text):
-    assert flagged(tmp_path, text.replace("By 2030 nothing", "By 2030 nothing")) == [], text
+    assert flagged(tmp_path, text) == [], text
 
 
 @pytest.mark.parametrize("text", ["It has 2048 tokens ({ref}`nb-a`).", "It runs 2000 steps ({ref}`nb-a`).",
@@ -580,12 +666,12 @@ def test_a_number_after_an_abbreviation_is_still_in_the_sentence_with_the_link(t
 
 
 @pytest.mark.parametrize("name", ["fp16", "bf16", "float32", "o200k", "GPT2", "13-gram", "top-2", "4-bit",
-                                  "Llama-3", "2-D", "fp16/bf16", "8B", "fp16/bf16."])
+                                  "Llama-3", "2-D", "fp16/bf16", "fp16/bf16."])
 def test_numbers_that_are_part_of_a_name_are_not_results(tmp_path, name):
     assert flagged(tmp_path, f"It uses {name} here ({LINK}).") == [], name
 
 
-@pytest.mark.parametrize("bare", ["13 grams", "top 2", "-2", "2 - 1", "16/32", "1e5 and 3"])
+@pytest.mark.parametrize("bare", ["13 grams", "top 2", "-2", "2 - 1", "16/32", "1e5 and 3", "8B"])
 def test_bare_numbers_next_to_units_still_count(tmp_path, bare):
     assert len(flagged(tmp_path, f"It gives {bare} here ({LINK}).")) == 1, bare
 
@@ -612,3 +698,38 @@ def test_code_directives_behind_colon_fences_and_wrapped_inline_code_are_code(tm
 def test_every_chapter_declares_a_not_a_result_dictionary():
     for chapter_dir in CHAPTER_DIRS:
         assert chapter_constants(chapter_dir).NOT_A_RESULT == {}
+
+
+COUNTED = [
+    # quantities that look like names (rule A)
+    "x2", "5k", "1e-3", "3e-4", "a loss of 1e-3", "speedup of 2x", "10x", "1.5x", "5k tokens", "7B params",
+    # years followed by a noun (rule C)
+    "trained from 2000 examples", "from 2000 steps", "in 2048 dimensions", "after 2000 samples",
+    "before 2048 tokens", "by 2000 steps",
+    # bare numbers, ranges, arithmetic and suffixes
+    "2048 tokens", "2000 steps", "a context of 2048", "reaches 2000", "13 grams", "top 2", "-2", "2 - 1",
+    "3-4 epochs", "10-15%", "1-2", "0.5-1.0", "1/2", "2\u00d7", "1e5", "top-2 accuracy of 0.9",
+    "GPT-2 reaches 3.1", "fp16 halves memory to 8 GB", "ten times longer", "twice as fast",
+]
+NOT_COUNTED = [
+    "in 2017", "since 2020", "(2019)", "Vaswani et al., 2017", "June 2025", "by 2030 the stock runs out",
+    "In 2017 Vaswani introduced it", "fp16", "bf16", "float32", "GPT2", "o200k", "cl100k_base", "13-gram",
+    "top-2", "4-bit", "Llama-3", "GPT-2", "2-D", "FineWeb-2", "fp16/bf16", "Chapter 2", "Section 3.3",
+    "Figure 4", "It sets `n = 12` here.",
+]
+
+
+@pytest.mark.parametrize("text", COUNTED)
+def test_states_a_number_counts_quantities(text):
+    assert states_a_number(text), text
+
+
+@pytest.mark.parametrize("text", NOT_COUNTED)
+def test_states_a_number_ignores_names_years_and_references(text):
+    assert not states_a_number(text), text
+
+
+def test_the_digit_beside_a_name_is_the_one_counted():
+    assert counted_numbers("fp16 halves memory to 8 GB") == ["8"]
+    assert counted_numbers("top-2 accuracy of 0.9") == ["0.9"]
+    assert counted_numbers("o200k_base and 5k tokens") == ["5k"]
