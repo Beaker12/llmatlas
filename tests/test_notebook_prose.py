@@ -188,6 +188,8 @@ MONTHS = {"january", "february", "march", "april", "may", "june", "july", "augus
 YEAR_BEFORE = {"in", "since", "by", "from", "until", "before", "after", "during", "early", "late"} | MONTHS
 YEAR_AFTER = {"the", "a", "an", "and", "or", "to", "onward", "onwards", "when", "with", "as", "it", "we", "this",
               "that", "there", "has", "have", "had", "was", "were", "is", "are"}
+# Rule B2: a number-first compound (2048-token, 10-fold) counts unless its word is one of these unit names.
+UNIT_WORDS = {"gram", "grams", "bit", "byte", "D", "d", "shot", "way", "hop", "pass", "stage", "th", "st", "nd", "rd"}
 CITE = "\x00cite"                                      # stands in for a {cite} role while tokens are classified
 LEAD = "([{\"'\u201c\u2018*_"
 TRAIL = ")]}\"'\u201d\u2019.,;:!?*_"
@@ -274,9 +276,16 @@ def core(chunk):
 
 
 def is_name(token):
-    """Rule B: fp16, GPT2, cl100k_base; 13-gram, top-2, Llama-3, 2-D; and such names joined by a slash."""
+    """Rule B: fp16, GPT2, cl100k_base; 13-gram, top-2, Llama-3, 2-D; and such names joined by a slash.
+
+    B2: a number-first compound is a name only when its word is in UNIT_WORDS (13-gram, 4-bit, 2-D, 5-shot);
+    otherwise it counts (2048-token, 10-fold). Word-first compounds (top-2, GPT-3.5, FineWeb-2) are names.
+    """
     def hyphen_name(part):
         segments = part.split("-")
+        if len(segments) > 1 and DIGITS.fullmatch(segments[0]) and ALPHA.fullmatch(segments[1]) \
+                and segments[1] not in UNIT_WORDS:
+            return False                                     # rule B2: 2048-token, 10-fold count
         if not all(ALPHA.fullmatch(x) or DIGITS.fullmatch(x) or LETTER_NAME.fullmatch(x) for x in segments):
             return False
         if all(LETTER_NAME.fullmatch(x) or ALPHA.fullmatch(x) for x in segments):
@@ -298,7 +307,7 @@ def is_year_position(chunks, i, year_core):
     before = [c.lower() for c in chunks[max(0, i - 2):i]]
     if before[-2:] == ["et", "al."] or before[-2:] == ["et", "al.,"]:
         return True
-    preceded = MID_YEAR.fullmatch(year_core) or (before and before[-1].rstrip(".") in YEAR_BEFORE)
+    preceded = MID_YEAR.fullmatch(year_core) or (before and before[-1].lstrip(LEAD).rstrip(".") in YEAR_BEFORE)
     if not preceded or chunk.lstrip(LEAD) != chunk:
         return False
     if after is None or chunk.rstrip(TRAIL) != chunk:     # end of sentence, punctuation or closing bracket
@@ -318,8 +327,10 @@ def counted_numbers(text):
     B. A name, not counted, only when no part was claimed by A: a token that begins with a letter and contains
        digits (fp16, GPT2, o200k, cl100k_base), a digit sequence joined by a hyphen to an alphabetic word on
        either side (13-gram, top-2, Llama-3, 2-D, FineWeb-2), and such names joined by a slash (fp16/bf16).
+       B2: a number-first compound counts unless its word is in UNIT_WORDS (2048-token and 10-fold count,
+       13-gram, 4-bit, 2-D and 5-shot do not).
     C. A year 1900-2099 is not counted only directly after in/since/by/from/until/before/after/during/early/
-       late/mid-/a month name when followed by the end, punctuation, a closing bracket, a capitalised word or
+       late/mid-/a month name (opening brackets and quotes before that word are ignored) when followed by the end, punctuation, a closing bracket, a capitalised word or
        one of YEAR_AFTER (`of` is not a preceding word: "a context of 2048" counts); alone in brackets
        ((2019), [2020a]); directly before a {cite} role; or directly after `et al.` / `et al.,`.
     D. Chapter/Section/Part/Exercise/Figure/Table/Step references are removed before this (NOT_A_RESULT in
@@ -733,3 +744,17 @@ def test_the_digit_beside_a_name_is_the_one_counted():
     assert counted_numbers("fp16 halves memory to 8 GB") == ["8"]
     assert counted_numbers("top-2 accuracy of 0.9") == ["0.9"]
     assert counted_numbers("o200k_base and 5k tokens") == ["5k"]
+
+
+@pytest.mark.parametrize("text", ["2048-token context", "a 512-dimensional vector", "4,096-token", "a 10-fold reduction",
+                                  "a 3-point gain", "a 4-fold speedup", "400-step run", "13-word shingles",
+                                  "by 2030 nothing changes"])
+def test_number_first_compounds_and_years_before_other_words_count(text):
+    assert states_a_number(text), text
+
+
+@pytest.mark.parametrize("text", ["13-gram", "4-bit", "8-bit", "8-byte", "2-D", "2-d", "5-shot", "2-way", "3-hop",
+                                  "2-pass", "2-stage", "5-th", "1-st", "2-nd", "3-rd", "(in 2017)",
+                                  "(since 2020, it grew)", '"in 2019"'])
+def test_unit_compounds_and_bracketed_year_phrases_do_not_count(text):
+    assert not states_a_number(text), text
