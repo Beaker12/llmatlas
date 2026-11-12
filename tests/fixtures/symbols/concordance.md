@@ -12,3 +12,5 @@ $$ O = A V $$
 - An undeclared $\Upsilon$ here.
 
 The position $m$ has two rows in the global table.
+
+The first moment $m_t$ decays.

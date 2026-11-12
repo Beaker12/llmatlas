@@ -45,85 +45,86 @@ def _transpose(region, match):
 # (regex over the text of one math region, the global row it comes from, the chapters it applies to[, a filter
 # (region, match) -> bool that keeps only the matches that are the banned use[, a regex the heading of the
 # section must match]]). Chapter 5's L and the plain-letter uses that only prose identifies are BANNED_PHRASES.
+# Each row ends with "write ..." from the global table's symbol for the row (or, for a proposed row, the local
+# list's); chapter line numbers are not given, the failure line names the place.
 # Rows marked "(proposed)" are additions from the Task 1 step 9 inventory, to be folded into the plan's table.
 BANNED: list[tuple] = [
-    (r"d_\{?(?:\\(?:text|mathrm)\{)?model", "Model (residual) width: d_model in ch. 6", frozenset({6})),
-    (r"\\sqrt\{N\}", "Layers: N for residual layers at CH6:139", frozenset({6})),
-    (r"\\text\{head\}_\{?h\b", "Attention heads: h as head count in ch. 1-2", frozenset({1, 2})),
-    (r"\\cdot\s*h\s*\\cdot|\\,h\\,", "Attention heads: h as head count in ch. 2", frozenset({2})),
-    (r"/\s*h(?![\w^_])", "Attention heads: h as head count at CH6:82", frozenset({6})),
-    (r"d_\{?h(?![\w])", "Per-head width: d_h in ch. 6", frozenset({6})),
-    (r"L\\,\s*s\\,", "Sequence or context length: s at CH6:502", frozenset({6})),
+    (r"d_\{?(?:\\(?:text|mathrm)\{)?model", "Model (residual) width: d_model in ch. 6; write d", frozenset({6})),
+    (r"\\sqrt\{N\}", "Layers: N for residual layers; write 2L, the number of residual layers", frozenset({6})),
+    (r"\\text\{head\}_\{?h\b", "Attention heads: h as head count in ch. 1-2; write \\text{head}_i for one head and n_h for the count", frozenset({1, 2})),
+    (r"\\cdot\s*h\s*\\cdot|\\,h\\,", "Attention heads: h as head count in ch. 2; write n_h", frozenset({2})),
+    (r"/\s*h(?![\w^_])", "Attention heads: h as head count; write n_h", frozenset({6})),
+    (r"d_\{?h(?![\w])", "Per-head width: d_h in ch. 6; write d_k", frozenset({6})),
+    (r"L\\,\s*s\\,", "Sequence or context length: s; write n", frozenset({6})),
     (r"L'|[<>]\s*L(?![\w])|L\\,\\theta|\[0,\s*L\)",
-     "Trained and target context length: L, L' in ch. 6", frozenset({6})),
-    (r"(?<![\\\w])pos(?![\w])", "Positions: pos in ch. 1", frozenset({1})),
-    (r"i\s*-\s*j", "Positions: i - j as a relative offset in ch. 1", frozenset({1})),
-    (r"m\s*-\s*n(?![\w])", "Positions: n as key position at CH6:261", frozenset({6})),
-    (r"q_t\^\\top\s*k_s", "Positions: q_t^T k_s at CH6:549", frozenset({6})),
-    (r"O\(nW\)|L\s*\\cdot\s*W|(?<![\\\w])W\s*=\s*\d", "Sliding-window span: W in ch. 6", frozenset({6})),
-    (r"(?<![\\\w{])B_\{?t\b", "Batch size: B_t in the C2-10 fix", frozenset({2})),
-    (r"(?<![\\\w{])\|V\|", "Vocabulary: |V| as a size", frozenset({4})),
-    (r"\{V\s*\\times", "Vocabulary: V as a size at CH1:277", frozenset({1})),
-    (r"\+\s*V\s*d(?![\w])", "Vocabulary: V as a size at CH2:450", frozenset({2})),
-    (r"V\s*\\cdot\s*d", "Vocabulary: V as a size at CH6:395", frozenset({6})),
-    (r"\^\{N\}|\\frac\{1\}\{N\}", "Tokens in a loss or perplexity sum: N", frozenset({1, 2, 4})),
-    (r"w_\{?(?:N|1:N)\b", "Tokens in a loss or perplexity sum: N at CH4:462", frozenset({4})),
-    (r"1/T\b|(?<![\\\w])T\s*[=>]\s*1", "Temperature: T at CH5:428", frozenset({5})),
-    (r"\\tau\}\{\\\|g", "Gradient-clipping threshold: tau at CH2:223", frozenset({2})),
-    (r"\\mathcal\{L\}\s*=\s*-\s*\\sum", "Loss: the sum at CH1:1060", frozenset({1})),
-    (r"(?<![\\\w{])L\((?:N|D|C)", "Loss: L(N) in ch. 2", frozenset({2})),
-    (r"(?<![\\\w])[PQ](?:\(|_\{|\s*\|\||,\s*Q)", "Data and model distributions: P, Q in ch. 1 and ch. 2",
+     "Trained and target context length: L, L' in ch. 6; write n_{train} and n'", frozenset({6})),
+    (r"(?<![\\\w])pos(?![\w])", "Positions: pos in ch. 1; write m", frozenset({1})),
+    (r"i\s*-\s*j", "Positions: i - j as a relative offset in ch. 1; write m - m'", frozenset({1})),
+    (r"m\s*-\s*n(?![\w])", "Positions: n as key position; write m - m'", frozenset({6})),
+    (r"q_t\^\\top\s*k_s", "Positions: q_t^T k_s; write q_m^\\top k_{m'}", frozenset({6})),
+    (r"O\(nW\)|L\s*\\cdot\s*W|(?<![\\\w])W\s*=\s*\d", "Sliding-window span: W in ch. 6; write n_{win}", frozenset({6})),
+    (r"(?<![\\\w{])B_\{?t\b", "Batch size: B_t in the C2-10 fix; write B", frozenset({2})),
+    (r"(?<![\\\w{])\|V\|", "Vocabulary: |V| as a size; write |\\mathcal{V}|", frozenset({4})),
+    (r"\{V\s*\\times", "Vocabulary: V as a size; write |\\mathcal{V}|", frozenset({1})),
+    (r"\+\s*V\s*d(?![\w])", "Vocabulary: V as a size; write |\\mathcal{V}| d", frozenset({2})),
+    (r"V\s*\\cdot\s*d", "Vocabulary: V as a size; write |\\mathcal{V}| \\cdot d", frozenset({6})),
+    (r"\^\{N\}|\\frac\{1\}\{N\}", "Tokens in a loss or perplexity sum: N; write T", frozenset({1, 2, 4})),
+    (r"w_\{?(?:N|1:N)\b", "Tokens in a loss or perplexity sum: N; write x_T", frozenset({4})),
+    (r"1/T\b|(?<![\\\w])T\s*[=>]\s*1", "Temperature: T; write \\tau", frozenset({5})),
+    (r"\\tau\}\{\\\|g", "Gradient-clipping threshold: tau; write g_{\\max}", frozenset({2})),
+    (r"\\mathcal\{L\}\s*=\s*-\s*\\sum", "Loss: the sum; write \\mathcal{L} as the mean per token, -\\frac{1}{T}\\sum", frozenset({1})),
+    (r"(?<![\\\w{])L\((?:N|D|C)", "Loss: L(N) in ch. 2; write \\mathcal{L}(N)", frozenset({2})),
+    (r"(?<![\\\w])[PQ](?:\(|_\{|\s*\|\||,\s*Q)", "Data and model distributions: P, Q in ch. 1 and ch. 2; write p and q (p_{data}, p_\\theta)",
      frozenset({1, 2})),
     (r"P\s*=\s*\\mathrm\{softmax\}|=\s*PV|P\s*\\odot|\\odot\s*P|P\^(?:T|\\top)",
-     "Attention: P as attention weights at CH2:337-345", frozenset({2})),
-    (r"g_j\s*=\s*\\gamma_j", "Upstream gradient: g_j at CH2:325-327", frozenset({2})),
-    (r"W_\{?[123]\}?(?![\d\w])", "Feed-forward matrices: W_1, W_2, W_3", frozenset({1, 6})),
-    (r"d_\{(?:\\text\{)?ffn", "Feed-forward width: d_ffn at CH6:160", frozenset({6})),
-    (r"b_\{?[12]\b|b_\{i\s*-\s*j\}", "Biases: b_1, b_2, b_{i-j} in ch. 1", frozenset({1})),
-    (r"(?<![\\\w])E\s*\\in|(?<![\\\w])E\[", "Embedding matrix: E at CH1:277", frozenset({1})),
-    (r"C\^\{?[ab]\b|(?<![\\\w_])[ab]\s*\\approx", "Compute-optimal exponents: C^a, C^b in ch. 2",
+     "Attention: P as attention weights; write A", frozenset({2})),
+    (r"g_j\s*=\s*\\gamma_j", "Upstream gradient: g_j; write \\tilde{g}_j", frozenset({2})),
+    (r"W_\{?[123]\}?(?![\d\w])", "Feed-forward matrices: W_1, W_2, W_3; write W_{gate}, W_{up} and W_{down}", frozenset({1, 6})),
+    (r"d_\{(?:\\text\{)?ffn", "Feed-forward width: d_ffn; write d_{ff}", frozenset({6})),
+    (r"b_\{?[12]\b|b_\{i\s*-\s*j\}", "Biases: b_1, b_2, b_{i-j} in ch. 1; write nothing: leave the bias term out of the formula and say so once", frozenset({1})),
+    (r"(?<![\\\w])E\s*\\in|(?<![\\\w])E\[", "Embedding matrix: E; write W_E", frozenset({1})),
+    (r"C\^\{?[ab]\b|(?<![\\\w_])[ab]\s*\\approx", "Compute-optimal exponents: C^a, C^b in ch. 2; write C^{a_N} and C^{a_D}",
      frozenset({2})),
-    (r"\\times\s*s(?![\w])", "Loss-scaling factor: s at CH2:513", frozenset({2})),
+    (r"\\times\s*s(?![\w])", "Loss-scaling factor: s; write \\zeta", frozenset({2})),
     (r"b_\{(?:\\text\{)?out|W_\{(?:\\text\{)?out\}?\}\s*h",
-     "Unembedding and vector convention: b_out and W_out h at CH1:1064", frozenset({1})),
-    (r"N_s", "Source s: N_s at CH5:429", frozenset({5})),
-    (r"\\theta_", "RoPE frequencies: theta_i in ch. 6", frozenset({6})),
-    (r"2i/d(?![\w])|d/2\s*-\s*1|\(d\s*-\s*2\)|d/\(d", "RoPE frequencies: bare d in ch. 6", frozenset({6})),
-    (r"s\s*=\s*L'|s\^\{\\,?d|1/s(?![\w])", "Context scale factor: bare s in ch. 6", frozenset({6})),
-    (r"(?<![\\\w])[sg]_\{?[ij]\b|\\mathrm\{TopK\}\(s\)", "Router: s_i, g_i at CH6:324", frozenset({6})),
-    (r"P_i", "Router: P_i at CH6:352", frozenset({6})),
-    (r"E_i\s*\(", "Experts: E_i(x) at CH6:324", frozenset({6})),
-    (r"k\s*>\s*1|\\,\s*k\\,\s*T", "Experts: k as top-k in ch. 6", frozenset({6})),
-    (r"C\s*=\s*\\lceil|\\lceil\s*c", "Experts: C and c at CH6:354", frozenset({6})),
-    (r"(?<![\\\w])[hc]_\{?t\b|c_s\b", "Multi-head latent attention: h_t, c_t in ch. 6", frozenset({6})),
-    (r"(?<![\\\w])s_[ij]\b", "Document of position i: s_i at CH5:385", frozenset({5})),
-    (r"v_\{t\s*\+\s*1\}|\\beta\s*v_t", "Momentum: beta and v_t at CH2:180-183", frozenset({2})),
-    (r"T_\{(?:\\text\{)?(?:warmup|\\max)", "Optimizer step: T_warmup, T_max in ch. 2", frozenset({2})),
-    (r"n_\{(?:\\text\{)?(?:in|out)\b", "Fan-in and fan-out: n_in, n_out in ch. 2", frozenset({2})),
-    (r"(?<![\\\w{])O\(", "Asymptotic order: O(.) in every chapter", ALL),
-    (r"k\s*\+\s*1", "Index letters: k as a training step at CH5:435", frozenset({5})),
-    (r"\|D\|", "YaRN: the paper's |D| in the attention scale", frozenset({6})),
+     "Unembedding and vector convention: b_out and W_out h; write h W_{out}, without a bias term", frozenset({1})),
+    (r"N_s", "Source s: N_s; write U_s", frozenset({5})),
+    (r"\\theta_", "RoPE frequencies: theta_i in ch. 6; write \\omega_i", frozenset({6})),
+    (r"2i/d(?![\w])|d/2\s*-\s*1|\(d\s*-\s*2\)|d/\(d", "RoPE frequencies: bare d in ch. 6; write d_k", frozenset({6})),
+    (r"s\s*=\s*L'|s\^\{\\,?d|1/s(?![\w])", "Context scale factor: bare s in ch. 6; write s_{ctx}", frozenset({6})),
+    (r"(?<![\\\w])[sg]_\{?[ij]\b|\\mathrm\{TopK\}\(s\)", "Router: s_i, g_i; write r_i for the logit and \\tilde{\\rho}_i for the gate weight", frozenset({6})),
+    (r"P_i", "Router: P_i; write \\bar{\\rho}_i", frozenset({6})),
+    (r"E_i\s*\(", "Experts: E_i(x); write \\mathrm{FFN}_i(x)", frozenset({6})),
+    (r"k\s*>\s*1|\\,\s*k\\,\s*T", "Experts: k as top-k in ch. 6; write n_{act}", frozenset({6})),
+    (r"C\s*=\s*\\lceil|\\lceil\s*c", "Experts: C and c; write \\kappa and \\phi", frozenset({6})),
+    (r"(?<![\\\w])[hc]_\{?t\b|c_s\b", "Multi-head latent attention: h_t, c_t in ch. 6; write h_i and c_i", frozenset({6})),
+    (r"(?<![\\\w])s_[ij]\b", "Document of position i: s_i; write the document of position i in words (M_{ij} is the mask)", frozenset({5})),
+    (r"v_\{t\s*\+\s*1\}|\\beta\s*v_t", "Momentum: beta and v_t; write u_t and \\beta_{mom}", frozenset({2})),
+    (r"T_\{(?:\\text\{)?(?:warmup|\\max)", "Optimizer step: T_warmup, T_max in ch. 2; write t_{warm} and t_{end}", frozenset({2})),
+    (r"n_\{(?:\\text\{)?(?:in|out)\b", "Fan-in and fan-out: n_in, n_out in ch. 2; write d_{in} and d_{out}", frozenset({2})),
+    (r"(?<![\\\w{])O\(", "Asymptotic order: O(.) in every chapter; write \\mathcal{O}(\\cdot)", ALL),
+    (r"k\s*\+\s*1", "Index letters: k as a training step; write t + 1", frozenset({5})),
+    (r"\|D\|", "YaRN: the paper's |D| in the attention scale; write d_k", frozenset({6})),
     # (proposed) rows from the Task 1 step 9 inventory
-    (r"\^\s*\{?\s*T\b", "(proposed) Transpose: ^\\top, never ^T", ALL, _transpose),
-    (r"W_\{?i\}?\^\{?[QKV]\b", "(proposed) Attention projections: W_i^Q at CH1:839 is W_Q^{(i)}", frozenset({1})),
-    (r"(?<![\\\w{])W(?![\w])", "(proposed) World size: W at CH5:532-535 is n_{ranks}", frozenset({5})),
-    (r"(?<![\\\w])P\s*[\(\[]|P\\left", "(proposed) Probability of an event: \\Pr, not P, in ch. 4", frozenset({4})),
-    (r"(?<![\\\w{])X\s*(?:>|\\sim)|[HI]\(X|X;\s*Y", "(proposed) Random variables: \\mathrm{X}, \\mathrm{Y} in ch. 2; "
-     "\\Pr[\\text{Pareto}(9) > 1 - \\hat{p}] in ch. 4", frozenset({2, 4})),
+    (r"\^\s*\{?\s*T\b", "(proposed) Transpose: ^\\top, never ^T; write ^\\top", ALL, _transpose),
+    (r"W_\{?i\}?\^\{?[QKV]\b", "(proposed) Attention projections: W_i^Q is W_Q^{(i)}; write W_Q^{(i)}", frozenset({1})),
+    (r"(?<![\\\w{])W(?![\w])", "(proposed) World size: W is n_{ranks}; write n_{ranks}", frozenset({5})),
+    (r"(?<![\\\w])P\s*[\(\[]|P\\left", "(proposed) Probability of an event: \\Pr, not P, in ch. 4; write \\Pr", frozenset({4})),
+    (r"(?<![\\\w{])X\s*(?:>|\\sim)|[HI]\(X|X;\s*Y", "(proposed) Random variables: \\mathrm{X}, \\mathrm{Y} in ch. 2; \\Pr[\\text{Pareto}(9) > 1 - \\hat{p}] in ch. 4; write \\mathrm{X} and \\mathrm{Y}", frozenset({2, 4})),
     (r"(?<![\\\w])h_\{?(?:l|L|1)(?:\s*[+-]\s*1)?\}?(?![\w])|\\theta_1",
-     "(proposed) Hidden state and parameters of layer l are h^{(l)}, theta^{(l)} in ch. 2", frozenset({2})),
-    (r"p\s*-\s*y|-y/p", "(proposed) Kronecker delta: the one-hot target y at CH2:58", frozenset({2})),
-    (r"\\mathbf\{x\}", "(proposed) Hidden state: the embedding x_i at CH1:279 is h^{(0)}_i", frozenset({1})),
-    (r"x_\{?t\b", "(proposed) Index letters: t as a position at CH1:1040", frozenset({1})),
-    (r"(?<![\\\w])[kv]_t\b", "(proposed) Index letters: k_t, v_t as positions at CH6:236", frozenset({6}), None,
+     "(proposed) Hidden state and parameters of layer l are h^{(l)}, theta^{(l)} in ch. 2; write h^{(l)} and \\theta^{(l)}", frozenset({2})),
+    (r"p\s*-\s*y|-y/p", "(proposed) Kronecker delta: the one-hot target y; write the one-hot target y", frozenset({2})),
+    (r"\\mathbf\{x\}", "(proposed) Hidden state: the embedding x_i is h^{(0)}_i; write h^{(0)}_i", frozenset({1})),
+    (r"x_\{?t\b", "(proposed) Index letters: t as a position; write x_i", frozenset({1})),
+    (r"(?<![\\\w])[kv]_t\b", "(proposed) Index letters: k_t, v_t as positions; write k_i and v_i", frozenset({6}), None,
      r"latent attention"),
-    (r"(?<![\\\w])w_\{?(?:1|i|<i)\b|[qc]\(w", "(proposed) Tokens: w for tokens at CH4:462-466", frozenset({4})),
-    (r"C\s*\+\s*\\alpha", "(proposed) Reference total: C at CH4:466", frozenset({4})),
-    (r"8N|N\s*\\log\s*N", "(proposed) Suffix-array length: N at CH4:722", frozenset({4})),
-    (r"J\(A,\s*B\)|h\([AB]\)|A\s*\\c[au]p\s*B", "(proposed) Shingle sets: A, B in ch. 4", frozenset({4})),
-    (r"s\^r|k\s*=\s*br|/k(?![\w])|b_i|\\bmod\s*p\b", "(proposed) MinHash and LSH symbols in ch. 4",
+    (r"(?<![\\\w])w_\{?(?:1|i|<i)\b|[qc]\(w", "(proposed) Tokens: w for tokens; write x_i and x_T", frozenset({4})),
+    (r"C\s*\+\s*\\alpha", "(proposed) Reference total: C; write T_{ref}", frozenset({4})),
+    (r"8N|N\s*\\log\s*N", "(proposed) Suffix-array length: N; write T_{idx}", frozenset({4})),
+    (r"J\(A,\s*B\)|h\([AB]\)|A\s*\\c[au]p\s*B", "(proposed) Shingle sets: A, B in ch. 4; write \\mathcal{X}, \\mathcal{Y} and J(\\mathcal{X}, \\mathcal{Y})", frozenset({4})),
+    (r"s\^r|k\s*=\s*br|/k(?![\w])|b_i|\\bmod\s*p\b", "(proposed) MinHash and LSH symbols in ch. 4; write n_{hash} = b r and h_i(\\chi) = (a_{i,1} \\chi + a_{i,0}) \\bmod P",
      frozenset({4})),
-    (r"\\alpha\\,\s*E", "(proposed) Auxiliary-loss weight: alpha at CH6:352", frozenset({6})),
+    (r"\\alpha\\,\s*E", "(proposed) Auxiliary-loss weight: alpha; write \\lambda_{aux}", frozenset({6})),
 ]
 
 
@@ -263,7 +264,7 @@ def banned_failures(chapter_dir, number=None):
         for start, end in math_regions(text):
             region = text[start:end]
             section = next((h for pos, h in reversed(headings) if pos < start), "")
-            spans = []  # the spans older patterns reported in this region
+            spans = []  # every span reported in this region: a later match overlapping one is the same place
             for pattern, row, keep, where in active:
                 if where and not where.search(section):
                     continue
@@ -273,10 +274,10 @@ def banned_failures(chapter_dir, number=None):
                         continue
                     if any(a <= start + m.start() < b for a, b in exempt):
                         continue  # a paper's own symbol, named in a paper note
-                    if exact and any(a <= m.start() < b for a, b in spans):
-                        continue  # an older, more specific pattern already reported this span
-                    if not exact:
-                        spans.append(m.span())
+                    end = max(m.end(), m.start() + 1)
+                    if any(m.start() < b and a < end for a, b in spans):
+                        continue  # an earlier (older, more specific) pattern already reported this place
+                    spans.append((m.start(), end))
                     line = text.count("\n", 0, start) + 1 + region.count("\n", 0, m.start())
                     failures.append(f"{page.name}:L{line}: banned {exact or m.group(0)!r} ({row})")
     return failures
@@ -669,7 +670,29 @@ def test_a_clean_chapter_passes(tmp_path):
 def test_a_banned_pattern_is_reported_only_in_its_chapters(tmp_path):
     chapter = chapter_with(tmp_path, "The width $d_{model}$.\n")
     # The exact ban on d_{model} matches the same span and is not reported a second time.
-    assert banned_failures(chapter, 6) == ["index.md:L1: banned 'd_{model' (Model (residual) width: d_model in ch. 6)"]
+    assert banned_failures(chapter, 6) == ["index.md:L1: banned 'd_{model' (Model (residual) width: d_model in ch. 6; write d)"]
+
+
+def test_every_banned_row_says_what_to_write_and_names_no_line():
+    for entry in BANNED:
+        assert "; write " in entry[1] and not re.search(r"CH\d:\d", entry[1]), entry[1]
+    failures = banned_failures_of_text("Then $O = PV$ here.\n", 2)
+    assert failures == ["index.md:L1: banned '= PV' (Attention: P as attention weights; write A)"]
+
+
+def test_overlapping_matches_report_one_place_once(tmp_path):
+    # Two older rows: "L\,\theta" (trained context length) covers the start of "\theta_" (RoPE frequencies).
+    six = banned_failures(chapter_with(tmp_path / "six", "Then $L\\,\\theta_i$.\n"), 6)
+    assert six == ["index.md:L1: banned 'L\\\\,\\\\theta' (Trained and target context length: L, L' in ch. 6; "
+                   "write n_{train} and n')"], six
+    # An older row and an exact ban on the same place: the older report alone.
+    assert len(banned_failures(chapter_with(tmp_path / "ff", "Then $W_1 x$.\n"), 6)) == 1
+
+
+def banned_failures_of_text(text, number):
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        return banned_failures(chapter_with(Path(d), text), number)
     assert banned_failures(chapter, 2) == []
 
 

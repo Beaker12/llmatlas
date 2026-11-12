@@ -10,16 +10,12 @@ A fence is code unless it opens a MyST directive (info string starting with `{`,
 directives below) or is a colon fence; the content of a directive such as an admonition or a figure is prose.
 """
 import re
-from pathlib import Path
+
+from tools.notation_tables import pages  # noqa: F401  (the one page list, shared with the tools)
 
 CODE_DIRECTIVES = {"code-block", "code", "sourcecode", "code-cell", "literalinclude", "math", "mermaid", "graphviz"}
 FENCE = re.compile(r"^\s*(`{3,}|~{3,}|:{3,})\s*(\{[^}\n]*\})?(.*)$")
 CLOSING = re.compile(r"^\s*(`{3,}|~{3,}|:{3,})\s*$")
-
-
-def pages(chapter_dir):
-    # notation-local.md is the chapter's symbol list for tests/test_notation.py, not a page of the book.
-    return sorted(p for p in Path(chapter_dir).glob("*.md") if p.name != "notation-local.md")
 
 
 def _blank(match):

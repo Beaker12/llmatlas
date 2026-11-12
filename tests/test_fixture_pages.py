@@ -20,6 +20,32 @@ FIXTURE = ROOT / "tests" / "fixtures" / "sample-chapter"
 BIB = [FIXTURE / "refs.bib"]
 
 
+def page_reader_results(chapter):
+    """What every reader of a chapter's pages finds, beyond all_failures: fences, prose, shared definitions."""
+    from tests.test_fences import check_chapter as fence_failures
+    from tests.test_notebook_prose import chapter_text, check_admonitions
+    from tests.test_ch01_snippets import pages as ch01_pages
+    from tools.list_shared_defs import chapter_sources
+    from tools.list_symbols import concordance, pages as tool_pages, symbols
+    return {"fences": fence_failures(chapter), "admonitions": check_admonitions(chapter, [], declared={}),
+            "text": chapter_text(chapter), "shared": list(chapter_sources(chapter)), "symbols": symbols(chapter),
+            "concordance": concordance(chapter), "pages": [tool_pages(chapter), ch01_pages(chapter)]}
+
+
+def test_a_notation_local_list_changes_no_check(tmp_path):
+    """notation-local.md is not a page: a digit, a link, a code fence and a symbol in it change no result."""
+    chapter = tmp_path / "sample-chapter"
+    shutil.copytree(FIXTURE, chapter)
+    before = (all_failures(chapter), page_reader_results(chapter))
+    (chapter / "notation-local.md").write_text(
+        "# Local notation\n\nSee [the table](https://example.com/table) for 42 rows and Section 2.1.\n\n"
+        "```python\nimport sys\nsys.exit(3)\ndef shared_helper():\n    return 7\n```\n\n"
+        "| Symbol | Meaning | First used | Rename | Also means |\n|---|---|---|---|---|\n"
+        "| $J$ | Jaccard similarity of $\\Xi$, O(1) | index.md:L1 |  |  |\n", encoding="utf-8")
+    after = (all_failures(chapter), page_reader_results(chapter))
+    assert after[0] == before[0] and after[1] == before[1]
+
+
 def all_failures(chapter):
     bib = [chapter / "refs.bib"]
     return {"spelling": spelling_failures(chapter, generators={}),

@@ -226,11 +226,23 @@ def test_a_local_symbol_shows_its_local_meaning():
     assert "concordance.md:L5: A hash $h$ maps a shingle $\\chi$ to a bucket." in out
 
 
-def test_a_symbol_with_two_rows_prints_one_header_per_meaning():
+def test_a_symbol_with_two_meanings_prints_one_header_then_its_units_once():
     out = run_concordance("--symbol", "m").splitlines()
-    assert out[:2] == ["== m \u2014 position in a positional encoding or relative offset (m' a second position) ==",
-                       "== m \u2014 Adam's first moment (m_t) =="]
-    assert "concordance.md:L14: The position $m$ has two rows in the global table." in out
+    assert out[0] == ("== m \u2014 position in a positional encoding or relative offset (m' a second position) | "
+                      "Adam's first moment (m_t) ==")
+    assert sum(line.startswith("== ") for line in out) == 1 and len(out) == len(set(out))
+    assert [line for line in out if line.startswith("concordance.md")] == [
+        "concordance.md:L14: The position $m$ has two rows in the global table.",
+        "concordance.md:L16: The first moment $m_t$ decays."]
+
+
+def test_the_concordance_count_is_of_distinct_symbols():
+    proc = subprocess.run([sys.executable, str(ROOT / "tools" / "list_symbols.py"), str(FIXTURE), "--concordance"],
+                          capture_output=True, text=True, check=True)
+    headers = [line for line in proc.stdout.splitlines() if line.startswith("== ")]
+    assert len(headers) == len(concordance(FIXTURE)) == len({h.split(" \u2014 ")[0] for h in headers})
+    units = len(proc.stdout.splitlines()) - len(headers)
+    assert proc.stderr.strip() == f"# {len(concordance(FIXTURE))} symbols, {units} units"
 
 
 def test_the_tool_imports_no_test_module_and_runs_from_anywhere(tmp_path):

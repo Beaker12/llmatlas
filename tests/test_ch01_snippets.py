@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from tests._pages import pages
+
 torch = pytest.importorskip("torch")
 import numpy as np  # noqa: E402
 
@@ -36,7 +38,7 @@ INTERFACE_LABELS: dict[str, str] = {
 
 
 def ch01_fence(marker: str) -> str:
-    for page in sorted(CH01_DIR.glob("*.md")):
+    for page in pages(CH01_DIR):
         for m in FENCE.finditer(page.read_text(encoding="utf-8")):
             if marker in m.group(1):
                 return m.group(1)

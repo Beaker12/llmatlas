@@ -2,7 +2,8 @@
 
 The prose unit splitter (prose_sentences: list items and paragraphs outside code, cut into sentences), used by
 tests/test_notebook_prose.py, the phrase layer of tests/test_notation.py and the concordance of
-tools/list_symbols.py; paper_note_spans, the math a note gives as a paper's own symbols ("The YaRN paper writes
+tools/list_symbols.py; pages, the chapter's pages (every *.md directly in the chapter directory except
+notation-local.md), for the tools and tests/_pages.py alike; paper_note_spans, the math a note gives as a paper's own symbols ("The YaRN paper writes
 the ramp as $\\gamma$"), which tests/test_notation.py exempts; and the readers of the notation tables
 (tests/notation_global.txt and each chapter's notation-local.md).
 """
@@ -16,6 +17,11 @@ from tools.unescape_math import math_regions
 ROOT = Path(__file__).resolve().parents[1]
 GLOBAL = ROOT / "tests" / "notation_global.txt"
 LOCAL_LIST = "notation-local.md"
+
+def pages(chapter_dir) -> list[Path]:
+    """Every *.md directly in the chapter directory except notation-local.md (a symbol list, not a page), sorted."""
+    return sorted(p for p in Path(chapter_dir).glob("*.md") if p.name != LOCAL_LIST)
+
 
 # --- the prose unit splitter --------------------------------------------------------------------------------
 

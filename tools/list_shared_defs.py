@@ -21,6 +21,11 @@ import re
 import sys
 from pathlib import Path
 
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tools.notation_tables import pages  # noqa: E402
+
 FENCE = re.compile(r"```python\n([\s\S]*?)```")
 PSEUDO = re.compile(r"# pseudo-code(?![\w-])")
 DEFS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
@@ -90,7 +95,7 @@ def top_level_defs(source: str, magics: bool = True) -> dict[str, str]:
 
 def chapter_sources(chapter_dir: Path):
     """(label, source, is_pseudo_code) for each python fence of the chapter's pages."""
-    for page in sorted(Path(chapter_dir).glob("*.md")):
+    for page in pages(chapter_dir):
         text = page.read_text(encoding="utf-8")
         for m in FENCE.finditer(text):
             line = text[: m.start()].count("\n") + 1

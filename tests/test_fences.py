@@ -11,6 +11,7 @@ import pytest
 
 from tests._compare import compare_output
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check, tracked
+from tests._pages import pages as chapter_pages
 
 FENCE = re.compile(r"```python\n([\s\S]*?)```")
 PSEUDO_MARKER = re.compile(r"# pseudo-code(?![\w-])")
@@ -130,7 +131,7 @@ def check_page(page, network=False, timeout=RUN_TIMEOUT):
 
 def check_chapter(chapter_dir, network=False):
     failures = []
-    for page in sorted(chapter_dir.glob("*.md")):
+    for page in chapter_pages(chapter_dir):
         failures += check_page(page, network=network)
     return failures
 
@@ -253,6 +254,6 @@ def test_python_fences_run_standalone(chapter_dir):
 @pytest.mark.live
 @pytest.mark.parametrize("chapter_dir", CHAPTER_DIRS, ids=CHAPTER_IDS)
 def test_network_fences_run_standalone(chapter_dir):
-    if not any(has_network_fence(p) for p in sorted(chapter_dir.glob("*.md"))):
+    if not any(has_network_fence(p) for p in chapter_pages(chapter_dir)):
         pytest.skip("no # network fences in this chapter")
     chapter_check("fences-live")(chapter_dir, check_chapter(chapter_dir, network=True))

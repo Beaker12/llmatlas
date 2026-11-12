@@ -7,8 +7,9 @@ Usage:
     python tools/list_symbols.py chapters/02-mathematics --concordance [--symbol 'd_k'] [--undeclared]
 
 --concordance prints, per symbol (in the order of tests/notation_global.txt, then the chapter's local list,
-then the undeclared ones), a header "== <symbol> — <meaning or UNDECLARED> ==" per table row and one line
-"<page>:L<line>: <unit>" per sentence, list item or display block that uses it. A person reads it against the
+then the undeclared ones), one header "== <symbol> — <meaning> | <meaning> ... ==" listing every meaning the
+tables give it (or UNDECLARED), then one line "<page>:L<line>: <unit>" per sentence, list item or display block
+that uses it. The count on stderr is of distinct symbols. A person reads it against the
 tables to confirm each symbol's meaning in a finished chapter; tests/test_notation.py cannot.
 
 Math regions are found with tools.unescape_math.math_regions (fenced code excluded). The pages are the
@@ -46,7 +47,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tools.notation_tables import GLOBAL, LOCAL_LIST, global_rows, local_rows, prose_sentences  # noqa: E402
+from tools.notation_tables import GLOBAL, LOCAL_LIST, global_rows, local_rows, pages, prose_sentences  # noqa: E402
 from tools.unescape_math import math_regions  # noqa: E402
 
 # Operator and function names: commands that are never symbols. Any other command that is not a Greek
@@ -299,10 +300,6 @@ def normalise(math: str) -> list[str]:
     return [sym for sym, _ in symbols_in_math(math)]
 
 
-def pages(chapter_dir) -> list[Path]:
-    return sorted(p for p in Path(chapter_dir).glob("*.md") if p.name != LOCAL_LIST)
-
-
 def _occurrences(page: Path):
     text = page.read_text(encoding="utf-8")
     for start, end in math_regions(text):
@@ -530,14 +527,13 @@ def meanings(chapter_dir, global_path=None) -> dict[str, list[str]]:
 
 
 def concordance_lines(chapter_dir, symbol: str | None = None, undeclared: bool = False) -> list[str]:
-    """The --concordance output: a header line per meaning of each symbol (one per table row), then one line
-    per unit."""
+    """The --concordance output: one header line per symbol listing all its meanings, then one line per unit."""
     known = meanings(chapter_dir)
     out = []
     for sym, places in concordance(chapter_dir).items():
         if (symbol is not None and sym != symbol) or (undeclared and sym in known):
             continue
-        out += [f"== {sym} — {meaning} ==" for meaning in known.get(sym, ["UNDECLARED"])]
+        out.append(f"== {sym} — {' | '.join(known.get(sym, ['UNDECLARED']))} ==")
         out += [f"{page}:L{line}: {unit}" for page, line, unit in places]
     return out
 

@@ -18,6 +18,7 @@ import pytest
 
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check, chapter_constants
 from tests._notebooks import cell_text, notebooks, read
+from tests._pages import pages as chapter_pages
 from tools.notation_tables import (  # noqa: F401  (the prose unit splitter, shared with the tools)
     ABBREVIATION, CODE_DIRECTIVES, FENCE_LINE, LIST_ITEM, blank_code, prose_sentences, prose_units,
     split_sentences)
@@ -110,7 +111,7 @@ def holds(op, chapter_value, notebook_value):
 
 
 def chapter_text(chapter_dir):
-    return "\n".join(p.read_text(encoding="utf-8") for p in sorted(Path(chapter_dir).glob("*.md")))
+    return "\n".join(p.read_text(encoding="utf-8") for p in chapter_pages(chapter_dir))
 
 
 def notebook_output_text(chapter_dir):
@@ -314,7 +315,7 @@ def check_admonitions(chapter_dir, claims, nouns=(), declared=None):
         except re.error:
             pass
     failures = []
-    for page in sorted(Path(chapter_dir).glob("*.md")):
+    for page in chapter_pages(chapter_dir):
         for line, sentence in prose_sentences(page.read_text(encoding="utf-8")):
             used.update(rx for rx in declared if re.search(rx, sentence))
             if not NB_REF.search(sentence):
@@ -474,7 +475,7 @@ def test_an_admonition_without_a_notebook_link_or_number_needs_no_claim():
 def test_every_notebook_link_in_the_chapter_pages_is_in_a_sentence_the_check_examines():
     missed = []
     for chapter_dir in CHAPTER_DIRS:
-        for page in sorted(chapter_dir.glob("*.md")):
+        for page in chapter_pages(chapter_dir):
             text = page.read_text(encoding="utf-8")
             outside_code = re.sub(r"^(`{3,}|~{3,})[A-Za-z][^\n]*\n[\s\S]*?\n\1[ \t]*$", "", text, flags=re.M)
             expected = len(NB_REF.findall(outside_code))
