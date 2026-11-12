@@ -4,6 +4,12 @@
 Usage:
     python tools/list_symbols.py chapters/02-mathematics
     python tools/list_symbols.py chapters/02-mathematics --definitions
+    python tools/list_symbols.py chapters/02-mathematics --concordance [--symbol 'd_k'] [--undeclared]
+
+--concordance prints, per symbol (in the order of tests/notation_global.txt, then the chapter's local list,
+then the undeclared ones), a header "== <symbol> — <meaning or UNDECLARED> ==" and one line
+"<page>:L<line>: <unit>" per sentence, list item or display block that uses it. A person reads it against the
+tables to confirm each symbol's meaning in a finished chapter; tests/test_notation.py cannot.
 
 Math regions are found with tools.unescape_math.math_regions (fenced code excluded). The pages are the
 *.md files directly in the chapter directory, except notation-local.md.
@@ -420,11 +426,142 @@ def definitions(chapter_dir) -> dict[str, list[tuple[str, int, str]]]:
     return dict(sorted(result.items()))
 
 
+def _collapse(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _covering(sentences, line: int):
+    """The (index, start line, sentence) of each sentence whose lines include `line`, in order."""
+    return [(k, a, s) for k, (a, s) in enumerate(sentences) if a <= line <= a + s.count("\n")]
+
+
+def _display_intro(text: str, start: int, sentences) -> str:
+    """The sentence that introduces the display block at `start`, when the line before it ends with a colon."""
+    line_start = text.rfind("\n", 0, start) + 1
+    n = text.count("\n", 0, start) + 1
+    before = text[line_start:start]
+    if not before.strip():  # the block starts its line: look at the nearest non-blank line above
+        lines = text[:line_start].split("\n")[:-1]
+        while lines and not lines[-1].strip():
+            lines.pop()
+        if not lines:
+            return ""
+        before, n = lines[-1], len(lines)
+    if not before.rstrip().endswith(":"):
+        return ""
+    covering = _covering(sentences, n)
+    if not covering:
+        return _collapse(before)
+    _k, a, sentence = covering[-1]
+    intro = "\n".join(sentence.split("\n")[:n - a + 1])
+    return _collapse(intro.split("$$")[0])
+
+
+def concordance_of_text(text: str, page: str = "") -> list[tuple[str, str, int, tuple, str]]:
+    """(symbol, page, line, unit key, unit) for every symbol occurrence in a page's math, in order.
+
+    The unit is the sentence or list item holding the occurrence, from the splitter the phrase layer of
+    tests/test_notation.py uses (tests.test_notebook_prose.prose_sentences), math in place and white space
+    collapsed. An occurrence in display math has the display block as its unit, preceded by the sentence that
+    introduces it when the line before the block ends with a colon.
+    """
+    from tests.test_notebook_prose import prose_sentences  # the phrase layer's unit splitter
+
+    sentences = list(prose_sentences(text))
+    consumed: dict[tuple[int, str], int] = {}  # (sentence index, math) -> occurrences already assigned
+    found = []
+    for start, end in math_regions(text):
+        region = text[start:end]
+        line0 = text.count("\n", 0, start) + 1
+        if region.startswith("$$"):
+            intro = _display_intro(text, start, sentences)
+            key, unit = ("display", start), (f"{intro} " if intro else "") + _collapse(region)
+        else:
+            # Regions come in document order, so the n-th "$A$" on a line belongs to the sentence holding the
+            # n-th "$A$" among the sentences that cover the line.
+            needle = _collapse(region)
+            match = next(((k, s) for k, _a, s in _covering(sentences, line0)
+                          if _collapse(s).count(needle) > consumed.get((k, needle), 0)), None)
+            if match:
+                consumed[(match[0], needle)] = consumed.get((match[0], needle), 0) + 1
+                key, unit = ("sentence", match[0]), _collapse(match[1])
+            else:  # math outside any prose unit (a directive option): the line itself
+                line_start = text.rfind("\n", 0, start) + 1
+                line_end = text.find("\n", end)
+                key, unit = ("line", line0), _collapse(text[line_start:line_end if line_end >= 0 else len(text)])
+        for sym, off in symbols_in_math(region):
+            found.append((sym, page, line0 + region.count("\n", 0, off), key, unit))
+    return found
+
+
+def _tables(chapter_dir, global_path=None):
+    """(global rows, local rows) as (symbol, meaning) pairs, read with tests/test_notation.py's readers."""
+    from tests.test_notation import GLOBAL, global_rows, local_rows
+
+    return global_rows(global_path or GLOBAL), local_rows(chapter_dir)
+
+
+def concordance(chapter_dir, global_path=None) -> dict[str, list[tuple[str, int, str]]]:
+    """{symbol: [(page name, line, unit), ...]} for every symbol the chapter's math uses.
+
+    Each unit is listed once per symbol, at the line of the symbol's first occurrence in it. Symbols come in
+    the order of tests/notation_global.txt, then the chapter's notation-local.md, then the undeclared ones
+    sorted.
+    """
+    global_table, local_table = _tables(chapter_dir, global_path)
+    occurrences: dict[str, list[tuple[str, int, str]]] = {}
+    seen = set()
+    for page in pages(chapter_dir):
+        for sym, name, line, key, unit in concordance_of_text(page.read_text(encoding="utf-8"), page.name):
+            if (sym, name, key) not in seen:
+                seen.add((sym, name, key))
+                occurrences.setdefault(sym, []).append((name, line, unit))
+    order = list(dict.fromkeys([s for s, _ in global_table] + [s for s, _ in local_table]))
+    order += sorted(s for s in occurrences if s not in order)
+    return {s: occurrences[s] for s in order if s in occurrences}
+
+
+def meanings(chapter_dir, global_path=None) -> dict[str, str]:
+    """{symbol: meaning}: the chapter's local list where it has the symbol, else the global table's row(s)."""
+    global_table, local_table = _tables(chapter_dir, global_path)
+    result: dict[str, str] = {}
+    for sym, meaning in global_table:
+        result[sym] = f"{result[sym]} | {meaning}" if sym in result else meaning
+    local: dict[str, str] = {}
+    for sym, meaning in local_table:
+        local[sym] = f"{local[sym]} | {meaning}" if sym in local else meaning
+    result.update(local)
+    return result
+
+
+def concordance_lines(chapter_dir, symbol: str | None = None, undeclared: bool = False) -> list[str]:
+    """The --concordance output: a header per symbol, then one line per unit."""
+    known = meanings(chapter_dir)
+    out = []
+    for sym, places in concordance(chapter_dir).items():
+        if (symbol is not None and sym != symbol) or (undeclared and sym in known):
+            continue
+        out.append(f"== {sym} — {known.get(sym, 'UNDECLARED')} ==")
+        out += [f"{page}:L{line}: {unit}" for page, line, unit in places]
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("chapter_dir", type=Path)
     ap.add_argument("--definitions", action="store_true", help="also print defining phrases")
+    ap.add_argument("--concordance", action="store_true",
+                    help="print every sentence or list item that uses each symbol, with the symbol's meaning")
+    ap.add_argument("--symbol", help="with --concordance: only this symbol (normal form, e.g. 'd_k')")
+    ap.add_argument("--undeclared", action="store_true",
+                    help="with --concordance: only symbols in neither the global table nor the local list")
     args = ap.parse_args(argv)
+    if args.concordance or args.symbol is not None or args.undeclared:
+        lines = concordance_lines(args.chapter_dir, args.symbol, args.undeclared)
+        print("\n".join(lines))
+        headers = sum(line.startswith("== ") for line in lines)
+        print(f"# {headers} symbols, {len(lines) - headers} units", file=sys.stderr)
+        return 0
     found = symbols(args.chapter_dir)
     defs = definitions(args.chapter_dir) if args.definitions else {}
     for sym, places in found.items():

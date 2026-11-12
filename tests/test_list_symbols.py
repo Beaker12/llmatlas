@@ -3,7 +3,8 @@ import subprocess
 import sys
 
 from tests._files import ROOT
-from tools.list_symbols import definitions, definitions_in_text, is_transpose, normalise, symbols
+from tools.list_symbols import (concordance, definitions, definitions_in_text, is_transpose, meanings, normalise,
+                                symbols)
 
 FIXTURE = ROOT / "tests" / "fixtures" / "symbols"
 
@@ -155,3 +156,67 @@ def test_the_command_line_prints_symbols_and_definitions():
                          capture_output=True, text=True, check=True).stdout
     assert "d_k\tdefinitions.md:3; grammar.md:7" in out
     assert "    defined definitions.md:L3: the per-head width" in out
+
+
+# --- the concordance (tests/fixtures/symbols/concordance.md) ----------------------------------------------
+
+def on_page(name="concordance.md"):
+    """The concordance restricted to one fixture page: {symbol: [(line, unit), ...]}, in the concordance's order."""
+    found = {}
+    for sym, places in concordance(FIXTURE).items():
+        here = [(line, unit) for page, line, unit in places if page == name]
+        if here:
+            found[sym] = here
+    return found
+
+
+def run_concordance(*options):
+    return subprocess.run([sys.executable, str(ROOT / "tools" / "list_symbols.py"), str(FIXTURE), *options],
+                          capture_output=True, text=True, check=True).stdout
+
+
+def test_the_concordance_is_grouped_in_the_order_of_the_tables():
+    # Global table order (tau, h, V, A, O, gamma), then the local list (chi), then the undeclared (Upsilon).
+    assert list(on_page()) == ["\\tau", "h", "V", "A", "O", "\\gamma", "\\chi", "\\Upsilon"]
+    undeclared = [s for s in concordance(FIXTURE) if s not in meanings(FIXTURE)]
+    assert list(concordance(FIXTURE))[-len(undeclared):] == undeclared == sorted(undeclared)
+
+
+def test_a_symbol_twice_in_one_unit_is_listed_once_for_that_unit():
+    assert on_page()["A"][:2] == [
+        (3, "The attention weights $A$ multiply $V$, and $A$ is a square matrix."),
+        (3, "The weights $A$ sum to one per row.")]
+    assert on_page()["\\gamma"] == [(13, "A list item with the gain $\\gamma$ and $\\gamma$ again.")]
+
+
+def test_display_math_is_shown_with_the_sentence_that_introduces_it():
+    assert on_page()["A"][2] == (10, "The attention output is: $$ O = A V $$")
+    assert on_page()["O"] == [(10, "The attention output is: $$ O = A V $$")]
+    # A display block without an introducing colon is shown alone.
+    assert ("definitions.md", 6, "$$y = W x$$") in concordance(FIXTURE)["y"]
+
+
+def test_the_concordance_command_prints_one_symbol():
+    out = run_concordance("--symbol", "A").splitlines()
+    assert out[0] == "== A — attention weights =="
+    assert sum(line.startswith("== ") for line in out) == 1
+    assert [line for line in out if line.startswith("concordance.md")] == ["concordance.md:L3: The attention weights $A$ multiply $V$, and $A$ is a square matrix.",
+                       "concordance.md:L3: The weights $A$ sum to one per row.",
+                       "concordance.md:L10: The attention output is: $$ O = A V $$"]
+
+
+def test_the_concordance_command_prints_only_the_undeclared_symbols():
+    out = run_concordance("--concordance", "--undeclared")
+    headers = [line for line in out.splitlines() if line.startswith("== ")]
+    assert "== \\Upsilon — UNDECLARED ==" in headers
+    assert "concordance.md:L14: An undeclared $\\Upsilon$ here." in out
+    assert all(line.endswith("— UNDECLARED ==") for line in headers)
+    assert "== A " not in out and "== \\chi " not in out
+
+
+def test_a_local_symbol_shows_its_local_meaning():
+    out = run_concordance("--concordance")
+    assert "== h — the fixture's hash function ==" in out  # local, though the global table has h as well
+    assert "== \\chi — the fixture's shingle id ==" in out
+    assert "== \\tau — temperature (sampling, source mixing, YaRN) ==" in out
+    assert "concordance.md:L5: A hash $h$ maps a shingle $\\chi$ to a bucket." in out
