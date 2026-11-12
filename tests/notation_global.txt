@@ -1,0 +1,128 @@
+# The book-wide notation table: symbol<TAB>meaning, one row per line. Symbols are in the normal form that
+# tools/list_symbols.py prints (subscripts that are running indices dropped, superscripts and primes dropped).
+# A symbol with two rows must be listed in tests/notation_exceptions.txt. Source: the "Global notation" table
+# of the fix plan, extended by the Task 1 step 9 inventory.
+d	model (residual) width
+L	number of layers
+L_{enc}	number of encoder layers
+L_{dec}	number of decoder layers
+n_h	number of attention heads
+n_{kv}	number of key/value heads
+d_k	per-head query and key width
+d_v	per-head value width (equal to d_k)
+d_{attn}	attention width n_h d_k
+n	sequence or context length (n' the target context length)
+n_{train}	trained context length
+m	position in a positional encoding or relative offset (m' a second position)
+m	Adam's first moment (m_t)
+q	query vector (q_m at position m)
+q	a distribution (generic pair p, q)
+k	key vector (k_{m'} at position m')
+n_{win}	sliding-window span
+B	batch size
+\mathcal{B}	a mini-batch (\mathcal{B}_t at step t)
+\mathcal{V}	vocabulary (|\mathcal{V}| its size)
+T	number of tokens in a loss, perplexity sum or batch
+\tau	temperature (sampling, source mixing, YaRN)
+g_{\max}	gradient-clipping threshold
+N	number of parameters (non-embedding where Kaplan's N is meant)
+D	number of training tokens
+C	training compute
+\theta	model parameters as a vector
+\mathcal{L}	loss, mean per token, in nats
+h	hidden state (h^{(l)}_i at layer l, position i)
+p_{data}	data distribution
+p_{\theta}	model distribution
+p	a distribution (generic pair p, q)
+p	sampling probability of source s (p_s)
+Q	query matrix
+K	key matrix
+V	value matrix
+S	attention scores
+A	attention weights
+O	attention output
+W_Q	query projection matrix
+W_K	key projection matrix
+W_V	value projection matrix
+W_O	attention output projection matrix
+g	gradient vector (the upstream gradient in a backward pass; g_t the loss gradient at step t)
+G	upstream gradient matrix
+\tilde{g}	LayerNorm's scaled upstream gradient
+W_{gate}	SwiGLU gate matrix
+W_{up}	feed-forward up-projection matrix
+W_{down}	feed-forward down-projection matrix
+d_{ff}	feed-forward hidden width
+W	weight matrix (generic; a label in its subscript or superscript names it)
+W_E	embedding matrix
+W_{out}	unembedding matrix
+E	number of experts
+\mathrm{i}	imaginary unit
+H	entropy H(p) and cross-entropy H(p, q)
+U	left singular vectors (U \Sigma R^\top)
+U	unique tokens of source s (U_s)
+\Sigma	singular values (diagonal, \Sigma_{jj})
+R	right singular vectors (U \Sigma R^\top)
+\epsilon_{ls}	label-smoothing mass
+\epsilon	numerical-stability constant
+a_N	compute-optimal parameter exponent (N^* \propto C^{a_N})
+a_D	compute-optimal data exponent (D^* \propto C^{a_D})
+\zeta	loss-scaling factor (mixed precision)
+w	given weight of source s (w_s)
+e	epochs of source s (e_s)
+e	Euler's number
+b	RoPE base (b' a rescaled base)
+\omega	RoPE frequency (\omega_i = b^{-2i/d_k})
+s_{ctx}	context scale factor n'/n_{train}
+r	router logit (r_i for expert i)
+\rho	router probability
+\tilde{\rho}	router gate weight
+\bar{\rho}	batch-mean router probability
+n_{act}	experts active per token
+\kappa	expert capacity
+\phi	capacity factor
+\Phi	kernel feature map
+c	multi-head latent attention latent (c_i at position i)
+d_c	multi-head latent attention latent width
+\lambda	weight decay
+\lambda_{\max}	largest Hessian eigenvalue
+\mu	normalization mean
+\sigma	normalization standard deviation
+\gamma	normalization gain
+\beta	normalization shift
+\beta_{mom}	momentum coefficient
+u	momentum buffer (u_t)
+\beta_1	Adam's first-moment coefficient
+\beta_2	Adam's second-moment coefficient
+v	Adam's second moment (v_t)
+t	optimizer or training step
+t_{warm}	warm-up steps
+t_{end}	total steps
+d_{in}	fan-in of a weight matrix
+d_{out}	fan-out of a weight matrix
+\mathcal{O}	asymptotic order
+k_{top}	top-k cutoff
+p_{top}	nucleus (top-p) cutoff
+\ell	YaRN wavelength (\ell_i = 2\pi/\omega_i)
+\xi	YaRN ratio (\xi_i = n_{train}/\ell_i)
+\psi	YaRN ramp function
+\beta_{fast}	YaRN ramp bound beta_fast
+\beta_{slow}	YaRN ramp bound beta_slow
+i	running index (range stated where used)
+j	running index (range stated where used)
+l	layer index
+s	source index
+x	token (x_i at position i, x_{<i} the prefix)
+x	input row vector of a layer (xW)
+x_1	first token of a sequence
+x_2	second token of a sequence
+x_n	last token of a sequence of length n
+X	input matrix, one row per position
+F	residual-branch (sublayer) function
+y	output of a layer (LayerNorm, MoE layer)
+z	logits
+I	identity matrix
+\mathbb{R}	the real numbers
+\pi	the circle constant
+\mathrm{X}	a random variable
+\mathrm{Y}	a second random variable
+n_{bytes}	number of bytes in a text (bits per byte)
