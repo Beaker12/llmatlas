@@ -23,6 +23,8 @@ RESULT_CLAIMS: list[tuple[str, str, str]] = []
 NOT_A_RESULT: dict[str, str] = {}
 
 MIN_FIGURES: int = 15
+# Units the notation check's banned phrases may match, declared on purpose: unit regex -> reason.
+NOTATION_OK: dict[str, str] = {}
 
 
 def ch01_fence(marker: str) -> str:
