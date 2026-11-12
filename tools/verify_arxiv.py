@@ -222,58 +222,71 @@ def has_real_venue(fields) -> bool:
 
 
 STOP_WORDS = {"of", "the", "on", "and", "in", "for"}
-BOILERPLATE = {"proceedings", "conference", "international", "annual", "ieee", "acm", "workshop",
-               "published", "at", "meeting"}
+BOILERPLATE = {"proceedings", "proc", "conference", "international", "annual", "meeting",
+               "workshop", "symposium", "ieee", "acm", "published", "at"}
 
 
-def venue_words(venue: str):
-    words = re.findall(r"[a-z0-9]+", normalise_words(venue))
-    return [w for w in words if w not in STOP_WORDS and w not in BOILERPLATE and not w.isdigit()]
+def venue_tokens(venue: str):
+    """Word tokens of a venue with parenthesised text (``(CVPR)``), years and ordinals removed
+    and stop words dropped; case is kept."""
+    text = re.sub(r"\([^)]*\)", " ", normalise_words_keep_case(venue))
+    tokens = re.findall(r"[A-Za-z0-9]+", text)
+    return [t for t in tokens if t.lower() not in STOP_WORDS and not re.fullmatch(
+        r"\d+(st|nd|rd|th)?", t.lower())]
+
+
+def normalise_words_keep_case(text: str) -> str:
+    text = re.sub(r"\\['`\"^~=.vcHuk]\s*\{?\\?([A-Za-z])\}?", r"\1", text)  # TeX accents
+    return fold(re.sub(r"[{}\\]", "", text)).replace("-", "")
+
+
+def significant(venue: str):
+    """Tokens without boilerplate such as ``Proceedings`` and ``Conference``."""
+    return [t for t in venue_tokens(venue) if t.lower() not in BOILERPLATE]
 
 
 def word_match(x: str, y: str) -> bool:
-    """Equal, or one is a prefix abbreviation of the other (``nat`` and ``nature``)."""
+    """Equal, or one is a prefix abbreviation of the other (``nat`` and ``nature``), ignoring
+    case. ``Neural Comput.`` abbreviates both ``Neural Computation`` and ``Neural Computing``;
+    that ambiguity is inherent in abbreviations and is left as a match."""
+    x, y = x.lower(), y.lower()
     return x.startswith(y) or y.startswith(x)
 
 
-def initials(venue: str) -> str:
-    words = re.findall(r"[a-z0-9]+", normalise_words(venue))
-    return "".join(w[0] for w in words if w not in STOP_WORDS and not w.isdigit())
+def capitals(token: str) -> str:
+    return "".join(c for c in token if c.isupper())
 
 
-def is_acronym_of(short: str, venue: str) -> bool:
-    """``short`` (``icml``, ``jmlr``) is made of the initials of the venue's words."""
-    return len(short) > 1 and short in initials(venue)
+def is_initialism(token: str) -> bool:
+    """A token of at most eight letters with two or more capitals: ``ACL``, ``NeurIPS``."""
+    return len(token) <= 8 and len(capitals(token)) >= 2 and token.isalpha()
 
 
-def in_order(short, long):
-    """True when each word of ``short`` matches a later word of ``long`` than the previous."""
-    position = 0
-    for word in short:
-        while position < len(long) and not word_match(word, long[position]):
-            position += 1
-        if position == len(long):
-            return False
-        position += 1
-    return True
+def spells(token: str, venue: str) -> bool:
+    """The token's capitals are the initials of a run of consecutive words of the venue (stop
+    words skipped, boilerplate counted: ``ICML`` is International Conference on Machine
+    Learning)."""
+    initials = "".join(t[0].lower() for t in venue_tokens(venue))
+    return capitals(token).lower() in initials
 
 
 def same_venue(mine: str, theirs: str) -> bool:
-    """Word-by-word comparison that accepts abbreviations (``Nat. Mach. Intell.``) and acronyms
-    (``JMLR``), ignoring case, punctuation and stop words. The shorter side must match the longer
-    in order. A bare all-capital acronym that cannot be expanded is undecidable and counts as a
-    match, as does a side with no significant words."""
-    a, b = venue_words(mine), venue_words(theirs)
+    """Do two venue names denote the same venue? Boilerplate, stop words, years and ordinals are
+    ignored on both sides. Otherwise the two must have the same number of significant words and
+    each pair must match (equal, or one a prefix abbreviation of the other), so ``Nature`` does
+    not match ``Nature Communications``. The exception is a lone initialism (``ACL``, ``JMLR``,
+    ``NeurIPS``), which matches a venue whose words' initials spell it. A venue with no
+    significant words matches nothing but another such venue."""
+    a, b = significant(mine), significant(theirs)
     if not a or not b:
+        return not a and not b
+    if len(a) == 1 and len(b) == 1 and a[0].lower() == b[0].lower():
         return True
-    short, long = (a, b) if len(a) <= len(b) else (b, a)
-    original, other = (mine, theirs) if short is a else (theirs, mine)
-    if len(short) == 1:
-        word = short[0]
-        if is_acronym_of(word, other) or in_order(short, long):
-            return True
-        return original.strip().isupper() and len(word) > 1
-    return in_order(short, long)
+    if len(a) == 1 and is_initialism(a[0]):
+        return spells(a[0], theirs)
+    if len(b) == 1 and is_initialism(b[0]):
+        return spells(b[0], mine)
+    return len(a) == len(b) and all(word_match(x, y) for x, y in zip(a, b))
 
 
 def norm_pages(pages: str) -> str:
@@ -283,7 +296,10 @@ def norm_pages(pages: str) -> str:
 def compare_publication(fields, journal, volume, pages, source):
     problems = []
     mine = venue_of(fields)
-    if journal and mine and not is_preprint_venue(mine) and not same_venue(mine, journal):
+    # A reference cut at its first digit ("Proceedings of the 57th ...") may keep only boilerplate;
+    # that says nothing about the venue, so it is not compared.
+    if (journal and significant(journal) and mine and not is_preprint_venue(mine)
+            and not same_venue(mine, journal)):
         problems.append(f"journal: {mine!r} in the entry, {journal!r} in {source}")
     if volume and fields.get("volume") and fields["volume"].strip() != str(volume).strip():
         problems.append(f"volume: {fields['volume']} in the entry, {volume} in {source}")
@@ -345,11 +361,22 @@ def http_get(url: str) -> str:
     raise Unreachable(url)
 
 
+class ArxivError(Exception):
+    """arXiv answered, but not with a usable result; the message says what to report."""
+
+
 def fetch_arxiv(ids):
     url = "https://export.arxiv.org/api/query?" + urllib.parse.urlencode(
         {"id_list": ",".join(ids), "max_results": len(ids)}
     )
-    return parse_atom(http_get(url))
+    try:
+        text = http_get(url)
+    except NotFound as error:
+        raise ArxivError("arXiv endpoint returned 404") from error
+    records = parse_atom(text)
+    if "<feed" not in text or not records:
+        raise ArxivError("could not read the arXiv response")
+    return records
 
 
 def fetch_crossref(doi: str):
@@ -415,6 +442,9 @@ def main(argv):
             time.sleep(DELAY)
     except Unreachable:
         print("could not reach arXiv")
+        return 2
+    except ArxivError as error:
+        print(str(error))
         return 2
     for key, fields in items:
         problems = check_entry(fields, records.get(fields.get("eprint", "").strip()))

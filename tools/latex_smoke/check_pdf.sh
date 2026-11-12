@@ -24,6 +24,7 @@ pdf=${1:?usage: check_pdf.sh <pdf> [CJK font] [Arabic font] [LaTeX log]}
 cjk=${2:-Noto Sans CJK SC}
 arabic=${3:-Noto Naskh Arabic}
 log=${4:-}
+[ -f "$pdf" ] || { echo "FAIL: no such PDF: $pdf"; exit 1; }
 here=$(cd "$(dirname "$0")" && pwd)
 status=0
 
@@ -77,7 +78,7 @@ def arabic_letter(c):
 bad = 0
 for line in open(sys.argv[2], encoding="utf-8"):
     line = line.rstrip("\n")
-    if not line:
+    if not line.strip() or line.startswith("#"):
         continue
     kind, _, sample = line.partition(":")
     chars = set(unicodedata.normalize("NFKC", sample)) - set(" \t\n\r\f\x0c")

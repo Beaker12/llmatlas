@@ -273,3 +273,106 @@ def test_surnames_are_compared_whole():
 def test_non_latin_names_are_reported_as_not_comparable():
     problems = va.authors_match("{张}, 三", ["三 张"])
     assert problems and problems[0].startswith("could not compare")
+
+
+# --- exact venue matching (round 2) ------------------------------------------------------------
+
+
+def both_ways(a, b):
+    assert va.same_venue(a, b) == va.same_venue(b, a), (a, b)
+    return va.same_venue(a, b)
+
+
+def test_one_word_venues_do_not_match_longer_ones():
+    for short, long in [("Nature", "Nature Communications"),
+                        ("Nature", "Nature Machine Intelligence"),
+                        ("Science", "Science Advances"),
+                        ("Cell", "Cell Reports")]:
+        assert not both_ways(short, long)
+    assert both_ways("Nature", "Nature")
+    assert not both_ways("Nature", "Science")
+
+
+def test_abbreviations_still_match_and_near_names_differ():
+    for a, b in [("Nat. Mach. Intell.", "Nature Machine Intelligence"),
+                 ("J. Mach. Learn. Res.", "Journal of Machine Learning Research"),
+                 ("Trans. Assoc. Comput. Linguist.",
+                  "Transactions of the Association for Computational Linguistics"),
+                 ("IEEE Trans. Pattern Anal. Mach. Intell.",
+                  "IEEE Transactions on Pattern Analysis and Machine Intelligence"),
+                 ("Neural Comput.", "Neural Computation"),
+                 # an abbreviation is inherently ambiguous: this also matches Neural Computing
+                 ("Neural Comput.", "Neural Computing")]:
+        assert both_ways(a, b), (a, b)
+    for a, b in [("Science China Information Sciences", "Science China Technological Sciences"),
+                 ("Neural Computation", "Neural Networks"),
+                 ("Neural Computation", "Neural Computing and Applications")]:
+        assert not both_ways(a, b), (a, b)
+
+
+def test_empty_or_boilerplate_venue_matches_nothing_else():
+    assert not both_ways("Proceedings of the Annual Conference", "Nature")
+    assert not both_ways("", "Nature")
+
+
+def test_initialisms_and_proceedings():
+    long_acl = ("Proceedings of the 58th Annual Meeting of the Association for "
+                "Computational Linguistics")
+    for a, b in [("Proc. ACL", long_acl),
+                 ("ACL", "Association for Computational Linguistics"),
+                 ("JMLR", "Journal of Machine Learning Research"),
+                 ("TACL", "Transactions of the Association for Computational Linguistics"),
+                 ("NeurIPS", "Neural Information Processing Systems"),
+                 ("ICML", "International Conference on Machine Learning"),
+                 ("ICML", "Proceedings of the 37th International Conference on Machine Learning"),
+                 ("EMNLP", "Empirical Methods in Natural Language Processing"),
+                 ("Symposium on Things 2020", "Things")]:
+        assert both_ways(a, b), (a, b)
+    for a, b in [("ACL", "Association for Computing Machinery"),
+                 ("ICLR", "International Conference on Machine Learning")]:
+        assert not both_ways(a, b), (a, b)
+
+
+# --- arXiv errors (round 2) ------------------------------------------------------------------
+
+
+def run_main_with_response(monkeypatch, tmp_path, capsys, response):
+    bib = tmp_path / "a.bib"
+    bib.write_text("@article{k,\n  title={T},\n  eprint={1712.00409}\n}\n")
+
+    def fake_get(url):
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    monkeypatch.setattr(va, "http_get", fake_get)
+    monkeypatch.setattr(va.time, "sleep", lambda s: None)
+    status = va.main([str(bib)])
+    return status, capsys.readouterr().out
+
+
+def test_unreadable_arxiv_response_is_not_a_missing_record(monkeypatch, tmp_path, capsys):
+    for response in ["", "<html>Service unavailable</html>", "<feed></feed>"]:
+        status, out = run_main_with_response(monkeypatch, tmp_path, capsys, response)
+        assert status == 2
+        assert "could not read the arXiv response" in out
+        assert "no record" not in out
+
+
+def test_arxiv_404_is_reported_without_a_traceback(monkeypatch, tmp_path, capsys):
+    status, out = run_main_with_response(monkeypatch, tmp_path, capsys, va.NotFound("u"))
+    assert status == 2
+    assert "arXiv endpoint returned 404" in out
+
+
+def test_unreachable_arxiv_has_the_same_status(monkeypatch, tmp_path, capsys):
+    status, out = run_main_with_response(monkeypatch, tmp_path, capsys, va.Unreachable("u"))
+    assert status == 2
+    assert "could not reach arXiv" in out
+
+
+def test_journal_reference_cut_down_to_boilerplate_is_not_compared():
+    title = ("Proceedings of the 57th Annual Meeting of the Association for "
+             "Computational Linguistics")
+    journal, volume, pages = va.split_journal_ref(title)
+    assert va.compare_publication({"booktitle": title}, journal, volume, pages, "arXiv") == []
