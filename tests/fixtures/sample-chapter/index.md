@@ -53,3 +53,24 @@ import matplotlib.pyplot as plt
 plt.plot([1, 2, 3])
 plt.show()
 ```
+
+A function the page shares with its notebook:
+
+```python
+def average(xs):
+    """Arithmetic mean of a list of numbers."""
+    return sum(xs) / len(xs)
+
+
+print(average([1, 2, 3, 4]))
+```
+
+% output
+
+```text
+2.5
+```
+
+```{admonition} The notebook
+The notebook section {ref}`nb-sample-mean` reports a mean of 2.5 over the stored values. It also lists every value, which needs no claim.
+```
