@@ -159,25 +159,94 @@ def admonition_sentences(text):
                 yield text.count("\n", 0, start + a) + 1, sentence
 
 
+INLINE_CODE = r"``[^\n]*?``|`[^`\n]*`"
+FENCE_LINE = re.compile(r"^[ \t]*(`{3,}|~{3,}|:{3,})[ \t]*(.*?)[ \t]*$")
+# MyST directives whose content is code or markup, not prose; every other directive keeps its text
+CODE_DIRECTIVES = {"code-cell", "code-block", "sourcecode", "code", "math", "literalinclude", "raw", "eval-rst",
+                   "mermaid", "graphviz"}
+LIST_ITEM = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+")
+NOT_A_RESULT = [re.compile(p, re.I) for p in (
+    r"\bChapters?\s+\d+(?:\s*(?:,|and|&|-|\u2013)\s*\d+)*",
+    r"\bSections?\s+\d+(?:\.\d+)*",
+    r"\bParts?\s+\d+", r"\bExercises?\s+\d+", r"\bFigures?\s+\d+", r"\bTables?\s+\d+", r"\bSteps?\s+\d+",
+    r"(?<![\w.])(?:19|20)\d{2}(?![\w.]\d)",
+)]
+
+
+def blank_code(text):
+    """The text with every fenced code block (any info string, none, or a code directive) blanked.
+
+    Line count is kept. The fence lines of prose directives ({admonition}, {note}, ...) are blanked but their
+    content stays; a ::: fence is always a prose directive.
+    """
+    out, stack = [], []   # stack of (marker char, length, is_code)
+    for line in text.split("\n"):
+        m = FENCE_LINE.match(line)
+        if m:
+            marker, info = m.groups()
+            char, length = marker[0], len(marker)
+            if stack and stack[-1][0] == char and length >= stack[-1][1] and not info:
+                stack.pop()
+                out.append("")
+                continue
+            if not (stack and stack[-1][2]):
+                directive = re.match(r"\{([\w:-]+)\}", info)
+                is_code = char != ":" and (directive is None or directive.group(1) in CODE_DIRECTIVES)
+                stack.append((char, length, is_code))
+                out.append("")
+                continue
+        out.append("" if stack and stack[-1][2] else line)
+    return "\n".join(out)
+
+
+def prose_units(text):
+    """(first line, text) for each unit: a list item (with its wrapped lines) or a paragraph.
+
+    A blank line, a list-item marker or a heading starts a new unit; a wrapped line continues the current one.
+    """
+    units, current = [], None
+    for n, line in enumerate(blank_code(text).split("\n"), start=1):
+        if not line.strip() or re.match(r"^[ \t]*:[\w-]+:|^[ \t]*%", line):
+            current = None
+        elif re.match(r"^[ ]{0,3}#{1,6}[ \t]", line):
+            units.append((n, line))
+            current = None
+        elif LIST_ITEM.match(line):
+            current = [n, LIST_ITEM.sub("", line)]
+            units.append(current)
+        elif current is None:
+            current = [n, line.strip()]
+            units.append(current)
+        else:
+            current[1] += "\n" + line.strip()
+    return [(n, t) for n, t in units]
+
+
 def prose_sentences(text):
-    """(line, sentence) for every sentence outside code fences: admonition bodies, list items and paragraphs.
+    """(line, sentence) for every sentence outside code: admonition bodies, list items and paragraphs.
 
     The detector is deliberately wider than the admonition directives: chapter pages link notebook labels in
-    the Hands-On list and in body paragraphs as well, and those sentences may state results too.
+    the Hands-On list and in body paragraphs as well, and those sentences may state results too. Each list
+    item is its own unit; sentences end at . ! ? followed by white space.
     """
-    def blank(m):
-        return "\n" * m.group(0).count("\n")
-    text = re.sub(r"^(`{3,}|~{3,})[A-Za-z][^\n]*\n[\s\S]*?\n\1[ \t]*$", blank, text, flags=re.M)  # code fences
-    text = re.sub(r"^(?:`{3,}|:{3,}|~{3,})(?:\{[^\n]*)?[ \t]*$", "", text, flags=re.M)                # directive lines
-    text = re.sub(r"^[ \t]*:[\w-]+:.*$", "", text, flags=re.M)                                       # options
-    text = re.sub(r"^[ \t]*%.*$", "", text, flags=re.M)                                              # comments
-    for para in re.finditer(r"[^\n]+(?:\n[^\n]+)*", text):
-        body, start = para.group(0), para.start()
-        cuts = [0] + [b.end() for b in re.finditer(r"(?<=[.!?])\s+", body)] + [len(body)]
+    for start, unit in prose_units(text):
+        cuts = [0] + [b.end() for b in re.finditer(r"(?<=[.!?])\s+", unit)] + [len(unit)]
         for a, b in zip(cuts, cuts[1:]):
-            sentence = re.sub(r"^\s*(?:[-*]|\d+\.)\s+", "", body[a:b]).strip()
+            sentence = unit[a:b].strip()
             if sentence:
-                yield text.count("\n", 0, start + a) + 1, sentence
+                yield start + unit.count("\n", 0, a), sentence
+
+
+def states_a_number(sentence, nouns=()):
+    """Whether the sentence has a digit or number word outside roles, inline code, link targets, proper nouns
+    and references such as `Chapter 2`, `Section 3.1`, `Figure 4` or a year."""
+    rest = ROLE.sub(" ", sentence)
+    rest = re.sub(INLINE_CODE, " ", rest)
+    rest = re.sub(r"\]\([^)\n]*\)", "]", rest)
+    rest = strip_nouns(rest, nouns)
+    for pattern in NOT_A_RESULT:
+        rest = pattern.sub(" ", rest)
+    return bool(DIGIT.search(rest) or WORD.search(rest))
 
 
 def check_admonitions(chapter_dir, claims, nouns=()):
@@ -197,8 +266,7 @@ def check_admonitions(chapter_dir, claims, nouns=()):
         for line, sentence in prose_sentences(page.read_text(encoding="utf-8")):
             if not NB_REF.search(sentence):
                 continue
-            rest = strip_nouns(ROLE.sub(" ", sentence), nouns)
-            if not (DIGIT.search(rest) or WORD.search(rest)):
+            if not states_a_number(sentence, nouns):
                 continue
             if not any(rx.search(sentence) for rx in matchers):
                 failures.append(f"{page.name}:L{line}: states a notebook result with no RESULT_CLAIMS entry: "
@@ -365,6 +433,65 @@ def test_sentences_in_lists_paragraphs_and_admonitions_are_all_examined():
     found = [sentence for _, sentence in prose_sentences(text)]
     assert [bool(NB_REF.search(x)) for x in found] == [True, True, True]
     assert [line for line, _ in prose_sentences(text)] == [1, 3, 7]
+
+
+def sentence_failures(tmp_path, text, claims=(), nouns=()):
+    (tmp_path / "index.md").write_text(text, encoding="utf-8")
+    return check_admonitions(tmp_path, list(claims), nouns)
+
+
+def test_unpunctuated_bullets_are_separate_units(tmp_path):
+    text = "- Reads a snapshot ({ref}`nb-a`)\n- Counts things\n- Runs 12 steps\n"
+    assert sentence_failures(tmp_path, text) == []
+    assert [s for _, s in prose_sentences(text)] == ["Reads a snapshot ({ref}`nb-a`)", "Counts things", "Runs 12 steps"]
+    assert [l for l, _ in prose_sentences(text)] == [1, 2, 3]
+
+
+def test_a_bullet_with_a_link_and_a_number_is_flagged_at_its_own_line(tmp_path):
+    failures = sentence_failures(tmp_path, "- First\n- Runs 12 steps ({ref}`nb-a`)\n- Third\n")
+    assert len(failures) == 1 and failures[0].startswith("index.md:L2: ")
+
+
+def test_a_claim_regex_cannot_match_across_bullets(tmp_path):
+    text = "- Mean ({ref}`nb-a`) of\n- 2.5 items\n"
+    assert sentence_failures(tmp_path, text, [(r"of\s+(2\.5)", r"x (\d)", "eq")]) == []
+
+
+def test_wrapped_nested_and_numbered_items(tmp_path):
+    wrapped = "- A long item that wraps ({ref}`nb-a`)\n  and then reaches 12 steps.\n- Next\n"
+    failures = sentence_failures(tmp_path, wrapped)
+    assert len(failures) == 1 and failures[0].startswith("index.md:L1: ")
+    nested = "- Outer\n  - Inner links {ref}`nb-a`\n  - Inner has 7\n"
+    assert sentence_failures(tmp_path, nested) == []
+    nested_hit = "- Outer\n  - Inner links {ref}`nb-a` and has 7\n"
+    assert sentence_failures(tmp_path, nested_hit)[0].startswith("index.md:L2: ")
+    numbered = "1. Links {ref}`nb-a`\n2. Has 7\n10) Third {ref}`nb-b`\n"
+    assert sentence_failures(tmp_path, numbered) == []
+    assert sentence_failures(tmp_path, "3. Links {ref}`nb-a` and has 7\n")[0].startswith("index.md:L1: ")
+
+
+def test_a_blank_line_ends_a_unit_and_a_wrapped_line_continues_a_sentence():
+    text = "Para one links {ref}`nb-a`\ncontinues here\n\nPara two has 5.\n"
+    assert [s for _, s in prose_sentences(text)] == ["Para one links {ref}`nb-a`\ncontinues here", "Para two has 5."]
+
+
+def test_numbers_in_inline_code_and_any_fence_are_not_counted(tmp_path):
+    assert sentence_failures(tmp_path, "The notebook {ref}`nb-a` sets `n = 12` and ``k = 3``.\n") == []
+    assert sentence_failures(tmp_path, "Links {ref}`nb-a`.\n\n```\nx = 12\n```\n") == []
+    assert sentence_failures(tmp_path, "```{code-cell} ipython3\nx = 12  # {ref}`nb-a` 5\n```\n") == []
+    assert sentence_failures(tmp_path, "~~~text\nsee {ref}`nb-a` 12\n~~~\n") == []
+    assert len(sentence_failures(tmp_path, "```{note}\nThe notebook {ref}`nb-a` reaches 12.\n```\n")) == 1
+
+
+def test_chapter_and_section_numbers_and_years_are_not_results(tmp_path):
+    for text in ["The Chapter 2 notebook ({ref}`nb-a`) shows it.", "Chapters 2 and 3 use {ref}`nb-a`.",
+                 "See Section 3.1 and {ref}`nb-a`.", "Part 2 uses {ref}`nb-a`.", "Exercise 4 uses {ref}`nb-a`.",
+                 "Figure 5 comes from {ref}`nb-a`.", "Table 6 comes from {ref}`nb-a`.",
+                 "Step 3 of {ref}`nb-a` repeats.", "Introduced in 2017 ({ref}`nb-a`).", "In 1999 and 2031 ({ref}`nb-a`)."]:
+        assert sentence_failures(tmp_path, text + "\n") == [], text
+    for text in ["Chapter 2's notebook ({ref}`nb-a`) reaches a loss of 0.5.", "See 12345 in {ref}`nb-a`.",
+                 "Section 3.1 and {ref}`nb-a` give 7.", "In 2017 it reached 3 ({ref}`nb-a`)."]:
+        assert len(sentence_failures(tmp_path, text + "\n")) == 1, text
 
 
 def test_a_list_item_that_links_a_notebook_and_states_a_number_needs_a_claim(tmp_path):
