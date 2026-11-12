@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       LLMATLAS_LIVE: "1"
-      LLMATLAS_USER_AGENT: "llm-atlas-ci (+https://github.com/Beaker12/llmatlas)"
+      LLMATLAS_USER_AGENT: "Mozilla/5.0 (compatible; reference-checker)"
     steps:
       - uses: actions/checkout@v4
 
@@ -36,7 +36,9 @@ jobs:
         run: pytest -m live tests/
 
       - name: Check external links
+        if: always()
         run: make linkcheck VENV_DIR=$(dirname "$(dirname "$(which python)")")
 
       - name: Verify arXiv and Crossref metadata
+        if: always()
         run: python tools/verify_arxiv.py

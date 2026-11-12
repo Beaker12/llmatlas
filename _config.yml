@@ -64,7 +64,8 @@ sphinx:
       enable: false
     latex_elements:
       # Non-Latin text under XeLaTeX. Fonts are named in the two \providecommand lines only.
-      # Keep in sync with tools/latex_smoke/fonts.tex (the smoke test of this block).
+      # Keep in sync with tools/latex_smoke/fonts.tex (the smoke test of this block); the font
+      # names must also match the defaults in tools/latex_smoke/check_pdf.sh.
       # ucharclasses is loaded before xeCJK, which otherwise stops handling CJK text.
       preamble: |
         \providecommand{\cjkfontname}{Noto Sans CJK SC}

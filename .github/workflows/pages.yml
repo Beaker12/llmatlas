@@ -43,7 +43,7 @@ jobs:
         run: pytest tests/
 
       - name: Build the book (warnings are errors)
-        run: jupyter-book build . -W --keep-going
+        run: jupyter-book build . -W --keep-going -n
 
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -69,7 +69,6 @@ jobs:
             texlive-xetex texlive-latex-extra texlive-fonts-extra \
             texlive-lang-chinese texlive-lang-arabic latexmk poppler-utils \
             fonts-freefont-otf fonts-noto-cjk fonts-noto-core
-          kpsewhich bbm.sty xeCJK.sty ucharclasses.sty bidi.sty
 
       - name: Assert the required LaTeX packages are installed
         run: |
@@ -88,7 +87,7 @@ jobs:
           mkdir -p _build/smoke
           xelatex -interaction=nonstopmode -halt-on-error -output-directory _build/smoke \
             tools/latex_smoke/fonts.tex
-          bash tools/latex_smoke/check_pdf.sh _build/smoke/fonts.pdf
+          bash tools/latex_smoke/check_pdf.sh _build/smoke/fonts.pdf "Noto Sans CJK SC" "Noto Naskh Arabic" _build/smoke/fonts.log
 
       - name: Build the book as LaTeX
         run: jupyter-book build . --builder latex
@@ -99,7 +98,7 @@ jobs:
 
       - name: Check the book PDF
         # The book does not contain every smoke sample; check the embedded fonts only.
-        run: CHECK_SAMPLES=0 bash tools/latex_smoke/check_pdf.sh _build/latex/llmatlas.pdf
+        run: CHECK_SAMPLES=0 bash tools/latex_smoke/check_pdf.sh _build/latex/llmatlas.pdf "Noto Sans CJK SC" "Noto Naskh Arabic" _build/latex/llmatlas.log
 
       - uses: actions/upload-artifact@v4
         with:
