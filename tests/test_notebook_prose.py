@@ -42,6 +42,12 @@ def proper_nouns(chapter_dir, global_file=GLOBAL_NOUNS):
     return read_names(global_file) + read_names(Path(chapter_dir) / "proper-nouns.txt")
 
 
+def strip_nouns(text, nouns=()):
+    for name in sorted(nouns, key=len, reverse=True):
+        text = re.sub(rf"(?<![\w-]){re.escape(name)}(?![\w-])(?!\.\d)", " ", text)
+    return text
+
+
 def strip_exempt(text, nouns=()):
     """The markdown text with math, code, headings, link targets, labels and proper nouns removed."""
     text = re.sub(r"(`{3,}|~{3,})[\s\S]*?\1", " ", text)                  # code blocks
@@ -49,13 +55,12 @@ def strip_exempt(text, nouns=()):
     text = re.sub(r"(?<![\\\w])\$[^$\n]+\$", " ", text)                    # inline math
     text = re.sub(r"``[^\n]*?``|`[^`\n]*`", " ", text)                     # inline code (and roles' targets)
     text = re.sub(r"^[ ]{0,3}#{1,6}[ \t].*$", " ", text, flags=re.M)       # heading lines
+    text = re.sub(r"^[^\n]+\n[ ]{0,3}(?:=+|-+)[ \t]*$", " ", text, flags=re.M)  # setext headings
     text = re.sub(r"^\(\S+\)=[ \t]*$", " ", text, flags=re.M)              # MyST labels
     text = re.sub(r"\]\([^)\n]*\)", "]", text)                             # link targets
     text = re.sub(r"^\[[^\]\n]+\]:[ \t]*\S+.*$", " ", text, flags=re.M)    # reference link definitions
     text = re.sub(r"https?://[^\s)>]+", " ", text)                         # bare URLs
-    for name in sorted(nouns, key=len, reverse=True):
-        text = re.sub(rf"(?<![\w-]){re.escape(name)}(?![\w-])(?!\.\d)", " ", text)
-    return text
+    return strip_nouns(text, nouns)
 
 
 def prose_hits(text, nouns=()):
@@ -154,8 +159,33 @@ def admonition_sentences(text):
                 yield text.count("\n", 0, start + a) + 1, sentence
 
 
-def check_admonitions(chapter_dir, claims):
-    """Failures for sentences that link a notebook result with a number but match no claim."""
+def prose_sentences(text):
+    """(line, sentence) for every sentence outside code fences: admonition bodies, list items and paragraphs.
+
+    The detector is deliberately wider than the admonition directives: chapter pages link notebook labels in
+    the Hands-On list and in body paragraphs as well, and those sentences may state results too.
+    """
+    def blank(m):
+        return "\n" * m.group(0).count("\n")
+    text = re.sub(r"^(`{3,}|~{3,})[A-Za-z][^\n]*\n[\s\S]*?\n\1[ \t]*$", blank, text, flags=re.M)  # code fences
+    text = re.sub(r"^(?:`{3,}|:{3,}|~{3,})(?:\{[^\n]*)?[ \t]*$", "", text, flags=re.M)                # directive lines
+    text = re.sub(r"^[ \t]*:[\w-]+:.*$", "", text, flags=re.M)                                       # options
+    text = re.sub(r"^[ \t]*%.*$", "", text, flags=re.M)                                              # comments
+    for para in re.finditer(r"[^\n]+(?:\n[^\n]+)*", text):
+        body, start = para.group(0), para.start()
+        cuts = [0] + [b.end() for b in re.finditer(r"(?<=[.!?])\s+", body)] + [len(body)]
+        for a, b in zip(cuts, cuts[1:]):
+            sentence = re.sub(r"^\s*(?:[-*]|\d+\.)\s+", "", body[a:b]).strip()
+            if sentence:
+                yield text.count("\n", 0, start + a) + 1, sentence
+
+
+def check_admonitions(chapter_dir, claims, nouns=()):
+    """Failures for sentences that link a notebook result with a number but match no claim.
+
+    Every sentence of the pages is examined (see prose_sentences), so the check cannot miss a link because of
+    the kind of block it sits in. Proper nouns such as FineWeb-2 are not counted as numbers.
+    """
     matchers = []
     for chapter_re, _, _ in claims:
         try:
@@ -164,10 +194,10 @@ def check_admonitions(chapter_dir, claims):
             pass
     failures = []
     for page in sorted(Path(chapter_dir).glob("*.md")):
-        for line, sentence in admonition_sentences(page.read_text(encoding="utf-8")):
+        for line, sentence in prose_sentences(page.read_text(encoding="utf-8")):
             if not NB_REF.search(sentence):
                 continue
-            rest = ROLE.sub(" ", sentence)
+            rest = strip_nouns(ROLE.sub(" ", sentence), nouns)
             if not (DIGIT.search(rest) or WORD.search(rest)):
                 continue
             if not any(rx.search(sentence) for rx in matchers):
@@ -183,7 +213,7 @@ def check_chapter(chapter_dir, claims=None, global_file=GLOBAL_NOUNS):
     failures = []
     for path in notebooks(chapter_dir):
         failures += check_prose_cells(path, nouns)
-    return failures + check_claims(chapter_dir, claims) + check_admonitions(chapter_dir, claims)
+    return failures + check_claims(chapter_dir, claims) + check_admonitions(chapter_dir, claims, nouns)
 
 
 @pytest.mark.parametrize("chapter_dir", CHAPTER_DIRS, ids=CHAPTER_IDS)
@@ -314,3 +344,39 @@ def test_an_admonition_without_a_notebook_link_or_number_needs_no_claim():
     text = "```{admonition} T\nThe notebook {ref}`nb-x` lists every value.\n\nSee 3 items and {numref}`fig-ch1-a`.\n```\n"
     assert [s for _, s in admonition_sentences(text)] == [
         "The notebook {ref}`nb-x` lists every value.", "See 3 items and {numref}`fig-ch1-a`."]
+
+
+def test_every_notebook_link_in_the_chapter_pages_is_in_a_sentence_the_check_examines():
+    missed = []
+    for chapter_dir in CHAPTER_DIRS:
+        for page in sorted(chapter_dir.glob("*.md")):
+            text = page.read_text(encoding="utf-8")
+            outside_code = re.sub(r"^(`{3,}|~{3,})[A-Za-z][^\n]*\n[\s\S]*?\n\1[ \t]*$", "", text, flags=re.M)
+            expected = len(NB_REF.findall(outside_code))
+            seen = sum(len(NB_REF.findall(sentence)) for _, sentence in prose_sentences(text))
+            if seen != expected:
+                missed.append(f"{chapter_dir.name}/{page.name}: {expected} links outside code, {seen} in examined sentences")
+    assert not missed, "\n".join(missed)
+
+
+def test_sentences_in_lists_paragraphs_and_admonitions_are_all_examined():
+    text = ("Intro paragraph with {ref}`nb-a` and 3 things.\n\n- A list item ({ref}`nb-b`) with two parts.\n\n"
+            "```{admonition} T\n:class: tip\nBody sentence {ref}`nb-c` shows 4.\n```\n\n```python\nprint('{ref}`nb-d`')\n```\n")
+    found = [sentence for _, sentence in prose_sentences(text)]
+    assert [bool(NB_REF.search(x)) for x in found] == [True, True, True]
+    assert [line for line, _ in prose_sentences(text)] == [1, 3, 7]
+
+
+def test_a_list_item_that_links_a_notebook_and_states_a_number_needs_a_claim(tmp_path):
+    page = tmp_path / "index.md"
+    page.write_text("- Runs 12 steps ({ref}`nb-x`)\n", encoding="utf-8")
+    assert len(check_admonitions(tmp_path, [])) == 1
+    assert check_admonitions(tmp_path, [], nouns=[]) != []
+    page.write_text("- Uses FineWeb-2 ({ref}`nb-x`)\n", encoding="utf-8")
+    assert check_admonitions(tmp_path, [], nouns=["FineWeb-2"]) == []
+
+
+def test_setext_headings_are_exempt_but_hyphenated_number_words_are_not(tmp_path):
+    assert prose_hits("Title with 3 digits\n===\n\nplain text.") == []
+    assert prose_hits("Another 2 words\n---\n\nplain text.") == []
+    assert prose_hits("Two-thirds of the data.") == ["Two"]

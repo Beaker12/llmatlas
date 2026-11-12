@@ -35,6 +35,9 @@ def compare_cells(built, committed):
         if a[0] != b[0]:
             failures.append(f"cell {i}: generator builds a {a[0]} cell, notebook has a {b[0]} cell")
             continue
+        if a[1].rstrip("\n") == b[1].rstrip("\n"):
+            failures.append(f"cell {i}: trailing newline differs")
+            continue
         old, new = a[1].splitlines(), b[1].splitlines()
         line = next((n for n, (x, y) in enumerate(zip(old, new), start=1) if x != y), min(len(old), len(new)) + 1)
         x = old[line - 1] if line <= len(old) else "<end>"
@@ -87,3 +90,8 @@ def test_importing_the_generator_writes_nothing():
     before = target.stat().st_mtime_ns
     importlib.reload(importlib.import_module("tools.build_architecture_notebook"))
     assert target.stat().st_mtime_ns == before
+
+
+def test_cells_that_differ_only_by_a_trailing_newline_are_named_as_such():
+    assert compare_cells([("code", "x = 1")], [("code", "x = 1\n")]) == ["cell 0: trailing newline differs"]
+    assert compare_cells([("code", "x = 1\n\n")], [("code", "x = 1")]) == ["cell 0: trailing newline differs"]
