@@ -254,6 +254,23 @@ def test_the_house_list_is_a_hand_maintained_supplement_with_no_overlap():
     assert "Words VarCon accepts in" in WORDLIST.read_text(encoding="utf-8")[:900]
 
 
+def test_proper_names_are_not_flagged_and_real_misspellings_still_are(tmp_path):
+    pairs = load_pairs()
+    sentence = "Fred met Cree elders; Aesop and the Aeneid, Phoenicia and Caesar, Pangaea and Plataea, Taegu."
+    assert failures_of_page(tmp_path / "a", sentence, pairs=pairs) == []
+    for name in ("fred", "cree", "aesop", "aeneid", "adonises", "pangaea", "phoenicia", "plataea", "taegu", "caesar"):
+        assert name not in pairs
+    wrong = "The tokenisation and normalisation of behaviour in an encyclopaedia."
+    assert [f.split("'")[1] for f in failures_of_page(tmp_path / "b", wrong, pairs=pairs)] == [
+        "tokenisation", "normalisation", "behaviour", "encyclopaedia"]
+
+
+def test_the_header_gives_the_pair_count():
+    head = WORDLIST.read_text(encoding="utf-8")[:1200]
+    count = int(re.search(r"# (\d+) pairs\.", head).group(1))
+    assert count == len(load_pairs((WORDLIST,)))
+
+
 def test_a_quotation_exemption_does_not_cross_a_blank_line_or_exceed_300_characters(tmp_path):
     cited = " {cite}`smith2020x`.\n"
     unbalanced = "He said \"start of a quote about the colour.\n\nNext paragraph with the colour and a \"" + "x" * 5 + "\"" + cited

@@ -31,6 +31,10 @@ SUFFIXES = [("ised", "ized"), ("ises", "izes"), ("ising", "izing"), ("isation", 
 DOMAIN_VERBS = ["tokenise", "detokenise", "pretokenise", "subtokenise", "pseudonymise", "binarise", "lemmatise",
                 "quantise", "vectorise", "discretise", "canonicalise", "regularise", "parametrise", "reparametrise",
                 "linearise", "diagonalise", "orthogonalise", "marginalise", "factorise", "memoise", "sanitise"]
+# Proper names that VarCon lists in lower case as if they were spelling variants (Fred, Cree, Aesop, Aeneid, Adonis,
+# Pangaea, Phoenicia, Plataea, Taegu, Caesar). Neither the capitalisation rule nor the American-spelling rule can see them,
+# because every one occurs once, in lower case, and nowhere else in VarCon.
+NOT_SPELLINGS = {"caesar", "fred", "cree", "aesop", "aeneid", "adonises", "pangaea", "phoenicia", "plataea", "taegu"}
 HOUSE_CHOICES = {"catalogue": "catalog", "catalogues": "catalogs", "encyclopaedia": "encyclopedia",
                  "encyclopaedias": "encyclopedias", "encyclopaedic": "encyclopedic", "grey": "gray", "greys": "grays",
                  "judgement": "judgment", "judgements": "judgments", "acknowledgement": "acknowledgment",
@@ -55,24 +59,37 @@ def parse(path):
         yield entries
 
 
-def build(path):
-    """(pairs, american): the British-to-American pairs and the set of words VarCon accepts in American English."""
+def build(path, dropped=None):
+    """(pairs, american): the British-to-American pairs and the set of words VarCon accepts in American English.
+
+    Proper names are left out: rule 1 skips every entry in which VarCon capitalises any form (a proper noun);
+    rule 2 drops a pair whose British form is an American spelling of anything in VarCon (the base rule above);
+    NOT_SPELLINGS drops the names VarCon lists in lower case. `dropped`, if given, receives
+    {british word: rule} for every candidate removed by rule 2 or NOT_SPELLINGS.
+    """
+    dropped = {} if dropped is None else dropped
     american, candidates = set(), defaultdict(set)
     for entries in parse(path):
+        if any(word[:1].isupper() for _, word in entries):        # rule 1: a capitalised form is a proper noun
+            continue
         preferred = [w for marks, w in entries if marks.get("A") in ("", ".")] or \
                     [w for marks, w in entries if marks.get("A") == "v"]
         for marks, word in entries:
             if marks.get("A") not in (None, "x", "-"):
-                american.add(word)
+                american.add(word.lower())
         for marks, word in entries:
             if any(marks.get(c) not in (None, "x", "-") for c in "BZ") and preferred:
                 candidates[word].add(preferred[0])
     pairs = {}
     for word, partners in candidates.items():
-        if word in american or len(partners) != 1 or not re.fullmatch(r"[a-z]+", word):
+        if len(partners) != 1 or not re.fullmatch(r"[a-z]+", word):
             continue
         (us,) = partners
-        if us != word and re.fullmatch(r"[a-z]+", us):
+        if word in american:
+            dropped[word] = "rule 2"
+        elif word in NOT_SPELLINGS:
+            dropped[word] = "NOT_SPELLINGS"
+        elif us != word and re.fullmatch(r"[a-z]+", us):
             pairs[word] = us
     return dict(sorted(pairs.items())), american
 
@@ -92,7 +109,7 @@ def inflections(british_stem, american_stem, yse=False):
 def build_house(pairs, american):
     """(derived, domain, choices): three dicts of pairs absent from `pairs` and not American spellings."""
     def fresh(candidates, taken):
-        return {uk: us for uk, us in candidates if uk not in pairs and uk not in american and uk not in taken
+        return {uk: us for uk, us in candidates if uk not in pairs and uk not in american and uk not in taken and uk not in NOT_SPELLINGS
                 and re.fullmatch(r"[a-z]+", uk) and re.fullmatch(r"[a-z]+", us)}
 
     derived = {}
@@ -120,7 +137,8 @@ def main(varcon, readme, out, house_out):
               "varcon/varcon.txt in https://github.com/en-wl/wordlist. Derived by tests/make_spelling_list.py:",
               "pairs whose British form is not also an accepted American spelling in VarCon. Words VarCon accepts in",
               "American English (grey, catalogue, judgement ...) are not here; tests/spelling_house.txt adds the house",
-              "choices and the inflections VarCon lacks.",
+              "choices and the inflections VarCon lacks. Proper names are excluded (see build() and NOT_SPELLINGS).",
+              f"{len(pairs)} pairs.",
               "", "VarCon licence notice, reproduced as the licence requires:", ""]
     lines = [f"# {l}".rstrip() for l in header + licence(readme).splitlines()]
     with open(out, "w", encoding="utf-8") as f:

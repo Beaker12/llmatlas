@@ -3,7 +3,8 @@
 # varcon/varcon.txt in https://github.com/en-wl/wordlist. Derived by tests/make_spelling_list.py:
 # pairs whose British form is not also an accepted American spelling in VarCon. Words VarCon accepts in
 # American English (grey, catalogue, judgement ...) are not here; tests/spelling_house.txt adds the house
-# choices and the inflections VarCon lacks.
+# choices and the inflections VarCon lacks. Proper names are excluded (see build() and NOT_SPELLINGS).
+# 12655 pairs.
 #
 # VarCon licence notice, reproduced as the licence requires:
 #
@@ -116,7 +117,6 @@ actualising	actualizing
 acuaesthesia	acuesthesia
 adonise	adonize
 adonised	adonized
-adonises	adonizes
 adonising	adonizing
 adulterise	adulterize
 adulterised	adulterized
@@ -140,7 +140,6 @@ aemule	emule
 aemuled	emuled
 aemules	emules
 aemuling	emuling
-aeneid	eneid
 aeolic	eolic
 aeolipile	eolipile
 aeolipiles	eolipiles
@@ -167,7 +166,6 @@ aeschynite	eschynite
 aesculapian	esculapian
 aesculetin	esculetin
 aesculin	esculin
-aesop	esop
 aestheses	estheses
 aesthesia	esthesia
 aesthesias	esthesias
@@ -1199,7 +1197,6 @@ caenogenetic	cenogenetic
 caenogenetically	cenogenetically
 caenozoic	cenozoic
 caerule	cerule
-caesar	cesar
 caesious	cesious
 caespitose	cespitose
 caespitosely	cespitosely
@@ -2132,7 +2129,6 @@ creatin	ceratin
 creatins	ceratins
 creaturise	creaturize
 creaturises	creaturizes
-cree	cere
 crees	ceres
 crenellate	crenelate
 crenellated	crenelated
@@ -4103,7 +4099,6 @@ fraterniser	fraternizer
 fraternisers	fraternizers
 fraternises	fraternizes
 fraternising	fraternizing
-fred	ferd
 freity	ferity
 fribourg	friborg
 frictionise	frictionize
@@ -7750,7 +7745,6 @@ panellisation	panelization
 panellist	panelist
 panellists	panelists
 panellization	panelization
-pangaea	pangea
 panomphaean	panomphean
 pantheonisation	pantheonization
 pantheonisations	pantheonizations
@@ -8149,7 +8143,6 @@ phloeum	phleum
 phlyctaena	phlyctena
 phlyctaenae	phlyctenae
 phlyctaenula	phlyctenula
-phoenicia	phenicia
 phoenicopter	phenicopter
 phonemicisation	phonemicization
 phonemicisations	phonemicizations
@@ -8288,7 +8281,6 @@ plasticiser	plasticizer
 plasticisers	plasticizers
 plasticises	plasticizes
 plasticising	plasticizing
-plataea	platea
 platinisation	platinization
 platinisations	platinizations
 platinise	platinize
@@ -10822,7 +10814,6 @@ tachypnoea	tachypnea
 tachypnoeas	tachypneas
 tachypnoeic	tachypneic
 tae	te
-taegu	tegu
 taels	tels
 taenia	tenia
 taeniacidal	teniacidal
