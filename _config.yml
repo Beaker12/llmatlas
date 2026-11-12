@@ -8,11 +8,16 @@ logo: _static/logo.svg
 only_build_toc_files: true
 
 execute:
-  # Notebooks are committed with executed outputs and re-executed by the CI
-  # nbconvert step (see .github/workflows/pages.yml); the book build only runs a
-  # notebook that is missing outputs.
-  execute_notebooks: auto
-  timeout: 120
+  # The book build never executes a notebook: outputs are committed, and
+  # tests/test_notebook_outputs.py re-executes every notebook offline and compares
+  # the results (see .github/workflows/pages.yml).
+  execute_notebooks: "off"
+  timeout: 600
+
+latex:
+  latex_engine: xelatex
+  latex_documents:
+    targetname: llmatlas.tex
 
 parse:
   myst_enable_extensions:
@@ -26,6 +31,12 @@ parse:
 
 bibtex_bibfiles:
   - references.bib
+  - bib/ch01.bib
+  - bib/ch02.bib
+  - bib/ch03.bib
+  - bib/ch04.bib
+  - bib/ch05.bib
+  - bib/ch06.bib
 
 repository:
   url: https://github.com/Beaker12/llmatlas
@@ -52,6 +63,7 @@ sphinx:
     ogp_social_cards:
       enable: false
     linkcheck_ignore:
+      - "https://doi.org/10.1145/.*"      # dl.acm.org returns 403 to non-browser clients
       - "https://doi.org/10.1162/.*"      # direct.mit.edu returns 403 to non-browser clients
       - "https://doi.org/10.1121/.*"      # pubs.aip.org returns 403 to non-browser clients
     linkcheck_timeout: 20
