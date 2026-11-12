@@ -2,11 +2,11 @@
 
 This page collects the tokenizer material from Chapter 1 that goes beyond what you need to follow the transformer: modern tokenizers, special tokens, vocabulary construction, cross-lingual and domain issues, quality metrics, a complete BPE tokenizer, and analysis tools. Read {doc}`index` first.
 
-(sec-tdd-t-1-modern-tokenization-strategies)=
+(sec-tdd-modern-tokenization-strategies)=
 
 ## T.1 Modern Tokenization Strategies
 
-(sec-tdd-tiktoken-openai-s-tokenizer)=
+(sec-tdd-tiktoken-tokenizer)=
 
 ### Tiktoken (OpenAI's Tokenizer)
 
@@ -97,11 +97,11 @@ def build_vocab_coverage(corpus, coverage_threshold=0.95):
     return vocab
 ```
 
-(sec-tdd-t-2-tokenization-impact-on)=
+(sec-tdd-tokenization-impact-model-behavior)=
 
 ## T.2 Tokenization Impact on Model Behavior
 
-(sec-tdd-length-and-efficiency)=
+(sec-tdd-length-efficiency)=
 
 ### Length and Efficiency
 
@@ -176,7 +176,7 @@ Different strategies for unknown tokens:
 1. **Character fallback**: Fall back to character-level for unknown segments
 1. **Byte fallback**: Ultimate fallback to byte representation
 
-(sec-tdd-t-3-special-tokens-and)=
+(sec-tdd-special-tokens-their-roles)=
 
 ## T.3 Special Tokens and Their Roles
 
@@ -199,7 +199,7 @@ SPECIAL_TOKENS = {
 }
 ```
 
-(sec-tdd-token-ids-and-embeddings)=
+(sec-tdd-token-ids-embeddings)=
 
 ### Token IDs and Embeddings
 
@@ -223,7 +223,7 @@ class Tokenizer:
         return self.detokenize(tokens)  # Your detokenization logic
 ```
 
-(sec-tdd-t-4-practical-considerations)=
+(sec-tdd-practical-considerations)=
 
 ## T.4 Practical Considerations
 
@@ -265,7 +265,7 @@ def benchmark_tokenization(texts, tokenizer):
     }
 ```
 
-(sec-tdd-reversibility-and-information-loss)=
+(sec-tdd-reversibility-information-loss)=
 
 ### Reversibility and Information Loss
 
@@ -288,7 +288,7 @@ def test_reversibility(tokenizer, texts):
     return failures
 ```
 
-(sec-tdd-t-5-tokenization-challenges-and)=
+(sec-tdd-tokenization-challenges-solutions)=
 
 ## T.5 Tokenization Challenges and Solutions
 
@@ -456,7 +456,7 @@ legal_text = "The aforementioned clause notwithstanding the heretofore provision
 # Need specialized vocabulary for legal corpus
 ```
 
-(sec-tdd-quality-metrics-for-tokenization)=
+(sec-tdd-quality-metrics-tokenization)=
 
 ### Quality Metrics for Tokenization
 
@@ -511,7 +511,7 @@ def compare_tokenizers(tokenizers, test_corpus):
     return df
 ```
 
-(sec-tdd-best-practices-for-tokenization)=
+(sec-tdd-best-practices-tokenization)=
 
 ### Best Practices for Tokenization
 
@@ -641,7 +641,7 @@ def create_multi_domain_tokenizer(domain_corpora, vocab_size=32000):
     return tokenizer, domain_performance
 ```
 
-(sec-tdd-t-6-practical-implementation)=
+(sec-tdd-practical-implementation)=
 
 ## T.6 Practical Implementation
 

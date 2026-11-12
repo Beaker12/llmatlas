@@ -51,11 +51,11 @@ Read a modern model's `config.json` as a list of decisions. Each key is the answ
 
 The theme throughout is that architecture choices are constraints from somewhere else in the system. The head count is chosen for the cache, the expert count for the interconnect, the norm placement for the learning rate. A model table is therefore worth reading column by column.
 
-(sec-ch6-from-the-2017-block-to)=
+(sec-ch6-from-2017-to-2025-block)=
 
 ## 1. From the 2017 Block to the 2025 Block
 
-(sec-ch6-the-models-in-this-chapter)=
+(sec-ch6-models-this-chapter)=
 
 ### 1.1 The models in this chapter
 
@@ -116,11 +116,11 @@ The notebook section {ref}`nb-arch-configs` loads the configurations of the unga
 
 It is worth stating what is *constant*, because it explains why the field moved by small edits rather than redesigns. Every model above is autoregressive, uses causal self-attention, a residual stream of width $d_{model}$ that every sublayer reads from and writes to, and a learned token embedding. There are no recurrent connections, no convolutions in the main path and no cross-attention. The residual stream is the shared bus, and almost every innovation in this chapter is a change to what is plugged into it or to how the plug is normalized.
 
-(sec-ch6-normalization-and-the-residual-stream)=
+(sec-ch6-normalization-residual-stream)=
 
 ## 2. Normalization and the Residual Stream
 
-(sec-ch6-pre-norm-and-post-norm)=
+(sec-ch6-pre-norm-post-norm)=
 
 ### 2.1 Pre-norm and post-norm
 
@@ -140,7 +140,7 @@ $$\mathrm{RMSNorm}(x) = \gamma \odot \frac{x}{\sqrt{\frac{1}{d}\sum_{i=1}^{d} x_
 
 The argument is that the re-scaling is what matters and the re-centring is not. It has one parameter vector instead of two and a cheaper forward and backward pass; it is what every model in the table uses. Chapter 1 gives the implementation, and Chapter 2 derives the backward pass of layer normalization. In the parameter count, each RMSNorm contributes $d_{model}$ weights.
 
-(sec-ch6-normalizing-queries-and-keys)=
+(sec-ch6-normalizing-queries-keys)=
 
 ### 2.3 Normalizing queries and keys
 
@@ -156,7 +156,7 @@ A second family places the normalization on the *output* of each sublayer, befor
 
 All of these keep the *magnitude* of what each layer adds to the residual stream bounded. That is the common thread: the stream is a running sum of terms, and the stability techniques of the last five years are ways of controlling the size of the terms.
 
-(sec-ch6-initialization-of-the-residual-branches)=
+(sec-ch6-initialization-residual-branches)=
 
 ### 2.5 Initialization of the residual branches
 
@@ -167,11 +167,11 @@ The residual stream is a sum of $2L$ terms. If each term has unit variance at in
 The notebook section {ref}`nb-arch-block` checks the chapter's RMSNorm against PyTorch's reference, and {ref}`nb-arch-train` trains a six-layer post-norm and pre-norm model from the same seeds and learning rate, reporting the loss of each over five seeds.
 ```
 
-(sec-ch6-the-feed-forward-network)=
+(sec-ch6-feed-forward-network)=
 
 ## 3. The Feed-Forward Network
 
-(sec-ch6-from-relu-to-gated-units)=
+(sec-ch6-relu-gated-units)=
 
 ### 3.1 From ReLU to gated units
 
@@ -199,7 +199,7 @@ Linear layers in these models have no bias terms. The biases add few parameters 
 
 ## 4. Attention Variants
 
-(sec-ch6-why-inference-drives-the-design)=
+(sec-ch6-inference-drives-design)=
 
 ### 4.1 Why inference drives the design
 
@@ -228,7 +228,7 @@ def kv_cache_elements_per_token(cfg):
     return layers * 2 * n_kv * head_dim
 ```
 
-(sec-ch6-multi-query-and-grouped-query)=
+(sec-ch6-multi-query-grouped-query-attention)=
 
 ### 4.2 Multi-query and grouped-query attention
 
@@ -250,7 +250,7 @@ The choice of $n_{kv}$ is a direct dial on the cache. Llama 3.1 8B uses 8 key/va
 
 At 128K tokens, Llama 3.1 8B's cache for a single sequence is $131{,}072 \times 131{,}072 = 17.2$ GB, more than its 16.1 GB of bf16 weights. Section 8 works through this.
 
-(sec-ch6-what-grouped-query-attention-does)=
+(sec-ch6-grouped-query-attention-computation)=
 
 ### 4.3 What grouped-query attention does to the computation
 
@@ -283,7 +283,7 @@ Queries are also compressed through a low-rank bottleneck in V3 (rank 1,536) to 
 
 DeepSeek-V3 caches 70 KB per token against Llama 3.1 70B's 328 KB, although it has 128 heads against 64. The design is a bet that the cache is the binding constraint and that the extra projection compute is cheap by comparison.
 
-(sec-ch6-sliding-window-and-interleaved-attention)=
+(sec-ch6-sliding-window-interleaved-attention)=
 
 ### 4.5 Sliding-window and interleaved attention
 
@@ -298,17 +298,17 @@ A property of window attention that surprises people: tokens near the start of a
 The notebook section {ref}`nb-arch-kvcache` generates text with a cache and checks that it equals the full forward pass, measures the cache of the small model in bytes against the formulas above for MHA, GQA and MQA, and builds a simplified latent cache whose output matches its own uncompressed expansion.
 ```
 
-(sec-ch6-positions-and-long-context)=
+(sec-ch6-positions-long-context)=
 
 ## 5. Positions and Long Context
 
-(sec-ch6-rope-in-one-paragraph)=
+(sec-ch6-rope-one-paragraph)=
 
 ### 5.1 RoPE in one paragraph
 
 Chapter 1 derived rotary embeddings {cite}`su2021roformer`. Each pair of dimensions $(2i, 2i+1)$ of a query or key at position $m$ is rotated by the angle $m\,\theta_i$, with $\theta_i = b^{-2i/d}$ for a base $b$ (10,000 in the original) and $i = 0, \dots, d/2 - 1$. The dot product between a query at position $m$ and a key at position $n$ then depends only on $m - n$. The frequencies range from $\theta_0 = 1$ radian per position, which completes a turn in about 6 tokens, down to $\theta_{d/2-1} = b^{-(d-2)/d}$, almost $1/b$, which turns once in about $2\pi b$ tokens. The base therefore sets the longest wavelength the model can represent.
 
-(sec-ch6-why-trained-length-matters)=
+(sec-ch6-trained-length-matters)=
 
 ### 5.2 Why trained length matters
 
@@ -342,13 +342,13 @@ def ntk_aware_base(base, scale, d):
 
 The notebook section {ref}`nb-arch-rope` asserts the identities above to $10^{-9}$: after NTK-aware scaling, $\theta_0$ is unchanged and $\theta_{d/2-1}$ is exactly $1/s$ of its old value; with position interpolation, the largest angle at the low-frequency components over the extended length stays below the largest angle seen in training.
 
-(sec-ch6-alternatives-to-rope)=
+(sec-ch6-alternatives-rope)=
 
 ### 5.3 Alternatives to RoPE
 
 ALiBi adds a penalty to attention scores proportional to the distance between query and key, with a different slope per head, and no positional signal elsewhere {cite}`press2022train`. It extrapolates to longer sequences with no change, which was its selling point, but it has been displaced by RoPE with rescaling in most recent models. T5's bucketed biases {cite}`raffel2019exploring`, implemented in Chapter 1, belong to the same family: a learned additive bias indexed by distance. Shaw et al. introduced relative positions earlier, as learned vectors added to the keys and values {cite}`shaw2018self`.
 
-(sec-ch6-long-context-training-and-what)=
+(sec-ch6-long-context-training)=
 
 ### 5.4 Long-context training and what a number promises
 
@@ -371,7 +371,7 @@ The notebook section {ref}`nb-arch-rope` checks that RoPE preserves norms and ma
 
 ## 6. Mixture of Experts
 
-(sec-ch6-the-idea)=
+(sec-ch6-moe-idea)=
 
 ### 6.1 The idea
 
@@ -403,7 +403,7 @@ def route_top_k(x, router_weight, k):
     return top_i, gates, n_experts * (f * p).sum()
 ```
 
-(sec-ch6-keeping-the-experts-balanced)=
+(sec-ch6-keeping-experts-balanced)=
 
 ### 6.2 Keeping the experts balanced
 
@@ -415,7 +415,7 @@ Left alone, routers collapse: an expert that gets slightly more tokens trains fa
 
 **Expert-choice routing.** Zhou et al. invert the direction: each expert chooses its top tokens, which makes balance exact by construction, though it complicates autoregressive decoding, where the future tokens that would compete for an expert are not yet known {cite}`zhou2022mixture`.
 
-(sec-ch6-fine-grained-and-shared-experts)=
+(sec-ch6-fine-grained-shared-experts)=
 
 ### 6.3 Fine-grained and shared experts
 
@@ -425,7 +425,7 @@ DeepSeek-V3 adds three more refinements {cite}`deepseek2024v3`. Its router uses 
 
 The first layers of both DeepSeek models are dense (one in V2-Lite, three in V3); the configuration's `first_k_dense_replace` says how many.
 
-(sec-ch6-total-and-active-parameters)=
+(sec-ch6-total-active-parameters)=
 
 ### 6.4 Total and active parameters
 
@@ -440,7 +440,7 @@ Vendors disagree on whether "active" includes the input embedding table, which c
 The notebook section {ref}`nb-arch-moe` routes 4,096 random tokens through a top-2 router over 8 experts, checks that the dispatch fractions are near uniform and that the auxiliary loss is near 1 for a balanced router and well above it for one biased toward a single expert, and verifies the capacity-dropping count against a plain loop.
 ```
 
-(sec-ch6-efficiency-built-into-the-architecture)=
+(sec-ch6-efficiency-built-into-architecture)=
 
 ## 7. Efficiency Built into the Architecture
 
@@ -450,7 +450,7 @@ The notebook section {ref}`nb-arch-moe` routes 4,096 random tokens through a top
 
 FlashAttention computes exactly the same attention output as the textbook implementation but never writes the $n \times n$ score matrix to GPU main memory. It processes blocks that fit in on-chip SRAM, keeping running softmax statistics, so the extra memory is linear rather than quadratic in sequence length and the traffic to main memory falls by a large constant factor {cite}`dao2022flashattention`. FlashAttention-2 improves the work partition across thread blocks and warps {cite}`dao2024flashattention2`. Because the result is identical up to floating-point rounding, these are kernel choices, not architectural ones, but they changed what is affordable: attention memory stopped limiting sequence length, and the architectural cost that remains is the KV cache. PyTorch's `scaled_dot_product_attention`, used in this chapter's notebook, dispatches to such a kernel when one is available.
 
-(sec-ch6-the-kv-cache-in-serving)=
+(sec-ch6-kv-cache-serving)=
 
 ### 7.2 The KV cache in serving
 
@@ -462,7 +462,7 @@ Paged attention manages the KV cache like virtual memory, in fixed-size blocks a
 
 Standard training predicts one next token per position. Gloeckle et al. add extra heads that predict tokens 2, 3 and 4 positions ahead from the same hidden state, which improved code benchmarks at larger scales and allows speculative decoding without a separate draft model {cite}`gloeckle2024better`. DeepSeek-V3 uses a variant in which the additional prediction is made by a one-layer transformer module that takes the main model's hidden state and the next token's embedding, keeping the causal chain {cite}`deepseek2024v3`. The module is used as a training objective; it is not needed at inference (it can be dropped, or used for speculative decoding). Its layer accounts for the 13.46B elements that are in V3's checkpoint but not in its 671B (about 11.6B of them are the module's own weights; the rest are copies of the shared embedding and output head).
 
-(sec-ch6-embeddings-and-vocabulary)=
+(sec-ch6-embeddings-vocabulary)=
 
 ### 7.4 Embeddings and vocabulary
 
@@ -474,7 +474,7 @@ Larger vocabularies shorten sequences (Chapter 1 and its tokenization companion 
 
 ## 8. Accounting
 
-(sec-ch6-counting-parameters-from-a-configuration)=
+(sec-ch6-counting-parameters-configuration)=
 
 ### 8.1 Counting parameters from a configuration
 
@@ -607,7 +607,7 @@ Weights take the parameter count times the bytes per parameter: 2 for bf16, 1 fo
 The notebook section {ref}`nb-arch-configs` runs the function above on every configuration, compares it with the checkpoint element counts, the hub totals and the published figures, and prints the derived tables of this chapter, with an assertion behind each check.
 ```
 
-(sec-ch6-encoders-and-encoder-decoders-today)=
+(sec-ch6-encoders-encoder-decoders-today)=
 
 ## 9. Encoders and Encoder-Decoders Today
 
@@ -646,7 +646,7 @@ Decoder-only models dominate generation, but two other designs persist where the
 
 ## Further Reading
 
-(sec-ch6-models-and-technical-reports)=
+(sec-ch6-models-technical-reports)=
 
 ### Models and technical reports
 
@@ -657,7 +657,7 @@ Decoder-only models dominate generation, but two other designs persist where the
 - [2 OLMo 2 Furious](https://arxiv.org/abs/2501.00656) {cite}`olmo2024olmo2` - reordered norms, QK-norm and the stability changes behind them, with open data and code
 - [DeepSeek-V2](https://arxiv.org/abs/2405.04434) {cite}`deepseek2024v2` and [DeepSeek-V3](https://arxiv.org/abs/2412.19437) {cite}`deepseek2024v3` - multi-head latent attention, fine-grained MoE, multi-token prediction and FP8 training
 
-(sec-ch6-attention-and-positions)=
+(sec-ch6-attention-positions)=
 
 ### Attention and positions
 
@@ -666,7 +666,7 @@ Decoder-only models dominate generation, but two other designs persist where the
 - [Extending Context Window of Large Language Models via Positional Interpolation](https://arxiv.org/abs/2306.15595) {cite}`chen2023extending` and [YaRN](https://arxiv.org/abs/2309.00071) {cite}`peng2024yarn` - extending RoPE
 - [FlashAttention](https://arxiv.org/abs/2205.14135) {cite}`dao2022flashattention`, [FlashAttention-2](https://arxiv.org/abs/2307.08691) {cite}`dao2024flashattention2` and [PagedAttention](https://arxiv.org/abs/2309.06180) {cite}`kwon2023efficient` - the kernels and the cache manager
 
-(sec-ch6-normalization-and-activations)=
+(sec-ch6-normalization-activations)=
 
 ### Normalization and activations
 

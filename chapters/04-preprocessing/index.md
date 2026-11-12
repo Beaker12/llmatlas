@@ -53,11 +53,11 @@ Think of a raw web crawl as the contents of every recycling bin in a city. Somew
 
 The theme throughout is that none of these decisions is neutral. Every filter encodes a view of what "good text" is, and that view is inherited by the model. The chapter therefore pairs each technique with the way its effect is measured.
 
-(sec-ch4-why-preprocessing-decides-what-a)=
+(sec-ch4-preprocessing-decides-model-learns)=
 
 ## 1. Why Preprocessing Decides What a Model Learns
 
-(sec-ch4-from-raw-crawl-to-training)=
+(sec-ch4-raw-crawl-training-tokens)=
 
 ### 1.1 From raw crawl to training tokens
 
@@ -86,7 +86,7 @@ The scaling laws of Chapter 2 treat tokens as interchangeable, but they are not.
 
 The caveat, which Section 4.5 returns to, is that "better" is measured on a fixed set of benchmarks. A filter that keeps educational prose and drops forum conversation will raise scores on knowledge benchmarks and may lower the model's ability to handle informal text. Preprocessing is a design decision, not a neutral clean-up.
 
-(sec-ch4-the-stages-of-a-pipeline)=
+(sec-ch4-pipeline-stages)=
 
 ### 1.3 The stages of a pipeline
 
@@ -107,11 +107,11 @@ Most published pipelines are a variation of the following sequence. The order ma
 
 The percentages compound. A document that survives language identification with probability 0.3, quality rules with 0.7 and deduplication with 0.6 has about a one in eight chance of being trained on, which is why starting material measured in petabytes produces corpora measured in terabytes.
 
-(sec-ch4-text-extraction-and-normalization)=
+(sec-ch4-text-extraction-normalization)=
 
 ## 2. Text Extraction and Normalisation
 
-(sec-ch4-from-html-to-text)=
+(sec-ch4-html-to-text)=
 
 ### 2.1 From HTML to text
 
@@ -126,7 +126,7 @@ A boilerplate remover works from the structure of the page rather than its words
 
 The output of extraction is plain text with paragraph breaks preserved. Whether to keep anything else (headings as Markdown, tables as rows, lists as bullets) is a choice that propagates all the way to the model's output format. Pipelines that aim at code or mathematics keep more structure than pipelines that aim at prose.
 
-(sec-ch4-encoding-and-unicode-normalization)=
+(sec-ch4-encoding-unicode-normalization)=
 
 ### 2.2 Encoding and Unicode normalisation
 
@@ -185,7 +185,7 @@ assert normalize_text("ﬁle Ａ", form="NFC") == "ﬁle Ａ"
 
 One rule that is easy to get wrong: do not lowercase. Case carries information (proper nouns, sentence boundaries, the difference between `US` and `us`), modern tokenizers handle it without vocabulary explosion, and it cannot be put back.
 
-(sec-ch4-lines-paragraphs-and-document-boundaries)=
+(sec-ch4-lines-paragraphs-document-boundaries)=
 
 ### 2.3 Lines, paragraphs and document boundaries
 
@@ -201,7 +201,7 @@ Pipelines that split a document into chunks before filtering (for example, to sc
 
 ## 3. Language Identification
 
-(sec-ch4-classifiers-and-thresholds)=
+(sec-ch4-classifiers-thresholds)=
 
 ### 3.1 Classifiers and thresholds
 
@@ -215,7 +215,7 @@ The classifier returns a distribution over languages. Pipelines keep a document 
 
 Multilingual corpora run the same classifier and route each document to a per-language pipeline, because the quality thresholds in Section 4 (mean word length, stop-word counts, terminal punctuation) are language-specific. ROOTS {cite}`laurenccon2022bigscience` applies per-language parameter tables produced with native-speaker review.
 
-(sec-ch4-a-character-n-gram-identifier)=
+(sec-ch4-n-gram-identifier-from-scratch)=
 
 ### 3.2 A character n-gram identifier from scratch
 
@@ -586,7 +586,7 @@ assert np.all(np.diff(keep_rate) >= -0.02)  # monotone up to sampling noise
 
 Because the expected keep rate at score $s$ is $P(X > 1 - s)$ for $X \sim \text{Pareto}(9)$, which is $(1 + 1 - s)^{-9}$, the curve is steep: a document at score 0.5 is kept with probability about $1.5^{-9} \approx 0.026$. Diversity comes from the sheer number of low-scoring documents, not from a generous acceptance rate.
 
-(sec-ch4-measuring-whether-a-filter-helps)=
+(sec-ch4-measuring-whether-filter-helps)=
 
 ### 4.5 Measuring whether a filter helps
 
@@ -607,7 +607,7 @@ The notebook section {ref}`nb-prep-filters` applies the Gopher quality and repet
 
 ## 5. Deduplication
 
-(sec-ch4-why-duplicates-hurt)=
+(sec-ch4-duplicates-hurt)=
 
 ### 5.1 Why duplicates hurt
 
@@ -763,7 +763,7 @@ Production systems differ from this toy in three ways. They compute signatures i
 
 Which document to keep from a cluster is not a detail. Keeping the shortest copy drops the version with the comment thread; keeping the longest keeps the version with the navigation menu. FineWeb's authors found that deduplicating each Common Crawl snapshot independently produced *better* models than deduplicating globally across all snapshots, because global deduplication preferentially removed the oldest copy of good content while leaving the long tail of low-quality pages that were never duplicated. The content that survives many crawls is, on average, the content worth keeping.
 
-(sec-ch4-substring-deduplication-with-suffix-arrays)=
+(sec-ch4-substring-deduplication-suffix-arrays)=
 
 ### 5.4 Substring deduplication with suffix arrays
 
@@ -818,7 +818,7 @@ The cost is an embedding pass over the corpus, which is a forward pass of a smal
 The notebook section {ref}`nb-prep-dedup` runs exact and MinHash deduplication over a corpus seeded with syndicated, lightly edited and unrelated documents, plots the LSH candidate-probability curve for several band settings against the empirical rate, and shows the suffix-array method finding a shared licence header.
 ```
 
-(sec-ch4-privacy-toxicity-and-safety-filtering)=
+(sec-ch4-privacy-toxicity-safety-filtering)=
 
 ## 6. Privacy, Toxicity and Safety Filtering
 
@@ -873,7 +873,7 @@ assert redact_pii(directory)[2] is False
 
 Two cautions. Regular expressions written for North American formats miss most of the world's phone numbers, and a pattern loose enough to catch them all will also catch ISBNs, timestamps and version numbers. And redaction is not anonymisation: a document that names a person and describes their circumstances is still identifying after its email address is removed. Pipelines that need stronger guarantees drop whole documents from sources known to contain personal records rather than trying to scrub them.
 
-(sec-ch4-toxicity-and-adult-content)=
+(sec-ch4-toxicity-adult-content)=
 
 ### 6.2 Toxicity and adult content
 
@@ -885,7 +885,7 @@ Three mechanisms, in increasing order of cost and accuracy:
 
 The lesson of the C4 analysis is that any filter aimed at toxic content will also remove text by and about the communities that toxic content targets, so the threshold is a trade-off between the two kinds of harm. A more recent practice is to filter less at the pretraining stage and rely on post-training (Chapters 12 and 13) to control behaviour, on the grounds that a model which has never seen a slur cannot recognise one either.
 
-(sec-ch4-licenses-consent-and-opt-out)=
+(sec-ch4-licenses-consent-opt-out)=
 
 ### 6.3 Licences, consent and opt-out
 
@@ -961,7 +961,7 @@ assert contaminated_fraction(short_leak, index) > 0  # the 6-word example is ind
 assert contaminated_fraction(innocent, index) == 0.0
 ```
 
-(sec-ch4-what-overlap-does-not-catch)=
+(sec-ch4-what-overlap-misses)=
 
 ### 7.2 What overlap does not catch
 
@@ -1018,7 +1018,7 @@ assert code_quality_filter("x = 1\n" + "y = 1; " * 400 + "\n")[1] == "max_line_l
 assert code_quality_filter("".join("=" * 60 + "\n" for _ in range(20)))[1] == "low_alphanumeric"
 ```
 
-(sec-ch4-mathematics-and-scientific-text)=
+(sec-ch4-mathematics-scientific-text)=
 
 ### 8.2 Mathematics and scientific text
 
@@ -1030,7 +1030,7 @@ Mathematical text is destroyed by the default prose pipeline: HTML extractors dr
 
 Every threshold in Section 4 is a function of language. The practical approach, used by ROOTS {cite}`laurenccon2022bigscience` and the Common Crawl-derived multilingual corpora, is a per-language parameter table covering the word-splitting rule (character-based for Chinese, Japanese and Thai), stop-word lists, the mean-word-length bounds, and the perplexity model, set with help from speakers of each language. Scripts need their own treatment: a document in Cyrillic with a Latin-script navigation menu should not fail the "words with an alphabetic character" rule, and right-to-left text should not be reordered by extraction. Languages with little web presence suffer twice, because the language identifier is less accurate on them and the quality filters, tuned on majority languages, reject more of what it finds.
 
-(sec-ch4-assembling-the-pipeline)=
+(sec-ch4-assembling-pipeline)=
 
 ## 9. Assembling the Pipeline
 
@@ -1053,7 +1053,7 @@ Putting the stages together, this is the order FineWeb runs them in, with decont
 
 The principles behind the order: cheap before expensive; rules that depend on a property (language) after the stage that establishes it; deduplication after the text has been normalised and the cheapest filters have shrunk it, but before classifier scoring, so the classifier is not run on copies; redaction last among the content stages so that placeholders do not affect filters; decontamination last of all, against the final text.
 
-(sec-ch4-sharding-streaming-and-idempotence)=
+(sec-ch4-sharding-streaming-idempotence)=
 
 ### 9.2 Sharding, streaming and idempotence
 
@@ -1121,7 +1121,7 @@ assert pipe.counts["dropped_by:english_only"] == 1
 assert pipe.reasons["english_only:language"] == 1
 ```
 
-(sec-ch4-keeping-the-receipts)=
+(sec-ch4-keeping-receipts)=
 
 ### 9.3 Keeping the receipts
 
@@ -1134,7 +1134,7 @@ The output of a pipeline is not just the corpus. It is also:
 
 Dolma's release {cite}`soldaini2024dolma` is a good model: the toolkit, the per-stage statistics and the corpus were published together, and every number in the paper can be recomputed.
 
-(sec-ch4-preparing-the-output-for-training)=
+(sec-ch4-preparing-training-output)=
 
 ### 9.4 Preparing the output for training
 
@@ -1178,7 +1178,7 @@ The notebook section {ref}`nb-prep-pipeline` assembles normalisation, language i
 - [DataComp-LM](https://arxiv.org/abs/2406.11794) {cite}`li2024datacomp` - a controlled testbed for comparing data curation strategies
 - [The Pile](https://arxiv.org/abs/2101.00027) {cite}`gao2020pile` - a curated multi-source corpus and the arguments for source diversity
 
-(sec-ch4-deduplication-and-memorization)=
+(sec-ch4-deduplication-memorization)=
 
 ### Deduplication and memorisation
 
@@ -1188,7 +1188,7 @@ The notebook section {ref}`nb-prep-pipeline` assembles normalisation, language i
 - [Scaling Data-Constrained Language Models](https://arxiv.org/abs/2305.16264) {cite}`muennighoff2023scaling` - how many epochs are safe
 - [SemDeDup](https://arxiv.org/abs/2303.09540) {cite}`abbas2023semdedup` - embedding-based deduplication
 
-(sec-ch4-quality-filtering-and-its-effects)=
+(sec-ch4-quality-filtering-effects)=
 
 ### Quality filtering and its effects
 

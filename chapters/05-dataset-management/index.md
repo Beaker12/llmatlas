@@ -50,11 +50,11 @@ Think of a training dataset the way a software team thinks of a release. Source 
 
 The theme is that reproducibility is cheap when it is designed in and impossible to retrofit. A dataset built by hand in a notebook, shuffled with an unseeded call and written over an older copy, cannot be reproduced, diffed, or audited, and every experiment trained on it is uninterpretable.
 
-(sec-ch5-the-dataset-as-a-build)=
+(sec-ch5-dataset-build-artifact)=
 
 ## 1. The Dataset as a Build Artifact
 
-(sec-ch5-what-has-to-be-reproducible)=
+(sec-ch5-reproducibility-requirements)=
 
 ### 1.1 What has to be reproducible
 
@@ -66,7 +66,7 @@ Three distinct things are called "the dataset" and each needs its own handling:
 
 Reproducing a model means reproducing the third from the second, which means the second has to be fixed and the transformation has to be deterministic. The practical rule used by every serious training codebase: a run's configuration names a corpus version by hash, a tokenizer by hash, and a data seed, and the loader is a pure function of those.
 
-(sec-ch5-the-scale-of-the-problem)=
+(sec-ch5-scale-problem)=
 
 ### 1.2 The scale of the problem
 
@@ -74,11 +74,11 @@ A 15-trillion-token corpus is roughly 60 TB of UTF-8 text, 30 TB as 16-bit token
 
 Those numbers drive the design choices in the rest of the chapter: shards rather than files small enough to list, token arrays rather than text that needs parsing, indexes that locate a document without scanning, and sampling that computes the next batch's location arithmetically rather than by maintaining a queue.
 
-(sec-ch5-storage-formats-and-layout)=
+(sec-ch5-storage-formats-layout)=
 
 ## 2. Storage Formats and Layout
 
-(sec-ch5-the-formats-in-use)=
+(sec-ch5-formats-in-use)=
 
 ### 2.1 The formats in use
 
@@ -174,7 +174,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
 The `mtime=0` argument matters more than it looks. A gzip header records a modification time, and `gzip.open` fills it with the current time, so the same documents compressed a second apart produce different bytes and different hashes. A shard's hash has to be a function of its content alone, or every rebuild looks like a new version. Zstandard frames carry no timestamp; tar and zip archives do, and need the same treatment.
 
-(sec-ch5-tokenized-binaries-and-the-document)=
+(sec-ch5-tokenized-binaries-document-index)=
 
 ### 2.3 Tokenized binaries and the document index
 
@@ -263,7 +263,7 @@ The notebook section {ref}`nb-dm-formats` writes a corpus as JSON Lines shards a
 
 ## 3. Versioning
 
-(sec-ch5-a-version-is-a-set)=
+(sec-ch5-version-set-hashes)=
 
 ### 3.1 A version is a set of hashes
 
@@ -313,7 +313,7 @@ assert diff_manifests(v1, v2) == {
 }
 ```
 
-(sec-ch5-immutability-and-naming)=
+(sec-ch5-immutability-naming)=
 
 ### 3.2 Immutability and naming
 
@@ -335,11 +335,11 @@ Each version records how it was made: the versions of its inputs, the pipeline c
 The notebook section {ref}`nb-dm-versioning` builds a manifest for the corpus written earlier, rebuilds it with one document changed and one removed, and shows that the version root changes while the diff names exactly the affected shards. It then verifies a downloaded copy against the manifest and detects a corrupted shard.
 ```
 
-(sec-ch5-tokenization-and-packing)=
+(sec-ch5-tokenization-packing)=
 
 ## 4. Tokenization and Packing
 
-(sec-ch5-from-documents-to-sequences)=
+(sec-ch5-documents-sequences)=
 
 ### 4.1 From documents to sequences
 
@@ -451,11 +451,11 @@ Whether to mask is a choice. Many pretraining runs did not, on the grounds that 
 The notebook section {ref}`nb-dm-packing` packs the same corpus by chunking and by best-fit, reports the split and padding rates, plots the distribution of documents per sequence, and renders the document-causal mask for the fullest packed sequence.
 ```
 
-(sec-ch5-mixing-and-sampling)=
+(sec-ch5-mixing-sampling)=
 
 ## 5. Mixing and Sampling
 
-(sec-ch5-weights-temperature-and-epochs)=
+(sec-ch5-weights-temperature-epochs)=
 
 ### 5.1 Weights, temperature and epochs
 
@@ -468,7 +468,7 @@ Given weights $w_s$ that sum to one, the sampler draws each document's source wi
 
 Learned weights (DoReMi {cite}`xie2023doremi`, which fits static $w_s$ with a small proxy model) and curricula that change the mixture over training are both consumed by the same sampler, the latter with $w_s$ a function of the step. The cap is stated in tokens; the sampler below counts documents, which production samplers replace with token counts from the index.
 
-(sec-ch5-determinism-and-resumption)=
+(sec-ch5-determinism-resumption)=
 
 ### 5.2 Determinism and resumption
 
@@ -550,7 +550,7 @@ assert flat.probs[flat.names.index("wiki")] > a.probs[a.names.index("wiki")]
 
 The `seek` method replays draws, which is fine for millions of steps and a few sources. Production samplers are designed differently so that no replay is needed: the mixture is fixed in advance as a schedule of phases (the caps are applied when the schedule is computed, not as the run proceeds), the source for slot $t$ is a hash of `(seed, t)` under that schedule, and the within-source cursor at step $t$ is a count obtainable from a prefix sum, so that any step is $O(1)$. The price is that the schedule must be recomputed if the weights change mid-run.
 
-(sec-ch5-shuffling-at-the-right-granularity)=
+(sec-ch5-shuffling-right-granularity)=
 
 ### 5.3 Shuffling at the right granularity
 
@@ -637,11 +637,11 @@ The remaining ingredients are standard: a few worker processes per rank that pre
 The notebook section {ref}`nb-dm-distributed` simulates eight ranks under both designs, checks that each covers the corpus exactly once, and shows the global batch at a fixed step staying identical as the world size changes under global indexing and changing under shard assignment.
 ```
 
-(sec-ch5-statistics-tests-and-monitoring)=
+(sec-ch5-statistics-tests-monitoring)=
 
 ## 7. Statistics, Tests and Monitoring
 
-(sec-ch5-what-to-compute-for-every)=
+(sec-ch5-statistics-per-version)=
 
 ### 7.1 What to compute for every version
 
@@ -723,7 +723,7 @@ assert any("books" in f for f in check_contract(stats, {**plan, "books": 0.1}, t
 assert any("exceeds" in f for f in check_contract(stats, plan, tolerance=0.08, max_len=1000))
 ```
 
-(sec-ch5-canaries-and-drift)=
+(sec-ch5-canaries-drift)=
 
 ### 7.3 Canaries and drift
 
@@ -737,11 +737,11 @@ Two monitoring practices borrowed from other fields:
 The notebook section {ref}`nb-dm-governance` computes per-source statistics for the demo corpus, runs a contract against a plan, injects a canary and finds it, and renders a data card from the manifest and statistics.
 ```
 
-(sec-ch5-documentation-and-governance)=
+(sec-ch5-documentation-governance)=
 
 ## 8. Documentation and Governance
 
-(sec-ch5-data-cards-and-datasheets)=
+(sec-ch5-data-cards-datasheets)=
 
 ### 8.1 Data cards and datasheets
 
@@ -754,7 +754,7 @@ The pretraining corpora that are well documented (The Pile {cite}`gao2020pile`, 
 
 Croissant, a machine-readable metadata vocabulary built on schema.org, is becoming the common format for the card's structured part (sources, licences, fields, splits) so that hubs and loaders can read it; the prose part still needs a person.
 
-(sec-ch5-licenses-and-the-provenance-record)=
+(sec-ch5-licenses-provenance-record)=
 
 ### 8.2 Licences and the provenance record
 
@@ -809,7 +809,7 @@ The index is cheap: one hash per document, which the build computes anyway for d
 
 ## 9. Putting It Together
 
-(sec-ch5-the-build)=
+(sec-ch5-build)=
 
 ### 9.1 The build
 
@@ -855,7 +855,7 @@ What no tool supplies is the discipline: that every version is produced by the b
 
 ## Further Reading
 
-(sec-ch5-formats-loaders-and-packing)=
+(sec-ch5-formats-loaders-packing)=
 
 ### Formats, loaders and packing
 
@@ -867,7 +867,7 @@ What no tool supplies is the discipline: that every version is produced by the b
 - [DoReMi](https://arxiv.org/abs/2305.10429) {cite}`xie2023doremi` - learned mixture weights
 - [mT5](https://arxiv.org/abs/2010.11934) {cite}`xue2021mt5` - temperature sampling across languages
 
-(sec-ch5-documentation-auditing-and-governance)=
+(sec-ch5-documentation-auditing-governance)=
 
 ### Documentation, auditing and governance
 

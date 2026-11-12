@@ -95,30 +95,37 @@ def test_roles_code_and_math_are_exempt(tmp_path):
 
 
 # Section labels: every level 2-4 heading of the chapter pages and the deep-dive carries a target line
-# `(label)=` and a blank line directly above it. Interface labels (named by other chapters) are exempt from
-# the prefix rule; they sit on a host heading, which may carry two target lines.
-INTERFACE_LABELS = {"sec-ch1-perplexity", "sec-ch1-layernorm", "sec-ch1-modern-block", "sec-ch1-rope",
-                    "sec-ch1-relative-bias", "sec-ch2-sqrt-dk", "sec-ch2-pre-post-ln", "sec-ch2-flops",
-                    "sec-ch2-residual-init", "sec-ch3-epochs", "sec-ch4-dedup-scope"}
-HEADING = re.compile(r"^#{2,4} ")
+# `(label)=` and a blank line directly above it (a host heading may carry two stacked target lines).
+# Interface labels, which other chapters link to, are pinned to a page and heading text in this table:
+# a chapter task that moves one to a new heading edits its row.
+INTERFACE_LABELS = {
+    "sec-ch1-perplexity": ("01-foundations", "4.3 Evaluation Metrics"),
+    "sec-ch1-layernorm": ("01-foundations", "Layer Normalization"),
+    "sec-ch1-modern-block": ("01-foundations", "3.3 What Changed Since 2017"),
+    "sec-ch1-rope": ("01-foundations", "Positional Encodings"),
+    "sec-ch1-relative-bias": ("01-foundations", "Positional Encodings"),
+    "sec-ch2-sqrt-dk": ("02-mathematics", "0.1 A matrix is a map between spaces"),
+    "sec-ch2-pre-post-ln": ("02-mathematics", "Residual Connections"),
+    "sec-ch2-flops": ("02-mathematics", "Training Complexity"),
+    "sec-ch2-residual-init": ("02-mathematics", "Transformer-Specific Initialization"),
+    "sec-ch3-epochs": ("03-data-acquisition", "1.3 How much is enough"),
+    "sec-ch4-dedup-scope": ("04-preprocessing", "5.3 Near-duplicate detection with MinHash and LSH"),
+}
+HEADING = re.compile(r"^#{2,4} (.*?)\s*$")
 TARGET = re.compile(r"^\(([A-Za-z0-9_.:-]+)\)=$")
+LABEL_FORM = re.compile(r"sec-(ch[1-6]|tdd)-[a-z0-9]+(-[a-z0-9]+)*")
 
 
-def test_every_heading_has_a_section_label_and_labels_are_unique():
-    bad, seen = [], {}
+def test_every_heading_has_a_section_label():
+    bad, pinned = [], set()
     for chapter_dir in CHAPTER_DIRS:
         for page in pages(chapter_dir):
             prefix = "sec-tdd-" if page.name == "tokenization-deep-dive.md" else f"sec-ch{int(chapter_dir.name[:2])}-"
             text = page.read_text(encoding="utf-8")
             lines, prose = text.split("\n"), blank_code(text).split("\n")
             for i, line in enumerate(prose):
-                target = TARGET.match(line)
-                if target:
-                    label = target.group(1)
-                    if label in seen:
-                        bad.append(f"{page.name}:L{i + 1}: label {label!r} also at {seen[label]}")
-                    seen[label] = f"{page.name}:L{i + 1}"
-                if not HEADING.match(line):
+                heading = HEADING.match(line)
+                if not heading:
                     continue
                 labels, k = [], i - 1
                 while k >= 1 and lines[k] == "" and TARGET.match(lines[k - 1]):
@@ -126,7 +133,30 @@ def test_every_heading_has_a_section_label_and_labels_are_unique():
                     k -= 2
                 if not labels:
                     bad.append(f"{page.name}:L{i + 1}: heading has no target line above it: {line!r}")
-                bad += [f"{page.name}:L{i + 1}: label {label!r} lacks the prefix {prefix!r}"
-                        for label in labels if not (label.startswith(prefix) or label in INTERFACE_LABELS)]
+                for label in labels:
+                    where = f"{page.name}:L{i + 1}: label {label!r}"
+                    if not LABEL_FORM.fullmatch(label):
+                        bad.append(f"{where} does not match sec-(ch1-6|tdd)-words")
+                    if label in INTERFACE_LABELS:
+                        if (chapter_dir.name, heading.group(1)) != INTERFACE_LABELS[label]:
+                            bad.append(f"{where} is on {heading.group(1)!r}, expected {INTERFACE_LABELS[label][1]!r}")
+                        else:
+                            pinned.add(label)
+                    elif not label.startswith(prefix):
+                        bad.append(f"{where} lacks the prefix {prefix!r}")
+    bad += [f"interface label {label!r} is not above {INTERFACE_LABELS[label][1]!r}"
+            for label in sorted(set(INTERFACE_LABELS) - pinned)]
     assert not bad, "\n".join(bad)
-    assert INTERFACE_LABELS <= set(seen), f"interface labels missing: {sorted(INTERFACE_LABELS - set(seen))}"
+
+
+def test_target_labels_are_unique_book_wide():
+    seen, bad = {}, []
+    for path in tracked("*.md"):
+        for number, line in enumerate(path.read_text(encoding="utf-8").split("\n"), start=1):
+            target = TARGET.match(line)
+            if target:
+                where = f"{path.relative_to(ROOT)}:L{number}"
+                if target.group(1) in seen:
+                    bad.append(f"{where}: {target.group(1)!r} also at {seen[target.group(1)]}")
+                seen[target.group(1)] = where
+    assert not bad, "\n".join(bad)

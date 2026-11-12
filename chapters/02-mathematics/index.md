@@ -59,7 +59,7 @@ Everything a transformer does is a sequence of matrix products followed by simpl
 
 A weight matrix $W \in \mathbb{R}^{d_{\text{in}} \times d_{\text{out}}}$ turns a row vector $x \in \mathbb{R}^{d_{\text{in}}}$ into $xW \in \mathbb{R}^{d_{\text{out}}}$. Stacking $n$ inputs as the rows of $X \in \mathbb{R}^{n \times d_{\text{in}}}$ applies the same map to all of them at once, $XW$, which is why a batch of tokens costs one matrix product rather than $n$ separate ones. A query-key score matrix $QK^T \in \mathbb{R}^{n \times n}$ is the table of all pairwise dot products $q_i \cdot k_j$; the $\sqrt{d_k}$ scaling keeps those dot products at unit variance when $q$ and $k$ have unit-variance entries, since a sum of $d_k$ such products has variance $d_k$.
 
-(sec-ch2-the-softmax-jacobian)=
+(sec-ch2-softmax-jacobian)=
 
 ### 0.2 The softmax Jacobian
 
@@ -69,17 +69,17 @@ $$\frac{\partial p_i}{\partial z_j} = p_i(\delta_{ij} - p_j), \qquad \text{so fo
 
 This is the identity behind the attention gradient in Section 3.3 and behind cross-entropy's gradient $p - y$ (take $g = -y/p$ for a one-hot target $y$). It also explains saturation: if one $p_i \approx 1$ then every factor $p_i(\delta_{ij} - p_j)$ is near zero, and no gradient flows through that softmax.
 
-(sec-ch2-norms-conditioning-and-why-scale)=
+(sec-ch2-norms-conditioning-scale-matters)=
 
 ### 0.3 Norms, conditioning and why scale matters
 
 The operator norm $\|W\|_2$ is the largest factor by which $W$ can stretch a vector. A stack of $L$ layers multiplies these factors, which is why gradients vanish or explode geometrically with depth unless each layer is kept near norm 1, by initialization scale (Section 5.2), by normalization (Section 3.2) or by residual connections (Section 3.1). The Chapter 2 notebook measures all three on a twelve-layer stack.
 
-(sec-ch2-probability-and-information-theory)=
+(sec-ch2-probability-information-theory)=
 
 ## 1. Probability and Information Theory
 
-(sec-ch2-foundations-of-language-modeling)=
+(sec-ch2-foundations-language-modeling)=
 
 ### 1.1 Foundations of Language Modeling
 
@@ -125,7 +125,7 @@ Using $\log_2$ gives entropy in bits; the natural logarithm gives nats. The code
 
 For language, entropy measures the average information content per symbol. Shannon's experiments put the entropy of printed English at roughly 0.6 to 1.3 bits per character, far below the ~4.7 bits of a uniform choice over the alphabet, which is what makes language predictable {cite}`shannon1951prediction`.
 
-(sec-ch2-cross-entropy-and-kl-divergence)=
+(sec-ch2-cross-entropy-kl-divergence)=
 
 #### Cross-Entropy and KL Divergence
 
@@ -195,7 +195,7 @@ The notebook section {ref}`nb-math-information-theory` implements entropy, cross
 
 ## 2. Optimization Fundamentals
 
-(sec-ch2-gradient-descent-and-variants)=
+(sec-ch2-gradient-descent-variants)=
 
 ### 2.1 Gradient Descent and Variants
 
@@ -337,13 +337,13 @@ The notebook section {ref}`nb-math-optimizers` implements SGD, momentum and Adam
 
 ## 3. Backpropagation Through Transformers
 
-(sec-ch2-gradient-flow-in-deep-networks)=
+(sec-ch2-gradient-flow-deep-networks)=
 
 ### 3.1 Gradient Flow in Deep Networks
 
 Understanding how gradients flow through transformer architectures reveals why certain design choices (layer normalization, residual connections) are crucial for training stability.
 
-(sec-ch2-the-vanishing-gradient-problem)=
+(sec-ch2-vanishing-gradient-problem)=
 
 #### The Vanishing Gradient Problem
 
@@ -449,11 +449,11 @@ def attention_gradients(Q, K, V, grad_output):
 The notebook section {ref}`nb-math-backprop` implements scaled dot-product attention and reports its input gradients, and {ref}`nb-math-layernorm` compares gradient norms through twelve linear layers with and without layer normalization, with residual connections, and with a Xavier-scaled initialisation, so you can see which of these actually prevents vanishing.
 ```
 
-(sec-ch2-scaling-laws-and-compute)=
+(sec-ch2-scaling-laws-compute)=
 
 ## 4. Scaling Laws and Compute
 
-(sec-ch2-the-scaling-hypothesis)=
+(sec-ch2-scaling-hypothesis)=
 
 ### 4.1 The Scaling Hypothesis
 
@@ -693,7 +693,7 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 
 ## Further Reading
 
-(sec-ch2-learning-path-for-beginners)=
+(sec-ch2-learning-path-beginners)=
 
 ### Learning Path for Beginners
 
@@ -732,7 +732,7 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 - [Cyclical Learning Rates](https://arxiv.org/abs/1506.01186) - Practical learning rate scheduling
 - [On the difficulty of training recurrent neural networks](https://proceedings.mlr.press/v28/pascanu13.html) {cite}`pascanu2013difficulty` - Gradient flow analysis
 
-(sec-ch2-numerical-methods-and-efficiency)=
+(sec-ch2-numerical-methods-efficiency)=
 
 ### Numerical Methods and Efficiency
 
@@ -740,7 +740,7 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 - {cite}`you2019large`: Large batch training and scaling ([arXiv:1904.00962](https://arxiv.org/abs/1904.00962))
 - {cite}`shazeer2020glu`: Activation function analysis and GLU variants ([arXiv:2002.05202](https://arxiv.org/abs/2002.05202))
 
-(sec-ch2-mathematical-textbooks-and-references)=
+(sec-ch2-mathematical-textbooks-references)=
 
 ### Mathematical Textbooks and References
 
@@ -748,7 +748,7 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 - {cite}`murphy2012machine`: Comprehensive machine learning mathematics textbook
 - {cite}`mackay2003information`: Information theory perspective on learning - [Online Book](http://www.inference.org.uk/mackay/itila/)
 
-(sec-ch2-scaling-laws-and-empirical-analysis)=
+(sec-ch2-scaling-laws-empirical-analysis)=
 
 ### Scaling Laws and Empirical Analysis
 

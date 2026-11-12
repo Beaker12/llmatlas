@@ -46,7 +46,7 @@ Large Language Models (LLMs) like ChatGPT work by understanding and generating t
 
 These components work together to create models that can understand context, maintain coherent conversations, and generate human-like text by learning statistical patterns from enormous amounts of text data.
 
-(sec-ch1-tokenization-and-embeddings)=
+(sec-ch1-tokenization-embeddings)=
 
 ## 1. Tokenization and Embeddings
 
@@ -77,7 +77,7 @@ The choice of tokenization granularity creates fundamental trade-offs:
 | Character   | Small (\<100)      | Very Long       | Perfect      | Low                |
 | Byte-level  | Fixed (256)        | Longest         | Perfect      | Lowest             |
 
-(sec-ch1-the-vocabulary-size-dilemma)=
+(sec-ch1-vocabulary-size-dilemma)=
 
 #### The Vocabulary Size Dilemma
 
@@ -292,7 +292,7 @@ print(f"IDs: {ids}")
 The notebook's tokenization section ({ref}`nb-attn-tokenization`) builds a tiny word-level vocabulary and runs the BPE merge loop step by step, printing the splits after every merge. For WordPiece, unigram and SentencePiece in practice, see {doc}`tokenization-deep-dive`.
 ```
 
-(sec-ch1-embeddings-and-positional-encoding)=
+(sec-ch1-embeddings-positional-encoding)=
 
 ### 1.3 Embeddings and Positional Encoding
 
@@ -422,7 +422,7 @@ happiness_embedding = embedding_matrix[token_to_id["happiness"]]  # [d_model]
 # This happens through attention and context
 ```
 
-(sec-ch1-embedding-visualization-and-analysis)=
+(sec-ch1-embedding-visualization-analysis)=
 
 #### Embedding Visualization and Analysis
 
@@ -851,7 +851,7 @@ For runnable versions of the ideas in this section, see the accompanying noteboo
 
 ## 2. Attention Mechanisms
 
-(sec-ch1-the-attention-revolution)=
+(sec-ch1-attention-revolution)=
 
 ### 2.1 The Attention Revolution
 
@@ -890,7 +890,7 @@ where each head is:
 
 $$\text{head}_i = \text{Attention}(QW_i^Q, KW_i^K, VW_i^V)$$
 
-(sec-ch1-attention-patterns-and-interpretability)=
+(sec-ch1-attention-patterns-interpretability)=
 
 ### 2.2 Attention Patterns and Interpretability
 
@@ -961,7 +961,7 @@ class MultiHeadAttention(nn.Module):
 
 ## 3. Transformer Architecture
 
-(sec-ch1-the-complete-architecture)=
+(sec-ch1-complete-architecture)=
 
 ### 3.1 The Complete Architecture
 
@@ -1160,7 +1160,7 @@ The notebook ({ref}`nb-attn-lm`) builds the causal mask, applies it inside atten
 
 ## 5. Historical Context
 
-(sec-ch1-evolution-from-rnns)=
+(sec-ch1-evolution-rnns)=
 
 ### 5.1 Evolution from RNNs
 
@@ -1176,7 +1176,7 @@ The path to transformers involved several key developments:
 
 **Attention mechanisms** {cite}`bahdanau2014neural` first appeared in machine translation, allowing models to focus on relevant source positions when generating target words.
 
-(sec-ch1-the-transformer-breakthrough)=
+(sec-ch1-transformer-breakthrough)=
 
 ### 5.2 The Transformer Breakthrough
 
@@ -1186,7 +1186,7 @@ The path to transformers involved several key developments:
 - Parallel processing enabling efficient training
 - Multi-head attention for capturing diverse relationships
 
-(sec-ch1-scaling-to-language-models)=
+(sec-ch1-scaling-language-models)=
 
 ### 5.3 Scaling to Language Models
 
@@ -1215,7 +1215,7 @@ This progression established the foundation for today's LLMs and their remarkabl
 
 ## Further Reading
 
-(sec-ch1-learning-path-for-beginners)=
+(sec-ch1-learning-path-beginners)=
 
 ### Learning Path for Beginners
 
@@ -1254,7 +1254,7 @@ This progression established the foundation for today's LLMs and their remarkabl
 - [Tiktokenizer](https://tiktokenizer.vercel.app/) - Explore how GPT and other tokenizers split text
 - [Attention Patterns](https://github.com/jessevig/bertviz) - Visualize attention in BERT and GPT models
 
-(sec-ch1-advanced-topics-and-recent-research)=
+(sec-ch1-advanced-topics-recent-research)=
 
 ### Advanced Topics and Recent Research
 
@@ -1275,7 +1275,7 @@ This progression established the foundation for today's LLMs and their remarkabl
 - [FlashAttention: Fast and Memory-Efficient Exact Attention](https://arxiv.org/abs/2205.14135) {cite}`dao2022flashattention` - Efficient attention computation
 - [LLaMA: Open and Efficient Foundation Language Models](https://arxiv.org/abs/2302.13971) {cite}`touvron2023llama` - Modern transformer design choices
 
-(sec-ch1-books-and-comprehensive-resources)=
+(sec-ch1-books-comprehensive-resources)=
 
 ### Books and Comprehensive Resources
 
@@ -1292,14 +1292,14 @@ This progression established the foundation for today's LLMs and their remarkabl
 1. **Attention Visualization** - Create tools to visualize attention patterns in pre-trained models
 1. **Scaling Experiments** - Study how model performance changes with size using smaller versions
 
-(sec-ch1-documentation-and-apis)=
+(sec-ch1-documentation-apis)=
 
 ### Documentation and APIs
 
 - [PyTorch Transformer Tutorial](https://docs.pytorch.org/tutorials/beginner/transformer_tutorial.html)
 - [TensorFlow Transformer Tutorial](https://www.tensorflow.org/text/tutorials/transformer)
 
-(sec-ch1-research-communities-and-updates)=
+(sec-ch1-research-communities-updates)=
 
 ### Research Communities and Updates
 
