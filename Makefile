@@ -1,11 +1,12 @@
 # LLM Atlas: local development commands
 
-.PHONY: help install build build-lenient serve clean test lint linkcheck notebooks status
+.PHONY: help install build build-lenient serve clean test lint linkcheck notebooks status constraints
 
 VENV_DIR   = .venv
 PYTHON     = $(VENV_DIR)/bin/python
 PIP        = $(VENV_DIR)/bin/pip
 JB         = $(VENV_DIR)/bin/jupyter-book
+UV         ?= uv
 NOTEBOOKS  = $(wildcard chapters/*/examples/*.ipynb)
 
 help:
@@ -17,6 +18,7 @@ help:
 	@echo "make notebooks     execute every notebook headlessly"
 	@echo "make linkcheck     check external links"
 	@echo "make lint          flake8 on Python files"
+	@echo "make constraints regenerate constraints.txt with uv (CPU torch)"
 	@echo "make clean         remove build artifacts"
 	@echo "make status        show branch and build state"
 
@@ -66,3 +68,14 @@ status:
 	@echo "Branch: $(shell git branch --show-current)"
 	@git status --porcelain
 	@echo "Built book: $(shell test -f _build/html/index.html && echo present || echo missing)"
+
+# torch comes in on stdin so no extra input file is needed. The "+cpu" local
+# label is dropped from the pin: PEP 440 still matches the CPU wheel on Linux,
+# and macOS/Windows can satisfy the same constraint from PyPI.
+constraints:
+	{ sed '/^[^#]/,$$d' constraints.txt; \
+	  printf 'torch\n' | $(UV) pip compile requirements.txt requirements-dev.txt - \
+	    --python-version 3.12 --extra-index-url https://download.pytorch.org/whl/cpu \
+	    --index-strategy unsafe-best-match --no-header \
+	  | sed 's|^torch==\(.*\)+cpu$$|# torch is pinned without the +cpu label so non-Linux platforms can use PyPI;\n# PEP 440 still matches the +cpu wheel from the CPU index on Linux.\ntorch==\1|'; \
+	} > constraints.tmp && mv constraints.tmp constraints.txt

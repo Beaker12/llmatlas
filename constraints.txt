@@ -1,10 +1,6 @@
 # Pinned versions for reproducible installs (Python 3.12, Linux).
-# Generated with uv; regenerate after changing requirements*.txt. torch.in is
-# a one-line file containing "torch":
-#   uv pip compile requirements.txt requirements-dev.txt torch.in \
-#     --python-version 3.12 --extra-index-url https://download.pytorch.org/whl/cpu \
-#     --index-strategy unsafe-best-match --no-header -o constraints.txt
-# torch is pinned to the CPU build (no CUDA packages).
+# Generated with uv; regenerate with `make constraints` after changing
+# requirements*.txt (the comment lines at the top of this file are preserved).
 # Use as: pip install -c constraints.txt -r requirements.txt
 accessible-pygments==0.0.5
     # via pydata-sphinx-theme
@@ -418,8 +414,9 @@ tinycss2==1.5.1
     # via bleach
 tld==0.13.2
     # via courlan
-torch==2.15.0+cpu
-    # via -r /var/tmp/swp/claude-1000/-mnt-ztank-development-Projects-llmatlas-public/ee391892-17fc-4545-a2b3-4e798cf41c7a/scratchpad/torch.in
+# torch is pinned without the +cpu label so non-Linux platforms can use PyPI;
+# PEP 440 still matches the +cpu wheel from the CPU index on Linux.
+torch==2.15.0
 tornado==6.6.1
     # via
     #   ipykernel
