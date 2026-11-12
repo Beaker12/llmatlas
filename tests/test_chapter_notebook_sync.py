@@ -1,7 +1,7 @@
 """Code a chapter shares with its notebook stays identical.
 
 Every function or class that tools/list_shared_defs.py reports for a chapter must be identical in the chapter's
-python fences and in its notebook after ast.unparse (docstrings and comments ignored), unless the chapter's
+python fences and in its notebook (last definition on each side) after ast.unparse (docstrings and comments ignored), unless the chapter's
 SYNC_EXEMPT lists the name. One test per chapter, check name `sync-chapter`. A second test asserts that
 ScaledDotProductAttention is identical in the chapter 1 and chapter 2 notebooks.
 """
@@ -14,14 +14,14 @@ import sys
 import pytest
 
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check, chapter_constants
-from tools.list_shared_defs import normalised, notebook_defs, shared_defs
+from tools.list_shared_defs import normalised, notebook_defs, parse_failures, shared_defs, top_level_defs
 
 
 def check_sync(chapter_dir, exempt=None):
     """Failure strings for shared names whose chapter and notebook definitions differ."""
     if exempt is None:
         exempt = chapter_constants(chapter_dir).SYNC_EXEMPT
-    failures = []
+    failures = parse_failures(chapter_dir)
     for name, (in_chapter, in_notebook) in shared_defs(chapter_dir).items():
         if name in exempt:
             continue
@@ -115,3 +115,78 @@ def test_decorated_classes_and_magics_are_read(tmp_path):
     path.write_text(json.dumps(nb), encoding="utf-8")
     source = notebook_defs(path)["A"]
     assert source.startswith("@dec") and normalised(source) == "@dec\nclass A:\n    x = 1"
+
+
+# Fixture tests for what the tool sees.
+
+def write_notebook(path, *sources):
+    cells = [{"cell_type": "code", "metadata": {}, "outputs": [], "execution_count": None, "source": s}
+             for s in sources]
+    path.write_text(json.dumps({"cells": cells, "metadata": {}, "nbformat": 4, "nbformat_minor": 5}),
+                    encoding="utf-8")
+
+
+def mini_chapter(tmp_path, page, *cells):
+    chapter = tmp_path / "ch"
+    (chapter / "examples").mkdir(parents=True)
+    (chapter / "index.md").write_text(page, encoding="utf-8")
+    write_notebook(chapter / "examples" / "n.ipynb", *cells)
+    return chapter
+
+
+def fence(code):
+    return f"```python\n{code}\n```\n\n"
+
+
+def test_a_percent_on_a_continuation_line_is_not_a_magic():
+    source = "x = (1\n%2)\n\ndef f():\n    return 1\n"
+    assert "f" in top_level_defs(source)
+    assert "%2" in blank_lines_kept(source)
+
+
+def blank_lines_kept(source):
+    from tools.list_shared_defs import blank_magics
+    return blank_magics(source)
+
+
+def test_real_magics_at_depth_zero_are_blanked():
+    source = "%matplotlib inline\n!pip list\ndef f():\n    return 1\n"
+    assert list(top_level_defs(source)) == ["f"]
+
+
+def test_unparsable_cells_and_fences_are_reported_and_pseudo_code_is_not(tmp_path):
+    page = fence("def f(:\n    pass") + fence("# pseudo-code\ndef g(:\n") + fence("def h():\n    return 1")
+    chapter = mini_chapter(tmp_path, page, "x = 1", "def broken(:\n  pass")
+    failures = parse_failures(chapter)
+    assert len(failures) == 2
+    assert failures[0].startswith("index.md:L1: cannot parse: ") and failures[1].startswith("n.ipynb:cell 1: cannot parse: ")
+    assert check_sync(chapter, {})[:2] == failures
+
+
+def test_definitions_inside_if_try_and_with_are_top_level():
+    source = ("if True:\n    def a(): return 1\n"
+              "try:\n    def b(): return 2\nexcept ImportError:\n    def c(): return 3\n"
+              "with open('x') as f:\n    class D: pass\n")
+    assert list(top_level_defs(source)) == ["a", "b", "c", "D"]
+
+
+def test_the_last_definition_on_each_side_is_compared(tmp_path):
+    page = fence("def f():\n    return 1") + fence("def f():\n    return 2")
+    chapter = mini_chapter(tmp_path, page, "def f():\n    return 1", "def f():\n    return 2")
+    assert check_sync(chapter, {}) == []
+    chapter = mini_chapter(tmp_path / "b", page, "def f():\n    return 2", "def f():\n    return 1")
+    assert len(check_sync(chapter, {})) == 1
+
+
+def test_async_decorated_nested_docstring_and_comment_cases(tmp_path):
+    page = fence("@dec\nasync def a():\n    'doc'\n    return 1\n\n\ndef outer():\n    def inner():\n        return 1\n"
+                 "    return inner\n\n\ndef k():\n    return 1  # comment")
+    chapter = mini_chapter(tmp_path, page,
+                           "@dec\nasync def a():\n    'another doc'\n    return 1\n\n\n"
+                           "def outer():\n    def inner():\n        return 2\n    return inner\n\n\n"
+                           "def k():\n    # different comment\n    return 1")
+    assert set(shared_defs(chapter)) == {"a", "outer", "k"}   # inner is nested: not reported
+    failures = check_sync(chapter, {})
+    assert len(failures) == 1 and failures[0].startswith("outer: differs")   # a, k differ only by doc/comment
+    assert "inner" not in shared_defs(chapter)
+    assert shared_defs(chapter)["a"][0].startswith("@dec")
