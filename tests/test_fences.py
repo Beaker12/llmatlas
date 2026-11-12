@@ -6,16 +6,15 @@ import re
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
 
 import pytest
 
-from tests._compare import NUMBER, compare_output
-from tests._files import CHAPTER_DIRS, CHAPTER_IDS, chapter_check, tracked
+from tests._compare import compare_output
+from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check, tracked
 
-ROOT = Path(__file__).resolve().parents[1]
 FENCE = re.compile(r"```python\n([\s\S]*?)```")
-MARKER = "# pseudo-code"
+PSEUDO_MARKER = re.compile(r"# pseudo-code(?![\w-])")
+NETWORK_MARKER = re.compile(r"# network(?![\w-])")
 
 
 def fences():
@@ -29,7 +28,7 @@ def fences():
 
 @pytest.mark.parametrize("rel,line,code", list(fences()))
 def test_fence_is_runnable_or_marked_pseudo_code(rel, line, code):
-    if code.lstrip().startswith(MARKER):
+    if PSEUDO_MARKER.match(code.lstrip()):
         pytest.skip("marked pseudo-code")
     try:
         ast.parse(code)
@@ -51,7 +50,6 @@ def test_fence_is_runnable_or_marked_pseudo_code(rel, line, code):
 # Failure strings are "<page>:L<line of the opening fence>: <reason>".
 
 RUN_TIMEOUT = 120
-NETWORK_MARKER = "# network"
 OUTPUT_BLOCK = re.compile(r"\s*% output(-shape)?[ \t]*\n\s*```text\n([\s\S]*?)```")
 OUTPUT_MARKER = re.compile(r"\s*% output(?:-shape)?[ \t]*(?:\n|$)")
 
@@ -71,17 +69,43 @@ def python_fences(text):
         yield text[: m.start()].count("\n") + 1, m.group(1), text[m.end():]
 
 
+def marker_failures(text, name):
+    """`% output` lines that are mistyped or not directly after a python fence."""
+    failures = []
+    fence = None          # language of the open fence, if any
+    after_python = False  # only blank lines since the closing line of a python fence
+    for n, line in enumerate(text.splitlines(), start=1):
+        if fence is not None:
+            if line.startswith("```"):
+                fence, after_python = None, fence == "python"
+            continue
+        if line.startswith("```"):
+            fence, after_python = line[3:].strip(), False
+            continue
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if re.match(r"%\s*output", stripped, re.I):
+            if stripped not in ("% output", "% output-shape"):
+                failures.append(f"{name}:L{n}: mistyped marker {stripped!r} (use '% output' or '% output-shape')")
+            elif not after_python:
+                failures.append(f"{name}:L{n}: {stripped!r} is not directly after a python fence")
+        after_python = False
+    return failures
+
+
 def has_network_fence(page):
-    return any(code.lstrip().startswith(NETWORK_MARKER)
+    return any(NETWORK_MARKER.match(code.lstrip())
                for _, code, _ in python_fences(page.read_text(encoding="utf-8")))
 
 
 def check_page(page, network=False, timeout=RUN_TIMEOUT):
     """Run the page's python fences (or only its `# network` ones) and list the failures."""
-    failures = []
-    for line, code, rest in python_fences(page.read_text(encoding="utf-8")):
+    text = page.read_text(encoding="utf-8")
+    failures = [] if network else marker_failures(text, page.name)
+    for line, code, rest in python_fences(text):
         first = code.lstrip()
-        if first.startswith(MARKER) or first.startswith(NETWORK_MARKER) != network:
+        if PSEUDO_MARKER.match(first) or bool(NETWORK_MARKER.match(first)) != network:
             continue
         where = f"{page.name}:L{line}"
         try:
@@ -115,68 +139,110 @@ FIXTURE = ROOT / "tests" / "fixtures" / "sample-chapter"
 SAMPLE = FIXTURE / "index.md"
 
 
-def broken(tmp_path, old, new):
-    """A copy of the sample page with `old` replaced by `new`."""
+def chunk(marker):
+    """The fixture fence containing `marker`, with its output block, as a page of its own (fence at L1)."""
     text = SAMPLE.read_text(encoding="utf-8")
-    assert old in text
+    for m in FENCE.finditer(text):
+        if marker in m.group(1):
+            block = OUTPUT_BLOCK.match(text[m.end():])
+            return text[m.start(): m.end() + (block.end() if block else 0)] + "\n"
+    raise AssertionError(f"no fixture fence contains {marker!r}")
+
+
+def page_of(tmp_path, text):
     page = tmp_path / "index.md"
-    page.write_text(text.replace(old, new, 1), encoding="utf-8")
+    page.write_text(text, encoding="utf-8")
     return page
 
 
+def broken(tmp_path, marker, old, new):
+    """A page holding only the fixture fence that contains `marker`, with `old` replaced by `new`."""
+    text = chunk(marker)
+    assert old in text
+    return page_of(tmp_path, text.replace(old, new, 1))
+
+
 def test_sample_chapter_passes():
-    assert check_page(SAMPLE) == []
     assert check_chapter(FIXTURE) == []
 
 
 def test_sample_chapter_network_fence_runs_only_when_asked():
-    failures = check_page(SAMPLE, network=True)
-    assert len(failures) == 1
-    assert failures[0].startswith("index.md:L") and "exit 1" in failures[0] and "URLError" in failures[0]
+    text = SAMPLE.read_text(encoding="utf-8")
+    line = next(n for n, l in enumerate(text.splitlines(), start=1) if l == "# network") - 1
+    assert check_page(SAMPLE, network=True) == [f"index.md:L{line}: exit 1: RuntimeError: network fence ran"]
 
 
 def test_number_within_one_unit_of_the_last_digit_is_accepted(tmp_path):
-    assert check_page(broken(tmp_path, "3.1416", "3.1415")) == []
+    assert check_page(broken(tmp_path, "3.14159", "3.1416", "3.1415")) == []
 
 
 def test_text_that_differs_is_reported_with_the_first_differing_line(tmp_path):
-    failures = check_page(broken(tmp_path, "3.1416\ndone", "3.1416\nfinished"))
-    assert failures == ["index.md:L7: output line 3: expected 'finished', got 'done'"]
+    failures = check_page(broken(tmp_path, "3.14159", "3.1416\ndone", "3.1416\nfinished"))
+    assert failures == ["index.md:L1: output line 3: expected 'finished', got 'done'"]
 
 
 def test_number_off_by_more_than_one_unit_is_reported(tmp_path):
-    failures = check_page(broken(tmp_path, "3.1416", "3.1418"))
-    assert failures == ["index.md:L7: output line 2: expected '3.1418', got '3.14159'"]
+    failures = check_page(broken(tmp_path, "3.14159", "3.1416", "3.1418"))
+    assert failures == ["index.md:L1: output line 2: expected '3.1418', got '3.14159'"]
+
+
+def test_an_integer_that_differs_is_reported(tmp_path):
+    failures = check_page(broken(tmp_path, "3.14159", "7\n3.1416", "8\n3.1416"))
+    assert failures == ["index.md:L1: output line 1: expected '8', got '7'"]
 
 
 def test_output_shape_with_the_wrong_line_count_is_reported(tmp_path):
-    failures = check_page(broken(tmp_path, "loss 4.5\n", ""))
-    assert failures == ["index.md:L23: output-shape: expected 1 lines, got 2"]
+    failures = check_page(broken(tmp_path, "loss 0.123", "loss 4.5\n", ""))
+    assert failures == ["index.md:L1: output-shape: expected 1 lines, got 2"]
 
 
 def test_output_shape_with_different_text_is_reported(tmp_path):
-    failures = check_page(broken(tmp_path, "loss 4.5", "cost 4.5"))
-    assert failures == ["index.md:L23: output line 2: expected 'cost #', got 'loss #'"]
+    failures = check_page(broken(tmp_path, "loss 0.123", "loss 4.5", "cost 4.5"))
+    assert failures == ["index.md:L1: output line 2: expected 'cost #', got 'loss #'"]
 
 
 def test_a_fence_that_raises_is_reported_with_the_last_stderr_line(tmp_path):
-    failures = check_page(broken(tmp_path, "print(7)", "raise ValueError('bad')"))
-    assert failures == ["index.md:L7: exit 1: ValueError: bad"]
+    failures = check_page(broken(tmp_path, "3.14159", "print(7)", "raise ValueError('bad')"))
+    assert failures == ["index.md:L1: exit 1: ValueError: bad"]
 
 
 def test_a_fence_that_times_out_is_reported(tmp_path):
-    page = tmp_path / "index.md"
-    page.write_text("```python\nimport time\ntime.sleep(30)\n```\n", encoding="utf-8")
+    page = page_of(tmp_path, "```python\nimport time\ntime.sleep(30)\n```\n")
     assert check_page(page, timeout=1) == ["index.md:L1: timeout after 1s"]
 
 
 def test_output_marker_without_a_text_fence_is_reported(tmp_path):
-    failures = check_page(broken(tmp_path, "```text\n7\n", "```\n7\n"))
-    assert len(failures) == 1 and "% output" in failures[0] and failures[0].startswith("index.md:L7:")
+    failures = check_page(broken(tmp_path, "3.14159", "```text\n7\n", "```\n7\n"))
+    assert len(failures) == 1 and "% output" in failures[0] and failures[0].startswith("index.md:L1:")
 
 
 def test_trailing_whitespace_in_the_output_is_ignored(tmp_path):
-    assert check_page(broken(tmp_path, "done\n```", "done   \n```")) == []
+    assert check_page(broken(tmp_path, "3.14159", "done\n```", "done   \n```")) == []
+
+
+def test_markers_match_as_whole_words(tmp_path):
+    ran = "```python\n# networking\nprint('ran')\n```\n\n% output\n\n```text\nran\n```\n"
+    page = page_of(tmp_path, ran)
+    assert check_page(page) == []                      # run as an ordinary fence, not skipped as network
+    assert check_page(page, network=True) == []        # and not run as a network fence
+    broken_ran = page_of(tmp_path, ran.replace("ran\n```\n", "other\n```\n"))
+    assert len(check_page(broken_ran)) == 1
+    colon = page_of(tmp_path, "```python\n# pseudo-code: a sketch\nnot python (\n```\n")
+    assert check_page(colon) == []
+
+
+@pytest.mark.parametrize("marker", ["% outputs", "% output shape", "%output", "% Output-shape"])
+def test_a_mistyped_output_marker_is_reported(tmp_path, marker):
+    page = page_of(tmp_path, f"```python\nprint(1)\n```\n\n{marker}\n\n```text\n1\n```\n")
+    failures = check_page(page)
+    assert len(failures) == 1 and failures[0].startswith("index.md:L5: mistyped marker")
+
+
+@pytest.mark.parametrize("before", ["Some prose.\n", "```text\nx\n```\n"])
+def test_an_output_marker_not_after_a_python_fence_is_reported(tmp_path, before):
+    page = page_of(tmp_path, f"{before}\n% output\n\n```text\n1\n```\n")
+    failures = check_page(page)
+    assert len(failures) == 1 and "not directly after a python fence" in failures[0]
 
 
 @pytest.mark.parametrize("chapter_dir", CHAPTER_DIRS, ids=CHAPTER_IDS)

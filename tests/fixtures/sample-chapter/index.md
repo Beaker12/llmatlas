@@ -43,8 +43,7 @@ Network fences are left to the live tests:
 
 ```python
 # network
-import urllib.request
-urllib.request.urlopen("http://example.invalid")
+raise RuntimeError("network fence ran")
 ```
 
 A plotting fence must not trip the warnings-as-errors setting:

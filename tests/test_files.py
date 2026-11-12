@@ -1,7 +1,10 @@
 """The shared test helpers in tests/_files.py."""
+import subprocess
+
 import pytest
 
-from tests._files import CHAPTER_DIRS, chapter_constants, pending, report, tracked
+from tests import _files
+from tests._files import CHAPTER_DIRS, KNOWN_CHECKS, chapter_constants, pending, report, tracked
 
 
 def test_tracked_fails_when_nothing_matches():
@@ -36,7 +39,46 @@ def test_report_prints_failures_and_xfails_when_pending(tmp_path, capsys):
     with pytest.raises(pytest.xfail.Exception):
         report(tmp_path, "fences", ["index.md:L3: boom"])
     assert "index.md:L3: boom" in capsys.readouterr().out
-    report(tmp_path, "other", [])  # a different check name is not pending
+    report(tmp_path, "xrefs", [])  # a different check name is not pending
+
+
+def test_xfail_reason_and_assertion_message_list_every_failure(tmp_path):
+    failures = ["index.md:L3: boom", "index.md:L9: bang"]
+    with pytest.raises(AssertionError) as info:
+        report(tmp_path, "fences", failures)
+    assert all(f in str(info.value) for f in failures)
+    (tmp_path / ".review-pending").write_text("fences\n", encoding="utf-8")
+    with pytest.raises(pytest.xfail.Exception) as info:
+        report(tmp_path, "fences", failures)
+    assert all(f in str(info.value) for f in failures) and "2 failure(s)" in str(info.value)
+
+
+def test_unknown_check_names_are_rejected(tmp_path):
+    (tmp_path / ".review-pending").write_text("fences\n# note\nfencez\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match=r"\.review-pending:3: unknown check name 'fencez'"):
+        pending(tmp_path)
+    with pytest.raises(AssertionError, match="unknown check name 'nope'"):
+        report(tmp_path / "x", "nope", [])
+
+
+def test_known_checks_are_exactly_the_documented_names():
+    assert KNOWN_CHECKS == {"fences", "fences-live", "outputs", "outputs-live", "prose", "sync-chapter",
+                            "sync-generator", "spelling", "figures", "structure", "exercises", "citations",
+                            "xrefs", "notation", "hygiene"}
+
+
+@pytest.mark.parametrize("pattern", ["chapters/*/index.md", "tests/fixtures/*/*.md", "pytest.ini"])
+@pytest.mark.parametrize("how", ["git missing", "git empty"])
+def test_tracked_fallback_equals_the_git_result(monkeypatch, pattern, how):
+    expected = tracked(pattern)
+
+    def fake_run(*args, **kwargs):
+        if how == "git missing":
+            raise FileNotFoundError("git")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(_files.subprocess, "run", fake_run)
+    assert tracked(pattern) == expected
 
 
 def test_report_fails_strictly_when_a_pending_check_passes(tmp_path):

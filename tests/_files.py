@@ -23,7 +23,10 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 PENDING_FILE = ".review-pending"
-SKIP_DIRS = {"_build", ".venv", "venv", ".claude", ".superpowers", ".jupyter_cache"}
+SKIP_DIRS = {"_build", ".venv", "venv", ".claude", ".superpowers", ".jupyter_cache", ".git",
+             ".ipynb_checkpoints", "__pycache__", ".pytest_cache", "node_modules"}
+KNOWN_CHECKS = {"fences", "fences-live", "outputs", "outputs-live", "prose", "sync-chapter", "sync-generator",
+                "spelling", "figures", "structure", "exercises", "citations", "xrefs", "notation", "hygiene"}
 
 CHAPTER_DIRS = sorted(p for p in (ROOT / "chapters").iterdir()
                       if p.is_dir() and not p.name.startswith((".", "_")))
@@ -39,11 +42,11 @@ def tracked(pattern: str) -> list[Path]:
     Raises AssertionError if nothing matches either way.
     """
     try:
-        out = subprocess.run(["git", "ls-files", pattern], cwd=ROOT,
-                             capture_output=True, text=True).stdout.split("\n")
+        out = subprocess.run(["git", "ls-files", "-z", pattern], cwd=ROOT,
+                             capture_output=True, text=True).stdout.split("\0")
     except OSError:
         out = []
-    found = {ROOT / rel for rel in out if rel}
+    found = {ROOT / rel for rel in out if rel and (ROOT / rel).exists()}
     if not found:
         for path in ROOT.rglob("*"):
             rel = path.relative_to(ROOT)
@@ -56,25 +59,39 @@ def tracked(pattern: str) -> list[Path]:
 
 
 def pending(chapter_dir: Path) -> set[str]:
-    """Check names listed in <chapter_dir>/.review-pending (blank lines and # comments ignored)."""
+    """Check names listed in <chapter_dir>/.review-pending (blank lines and # comments ignored).
+
+    Raises AssertionError naming the file and line for a name not in KNOWN_CHECKS.
+    """
     path = Path(chapter_dir) / PENDING_FILE
     if not path.exists():
         return set()
-    lines = (l.strip() for l in path.read_text(encoding="utf-8").splitlines())
-    return {l for l in lines if l and not l.startswith("#")}
+    names = set()
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = line.strip()
+        if line and not line.startswith("#"):
+            assert line in KNOWN_CHECKS, (f"{path}:{number}: unknown check name {line!r} "
+                                          f"(known: {', '.join(sorted(KNOWN_CHECKS))})")
+            names.add(line)
+    return names
 
 
 def report(chapter_dir: Path, name: str, failures: list[str]) -> None:
-    """Print the failures, then apply the pending rule for check `name` in `chapter_dir`."""
+    """Print the failures, then apply the pending rule for check `name` in `chapter_dir`.
+
+    The failure list is also in the xfail reason and in the assertion message, so `pytest -rx` shows it.
+    """
+    assert name in KNOWN_CHECKS, f"unknown check name {name!r}"
     chapter_dir = Path(chapter_dir)
-    for f in failures:
-        print(f"{chapter_dir.name}/{f}")
+    listing = "\n".join(f"{chapter_dir.name}/{f}" for f in failures)
+    if failures:
+        print(listing)
     if name in pending(chapter_dir):
         if failures:
-            pytest.xfail(f"{name} pending for {chapter_dir.name}: {len(failures)} failure(s)")
+            pytest.xfail(f"{name} pending for {chapter_dir.name}: {len(failures)} failure(s)\n{listing}")
         pytest.fail(f"[XPASS(strict)] {name} passes for {chapter_dir.name}; "
                     f"remove it from {chapter_dir.name}/{PENDING_FILE}", pytrace=False)
-    assert not failures, f"{len(failures)} failure(s) in {chapter_dir.name}:\n" + "\n".join(failures)
+    assert not failures, f"{name}: {len(failures)} failure(s) in {chapter_dir.name}:\n{listing}"
 
 
 def chapter_check(name: str):
