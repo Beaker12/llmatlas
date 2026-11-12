@@ -109,6 +109,10 @@ def test_others_truncates_the_author_comparison():
     assert va.authors_match(fields["author"], ["Joel Hestness", "A B", "C D"]) == []
 
 
+def test_punctuation_only_record_authors_are_ignored():
+    assert va.authors_match("{Qwen Team} and Yang, An", ["Qwen", ":", "An Yang"]) == []
+
+
 def test_missing_record_is_reported():
     assert va.compare_arxiv({"title": "x"}, None) == ["arXiv has no record for this id"]
 

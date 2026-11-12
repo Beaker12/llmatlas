@@ -153,6 +153,7 @@ def authors_match(bib_author: str, record_authors):
     open_ended = bool(mine) and mine[-1] == "others"
     if open_ended:
         mine = mine[:-1]
+    record_authors = [a for a in record_authors if full_name_key(a)]  # drop stray ":" entries
     theirs = [full_name_key(a) for a in record_authors]
     if not theirs:
         return []
