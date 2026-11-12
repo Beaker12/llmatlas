@@ -18,6 +18,10 @@ SYNC_EXEMPT: dict[str, str] = {}  # name -> reason it may differ between the cha
 # Comparator: eq, gt, lt or approx:<rel>, applied as `chapter_value <op> notebook_value`.
 RESULT_CLAIMS: list[tuple[str, str, str]] = []
 
+# regex over a sentence -> one-line reason; such a sentence links a notebook and mentions a number but states
+# no result, so the notebook-link check (rule c of test_notebook_prose.py) does not flag it
+NOT_A_RESULT: dict[str, str] = {}
+
 MIN_FIGURES: int = 12
 
 

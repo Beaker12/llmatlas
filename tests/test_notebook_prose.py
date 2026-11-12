@@ -159,7 +159,7 @@ def admonition_sentences(text):
                 yield text.count("\n", 0, start + a) + 1, sentence
 
 
-INLINE_CODE = r"``[^\n]*?``|`[^`\n]*`"
+INLINE_CODE = r"``(?:[^`\n]|\n(?!\n))*?``|`[^`\n]*(?:\n[^`\n]*)?`"   # a span may wrap across one line break
 FENCE_LINE = re.compile(r"^[ \t]*(`{3,}|~{3,}|:{3,})[ \t]*(.*?)[ \t]*$")
 # MyST directives whose content is code or markup, not prose; every other directive keeps its text
 CODE_DIRECTIVES = {"code-cell", "code-block", "sourcecode", "code", "math", "literalinclude", "raw", "eval-rst",
@@ -169,8 +169,21 @@ NOT_A_RESULT = [re.compile(p, re.I) for p in (
     r"\bChapters?\s+\d+(?:\s*(?:,|and|&|-|\u2013)\s*\d+)*",
     r"\bSections?\s+\d+(?:\.\d+)*",
     r"\bParts?\s+\d+", r"\bExercises?\s+\d+", r"\bFigures?\s+\d+", r"\bTables?\s+\d+", r"\bSteps?\s+\d+",
-    r"(?<![\w.])(?:19|20)\d{2}(?![\w.]\d)",
 )]
+# A four-digit number 1900-2099 is a year (not a result) only in these positions. "of" is not in the list of
+# preceding words: "a context of 2048" states a number.
+YEAR = r"(?:19|20)\d{2}"
+MONTHS = "January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec"
+YEAR_CONTEXTS = [re.compile(p, re.I) for p in (
+    rf"\b(?:in|since|by|from|until|before|after|during|early|late|{MONTHS})\.?\s+{YEAR}(?!\d)",
+    rf"\bmid-{YEAR}(?!\d)",
+    rf"[(\[]\s*{YEAR}[a-z]?\s*[)\]]",
+    rf"(?<!\d){YEAR}[a-z]?(?=[,\s]*\{{cite)",
+    rf"\bet al\.,?\s+{YEAR}(?!\d)",
+)]
+# A whitespace-free chunk with a letter/digit junction (fp16, 13-gram, top-2, o200k, fp16/bf16) is a name.
+NAME_CHUNK = re.compile(r"\S*(?:[A-Za-z]\d|\d(?![eE][-+]?\d)[A-Za-z]|[A-Za-z]-\d|\d-[A-Za-z])\S*")
+ABBREVIATION = re.compile(r"(?:\be\.g|\bi\.e|\betc|\bvs|\bcf|\bal|\bFig|\bEq|\bSec|\bapprox|\bNo|(?<![A-Za-z])[A-Z])\.$")
 
 
 def blank_code(text):
@@ -191,7 +204,8 @@ def blank_code(text):
                 continue
             if not (stack and stack[-1][2]):
                 directive = re.match(r"\{([\w:-]+)\}", info)
-                is_code = char != ":" and (directive is None or directive.group(1) in CODE_DIRECTIVES)
+                is_code = ((directive is None and char != ":")
+                           or (directive is not None and directive.group(1) in CODE_DIRECTIVES))
                 stack.append((char, length, is_code))
                 out.append("")
                 continue
@@ -222,6 +236,16 @@ def prose_units(text):
     return [(n, t) for n, t in units]
 
 
+def split_sentences(unit):
+    """(offset, sentence) pairs: split after . ! ? and white space, but not after an abbreviation."""
+    cuts = [0]
+    for m in re.finditer(r"(?<=[.!?])\s+", unit):
+        if not ABBREVIATION.search(unit[: m.start()]):
+            cuts.append(m.end())
+    cuts.append(len(unit))
+    return [(a, unit[a:b]) for a, b in zip(cuts, cuts[1:])]
+
+
 def prose_sentences(text):
     """(line, sentence) for every sentence outside code: admonition bodies, list items and paragraphs.
 
@@ -230,31 +254,38 @@ def prose_sentences(text):
     item is its own unit; sentences end at . ! ? followed by white space.
     """
     for start, unit in prose_units(text):
-        cuts = [0] + [b.end() for b in re.finditer(r"(?<=[.!?])\s+", unit)] + [len(unit)]
-        for a, b in zip(cuts, cuts[1:]):
-            sentence = unit[a:b].strip()
+        for a, piece in split_sentences(unit):
+            sentence = piece.strip()
             if sentence:
                 yield start + unit.count("\n", 0, a), sentence
 
 
 def states_a_number(sentence, nouns=()):
-    """Whether the sentence has a digit or number word outside roles, inline code, link targets, proper nouns
-    and references such as `Chapter 2`, `Section 3.1`, `Figure 4` or a year."""
-    rest = ROLE.sub(" ", sentence)
+    """Whether the sentence states a number: a digit or number word outside roles, inline code, link targets,
+    proper nouns, years in citation-like positions, `Chapter 2`-style references and names such as `fp16`,
+    `13-gram` or `top-2` (names exempt digits only; number words always count)."""
+    rest = sentence
+    for pattern in YEAR_CONTEXTS:       # before roles are removed: a year may be followed by {cite}
+        rest = pattern.sub(" ", rest)
+    rest = ROLE.sub(" ", rest)
     rest = re.sub(INLINE_CODE, " ", rest)
     rest = re.sub(r"\]\([^)\n]*\)", "]", rest)
     rest = strip_nouns(rest, nouns)
     for pattern in NOT_A_RESULT:
         rest = pattern.sub(" ", rest)
-    return bool(DIGIT.search(rest) or WORD.search(rest))
+    return bool(DIGIT.search(NAME_CHUNK.sub(" ", rest)) or WORD.search(rest))
 
 
-def check_admonitions(chapter_dir, claims, nouns=()):
+def check_admonitions(chapter_dir, claims, nouns=(), declared=None):
     """Failures for sentences that link a notebook result with a number but match no claim.
 
     Every sentence of the pages is examined (see prose_sentences), so the check cannot miss a link because of
-    the kind of block it sits in. Proper nouns such as FineWeb-2 are not counted as numbers.
+    the kind of block it sits in. Proper nouns such as FineWeb-2 are not counted as numbers. `declared` maps a
+    regex over a sentence to a reason (the chapter's NOT_A_RESULT): matching sentences are not flagged, and an
+    entry that matches no sentence of the chapter is a failure.
     """
+    declared = dict(declared or {})
+    used = set()
     matchers = []
     for chapter_re, _, _ in claims:
         try:
@@ -264,24 +295,29 @@ def check_admonitions(chapter_dir, claims, nouns=()):
     failures = []
     for page in sorted(Path(chapter_dir).glob("*.md")):
         for line, sentence in prose_sentences(page.read_text(encoding="utf-8")):
+            used.update(rx for rx in declared if re.search(rx, sentence))
             if not NB_REF.search(sentence):
                 continue
-            if not states_a_number(sentence, nouns):
+            hit = [rx for rx in declared if re.search(rx, sentence)]
+            used.update(hit)
+            if hit or not states_a_number(sentence, nouns):
                 continue
             if not any(rx.search(sentence) for rx in matchers):
                 failures.append(f"{page.name}:L{line}: states a notebook result with no RESULT_CLAIMS entry: "
-                                f"{sentence[:90]!r}")
+                                f"{sentence!r}")
+    failures += [f"NOT_A_RESULT entry matches nothing: {rx}" for rx in declared if rx not in used]
     return failures
 
 
-def check_chapter(chapter_dir, claims=None, global_file=GLOBAL_NOUNS):
+def check_chapter(chapter_dir, claims=None, global_file=GLOBAL_NOUNS, declared=None):
     if claims is None:
         claims = chapter_constants(chapter_dir).RESULT_CLAIMS
     nouns = proper_nouns(chapter_dir, global_file)
     failures = []
     for path in notebooks(chapter_dir):
         failures += check_prose_cells(path, nouns)
-    return failures + check_claims(chapter_dir, claims) + check_admonitions(chapter_dir, claims, nouns)
+    declared = chapter_constants(chapter_dir).NOT_A_RESULT if declared is None else declared
+    return failures + check_claims(chapter_dir, claims) + check_admonitions(chapter_dir, claims, nouns, declared)
 
 
 @pytest.mark.parametrize("chapter_dir", CHAPTER_DIRS, ids=CHAPTER_IDS)
@@ -321,11 +357,11 @@ def sample_chapter(tmp_path, cell=None, source=None, tags=None, page=None, nouns
 
 
 def failures_of(chapter):
-    return check_chapter(chapter, CLAIMS, global_file=GLOBAL_NOUNS)
+    return check_chapter(chapter, CLAIMS, global_file=GLOBAL_NOUNS, declared={})
 
 
 def test_sample_chapter_passes():
-    assert check_chapter(FIXTURE, CLAIMS) == []
+    assert check_chapter(FIXTURE, CLAIMS, declared={}) == []
 
 
 def test_a_digit_typed_into_a_markdown_cell_is_reported(tmp_path):
@@ -435,9 +471,9 @@ def test_sentences_in_lists_paragraphs_and_admonitions_are_all_examined():
     assert [line for line, _ in prose_sentences(text)] == [1, 3, 7]
 
 
-def sentence_failures(tmp_path, text, claims=(), nouns=()):
+def sentence_failures(tmp_path, text, claims=(), nouns=(), declared=None):
     (tmp_path / "index.md").write_text(text, encoding="utf-8")
-    return check_admonitions(tmp_path, list(claims), nouns)
+    return check_admonitions(tmp_path, list(claims), nouns, declared)
 
 
 def test_unpunctuated_bullets_are_separate_units(tmp_path):
@@ -487,7 +523,7 @@ def test_chapter_and_section_numbers_and_years_are_not_results(tmp_path):
     for text in ["The Chapter 2 notebook ({ref}`nb-a`) shows it.", "Chapters 2 and 3 use {ref}`nb-a`.",
                  "See Section 3.1 and {ref}`nb-a`.", "Part 2 uses {ref}`nb-a`.", "Exercise 4 uses {ref}`nb-a`.",
                  "Figure 5 comes from {ref}`nb-a`.", "Table 6 comes from {ref}`nb-a`.",
-                 "Step 3 of {ref}`nb-a` repeats.", "Introduced in 2017 ({ref}`nb-a`).", "In 1999 and 2031 ({ref}`nb-a`)."]:
+                 "Step 3 of {ref}`nb-a` repeats.", "Introduced in 2017 ({ref}`nb-a`).", "Since 1999 ({ref}`nb-a`)."]:
         assert sentence_failures(tmp_path, text + "\n") == [], text
     for text in ["Chapter 2's notebook ({ref}`nb-a`) reaches a loss of 0.5.", "See 12345 in {ref}`nb-a`.",
                  "Section 3.1 and {ref}`nb-a` give 7.", "In 2017 it reached 3 ({ref}`nb-a`)."]:
@@ -507,3 +543,72 @@ def test_setext_headings_are_exempt_but_hyphenated_number_words_are_not(tmp_path
     assert prose_hits("Title with 3 digits\n===\n\nplain text.") == []
     assert prose_hits("Another 2 words\n---\n\nplain text.") == []
     assert prose_hits("Two-thirds of the data.") == ["Two"]
+
+
+LINK = "{ref}`nb-a`"
+
+
+def flagged(tmp_path, sentence, declared=None):
+    return sentence_failures(tmp_path, sentence + "\n", declared=declared)
+
+
+@pytest.mark.parametrize("text", ["Since 2020 it grew ({ref}`nb-a`).", "In 2017 it was proposed ({ref}`nb-a`).",
+                                  "It ({ref}`nb-a`) was proposed (2019).", "Vaswani et al., 2017 ({ref}`nb-a`).",
+                                  "Vaswani et al. 2017 ({ref}`nb-a`).", "Released in June 2025 ({ref}`nb-a`).",
+                                  "By 2030 nothing ({ref}`nb-a`) changed, mid-2024 aside, as in [2020a].",
+                                  "Attention 2017 {cite}`vaswani2017` shows {ref}`nb-a`.",
+                                  "Attention 2017, {cite}`vaswani2017` shows {ref}`nb-a`."])
+def test_years_in_citation_positions_are_not_results(tmp_path, text):
+    assert flagged(tmp_path, text.replace("By 2030 nothing", "By 2030 nothing")) == [], text
+
+
+@pytest.mark.parametrize("text", ["It has 2048 tokens ({ref}`nb-a`).", "It runs 2000 steps ({ref}`nb-a`).",
+                                  "A context of 2048 ({ref}`nb-a`).", "The loss reaches 2000 ({ref}`nb-a`)."])
+def test_four_digit_numbers_outside_citation_positions_count(tmp_path, text):
+    assert len(flagged(tmp_path, text)) == 1, text
+
+
+@pytest.mark.parametrize("abbreviation", ["e.g.", "i.e.", "etc.", "vs.", "cf.", "al.", "Fig.", "Eq.", "Sec.",
+                                          "approx.", "No.", "J."])
+def test_sentences_are_not_split_after_abbreviations(abbreviation):
+    sentences = [s for _, s in prose_sentences(f"Runs {LINK}, {abbreviation} 5 tokens. Next one.")]
+    assert sentences == [f"Runs {LINK}, {abbreviation} 5 tokens.", "Next one."]
+
+
+def test_a_number_after_an_abbreviation_is_still_in_the_sentence_with_the_link(tmp_path):
+    assert len(flagged(tmp_path, f"It runs {LINK}, e.g. 5 tokens.")) == 1
+
+
+@pytest.mark.parametrize("name", ["fp16", "bf16", "float32", "o200k", "GPT2", "13-gram", "top-2", "4-bit",
+                                  "Llama-3", "2-D", "fp16/bf16", "8B", "fp16/bf16."])
+def test_numbers_that_are_part_of_a_name_are_not_results(tmp_path, name):
+    assert flagged(tmp_path, f"It uses {name} here ({LINK}).") == [], name
+
+
+@pytest.mark.parametrize("bare", ["13 grams", "top 2", "-2", "2 - 1", "16/32", "1e5 and 3"])
+def test_bare_numbers_next_to_units_still_count(tmp_path, bare):
+    assert len(flagged(tmp_path, f"It gives {bare} here ({LINK}).")) == 1, bare
+
+
+def test_number_words_inside_names_still_count(tmp_path):
+    assert len(flagged(tmp_path, f"A top-two cut ({LINK}).")) == 1
+
+
+def test_a_declared_sentence_is_not_flagged_and_a_stale_entry_is_reported(tmp_path):
+    text = f"It parses two files ({LINK}).\n"
+    assert len(sentence_failures(tmp_path, text)) == 1
+    assert sentence_failures(tmp_path, text, declared={r"parses two files": "a count of inputs, not a result"}) == []
+    stale = sentence_failures(tmp_path, text, declared={r"parses two files": "ok", r"nothing like this": "stale"})
+    assert stale == ["NOT_A_RESULT entry matches nothing: nothing like this"]
+
+
+def test_code_directives_behind_colon_fences_and_wrapped_inline_code_are_code(tmp_path):
+    assert flagged(tmp_path, f":::{{code-cell}} ipython3\nx = 12  # {LINK}\n:::") == []
+    assert flagged(tmp_path, f":::{{code-block}} python\nx = 12  # {LINK}\n:::") == []
+    assert len(flagged(tmp_path, f":::{{note}}\nIt has 12 ({LINK}).\n:::")) == 1
+    assert flagged(tmp_path, f"Sets `n =\n12` ({LINK}).") == []
+
+
+def test_every_chapter_declares_a_not_a_result_dictionary():
+    for chapter_dir in CHAPTER_DIRS:
+        assert chapter_constants(chapter_dir).NOT_A_RESULT == {}
