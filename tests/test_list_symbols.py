@@ -20,7 +20,11 @@ def test_text_and_braces_are_stripped_from_a_subscript():
 
 
 def test_a_named_subscript_is_part_of_the_symbol():
-    assert on_line("Named subscripts kept:") == {"d_k", "n_h", "n_{kv}", "n_{train}"}
+    assert on_line("Named subscripts kept:") == {"d_k", "n_h", "n_{kv}", "n_{train}", "\\epsilon_{ls}"}
+
+
+def test_a_subscript_written_as_text_is_never_a_running_index():
+    assert normalise("\\epsilon_{\\text{ls}} + \\epsilon_{ls} + x_{\\mathrm{ij}}") == ["\\epsilon_{ls}", "\\epsilon", "x_{ij}"]
 
 
 def test_a_running_index_subscript_is_dropped():

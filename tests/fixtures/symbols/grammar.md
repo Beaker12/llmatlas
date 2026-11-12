@@ -4,7 +4,7 @@ Each line holds one rule; tests/test_list_symbols.py reads the symbols line by l
 
 Subscript text: $W_{gate}$ and $W_{\text{gate}}$ and $W_\text{gate}$ and $W_{\mathrm{gate}}$.
 
-Named subscripts kept: $d_k$ and $n_h$ and $n_{kv}$ and $n_{\text{train}}$.
+Named subscripts kept: $d_k$ and $n_h$ and $n_{kv}$ and $n_{\text{train}}$ and $\epsilon_{\text{ls}}$.
 
 Running indices dropped: $x_i$ and $x_{ij}$ and $x_{i-1}$ and $\omega_{2i+1}$ and $q_{m'}$ and $u_t$ and $U_s$ and $\Sigma_{jj}$ and $y_{l}$.
 

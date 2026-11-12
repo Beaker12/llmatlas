@@ -12,7 +12,8 @@ Symbol grammar
     A symbol is a Latin or Greek base letter, keeping any \\mathcal, \\mathbf, \\mathrm or \\mathbb wrapper
     and any \\tilde, \\bar or \\hat accent, plus its subscript after stripping \\text{}, \\mathrm{} and
     braces. A subscript that is only a running index (one or two of i, j, l, t, m, s, or an index
-    expression such as i-1, 2i+1 or m') is dropped. Superscripts and primes are not part of the symbol;
+    expression such as i-1, 2i+1 or m') is dropped, unless it is written as text (\\epsilon_{\\text{ls}} is
+    \\epsilon_{ls}, \\epsilon_{ls} is \\epsilon). Superscripts and primes are not part of the symbol;
     the symbols inside a superscript are listed on their own, except in a superscript of capital letters
     on a symbol, which is part of its name (W^{UK} is W). A subscript holding a relation or range
     (x_{<i}, \\mathbb{E}_{x \\sim p}, w_{1:N}) is a condition: not part of the symbol, its symbols listed. Operator and function names (OPERATOR_NAMES,
@@ -78,6 +79,8 @@ LABEL = re.compile(r"\s*[A-Z]+\s*(?:\\top\s*)?")
 # A subscript holding a relation or range is a condition (x_{<i}, \mathbb{E}_{x \sim p}, w_{1:N}): it is
 # not part of the symbol, and the symbols in it are listed on their own.
 CONDITION = re.compile(r"[<>=:]|\\(?:sim|in|le|leq|ge|geq|lt|gt|mid)(?![A-Za-z])")
+# A subscript written as text is a name, never a running index: \\epsilon_{\\text{ls}} is \\epsilon_{ls}.
+TEXT_SUBSCRIPT = re.compile(r"\s*\\(?:text|mathrm|textrm|operatorname)\s*\{[^{}]*\}\s*")
 STRIP_IN_SUBSCRIPT = re.compile(r"\\(?:text|mathrm|textrm|mathit|operatorname)\s*(?=\{)")
 
 
@@ -190,7 +193,7 @@ class _Parser:
         return self._scripts(base, at, i, attached)
 
     def _scripts(self, base: str | None, at: int, i: int, attached: bool = False) -> int:
-        subscript = None
+        subscript, named = None, False
         while True:
             j = self._skip_space(i)
             if j < len(self.s) and self.s[j] == "'":
@@ -202,13 +205,14 @@ class _Parser:
             elif j < len(self.s) and self.s[j] == "_" and subscript is None:
                 a, b, i = self._arg(j + 1)
                 subscript = normal_subscript(self.s[a:b])
+                named = bool(TEXT_SUBSCRIPT.fullmatch(self.s[a:b]))
                 if base is None or CONDITION.search(self.s[a:b]):
                     self.parse(a, b)
                     subscript = ""
             else:
                 break
         if base is not None:
-            if subscript and not attached and not INDEX.fullmatch(subscript):
+            if subscript and not attached and (named or not INDEX.fullmatch(subscript)):
                 base += f"_{subscript}" if len(subscript) == 1 else f"_{{{subscript}}}"
             self.found.append((base, at))
         return i

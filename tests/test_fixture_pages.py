@@ -1,7 +1,7 @@
 """The sample chapter passes every page-level check, and each check fails on a deliberately broken copy of it.
 
 Exercises, structure and figures have their broken-copy tests in their own modules; this module covers the
-spelling, citation, cross-reference and hygiene checks on copies of the fixture page.
+spelling, citation, cross-reference, hygiene and notation checks on copies of the fixture page.
 """
 import shutil
 
@@ -11,6 +11,7 @@ from tests._files import ROOT
 from tests.test_citation_style import citation_failures
 from tests.test_exercises import page_failures, size_failures
 from tests.test_figures import figure_failures
+from tests.test_notation import notation_failures
 from tests.test_source_hygiene import character_failures, checksum_failures
 from tests.test_spelling import spelling_failures
 from tests.test_xrefs import body_text_failures
@@ -25,7 +26,8 @@ def all_failures(chapter):
             "figures": figure_failures(chapter, 2),
             "exercises": page_failures(chapter), "structure": size_failures(chapter),
             "citations": citation_failures(chapter, bib), "xrefs": body_text_failures(chapter),
-            "hygiene": character_failures(chapter) + checksum_failures(chapter)}
+            "hygiene": character_failures(chapter) + checksum_failures(chapter),
+            "notation": notation_failures(chapter)}
 
 
 def broken(tmp_path, old, new):
@@ -39,7 +41,8 @@ def broken(tmp_path, old, new):
 
 def test_the_sample_chapter_passes_every_page_check():
     assert all_failures(FIXTURE) == {name: [] for name in
-                                     ("spelling", "figures", "exercises", "structure", "citations", "xrefs", "hygiene")}
+                                     ("spelling", "figures", "exercises", "structure", "citations", "xrefs", "hygiene",
+                                      "notation")}
 
 
 @pytest.mark.parametrize("old,new,check,fragment", [
@@ -49,6 +52,10 @@ def test_the_sample_chapter_passes_every_page_check():
     ("shows the ramp", "shows the colour ramp", "spelling", "'colour' -> 'color'"),
     ("Demo {cite:t}`demo2020` that", "Demo et al. {cite}`demo2020` that", "citations", "'et al.' followed by plain {cite}"),
     ("Demo {cite:t}`demo2020` that", "Sample {cite}`demo2020` that", "citations", "surname 'Sample' before {cite}`demo2020`"),
+    ("shows the ramp", "shows the ramp of $\\chi$", "notation", "symbol '\\\\chi' is in neither"),
+    ("shows the ramp", "shows the ramp in $O(n)$", "notation", "banned 'O(' (Asymptotic order"),
+    ("shows the ramp", "shows the ramp, where $d$ is the width, where $d$ is the depth", "notation",
+     "'d' defined as 'the depth', but as 'the width'"),
 ])
 def test_each_check_fails_on_a_broken_copy_of_the_sample_chapter(tmp_path, old, new, check, fragment):
     failures = all_failures(broken(tmp_path, old, new))
