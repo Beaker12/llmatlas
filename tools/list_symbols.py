@@ -14,8 +14,9 @@ Symbol grammar
     braces. A subscript that is only a running index (one or two of i, j, l, t, m, s, or an index
     expression such as i-1, 2i+1 or m') is dropped, unless it is written as text (\\epsilon_{\\text{ls}} is
     \\epsilon_{ls}, \\epsilon_{ls} is \\epsilon). Superscripts and primes are not part of the symbol;
-    the symbols inside a superscript are listed on their own, except in a superscript of capital letters
-    on a symbol, which is part of its name (W^{UK} is W). A subscript holding a relation or range
+    the symbols inside a superscript are listed on their own, except a label in LABELS (W^{UK} is W) and a
+    transpose (T or \\top after a symbol, a bracket or \\mathbf{1}); the T over \\sum or \\prod is a limit
+    and is listed. A run of three or more letters that is not an operator word is one name (pos). A subscript holding a relation or range
     (x_{<i}, \\mathbb{E}_{x \\sim p}, w_{1:N}) is a condition: not part of the symbol, its symbols listed. Operator and function names (OPERATOR_NAMES,
     \\operatorname{...}, \\text{...}, multi-letter \\mathrm{...} and the bare words in OPERATOR_WORDS) are
     not symbols; the symbols in their subscripts and arguments are.
@@ -23,9 +24,10 @@ Symbol grammar
     Normal form: base, then "_x" for a one-character subscript or "_{xy}" for a longer one, e.g.
     W_{gate}, d_k, \\tilde{\\rho}, \\mathcal{L}, \\lambda_{\\max}.
 
-Defining phrases (--definitions): "where $x$ is|are|denotes ...", "$x$ denotes ...", "with $x$ the|a|an
+Defining phrases (--definitions): "where $x$ is|are|denotes ...", "$x$ denotes ...", "with $x$ the
 ...", "let $x$ be ...". The phrase runs to the next comma, semicolon, colon, full stop, parenthesis,
-dollar sign, brace, backtick or line end. The symbol is the first one in the inline math.
+dollar sign, brace, backtick, "and" or line end, and must be a noun phrase (it starts with
+the, a, an or a noun). The math must hold exactly one symbol and no relation. The symbol is the first one in the inline math.
 """
 from __future__ import annotations
 
@@ -74,8 +76,15 @@ GREEK = {
 }
 INDEX_LETTERS = set("ijltms")
 INDEX = re.compile(r"[ijltms]{1,2}|(?=.*[ijltms])[ijltms0-9+\-',]+")
-# A superscript of capital letters on a symbol is part of its name (W^{UK}, d_h^{R}): not scanned.
-LABEL = re.compile(r"\s*[A-Z]+\s*(?:\\top\s*)?")
+# Superscript labels that are part of a symbol's name (W^{UK}, W^{DKV}, d_h^{R}): the labels that occur in the
+# chapters today. Their content is not listed; every other superscript is scanned for symbols.
+LABELS = {"UK", "UV", "DKV", "R"}
+# A superscript T or \top on a symbol, a bracket or \mathbf{1} is a transpose, not the symbol T; on a big operator
+# (\sum, \prod, \bigcup, \bigcap, \lim, ...) it is an upper limit and is scanned.
+TRANSPOSE = re.compile(r"\s*(?:T|\\top)\s*")
+LIMIT_OPERATORS = re.compile(r"\\(?:sum|prod|bigcup|bigcap|coprod|lim|limsup|liminf|max|min|sup|inf|int)\s*$")
+# A run of three or more Latin letters that is not an operator word is one name (pos), not a product of symbols.
+MIN_NAME_RUN = 3
 # A subscript holding a relation or range is a condition (x_{<i}, \mathbb{E}_{x \sim p}, w_{1:N}): it is
 # not part of the symbol, and the symbols in it are listed on their own.
 CONDITION = re.compile(r"[<>=:]|\\(?:sim|in|le|leq|ge|geq|lt|gt|mid)(?![A-Za-z])")
@@ -149,6 +158,9 @@ class _Parser:
                 run = re.compile(r"[A-Za-z]+").match(self.s, i).group(0)
                 if run in OPERATOR_WORDS:
                     i = self._name(i + len(run))
+                elif len(run) >= MIN_NAME_RUN:  # pos: a name written as a word; listed once, as itself
+                    self.found.append((run, i))
+                    i = self._name(i + len(run))
                 else:
                     i = self._symbol(ch, i, i + 1)
             elif ch.isalpha():
@@ -164,7 +176,8 @@ class _Parser:
             j = self._skip_space(i)
             if j < len(self.s) and self.s[j] in "_^":
                 a, b, i = self._arg(j + 1)
-                self.parse(a, b)
+                if not (self.s[j] == "^" and is_transpose(self.s, j)):
+                    self.parse(a, b)
             elif j < len(self.s) and self.s[j] == "'":
                 i = j + 1
             else:
@@ -200,7 +213,8 @@ class _Parser:
                 i = j + 1
             elif j < len(self.s) and self.s[j] == "^":
                 a, b, i = self._arg(j + 1)
-                if base is None or not LABEL.fullmatch(self.s[a:b]):
+                label = re.sub(r"\\top|\s", "", self.s[a:b])
+                if not (TRANSPOSE.fullmatch(self.s[a:b]) or (base is not None and label in LABELS)):
                     self.parse(a, b)
             elif j < len(self.s) and self.s[j] == "_" and subscript is None:
                 a, b, i = self._arg(j + 1)
@@ -216,6 +230,32 @@ class _Parser:
                 base += f"_{subscript}" if len(subscript) == 1 else f"_{{{subscript}}}"
             self.found.append((base, at))
         return i
+
+
+def _script_head(text: str, caret: int) -> str:
+    """The text before the script chain that the superscript at `caret` belongs to (a subscript is skipped)."""
+    before = text[:caret].rstrip()
+    if before.endswith("}"):
+        depth, k = 0, len(before) - 1
+        while k >= 0:
+            depth += before[k] == "}"
+            depth -= before[k] == "{"
+            if depth == 0:
+                break
+            k -= 1
+        group_start = k
+    else:
+        group_start = len(before) - 1
+        if before[group_start - 1:group_start] == "\\":
+            group_start -= 1
+    rest = before[:group_start].rstrip()
+    return rest[:-1] if rest.endswith("_") else before
+
+
+def is_transpose(text: str, caret: int) -> bool:
+    """True when the superscript at text[caret] == '^' is a transpose (T or \\top), not a big operator's limit."""
+    m = re.compile(r"\^\s*(?:\{\s*(?:T|\\top)\s*\}|T(?![A-Za-z])|\\top(?![A-Za-z]))").match(text, caret)
+    return bool(m) and not LIMIT_OPERATORS.search(_script_head(text, caret))
 
 
 def normal_subscript(text: str) -> str:
@@ -261,7 +301,21 @@ def symbols(chapter_dir) -> dict[str, list[tuple[str, int]]]:
     return dict(sorted(result.items()))
 
 
-_PHRASE = r"([^,;:.$(){}`\n]{1,100})"
+_PHRASE = r"((?:(?!\band\b)[^,;:.$(){}`\n]){1,100})"
+# Words that cannot start a noun phrase, so "where $T$ is used as given" is not a definition.
+_NOT_NOUN = {"not", "used", "given", "also", "then", "large", "small", "computed", "defined", "chosen", "set",
+             "typically", "usually", "often", "always", "never", "equal", "close", "kept", "shown", "written"}
+_RELATION = re.compile(r"[=<>]|\\(?:approx|sim|in|le|leq|ge|geq|propto|times|cdot)(?![A-Za-z])")
+
+
+def _noun_phrase(phrase: str) -> bool:
+    words = phrase.split()
+    if not words:
+        return False
+    first = words[0].lower()
+    if first in ("the", "a", "an"):
+        return len(words) > 1
+    return first.isalpha() and first not in _NOT_NOUN and not first.endswith(("ly", "ed", "ing"))
 _BEFORE = {
     "where": re.compile(r"\b[Ww]here\s+$"),
     "with": re.compile(r"\b[Ww]ith\s+$"),
@@ -269,7 +323,7 @@ _BEFORE = {
 }
 _AFTER = {
     "where": re.compile(r"\s+(?:is|are|denotes)\s+" + _PHRASE),
-    "with": re.compile(r"\s+((?:the|a|an)\s+[^,;:.$(){}`\n]{1,100})"),
+    "with": re.compile(r"\s+((?:the)\s+(?:(?!\band\b)[^,;:.$(){}`\n]){1,100})"),
     "let": re.compile(r"\s+be\s+" + _PHRASE),
     None: re.compile(r"\s+denotes\s+" + _PHRASE),
 }
@@ -280,12 +334,12 @@ def _definitions_in(text: str):
         if text.startswith("$$", start):
             continue
         found = symbols_in_math(text[start:end])
-        if not found:
-            continue
+        if len(found) != 1 or _RELATION.search(text[start:end]):
+            continue  # only a bare symbol can be defined: "where $d_k$ is", not "with $T = 1$ the"
         before = text[max(0, start - 20):start]
         kind = next((k for k, pattern in _BEFORE.items() if pattern.search(before)), None)
         m = _AFTER[kind].match(text, end) or (_AFTER[None].match(text, end) if kind else None)
-        if m and m.group(1).strip():
+        if m and _noun_phrase(m.group(1).strip()):
             yield found[0][0], text.count("\n", 0, start) + 1, m.group(1).strip()
 
 

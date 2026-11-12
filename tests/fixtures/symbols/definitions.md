@@ -6,3 +6,5 @@ Take $\mathcal{L}$ with $B$ the batch size; let $\theta$ be the parameters. Wher
 $$y = W x$$
 
 where $W$ is a weight matrix (rows).
+
+With $T = 1$ the weights are used as given, where $n$ is used as given, where $D$ is data and more, with $w$ a function of the step.

@@ -18,6 +18,12 @@ Superscripts dropped: $h^{(l)}_i$ and $h_i^{(l)}$ and $n'$ and $C^{a_N}$ and $A^
 
 Capital superscript labels: $W^{UK}$ and $W^{DKV}$ and $d_h^{R}$ and $V^{UK\top}$.
 
+Transposes and limits: $\sum_{i=1}^{T} x_i^T$ and $\prod_{i=1}^T a_i$ and $\mathbf{1}^T$ and $\left(AB\right)^T$ and $QK^T$.
+
+Other capital superscripts listed: $W_i^Q$ and $\mathbb{R}^{V}$ and $C^{N}$.
+
+Words are names: $PE_{(pos, 2i)}$ and $\sin(pos)$.
+
 Conditions: $x_{<i}$ and $\mathbb{E}_{z \sim p}$ and $w_{1:N}$.
 
 Operators are not symbols: $\log p + \exp(z) + \max_i a_i + \sum_{j=1}^{T} b_j + \operatorname{bucket}(r) + \mathrm{softmax}(S) + \text{loss} + \mathrm{FFN}_e(v) + \text{head}_c + \frac{1}{\tau}\sqrt{g}$.

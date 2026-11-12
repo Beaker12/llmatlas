@@ -3,7 +3,7 @@ import subprocess
 import sys
 
 from tests._files import ROOT
-from tools.list_symbols import definitions, normalise, symbols
+from tools.list_symbols import definitions, is_transpose, normalise, symbols
 
 FIXTURE = ROOT / "tests" / "fixtures" / "symbols"
 
@@ -49,8 +49,30 @@ def test_superscripts_and_primes_are_not_part_of_the_symbol():
     assert on_line("Superscripts dropped:") == {"h", "l", "n", "C", "a_N", "A"}
 
 
-def test_a_capital_superscript_label_is_not_scanned():
+def test_a_whitelisted_superscript_label_is_not_scanned():
     assert on_line("Capital superscript labels:") == {"W", "d_h", "V"}
+
+
+def test_any_other_capital_superscript_is_scanned():
+    # W_i^Q is W and Q (so chapter 1's per-head projection cannot pass as the generic W), R^{V} lists V.
+    assert on_line("Other capital superscripts listed:") == {"W", "Q", "\\mathbb{R}", "V", "C", "N"}
+
+
+def test_a_transpose_is_not_a_symbol_but_an_upper_limit_is():
+    # T over \sum or \prod is the token count; T after x_i, \mathbf{1}, a bracket or K is a transpose.
+    assert on_line("Transposes and limits:") == {"T", "i", "x", "a", "A", "B", "Q", "K"}
+    assert normalise("\\mathbf{1}^T + \\right)^T") == []
+
+
+def test_is_transpose_tells_a_transpose_from_a_limit():
+    for math, expected in [("\\sum_{i=1}^{T}", [False]), ("\\prod_{i=1}^T", [False]),
+                           ("\\sum_{i=1}^{T} x_i^T", [False, True]), ("QK^T", [True]),
+                           ("\\mathbf{1}^T", [True]), ("(AB)^T", [True]), ("x^\\top", [True]), ("x^2", [False])]:
+        assert [is_transpose(math, k) for k, ch in enumerate(math) if ch == "^"] == expected, math
+
+
+def test_a_word_is_one_name_not_a_product():
+    assert on_line("Words are names:") == {"pos", "i"}
 
 
 def test_a_condition_subscript_is_scanned_not_attached():
@@ -64,7 +86,7 @@ def test_operator_and_function_names_are_not_symbols():
 
 def test_display_math_is_read_and_code_is_not():
     places = symbols(FIXTURE)
-    assert ("grammar.md", 25) in places["\\mathcal{O}"] and ("grammar.md", 25) in places["Q"]
+    assert ("grammar.md", 31) in places["\\mathcal{O}"] and ("grammar.md", 31) in places["Q"]
     assert "o" not in places and "not" not in places
 
 
@@ -85,6 +107,8 @@ def test_defining_phrases_are_extracted():
     assert found["\\theta"] == [("definitions.md", 4, "the parameters")]
     assert found["n_h"] == [("definitions.md", 4, "the number of heads")]
     assert found["W"] == [("definitions.md", 8, "a weight matrix")]
+    assert found["D"] == [("definitions.md", 10, "data")]  # the phrase stops at "and"
+    assert "T" not in found and "n" not in found and "w" not in found  # "with $w$ a ...", "$T = 1$ the ...", "is used as given": not definitions
     assert "d" not in found and "\\mathcal{L}" not in found
 
 
