@@ -1,9 +1,11 @@
 """Notation: one meaning per symbol, book-wide and in each chapter.
 
 Check name `notation`, one test per chapter. Failures, in what each layer does and does not guarantee:
-- Formula bans (BANNED) are exact: a pattern in a math region, scoped to chapters, from the plan's "Replaces"
-  column; the bans built from NO_MEANING report a symbol that has no meaning in that chapter, read with the
-  symbol grammar of tools/list_symbols.py. A wrong use the formula itself does not show is not caught here.
+- Formula bans (BANNED) are exact for the forms they name: a pattern in a math region, scoped to chapters, from
+  the plan's "Replaces" column; an older pattern can miss a variant spelling (an unbraced subscript). The bans
+  from NO_MEANING report a symbol with no meaning in that chapter, read with the grammar of list_symbols.py;
+  that list is a snapshot of the tables, and a chapter that declares one of its symbols in its local list
+  removes the matching ban in the same change. A wrong use the formula itself does not show is not caught.
 - Phrase entries (BANNED_PHRASES) are a regression guard for wording close to the recorded lines, nothing
   more: keyword cues near the symbol can miss a reworded wrong use and can match a correct sentence (which
   the chapter then declares in its NOTATION_OK). test_known_limits_of_the_phrase_layer_are_recorded keeps one
@@ -23,11 +25,10 @@ import pytest
 
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check, chapter_constants
 from tests._pages import blank_code, blank_inline_code, blank_math
-from tests.test_notebook_prose import prose_sentences
+from tools.notation_tables import GLOBAL, _rows, global_rows, local_rows, prose_sentences
 from tools.list_symbols import LOCAL_LIST, definitions, is_transpose, normalise, pages, symbols, symbols_in_math
 from tools.unescape_math import math_regions
 
-GLOBAL = ROOT / "tests" / "notation_global.txt"
 EXCEPTIONS = ROOT / "tests" / "notation_exceptions.txt"
 ALL = frozenset(range(0, 7))  # every chapter, and a directory without a chapter number (the sample chapter)
 
@@ -122,36 +123,45 @@ BANNED: list[tuple] = [
 ]
 
 
-# (chapter, symbol in normal form, what the chapter's tables use instead): symbols with no meaning in that chapter
-# under notation_global.txt and the chapter's notation-local.md, each found in the chapter's math when this list
-# was made. Each is banned exactly: a match counts only where list_symbols reads that symbol (so in chapter 2
-# P, P \odot G and O = PV are banned; \Pr, p, p_\theta, \mathrm{PE} and PPL are not). Several are also caught by
-# an older pattern above; these stay banned however the formula is written.
+# (chapter, symbol in normal form, what to do instead): symbols with no meaning in that chapter under
+# notation_global.txt and the chapter's notation-local.md, each found in the chapter's math when this list was made.
+# Each is banned exactly: a match counts only where list_symbols reads that symbol (so in chapter 2 P, P \odot G and
+# O = PV are banned; \Pr, p, p_\theta, \mathrm{PE} and PPL are not). Where an older pattern above reports the same
+# span, only the older, more specific report is kept. A symbol a note must name as a paper's own (the YaRN row's
+# \alpha, the RoPE row's \theta_i) is never listed here. This is a snapshot of the tables: when a chapter declares
+# one of these symbols in its local list, its entry here is removed in the same change.
 NO_MEANING: list[tuple[int, str, str]] = [
-    (1, "P", "p_\\theta or p, a distribution"),
-    (1, "W_1", "W_{gate}, W_{up}, W_{down}"), (1, "W_2", "W_{gate}, W_{up}, W_{down}"),
-    (1, "W_3", "W_{gate}, W_{up}, W_{down}"),
-    (1, "\\mathbf{x}", "h^{(0)}_i, the embedding"),
-    (1, "b_1", "the plan's Biases row"), (1, "b_2", "the plan's Biases row"),
-    (1, "b_{out}", "the plan's Unembedding row"), (1, "pos", "m, the position"),
-    (2, "P", "A for attention weights, p for a distribution"),
-    (2, "P_{\\theta}", "p_\\theta"), (2, "P_{data}", "p_{data}"),
-    (2, "T_{\\max}", "t_{end}"), (2, "T_{warmup}", "t_{warm}"),
-    (2, "Y", "\\mathrm{Y}"), (2, "a", "a_N"),
-    (2, "\\theta_1", "\\theta^{(1)}"), (2, "h_1", "h^{(1)}"), (2, "h_L", "h^{(L)}"),
-    (2, "n_{in}", "d_{in}"), (2, "n_{out}", "d_{out}"),
-    (4, "w_1", "x_1"), (4, "w_N", "x_T"),
-    (6, "P", "\\bar{\\rho}, the batch-mean router probability"),
-    (6, "W_1", "W_{gate}, W_{up}, W_{down}"), (6, "W_2", "W_{gate}, W_{up}, W_{down}"),
-    (6, "\\alpha", "\\lambda_{aux}"),
-    (6, "\\theta_0", "\\omega_0"), (6, "\\theta_{d/2-1}", "\\omega_{d_k/2-1}"),
-    (6, "d_h", "d_k"), (6, "d_{ffn}", "d_{ff}"), (6, "d_{model}", "d"),
+    (1, "P", "write p_\\theta (the model distribution) or p (a distribution)"),
+    (1, "W_1", "write W_{\\text{gate}} in SwiGLU, W_{\\text{up}} in the ReLU or GELU network"),
+    (1, "W_2", "write W_{\\text{down}} in SwiGLU and in the ReLU or GELU network"),
+    (1, "W_3", "write W_{\\text{up}} in SwiGLU"),
+    (1, "\\mathbf{x}", "write h^{(0)}_i, the embedding"),
+    (1, "b_1", "leave the bias term out of the formula and say so once"),
+    (1, "b_2", "leave the bias term out of the formula and say so once"),
+    (1, "b_{out}", "leave the bias term out of the formula and say so once"),
+    (1, "pos", "write m, the position"),
+    (2, "P", "write A for attention weights, p for a distribution"),
+    (2, "P_{\\theta}", "write p_\\theta"), (2, "P_{data}", "write p_{\\text{data}}"),
+    (2, "T_{\\max}", "write t_{\\text{end}}"), (2, "T_{warmup}", "write t_{\\text{warm}}"),
+    (2, "Y", "write \\mathrm{Y}"), (2, "a", "write a_N"),
+    (2, "\\theta_1", "write \\theta^{(1)}"), (2, "h_1", "write h^{(1)}"), (2, "h_L", "write h^{(L)}"),
+    (2, "n_{in}", "write d_{\\text{in}}"), (2, "n_{out}", "write d_{\\text{out}}"),
+    (4, "w_1", "write x_1"), (4, "w_N", "write x_T"),
+    (6, "P", "write \\bar{\\rho}, the batch-mean router probability"),
+    (6, "W_1", "write W_{\\text{up}}"), (6, "W_2", "write W_{\\text{down}}"),
+    (6, "\\theta_0", "write \\omega_0"), (6, "\\theta_{d/2-1}", "write \\omega_{d_k/2-1}"),
+    (6, "d_h", "write d_k, and d_{\\text{rope}} for the labelled d_h^{R}"),
+    (6, "d_{ffn}", "write d_{\\text{ff}}"), (6, "d_{model}", "write d"),
 ]
 
 
 def _symbol_at(symbol):
-    """A BANNED filter: keep a match only where list_symbols reads exactly `symbol` starting at it."""
-    return lambda region, match: (symbol, match.start()) in symbols_in_math(region)
+    """A BANNED filter: keep a match only where list_symbols reads exactly `symbol` starting at it. Its `symbol`
+    attribute marks the entry as an exact ban: reported as the symbol, and only where no older pattern matched."""
+    def keep(region, match):
+        return (symbol, match.start()) in symbols_in_math(region)
+    keep.symbol = symbol
+    return keep
 
 
 def _symbol_start(symbol):
@@ -160,7 +170,7 @@ def _symbol_start(symbol):
     return re.escape(head) if head.startswith("\\") else rf"(?<![\\A-Za-z]){head}"
 
 
-BANNED += [(_symbol_start(sym), f"No meaning in ch. {chapter}: {sym} (write {instead})", frozenset({chapter}),
+BANNED += [(_symbol_start(sym), f"No meaning in ch. {chapter}: {sym}; {instead}", frozenset({chapter}),
             _symbol_at(sym)) for chapter, sym, instead in NO_MEANING]
 
 
@@ -221,38 +231,8 @@ def chapter_number(chapter_dir) -> int:
     return int(name[:2]) if name[:2].isdigit() else 0
 
 
-def _rows(path: Path, columns: int):
-    if not path.exists():
-        return []
-    rows = []
-    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        if line.strip() and not line.startswith("#"):
-            parts = line.split("\t")
-            assert len(parts) == columns, f"{path.name}:{number}: expected {columns} tab-separated columns"
-            rows.append(tuple(p.strip() for p in parts))
-    return rows
-
-
-def global_rows(path=GLOBAL) -> list[tuple[str, str]]:
-    return _rows(path, 2)
-
-
 def exceptions(path=EXCEPTIONS) -> dict[str, tuple[set, str]]:
     return {sym: ({m.strip() for m in meanings.split(" | ")}, reason) for sym, meanings, reason in _rows(path, 3)}
-
-
-def local_rows(chapter_dir) -> list[tuple[str, str]]:
-    """(symbol, meaning) from the chapter's notation-local.md table (Symbol, Meaning, First used, Rename)."""
-    path = Path(chapter_dir) / LOCAL_LIST
-    if not path.exists():
-        return []
-    rows = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if not line.startswith("|") or len(cells) < 3 or cells[0] in ("Symbol", "") or set(cells[0]) <= set("-:"):
-            continue
-        rows.append((cells[0].strip("$").strip(), cells[1]))
-    return rows
 
 
 def banned_failures(chapter_dir, number=None):
@@ -260,6 +240,7 @@ def banned_failures(chapter_dir, number=None):
     active = [(re.compile(entry[0]), entry[1], entry[3] if len(entry) > 3 else None,
                re.compile(entry[4], re.I) if len(entry) > 4 else None)
               for entry in BANNED if number in entry[2]]
+    active.sort(key=lambda entry: hasattr(entry[2], "symbol"))  # exact bans last, after the older patterns
     failures = []
     for page in pages(chapter_dir):
         text = page.read_text(encoding="utf-8")
@@ -267,14 +248,20 @@ def banned_failures(chapter_dir, number=None):
         for start, end in math_regions(text):
             region = text[start:end]
             section = next((h for pos, h in reversed(headings) if pos < start), "")
+            spans = []  # the spans older patterns reported in this region
             for pattern, row, keep, where in active:
                 if where and not where.search(section):
                     continue
+                exact = getattr(keep, "symbol", None)
                 for m in pattern.finditer(region):
                     if keep and not keep(region, m):
                         continue
+                    if exact and any(a <= m.start() < b for a, b in spans):
+                        continue  # an older, more specific pattern already reported this span
+                    if not exact:
+                        spans.append(m.span())
                     line = text.count("\n", 0, start) + 1 + region.count("\n", 0, m.start())
-                    failures.append(f"{page.name}:L{line}: banned {m.group(0)!r} ({row})")
+                    failures.append(f"{page.name}:L{line}: banned {exact or m.group(0)!r} ({row})")
     return failures
 
 
@@ -636,8 +623,8 @@ def test_a_clean_chapter_passes(tmp_path):
 
 def test_a_banned_pattern_is_reported_only_in_its_chapters(tmp_path):
     chapter = chapter_with(tmp_path, "The width $d_{model}$.\n")
-    assert banned_failures(chapter, 6) == ["index.md:L1: banned 'd_{model' (Model (residual) width: d_model in ch. 6)",
-                                           "index.md:L1: banned 'd' (No meaning in ch. 6: d_{model} (write d))"]
+    # The exact ban on d_{model} matches the same span and is not reported a second time.
+    assert banned_failures(chapter, 6) == ["index.md:L1: banned 'd_{model' (Model (residual) width: d_model in ch. 6)"]
     assert banned_failures(chapter, 2) == []
 
 
@@ -712,7 +699,10 @@ def test_a_symbol_with_no_meaning_in_its_chapter_is_banned_there_alone(tmp_path,
     known = {sym for sym, _ in global_rows()} | {sym for sym, _ in local_rows(CHAPTER_DIRS[number - 1])}
     assert symbol not in known, f"{symbol!r} has a meaning in chapter {number}: no ban"
     assert normalise(symbol) == [symbol]
-    assert len(_banned(tmp_path, symbol, number)) == 1
+    # Reported at its spot, by the exact ban alone or by older patterns that name the same span.
+    failures = banned_failures(chapter_with(tmp_path, f"Math ${symbol}$ here.\n"), number)
+    exact = [f for f in failures if "No meaning" in f]
+    assert failures and (exact == failures if exact else True) and len(exact) <= 1, failures
     banned_in = {c for c, s, _ in NO_MEANING if s == symbol}
     assert all(_banned(tmp_path, symbol, n) == [] for n in range(1, 7) if n not in banned_in)
 
@@ -722,17 +712,20 @@ def test_a_symbol_with_no_meaning_in_its_chapter_is_banned_there_alone(tmp_path,
     ("\\Pr[A]", False), ("p", False), ("p_\\theta", False), ("\\mathrm{PE}", False), ("PPL", False),
     ("\\mathbf{P}", False)])
 def test_bare_p_is_banned_in_chapter_2(tmp_path, math, banned):
-    found = [f for f in _banned(tmp_path, math, 2) if ": P (" in f]
+    # Some forms are reported by an older, more specific pattern instead of the exact ban; either counts.
+    found = banned_failures(chapter_with(tmp_path, f"Math ${math}$ here.\n"), 2)
     assert bool(found) == banned, found
+    assert len(found) <= 1, found
 
 
 def test_p_theta_is_banned_in_chapter_2_by_the_distribution_row_and_exactly(tmp_path):
-    # The older pattern for distributions catches P_{\theta} but not P_\theta; the exact ban catches both.
+    # The older pattern for distributions catches P_{\theta} but not P_\theta; the exact ban catches the
+    # unbraced form, and for the braced one the older, more specific report is the only one.
     chapter = chapter_with(tmp_path, "Math $P_{\\theta}$ and $P_\\theta(x)$ here.\n")
     failures = banned_failures(chapter, 2)
     assert len([f for f in failures if "Data and model distributions" in f and "'P_{'" in f]) == 1
-    assert len([f for f in failures if "No meaning in ch. 2: P_{\\theta}" in f]) == 2
-    assert not [f for f in failures if ": P (" in f]
+    assert [f for f in failures if "No meaning" in f] == [
+        "index.md:L1: banned 'P_{\\\\theta}' (No meaning in ch. 2: P_{\\theta}; write p_\\theta)"]
 
 
 def test_known_limits_of_the_phrase_layer_are_recorded():
@@ -744,3 +737,46 @@ def test_known_limits_of_the_phrase_layer_are_recorded():
     assert hits(6, "Each of the $L$ blocks processes all $n$ tokens.")
     # A wrong use that escapes: tau as the clipping threshold, with none of the cues clip, threshold or norm.
     assert not hits(2, "Gradients are rescaled whenever their magnitude exceeds $\\tau$.")
+
+
+def test_an_exact_ban_shows_the_whole_symbol(tmp_path):
+    failures = _banned(tmp_path, "x + P_\\theta", 2)
+    assert len(failures) == 1 and "banned 'P_{\\\\theta}'" in failures[0]  # the symbol, not just its letter
+
+
+def test_an_exact_ban_and_an_older_pattern_on_the_same_span_report_once(tmp_path):
+    two = banned_failures(chapter_with(tmp_path / "two", "Here $O = PV$ and $P$.\n"), 2)
+    assert [f for f in two if "No meaning" in f] == ["index.md:L1: banned 'P' (No meaning in ch. 2: P; write A for "
+                                                    "attention weights, p for a distribution)"]
+    assert len([f for f in two if "'= PV'" in f]) == 1
+    six = banned_failures(chapter_with(tmp_path / "six", "Then $W_2\\,\\mathrm{ReLU}(W_1 x)$.\n"), 6)
+    assert len(six) == 2 and not [f for f in six if "No meaning" in f]  # W_1 and W_2: the feed-forward row
+
+
+def test_the_hints_say_what_to_write():
+    hint = {(n, s): h for n, s, h in NO_MEANING}
+    assert "W_{\\text{gate}} in SwiGLU" in hint[(1, "W_1")] and "W_{\\text{up}} in the ReLU" in hint[(1, "W_1")]
+    assert "W_{\\text{up}}" in hint[(1, "W_3")] and "W_{\\text{down}}" in hint[(1, "W_2")]
+    assert hint[(6, "W_1")] == "write W_{\\text{up}}" and hint[(6, "W_2")] == "write W_{\\text{down}}"
+    for sym in ("b_1", "b_2", "b_{out}"):
+        assert hint[(1, sym)] == "leave the bias term out of the formula and say so once"
+    assert "d_k" in hint[(6, "d_h")] and "d_{\\text{rope}}" in hint[(6, "d_h")]
+
+
+def test_a_paper_symbol_named_in_a_note_is_not_banned(tmp_path):
+    """The plan's YaRN, RoPE, context-scale and temperature rows ask for a note naming the paper's own symbols, so
+    none of those may carry a ban on the bare symbol in chapter 6."""
+    note = ("The paper writes the ramp bounds as $\\alpha$ and $\\beta$, the frequencies as $\\theta_i$, the scale "
+            "as $s$, the temperature as $t$, and $\\lambda$, $r$ and $\\gamma$ for the rest.\n")
+    chapter = chapter_with(tmp_path, note)
+    assert [f for f in banned_failures(chapter, 6) if "No meaning" in f] == []
+    assert not [f for f in banned_failures(chapter, 6) if "alpha" in f]
+    assert all(s not in ("\\alpha", "\\lambda", "r", "\\gamma", "\\beta", "s", "t", "\\theta")
+               for n, s, _ in NO_MEANING if n == 6)
+
+
+def test_the_auxiliary_loss_weight_alpha_is_banned_in_chapter_6(tmp_path):
+    line = next(l for l in (CHAPTER_DIRS[5] / "index.md").read_text(encoding="utf-8").splitlines()
+                if "The Switch loss is $\\alpha" in l)
+    chapter = chapter_with(tmp_path, line + "\n")
+    assert [f for f in banned_failures(chapter, 6) if "Auxiliary-loss weight" in f]
