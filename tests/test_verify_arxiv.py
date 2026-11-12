@@ -144,3 +144,132 @@ def test_undecidable_venues_count_as_a_match():
                          "2016 IEEE Conference on Computer Vision and Pattern Recognition (CVPR)")
     assert not va.same_venue("Science China Information Sciences",
                              "SCIENCE CHINA Technological Sciences")
+
+
+# --- title rule (item 2) ---------------------------------------------------------------------
+
+
+def test_preprint_string_in_journal_still_gets_the_title_check():
+    fields = parse("""@article{x,
+  title={A completely different title about something else},
+  author={Hestness, Joel and Patwary, Mostafa and Daum{\\'e} III, Hal},
+  journal={arXiv preprint arXiv:1712.00409},
+  eprint={1712.00409}
+}""")["x"]
+    problems = va.compare_arxiv(fields, va.parse_atom(ATOM)["1712.00409"])
+    assert [p.split(":")[0] for p in problems] == ["title"]
+
+
+def test_published_entry_is_not_checked_on_title():
+    fields = parse("""@article{x,
+  title={A different published title},
+  author={Hestness, Joel and Patwary, Mostafa and Daum{\\'e} III, Hal},
+  journal={Journal of Things},
+  eprint={1712.00409}
+}""")["x"]
+    assert va.compare_arxiv(fields, va.parse_atom(ATOM)["1712.00409"]) == []
+
+
+# --- venues (item 3) -------------------------------------------------------------------------
+
+
+def test_venue_abbreviations_and_acronyms():
+    assert va.same_venue("Nature Machine Intelligence", "Nat. Mach. Intell.")
+    assert va.same_venue("J. Mach. Learn. Res.", "Journal of Machine Learning Research")
+    assert va.same_venue("JMLR", "Journal of Machine Learning Research")
+    assert va.same_venue("TACL", "Transactions of the Association for Computational Linguistics")
+    assert not va.same_venue("Neural Computation", "Neural Networks")
+    assert not va.same_venue("Science China Information Sciences",
+                             "Science China Technological Sciences")
+    assert not va.same_venue("Nature", "Science")
+
+
+# --- Crossref through the arXiv DOI (item 4) -------------------------------------------------
+
+NO_REF_ATOM = ATOM.replace(
+    '<arxiv:journal_ref xmlns:arxiv="x">SCIENCE CHINA Technological Sciences 63,\n'
+    '  1872-1897 (2020)</arxiv:journal_ref>', "")
+
+
+def test_doi_from_arxiv_is_checked_against_crossref():
+    record = va.parse_atom(NO_REF_ATOM)["2003.08271"]
+    assert record["journal_ref"] is None and record["doi"] == "10.1007/s11431-020-1647-3"
+    fields = parse("""@article{qiu,
+  title={Pre-trained models},
+  author={Qiu, Xipeng and Sun, Tianxiang},
+  journal={Science China Information Sciences},
+  eprint={2003.08271}
+}""")["qiu"]
+    seen = []
+
+    def crossref(doi):
+        seen.append(doi)
+        return {"title": "", "authors": ["Qiu", "Sun"], "volume": "63", "pages": "1872",
+                "journal": "Science China Technological Sciences"}
+
+    problems = va.check_entry(fields, record, crossref, delay=0)
+    assert seen == ["10.1007/s11431-020-1647-3"]
+    assert any(p.startswith("journal:") for p in problems)
+
+
+# --- nothing checked, unreachable services (item 5) ------------------------------------------
+
+
+def test_nothing_checked_is_an_error(tmp_path, capsys):
+    bib = tmp_path / "a.bib"
+    bib.write_text("@article{k,\n  title={T},\n  author={A, B}\n}\n")
+    assert va.main([str(bib)]) == 2
+    assert "nothing checked" in capsys.readouterr().out
+    bib.write_text("@article{k,\n  title={T},\n  eprint={1712.00409}\n}\n")
+    assert va.main([str(bib), "--keys", "nosuchkey"]) == 2
+    assert "nothing checked" in capsys.readouterr().out
+
+
+def test_crossref_outage_is_not_reported_as_a_missing_record():
+    fields = {"doi": "10.1/x", "author": "Qiu, Xipeng"}
+
+    def down(doi):
+        raise va.Unreachable(doi)
+
+    assert va.check_entry(fields, None, down, delay=0) == ["could not reach Crossref"]
+    assert va.check_entry(fields, None, lambda doi: None, delay=0) == [
+        "Crossref has no record for this DOI"]
+
+
+def test_http_404_is_not_found_and_other_failures_are_unreachable(monkeypatch):
+    import urllib.error
+
+    def raise_http(code):
+        def opener(request, timeout=0):
+            raise urllib.error.HTTPError("u", code, "m", {}, None)
+        return opener
+
+    monkeypatch.setattr(va.time, "sleep", lambda s: None)
+    monkeypatch.setattr(va.urllib.request, "urlopen", raise_http(404))
+    assert va.fetch_crossref("10.1/x") is None
+    monkeypatch.setattr(va.urllib.request, "urlopen", raise_http(503))
+    try:
+        va.fetch_crossref("10.1/x")
+    except va.Unreachable:
+        pass
+    else:
+        raise AssertionError("expected Unreachable")
+
+
+# --- whole-surname comparison (item 11) --------------------------------------------------------
+
+
+def test_surnames_are_compared_whole():
+    assert va.authors_match("Li, Wei", ["Wei Ali"])
+    assert va.authors_match("Ali, Wei", ["Wei Li"])
+    assert va.authors_match("van der Maaten, Laurens", ["Laurens van der Maaten"]) == []
+    assert va.authors_match("Daum{\\'e} III, Hal", ["Hal Daumé III"]) == []
+    assert va.authors_match("Garc\\'ia M\\'arquez, Gabriel",
+                            ["Gabriel García Márquez"]) == []
+    assert va.authors_match("Smith-Jones, Ann", ["Ann Smith-Jones"]) == []
+    assert va.authors_match("Du, Nan", ["Nan Du"]) == []  # a surname that is also a particle
+
+
+def test_non_latin_names_are_reported_as_not_comparable():
+    problems = va.authors_match("{张}, 三", ["三 张"])
+    assert problems and problems[0].startswith("could not compare")

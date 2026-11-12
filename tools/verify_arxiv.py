@@ -29,6 +29,7 @@ import re
 import sys
 import time
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -71,23 +72,51 @@ def entries(text):
             yield key, fields["eprint"], fields["title"]
 
 
+PARTICLES = {"van", "von", "de", "der", "den", "la", "le", "di", "du", "del", "da", "dos",
+             "ter", "ten", "al", "el", "bin"}
+SUFFIXES = {"jr", "sr", "ii", "iii", "iv"}
+
+
+def name_words(name: str, keep_particles: bool = False):
+    """Lower-case ASCII words of a name without generational suffixes and (unless asked to keep
+    them) particles such as ``van``; a name made only of particles keeps them."""
+    words = [w for w in re.findall(r"[a-z0-9]+", normalise_words(name)) if w not in SUFFIXES]
+    if keep_particles:
+        return words
+    return [w for w in words if w not in PARTICLES] or words
+
+
+def normalise_words(text: str) -> str:
+    text = re.sub(r"\\['`\"^~=.vcHuk]\s*\{?\\?([A-Za-z])\}?", r"\1", text)  # TeX accents
+    return fold(re.sub(r"[{}\\]", "", text)).lower().replace("-", "")
+
+
 def bib_surnames(author_field: str):
+    """Surname keys of the entry's authors: ``None`` for a name that folds to nothing (a
+    non-Latin script), ``"others"`` for ``and others``, and ``("corporate", key)`` for a name
+    wrapped in braces."""
     names = [a.strip() for a in re.split(r"\s+and\s+", author_field) if a.strip()]
     surnames = []
     for name in names:
         if name == "others":
             surnames.append("others")
         elif name.startswith("{") and name.endswith("}"):  # corporate author
-            surnames.append(normalise(name))
-        elif "," in name:
-            surnames.append(normalise(name.split(",")[0]))
+            key = "".join(name_words(name))
+            surnames.append(("corporate", key) if key else None)
         else:
-            surnames.append(normalise(name.split()[-1]))
+            part = name.split(",")[0] if "," in name else name
+            words = name_words(part if "," in name else part.split()[-1] if part.split() else "")
+            surnames.append("".join(words) or None)
     return surnames
 
 
-def full_name_key(name: str) -> str:
-    return normalise(name)
+def record_name_keys(name: str):
+    """Acceptable surname keys for a record author written ``Given Family``: the last word, or
+    the last two or three words joined (compound surnames)."""
+    keys = set()
+    for words in (name_words(name), name_words(name, keep_particles=True)):
+        keys |= {"".join(words[-k:]) for k in (1, 2, 3) if len(words) >= k}
+    return keys
 
 
 # --- records from the services ----------------------------------------------------------------
@@ -148,21 +177,32 @@ def split_journal_ref(ref: str):
 
 
 def authors_match(bib_author: str, record_authors):
-    """Problems (a list of strings) comparing the entry's authors with a record's."""
+    """Problems (a list of strings) comparing the entry's authors with a record's. Surnames are
+    compared whole, after folding case, accents, braces, hyphens and particles."""
     mine = bib_surnames(bib_author)
     open_ended = bool(mine) and mine[-1] == "others"
     if open_ended:
         mine = mine[:-1]
-    record_authors = [a for a in record_authors if full_name_key(a)]  # drop stray ":" entries
-    theirs = [full_name_key(a) for a in record_authors]
-    if not theirs:
+    record_authors = [a for a in record_authors if name_words(a) or re.search(r"\w", a)]
+    if not record_authors:
         return []
-    if len(mine) != len(theirs) and not (open_ended and len(mine) <= len(theirs)):
-        return [f"author count {len(mine)} in the entry, {len(theirs)} in the record"]
+    if len(mine) != len(record_authors) and not (open_ended and len(mine) <= len(record_authors)):
+        return [f"author count {len(mine)} in the entry, {len(record_authors)} in the record"]
+    problems = []
     for i, name in enumerate(mine):
-        last = normalise(record_authors[i].split()[-1]) if record_authors[i].split() else ""
-        if not (theirs[i].endswith(name) or (last and name.startswith(last))):
-            return [f"author {i + 1} is {name!r} in the entry, {record_authors[i]!r} in the record"]
+        theirs = record_name_keys(record_authors[i])
+        if name is None or not theirs:
+            problems.append(f"could not compare author {i + 1} ({record_authors[i]!r}): the name "
+                            "has no Latin letters; check it by hand")
+        elif isinstance(name, tuple):
+            if not any(name[1] in t or t in name[1] for t in theirs):
+                problems.append(f"author {i + 1} is {name[1]!r} in the entry, "
+                                f"{record_authors[i]!r} in the record")
+        elif name not in theirs:
+            problems.append(f"author {i + 1} is {name!r} in the entry, "
+                            f"{record_authors[i]!r} in the record")
+        if problems:
+            return problems[:1]
     return []
 
 
@@ -174,23 +214,66 @@ def venue_of(fields):
     return fields.get("journal") or fields.get("booktitle") or ""
 
 
-GENERIC_WORDS = {"proceedings", "of", "the", "on", "and", "in", "conference", "international",
-                 "annual", "journal", "ieee", "acm", "workshop", "published", "at", "for",
-                 "meeting"}
+def has_real_venue(fields) -> bool:
+    """True for an entry published in a journal or proceedings; an arXiv preprint string in
+    ``journal`` does not count."""
+    venue = venue_of(fields)
+    return bool(venue) and not is_preprint_venue(venue)
+
+
+STOP_WORDS = {"of", "the", "on", "and", "in", "for"}
+BOILERPLATE = {"proceedings", "conference", "international", "annual", "ieee", "acm", "workshop",
+               "published", "at", "meeting"}
 
 
 def venue_words(venue: str):
-    words = re.findall(r"[a-z]+", fold(re.sub(r"[{}\\]", "", venue)).lower())
-    return {w for w in words if w not in GENERIC_WORDS}
+    words = re.findall(r"[a-z0-9]+", normalise_words(venue))
+    return [w for w in words if w not in STOP_WORDS and w not in BOILERPLATE and not w.isdigit()]
+
+
+def word_match(x: str, y: str) -> bool:
+    """Equal, or one is a prefix abbreviation of the other (``nat`` and ``nature``)."""
+    return x.startswith(y) or y.startswith(x)
+
+
+def initials(venue: str) -> str:
+    words = re.findall(r"[a-z0-9]+", normalise_words(venue))
+    return "".join(w[0] for w in words if w not in STOP_WORDS and not w.isdigit())
+
+
+def is_acronym_of(short: str, venue: str) -> bool:
+    """``short`` (``icml``, ``jmlr``) is made of the initials of the venue's words."""
+    return len(short) > 1 and short in initials(venue)
+
+
+def in_order(short, long):
+    """True when each word of ``short`` matches a later word of ``long`` than the previous."""
+    position = 0
+    for word in short:
+        while position < len(long) and not word_match(word, long[position]):
+            position += 1
+        if position == len(long):
+            return False
+        position += 1
+    return True
 
 
 def same_venue(mine: str, theirs: str) -> bool:
-    """True when one venue's significant words are contained in the other's. Undecidable
-    comparisons (a side with no significant words, or one bare acronym) count as a match."""
+    """Word-by-word comparison that accepts abbreviations (``Nat. Mach. Intell.``) and acronyms
+    (``JMLR``), ignoring case, punctuation and stop words. The shorter side must match the longer
+    in order. A bare all-capital acronym that cannot be expanded is undecidable and counts as a
+    match, as does a side with no significant words."""
     a, b = venue_words(mine), venue_words(theirs)
-    if not a or not b or min(len(a), len(b)) < 2 and a != b and (len(a) == 1 or len(b) == 1):
+    if not a or not b:
         return True
-    return a <= b or b <= a
+    short, long = (a, b) if len(a) <= len(b) else (b, a)
+    original, other = (mine, theirs) if short is a else (theirs, mine)
+    if len(short) == 1:
+        word = short[0]
+        if is_acronym_of(word, other) or in_order(short, long):
+            return True
+        return original.strip().isupper() and len(word) > 1
+    return in_order(short, long)
 
 
 def norm_pages(pages: str) -> str:
@@ -210,13 +293,15 @@ def compare_publication(fields, journal, volume, pages, source):
 
 
 def compare_arxiv(fields, record):
-    """Problems for one entry against its arXiv record."""
+    """Problems for one entry against its arXiv record. The title is compared for entries not
+    published in a real venue (preprints, including a ``journal`` that is an arXiv preprint
+    string); a published title may differ from the preprint's."""
     if record is None:
         return ["arXiv has no record for this id"]
     problems = []
     if fields.get("author"):
         problems += authors_match(fields["author"], record["authors"])
-    if not venue_of(fields) and fields.get("title"):
+    if not has_real_venue(fields) and fields.get("title"):
         if not normalise(record["title"]).startswith(normalise(fields["title"])[:30]):
             problems.append(f"title: arXiv has {record['title'][:70]!r}")
     if record.get("journal_ref") and not is_preprint_venue(venue_of(fields)):
@@ -238,14 +323,26 @@ def compare_crossref(fields, record):
 # --- network ------------------------------------------------------------------------------------
 
 
+class NotFound(Exception):
+    """The service answered that it has no such record."""
+
+
+class Unreachable(Exception):
+    """The service could not be reached or answered with an error."""
+
+
 def http_get(url: str) -> str:
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     for attempt in range(4):
         try:
             return urllib.request.urlopen(request, timeout=60).read().decode("utf-8", "replace")
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                raise NotFound(url) from error
+            time.sleep(5 * (attempt + 1))
         except Exception:  # noqa: BLE001
             time.sleep(5 * (attempt + 1))
-    raise RuntimeError(f"unreachable: {url}")
+    raise Unreachable(url)
 
 
 def fetch_arxiv(ids):
@@ -256,41 +353,71 @@ def fetch_arxiv(ids):
 
 
 def fetch_crossref(doi: str):
+    """The Crossref record, ``None`` when Crossref has none; ``Unreachable`` on network failure."""
     try:
         return parse_crossref(http_get("https://api.crossref.org/works/" + urllib.parse.quote(doi)))
-    except (RuntimeError, ValueError, KeyError):
+    except NotFound:
         return None
+    except (ValueError, KeyError) as error:
+        raise Unreachable("unreadable Crossref response") from error
+
+
+def check_entry(fields, arxiv_record, crossref=fetch_crossref, delay=CROSSREF_DELAY):
+    """All problems for one entry. A DOI the entry lacks but arXiv supplies is checked too."""
+    problems = []
+    if "eprint" in fields:
+        problems += compare_arxiv(fields, arxiv_record)
+    doi = fields.get("doi") or (arxiv_record or {}).get("doi")
+    if doi:
+        try:
+            record = crossref(doi.strip())
+            time.sleep(delay)
+        except Unreachable:
+            return problems + ["could not reach Crossref"]
+        problems += ["Crossref has no record for this DOI"] if record is None \
+            else compare_crossref(fields, record)
+    return problems
+
+
+def select_entries(paths, only=None):
+    items = []
+    for path in paths:
+        with open(path, encoding="utf-8") as handle:
+            items += [(k, f) for k, f in parse_entries(handle.read())
+                      if ("eprint" in f or "doi" in f) and (only is None or k in only)]
+    return items
 
 
 def main(argv):
-    paths, only = [], None
+    only = None
     args = list(argv)
     if "--keys" in args:
         i = args.index("--keys")
         only = set(args[i + 1].split(","))
         del args[i:i + 2]
     paths = args or ["references.bib"] + sorted(glob.glob("bib/*.bib"))
-    items = []
-    for path in paths:
-        with open(path, encoding="utf-8") as handle:
-            items += [(k, f) for k, f in parse_entries(handle.read())
-                      if ("eprint" in f or "doi" in f) and (only is None or k in only)]
+    items = select_entries(paths, only)
+    if not items:
+        what = f"matches --keys {','.join(sorted(only))}" if only else "has an eprint or doi field"
+        print(f"nothing checked: no entry in {', '.join(paths)} {what}")
+        return 2
+    if only:
+        missing = only - {k for k, _ in items}
+        if missing:
+            print("no entry with an eprint or doi for: " + ", ".join(sorted(missing)))
     bad = 0
     arxiv_items = [(k, f) for k, f in items if "eprint" in f]
     records = {}
-    for start in range(0, len(arxiv_items), BATCH):
-        batch = arxiv_items[start:start + BATCH]
-        records.update(fetch_arxiv([f["eprint"].strip() for _, f in batch]))
-        time.sleep(DELAY)
+    try:
+        for start in range(0, len(arxiv_items), BATCH):
+            batch = arxiv_items[start:start + BATCH]
+            records.update(fetch_arxiv([f["eprint"].strip() for _, f in batch]))
+            time.sleep(DELAY)
+    except Unreachable:
+        print("could not reach arXiv")
+        return 2
     for key, fields in items:
-        problems = []
-        if "eprint" in fields:
-            problems += compare_arxiv(fields, records.get(fields["eprint"].strip()))
-        if "doi" in fields:
-            record = fetch_crossref(fields["doi"].strip())
-            time.sleep(CROSSREF_DELAY)
-            problems += ["Crossref has no record for this DOI"] if record is None \
-                else compare_crossref(fields, record)
+        problems = check_entry(fields, records.get(fields.get("eprint", "").strip()))
         bad += bool(problems)
         ident = fields.get("eprint", fields.get("doi", ""))
         print(("OK  " if not problems else "BAD ") + f"{key:28} {ident}")
