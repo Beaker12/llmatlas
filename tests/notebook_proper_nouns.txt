@@ -1,0 +1,9 @@
+# Model and dataset names that contain a digit; exempt from the notebook prose number scan.
+# One name per line. A chapter adds its own in chapters/<dir>/proper-nouns.txt.
+C4
+FineWeb-2
+GPT-2
+GPT-3
+Gemma 2
+Llama 3
+Llama 3.1
