@@ -357,8 +357,12 @@ def _defined_symbol(math: str):
     """(symbol, is_relation) for the math of a defining phrase, or (None, ...) when it defines no one symbol.
 
     A bare symbol defines itself; a relation defines its left-hand side if that is one symbol ($G = ...$); an
-    application defines its function ($c(w)$, $\\min h(A)$ define c and h).
+    application defines its function ($c(w)$ defines c); an operator applied to an expression
+    ($\\min h(A)$, $\\max_i x_i$, $\\sum ...$) defines nothing.
     """
+    head = re.match(r"\s*\\([A-Za-z]+)", math)
+    if head and head.group(1) not in GREEK | WRAPPERS | ACCENTS:
+        return None, False  # an operator applied to an expression ($\\min h(A)$, $\\max_i x_i$) defines no symbol
     lhs = _LHS.match(math)
     if lhs:
         side = normalise(lhs.group(1))

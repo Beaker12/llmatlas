@@ -93,7 +93,14 @@ def test_each_symbol_in_a_list_of_definitions_takes_its_phrase():
             "count and $|V|$ the vocabulary size. If $h$ is a hash function and $\\min h(A)$ denotes the smallest "
             "hash value among $A$'s shingles, then it holds.\n")
     assert [(s, p) for s, _, p in definitions_in_text(text)] == [
-        ("c", "the reference count of"), ("C", "the total reference count"), ("V", "the vocabulary size"), ("h", "the smallest hash value among")]
+        ("c", "the reference count of"), ("C", "the total reference count"), ("V", "the vocabulary size")]
+
+
+def test_an_operator_applied_to_a_symbol_defines_nothing():
+    # "$\\min h(A)$ denotes the smallest hash value" defines \\min h(A), not h.
+    text = ("If $\\min h(A)$ denotes the smallest hash value, where $\\max_i x_i$ is the largest entry and "
+            "$\\max x$ denotes the peak, let $\\sum_i w_i$ be the total.\n")
+    assert list(definitions_in_text(text)) == []
 
 
 def test_junk_phrases_stay_excluded():
