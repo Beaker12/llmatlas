@@ -2,8 +2,9 @@
 
 .PHONY: help install build build-lenient serve clean test lint linkcheck notebooks status constraints
 
+PYTHON     ?= python3.12
 VENV_DIR   = .venv
-PYTHON     = $(VENV_DIR)/bin/python
+VENV_PY    = $(VENV_DIR)/bin/python
 PIP        = $(VENV_DIR)/bin/pip
 JB         = $(VENV_DIR)/bin/jupyter-book
 UV         ?= uv
@@ -11,8 +12,8 @@ NOTEBOOKS  = $(wildcard chapters/*/examples/*.ipynb)
 
 help:
 	@echo "make install       create .venv and install torch (CPU) + requirements"
-	@echo "make test          YAML check + pytest + strict book build + notebook execution"
-	@echo "make build         build the HTML book (warnings are errors, as in CI)"
+	@echo "make test          YAML check + pytest (executes every notebook) + strict book build"
+	@echo "make build         build the HTML book (warnings are errors, nitpicky, as in CI)"
 	@echo "make build-lenient build without -W"
 	@echo "make serve         build and serve on http://localhost:8000"
 	@echo "make notebooks     execute every notebook headlessly"
@@ -23,7 +24,7 @@ help:
 	@echo "make status        show branch and build state"
 
 $(VENV_DIR)/pyvenv.cfg:
-	python3 -m venv $(VENV_DIR)
+	$(PYTHON) -m venv $(VENV_DIR)
 	$(PIP) install --upgrade pip
 
 install: $(VENV_DIR)/pyvenv.cfg
@@ -33,7 +34,7 @@ install: $(VENV_DIR)/pyvenv.cfg
 	@echo "Installed. Run 'make test'."
 
 build:
-	$(JB) build . --builder html -W --keep-going
+	$(JB) build . -W --keep-going -n
 
 build-lenient:
 	$(JB) build . --builder html
@@ -46,10 +47,9 @@ clean:
 	rm -rf _build/ .jupyter_cache/
 
 test:
-	$(PYTHON) -c "import yaml; yaml.safe_load(open('_config.yml')); yaml.safe_load(open('_toc.yml'))"
-	$(PYTHON) -m pytest tests/
+	$(VENV_PY) -c "import yaml; yaml.safe_load(open('_config.yml')); yaml.safe_load(open('_toc.yml'))"
+	$(VENV_PY) -m pytest tests/
 	$(MAKE) build
-	$(MAKE) notebooks
 
 notebooks:
 	@for nb in $(NOTEBOOKS); do \
@@ -76,6 +76,7 @@ status:
 # that has it, which would hide the CPU torch wheel when PyPI is also searched.
 # The output is built in temporary files so a failed uv never clobbers the file.
 constraints:
+	@test -f constraints.txt || { echo "error: constraints.txt not found; its header comments are copied from it" >&2; exit 1; }
 	@command -v $(UV) >/dev/null || { echo "error: uv not found (UV=$(UV))" >&2; exit 1; }
 	@printf 'torch\n' | $(UV) pip compile requirements.txt requirements-dev.txt - \
 	    --python-version 3.12 --extra-index-url https://download.pytorch.org/whl/cpu \
