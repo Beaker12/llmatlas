@@ -16,3 +16,7 @@ nbconvert
 pyyaml
 pytest
 pyflakes
+tiktoken
+sentencepiece
+pyarrow
+trafilatura

@@ -1,3 +1,4 @@
 # Developer-only tools (not needed to build the book).
 pre-commit
 playwright
+flake8

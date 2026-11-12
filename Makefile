@@ -25,8 +25,8 @@ $(VENV_DIR)/pyvenv.cfg:
 	$(PIP) install --upgrade pip
 
 install: $(VENV_DIR)/pyvenv.cfg
-	$(PIP) install torch --index-url https://download.pytorch.org/whl/cpu
-	$(PIP) install -r requirements.txt -r requirements-dev.txt
+	$(PIP) install torch --index-url https://download.pytorch.org/whl/cpu -c constraints.txt
+	$(PIP) install -r requirements.txt -r requirements-dev.txt -c constraints.txt
 	$(VENV_DIR)/bin/pre-commit install
 	@echo "Installed. Run 'make test'."
 
