@@ -5,8 +5,8 @@ Symbols used only in this chapter, beside the book-wide table in `tests/notation
 page and line at commit `4f4ee01`, or the review finding whose addition reserves the symbol. "Rename" is what the
 chapter writes today and must change to the symbol in the first column. This file is not part of the build.
 
-| Symbol | Meaning | First used | Rename |
-|---|---|---|---|
+| Symbol | Meaning | First used | Rename | Also means |
+|---|---|---|---|---|
 | $J$ | Jaccard similarity of two shingle sets | index.md:L607 | $s$ at L615, L617, L1073 |
 | $\mathcal{X}$ | shingle set of the first document | index.md:L607 | $A$ at L607-L613 |
 | $\mathcal{Y}$ | shingle set of the second document | index.md:L607 | $B$ at L607-L613 |

@@ -4,16 +4,17 @@ Check name `notation`, one test per chapter. Failures, in what each layer does a
 - Formula bans (BANNED) are exact for the forms they name: a pattern in a math region, scoped to chapters, from
   the plan's "Replaces" column; an older pattern can miss a variant spelling (an unbraced subscript). The bans
   from NO_MEANING report a symbol with no meaning in that chapter, read with the grammar of list_symbols.py;
-  that list is a snapshot of the tables, and a chapter that declares one of its symbols in its local list
-  removes the matching ban in the same change. A wrong use the formula itself does not show is not caught.
+  an entry is active only while its symbol is in neither notation_global.txt nor the chapter's
+  notation-local.md, so a chapter that declares the symbol lifts the ban. A wrong use the formula itself does
+  not show is not caught.
 - Phrase entries (BANNED_PHRASES) are a regression guard for wording close to the recorded lines, nothing
   more: keyword cues near the symbol can miss a reworded wrong use and can match a correct sentence (which
   the chapter then declares in its NOTATION_OK). test_known_limits_of_the_phrase_layer_are_recorded keeps one
   example of each.
 - "O(" in prose; a symbol in neither notation_global.txt nor the chapter's notation-local.md; a symbol with
   two different defining phrases ("where $x$ is ...") in the chapter.
-Book-wide: no symbol has two meanings across the tables unless notation_exceptions.txt lists it; every table
-symbol is in normal form. None of this confirms what a symbol means in a sentence: for a finished chapter a
+Book-wide: no symbol has two meanings across the tables unless notation_exceptions.txt lists it or a chapter's
+local row for it fills the "Also means" column; every table symbol is in normal form. None of this confirms what a symbol means in a sentence: for a finished chapter a
 person reads `python tools/list_symbols.py <chapter-dir> --concordance` against the tables.
 """
 import re
@@ -25,7 +26,7 @@ import pytest
 
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check, chapter_constants
 from tests._pages import blank_code, blank_inline_code, blank_math
-from tools.notation_tables import GLOBAL, _rows, global_rows, local_rows, prose_sentences
+from tools.notation_tables import GLOBAL, _rows, global_rows, local_also_means, local_rows, prose_sentences
 from tools.list_symbols import LOCAL_LIST, definitions, is_transpose, normalise, pages, symbols, symbols_in_math
 from tools.unescape_math import math_regions
 
@@ -128,8 +129,9 @@ BANNED: list[tuple] = [
 # Each is banned exactly: a match counts only where list_symbols reads that symbol (so in chapter 2 P, P \odot G and
 # O = PV are banned; \Pr, p, p_\theta, \mathrm{PE} and PPL are not). Where an older pattern above reports the same
 # span, only the older, more specific report is kept. A symbol a note must name as a paper's own (the YaRN row's
-# \alpha, the RoPE row's \theta_i) is never listed here. This is a snapshot of the tables: when a chapter declares
-# one of these symbols in its local list, its entry here is removed in the same change.
+# \alpha, the RoPE row's \theta_i) is never listed here. An entry is active only while its symbol has no meaning
+# in the chapter: it is lifted at run time (no_meaning_bans) when the symbol is in notation_global.txt or in that
+# chapter's notation-local.md, so a chapter that declares the symbol edits only its own local list.
 NO_MEANING: list[tuple[int, str, str]] = [
     (1, "P", "write p_\\theta (the model distribution) or p (a distribution)"),
     (1, "W_1", "write W_{\\text{gate}} in SwiGLU, W_{\\text{up}} in the ReLU or GELU network"),
@@ -170,8 +172,17 @@ def _symbol_start(symbol):
     return re.escape(head) if head.startswith("\\") else rf"(?<![\\A-Za-z]){head}"
 
 
-BANNED += [(_symbol_start(sym), f"No meaning in ch. {chapter}: {sym}; {instead}", frozenset({chapter}),
-            _symbol_at(sym)) for chapter, sym, instead in NO_MEANING]
+def known_symbols(chapter_dir) -> set[str]:
+    """The symbols with a meaning in the chapter: notation_global.txt and the chapter's notation-local.md."""
+    return {sym for sym, _ in global_rows()} | {sym for sym, _ in local_rows(chapter_dir)}
+
+
+def no_meaning_bans(chapter_dir, number) -> list[tuple]:
+    """The active NO_MEANING entries of chapter `number` as BANNED rows; an entry whose symbol the tables give a
+    meaning for in `chapter_dir` is inactive."""
+    known = known_symbols(chapter_dir)
+    return [(_symbol_start(sym), f"No meaning in ch. {chapter}: {sym}; {instead}", frozenset({chapter}),
+             _symbol_at(sym)) for chapter, sym, instead in NO_MEANING if chapter == number and sym not in known]
 
 
 # Uses of a global symbol's spelling with another meaning that only the words around the math identify.
@@ -239,7 +250,7 @@ def banned_failures(chapter_dir, number=None):
     number = chapter_number(chapter_dir) if number is None else number
     active = [(re.compile(entry[0]), entry[1], entry[3] if len(entry) > 3 else None,
                re.compile(entry[4], re.I) if len(entry) > 4 else None)
-              for entry in BANNED if number in entry[2]]
+              for entry in BANNED + no_meaning_bans(chapter_dir, number) if number in entry[2]]
     active.sort(key=lambda entry: hasattr(entry[2], "symbol"))  # exact bans last, after the older patterns
     failures = []
     for page in pages(chapter_dir):
@@ -381,8 +392,14 @@ def test_notation(chapter_dir):
 
 
 def meaning_failures(global_path=GLOBAL, exceptions_path=EXCEPTIONS, chapter_dirs=CHAPTER_DIRS):
-    """Book-wide: every symbol has one meaning across the global table and the local lists, or an exception."""
+    """Book-wide: every symbol has one meaning across the global table and the local lists, or an exception.
+
+    An exception is a line of notation_exceptions.txt, or a chapter's local row for the symbol with its "Also
+    means" column filled (the other meaning, and why the double use is acceptable). A filled "Also means" on a
+    symbol with one meaning is reported, as is an exception line that no longer matches the tables.
+    """
     meanings = defaultdict(dict)  # symbol -> {meaning: [where]}
+    also = defaultdict(list)  # symbol -> [chapter whose local row fills "Also means"]
     for sym, meaning in global_rows(global_path):
         meanings[sym].setdefault(meaning, []).append("notation_global.txt")
     global_meanings = {sym: set(found) for sym, found in meanings.items()}
@@ -392,15 +409,21 @@ def meaning_failures(global_path=GLOBAL, exceptions_path=EXCEPTIONS, chapter_dir
             if meaning in global_meanings.get(sym, set()):
                 failures.append(f"{Path(chapter_dir).name}/{LOCAL_LIST}: {sym!r} repeats a global row")
             meanings[sym].setdefault(meaning, []).append(f"{Path(chapter_dir).name}/{LOCAL_LIST}")
+        for sym in local_also_means(chapter_dir):
+            also[sym].append(Path(chapter_dir).name)
     allowed = exceptions(exceptions_path)
     for sym, found in sorted(meanings.items()):
-        if len(found) > 1 and sym not in allowed:
+        if len(found) > 1 and sym not in allowed and sym not in also:
             listing = "; ".join(f"{m!r} ({', '.join(w)})" for m, w in found.items())
             failures.append(f"{sym!r} has {len(found)} meanings and no exception: {listing}")
     for sym, (listed, _reason) in sorted(allowed.items()):
         found = set(meanings.get(sym, {}))
         if found != listed:
             failures.append(f"exception {sym!r} lists {sorted(listed)}, the tables give {sorted(found)}")
+    for sym, chapters in sorted(also.items()):
+        if len(meanings.get(sym, {})) < 2:
+            failures.append(f"{', '.join(chapters)}/{LOCAL_LIST}: {sym!r} fills 'Also means' but has one meaning; "
+                            f"empty the cell")
     return failures
 
 
@@ -567,7 +590,9 @@ def test_the_phrase_cases_cover_every_entry():
 
 def test_every_chapter_declares_notation_ok():
     for chapter_dir in CHAPTER_DIRS:
-        assert isinstance(chapter_constants(chapter_dir).NOTATION_OK, dict)
+        declared = chapter_constants(chapter_dir).NOTATION_OK
+        assert isinstance(declared, dict), chapter_dir.name
+        assert all(isinstance(k, str) and isinstance(v, str) for k, v in declared.items()), chapter_dir.name
 
 
 def test_a_declared_unit_is_not_reported_and_an_unused_declaration_is(tmp_path):
@@ -686,6 +711,42 @@ def test_two_meanings_without_an_exception_are_reported(tmp_path):
     assert len(meaning_failures(table, none, [chapter])) == 1
 
 
+LOCAL_ALSO = "| Symbol | Meaning | First used | Rename | Also means |\n|---|---|---|---|---|\n"
+
+
+def test_a_local_row_that_fills_also_means_accepts_a_second_meaning(tmp_path):
+    table = tmp_path / "g.txt"
+    table.write_text("U\tleft singular vectors\n", encoding="utf-8")
+    none = tmp_path / "none.txt"
+    plain = chapter_with(tmp_path / "03-x", "x\n", local=LOCAL_ALSO + "| $U$ | unique tokens of source s (U_s) | L1 |  |  |\n")
+    assert len(meaning_failures(table, none, [plain])) == 1  # empty cell: no exception
+    declared = chapter_with(tmp_path / "03-y", "x\n", local=LOCAL_ALSO + (
+        "| $U$ | unique tokens of source s (U_s) | L1 |  | left singular vectors; U_s keeps its subscript |\n"))
+    assert local_also_means(declared) == {"U": "left singular vectors; U_s keeps its subscript"}
+    assert meaning_failures(table, none, [declared]) == []
+    # The exceptions file still clears it on its own, with the column empty.
+    none.write_text("U\tleft singular vectors | unique tokens of source s (U_s)\tbecause\n", encoding="utf-8")
+    assert meaning_failures(table, none, [plain]) == []
+
+
+def test_a_filled_also_means_on_a_symbol_with_one_meaning_is_reported(tmp_path):
+    table = tmp_path / "g.txt"
+    table.write_text("d\tmodel width\n", encoding="utf-8")
+    chapter = chapter_with(tmp_path / "03-x", "x\n", local=LOCAL_ALSO + "| $J$ | Jaccard similarity | L1 |  | nothing |\n")
+    assert meaning_failures(table, tmp_path / "none.txt", [chapter]) == [
+        "03-x/notation-local.md: 'J' fills 'Also means' but has one meaning; empty the cell"]
+
+
+def test_the_also_means_column_is_found_by_its_header_and_is_empty_today(tmp_path):
+    chapter = chapter_with(tmp_path, "x\n")  # the four-column header: no "Also means"
+    (tmp_path / LOCAL_LIST).write_text("| Symbol | Meaning | First used | Rename |\n|---|---|---|---|\n"
+                                       "| $J$ | Jaccard similarity | L1 | sim |\n", encoding="utf-8")
+    assert local_also_means(chapter) == {} and local_rows(chapter) == [("J", "Jaccard similarity")]
+    for chapter_dir in CHAPTER_DIRS:
+        assert "| Also means |" in (chapter_dir / LOCAL_LIST).read_text(encoding="utf-8"), chapter_dir.name
+        assert local_also_means(chapter_dir) == {}, chapter_dir.name
+
+
 # --- symbols with no meaning in a chapter (NO_MEANING) ------------------------------------------------------
 
 def _banned(tmp_path, math, number):
@@ -693,11 +754,16 @@ def _banned(tmp_path, math, number):
     return [f for f in banned_failures(chapter, number) if "No meaning" in f]
 
 
-@pytest.mark.parametrize("number,symbol", [(n, s) for n, s, _ in NO_MEANING],
-                         ids=[f"ch{n}-{s}" for n, s, _ in NO_MEANING])
+def chapter_dir_of(number):
+    return next(d for d in CHAPTER_DIRS if chapter_number(d) == number)
+
+
+ACTIVE_NO_MEANING = [(n, s) for n, s, _ in NO_MEANING if s not in known_symbols(chapter_dir_of(n))]
+
+
+@pytest.mark.parametrize("number,symbol", ACTIVE_NO_MEANING, ids=[f"ch{n}-{s}" for n, s in ACTIVE_NO_MEANING])
 def test_a_symbol_with_no_meaning_in_its_chapter_is_banned_there_alone(tmp_path, number, symbol):
-    known = {sym for sym, _ in global_rows()} | {sym for sym, _ in local_rows(CHAPTER_DIRS[number - 1])}
-    assert symbol not in known, f"{symbol!r} has a meaning in chapter {number}: no ban"
+    """Active entries only: an entry whose symbol a chapter has declared is lifted (see the next test)."""
     assert normalise(symbol) == [symbol]
     # Reported at its spot, by the exact ban alone or by older patterns that name the same span.
     failures = banned_failures(chapter_with(tmp_path, f"Math ${symbol}$ here.\n"), number)
@@ -705,6 +771,18 @@ def test_a_symbol_with_no_meaning_in_its_chapter_is_banned_there_alone(tmp_path,
     assert failures and (exact == failures if exact else True) and len(exact) <= 1, failures
     banned_in = {c for c, s, _ in NO_MEANING if s == symbol}
     assert all(_banned(tmp_path, symbol, n) == [] for n in range(1, 7) if n not in banned_in)
+
+
+def test_declaring_a_no_meaning_symbol_in_the_chapter_lifts_its_ban(tmp_path):
+    """A copy of chapter 2's local list, with and without a row for the banned symbol a."""
+    local = (chapter_dir_of(2) / LOCAL_LIST).read_text(encoding="utf-8")
+    page = "The exponent $a$ here.\n"
+    before = chapter_with(tmp_path / "before", page, local=local)
+    assert [f for f in banned_failures(before, 2) if "No meaning" in f] == [
+        "index.md:L1: banned 'a' (No meaning in ch. 2: a; write a_N)"]
+    after = chapter_with(tmp_path / "after", page, local=local.rstrip("\n") + "\n| $a$ | an exponent | index.md:L1 |  |  |\n")
+    assert banned_failures(after, 2) == [] and membership_failures(after) == []
+    assert ("a", "an exponent") in local_rows(after) and len(local_rows(after)) == len(local_rows(before)) + 1
 
 
 @pytest.mark.parametrize("math,banned", [
@@ -776,7 +854,9 @@ def test_a_paper_symbol_named_in_a_note_is_not_banned(tmp_path):
 
 
 def test_the_auxiliary_loss_weight_alpha_is_banned_in_chapter_6(tmp_path):
-    line = next(l for l in (CHAPTER_DIRS[5] / "index.md").read_text(encoding="utf-8").splitlines()
-                if "The Switch loss is $\\alpha" in l)
+    # The chapter 6 sentence at 774011c, as a literal: the chapter's own fix removes it from the page.
+    line = ("**An auxiliary loss.** The Switch loss is $\\alpha\\, E \\sum_{i=1}^{E} f_i P_i$, where $f_i$ is the "
+            "fraction of tokens dispatched to expert $i$ and $P_i$ is the mean router probability assigned to it "
+            "{cite}`fedus2022switch`.")
     chapter = chapter_with(tmp_path, line + "\n")
     assert [f for f in banned_failures(chapter, 6) if "Auxiliary-loss weight" in f]

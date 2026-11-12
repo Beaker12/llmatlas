@@ -5,8 +5,8 @@ Symbols used only in this chapter, beside the book-wide table in `tests/notation
 page and line at commit `4f4ee01`, or the review finding whose addition reserves the symbol. "Rename" is what the
 chapter writes today and must change to the symbol in the first column. This file is not part of the build.
 
-| Symbol | Meaning | First used | Rename |
-|---|---|---|---|
+| Symbol | Meaning | First used | Rename | Also means |
+|---|---|---|---|---|
 | $f$ | fraction of tokens dispatched to expert i (f_i) | index.md:L352 |  |
 | $\lambda_{aux}$ | weight of the auxiliary load-balancing loss | index.md:L352 | $\alpha$ at L352 |
 | $v$ | value vector (v_i at position i) | index.md:L236 | $v_t$ at L236 (position $i$, not $t$) |

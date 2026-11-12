@@ -25,6 +25,14 @@ NOT_A_RESULT: dict[str, str] = {}
 MIN_FIGURES: int = 15
 # Units the notation check's banned phrases may match, declared on purpose: unit regex -> reason.
 NOTATION_OK: dict[str, str] = {}
+# Section labels other chapters link to: label -> the text of the heading it sits directly above.
+INTERFACE_LABELS: dict[str, str] = {
+    "sec-ch1-perplexity": "4.3 Evaluation Metrics",
+    "sec-ch1-layernorm": "Layer Normalization",
+    "sec-ch1-modern-block": "3.3 What Changed Since 2017",
+    "sec-ch1-rope": "Positional Encodings",
+    "sec-ch1-relative-bias": "Positional Encodings",
+}
 
 
 def ch01_fence(marker: str) -> str:

@@ -116,15 +116,38 @@ def global_rows(path=GLOBAL) -> list[tuple[str, str]]:
     return _rows(Path(path), 2)
 
 
-def local_rows(chapter_dir) -> list[tuple[str, str]]:
-    """(symbol, meaning) from the chapter's notation-local.md table (Symbol, Meaning, First used, Rename)."""
+def local_table(chapter_dir) -> list[dict[str, str]]:
+    """The rows of the chapter's notation-local.md table as {"symbol", "meaning", "also"} dicts.
+
+    Columns: Symbol, Meaning, First used, Rename and an optional last column "Also means". A chapter fills
+    "Also means" when its symbol's normal form already has another meaning (U_s, e_s and w_s drop their running
+    index and read as U, e, w): it names the other meaning and says why the double use is acceptable, and
+    tests/test_notation.py then accepts the two meanings without a line in tests/notation_exceptions.txt.
+    The column is found by its header; a row with fewer cells leaves it empty.
+    """
     path = Path(chapter_dir) / LOCAL_LIST
     if not path.exists():
         return []
-    rows = []
+    rows, also = [], None
     for line in path.read_text(encoding="utf-8").splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if not line.startswith("|") or len(cells) < 3 or cells[0] in ("Symbol", "") or set(cells[0]) <= set("-:"):
+        if not line.startswith("|") or len(cells) < 3 or set(cells[0]) <= set("-:"):
             continue
-        rows.append((cells[0].strip("$").strip(), cells[1]))
+        if cells[0] == "Symbol":
+            also = next((k for k, c in enumerate(cells) if c.lower() == "also means"), None)
+            continue
+        if cells[0] == "":
+            continue
+        rows.append({"symbol": cells[0].strip("$").strip(), "meaning": cells[1],
+                     "also": cells[also] if also is not None and also < len(cells) else ""})
     return rows
+
+
+def local_rows(chapter_dir) -> list[tuple[str, str]]:
+    """(symbol, meaning) from the chapter's notation-local.md table (see local_table)."""
+    return [(row["symbol"], row["meaning"]) for row in local_table(chapter_dir)]
+
+
+def local_also_means(chapter_dir) -> dict[str, str]:
+    """{symbol: the filled "Also means" cell} for the chapter's local rows that fill it."""
+    return {row["symbol"]: row["also"] for row in local_table(chapter_dir) if row["also"]}

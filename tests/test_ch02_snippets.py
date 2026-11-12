@@ -25,6 +25,13 @@ NOT_A_RESULT: dict[str, str] = {}
 MIN_FIGURES: int = 12
 # Units the notation check's banned phrases may match, declared on purpose: unit regex -> reason.
 NOTATION_OK: dict[str, str] = {}
+# Section labels other chapters link to: label -> the text of the heading it sits directly above.
+INTERFACE_LABELS: dict[str, str] = {
+    "sec-ch2-sqrt-dk": "0.1 A matrix is a map between spaces",
+    "sec-ch2-pre-post-ln": "Residual Connections",
+    "sec-ch2-flops": "Training Complexity",
+    "sec-ch2-residual-init": "Transformer-Specific Initialization",
+}
 
 
 def fence_containing(marker: str) -> str:

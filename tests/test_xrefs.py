@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tests._files import CHAPTER_DIRS, CHAPTER_IDS, chapter_check, tracked
+from tests._files import CHAPTER_DIRS, CHAPTER_IDS, chapter_check, chapter_constants, tracked
 from tests._pages import blank_code, blank_inline_code, blank_math, line_of, pages
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -96,28 +96,102 @@ def test_roles_code_and_math_are_exempt(tmp_path):
 
 # Section labels: every level 2-4 heading of the chapter pages and the deep-dive carries a target line
 # `(label)=` and a blank line directly above it (a host heading may carry two stacked target lines).
-# Interface labels, which other chapters link to, are pinned to a page and heading text in this table:
-# a chapter task that moves one to a new heading edits its row.
-INTERFACE_LABELS = {
-    "sec-ch1-perplexity": ("01-foundations", "4.3 Evaluation Metrics"),
-    "sec-ch1-layernorm": ("01-foundations", "Layer Normalization"),
-    "sec-ch1-modern-block": ("01-foundations", "3.3 What Changed Since 2017"),
-    "sec-ch1-rope": ("01-foundations", "Positional Encodings"),
-    "sec-ch1-relative-bias": ("01-foundations", "Positional Encodings"),
-    "sec-ch2-sqrt-dk": ("02-mathematics", "0.1 A matrix is a map between spaces"),
-    "sec-ch2-pre-post-ln": ("02-mathematics", "Residual Connections"),
-    "sec-ch2-flops": ("02-mathematics", "Training Complexity"),
-    "sec-ch2-residual-init": ("02-mathematics", "Transformer-Specific Initialization"),
-    "sec-ch3-epochs": ("03-data-acquisition", "1.3 How much is enough"),
-    "sec-ch4-dedup-scope": ("04-preprocessing", "5.3 Near-duplicate detection with MinHash and LSH"),
+# Interface labels are the section labels other chapters link to. Which labels they are, and the chapter each
+# belongs to, is fixed here; the heading each sits above is declared by its chapter, in INTERFACE_LABELS
+# (label -> heading text) of tests/test_chNN_snippets.py, so a chapter task that moves one edits only its own files.
+INTERFACE_LABEL_NAMES = {
+    "sec-ch1-perplexity": "01-foundations",
+    "sec-ch1-layernorm": "01-foundations",
+    "sec-ch1-modern-block": "01-foundations",
+    "sec-ch1-rope": "01-foundations",
+    "sec-ch1-relative-bias": "01-foundations",
+    "sec-ch2-sqrt-dk": "02-mathematics",
+    "sec-ch2-pre-post-ln": "02-mathematics",
+    "sec-ch2-flops": "02-mathematics",
+    "sec-ch2-residual-init": "02-mathematics",
+    "sec-ch3-epochs": "03-data-acquisition",
+    "sec-ch4-dedup-scope": "04-preprocessing",
 }
 HEADING = re.compile(r"^#{2,4} (.*?)\s*$")
 TARGET = re.compile(r"^\(([A-Za-z0-9_.:-]+)\)=$")
 LABEL_FORM = re.compile(r"sec-(ch[1-6]|tdd)-[a-z0-9]+(-[a-z0-9]+)*")
 
 
+def labels_above(lines, i):
+    """The target labels stacked directly above line i, each followed by one blank line, nearest first."""
+    labels, k = [], i - 1
+    while k >= 1 and lines[k] == "" and TARGET.match(lines[k - 1]):
+        labels.append(TARGET.match(lines[k - 1]).group(1))
+        k -= 2
+    return labels
+
+
+def heading_labels(chapter_dir):
+    """{label: [(page name, heading text), ...]} for the labels directly above each level 2-4 heading."""
+    found = {}
+    for page in pages(chapter_dir):
+        text = page.read_text(encoding="utf-8")
+        lines = text.split("\n")
+        for i, line in enumerate(blank_code(text).split("\n")):
+            heading = HEADING.match(line)
+            if heading:
+                for label in labels_above(lines, i):
+                    found.setdefault(label, []).append((page.name, heading.group(1)))
+    return found
+
+
+def interface_label_failures(chapter_dir, declared, names=None):
+    """Failures for a chapter's INTERFACE_LABELS `declared` (label -> heading text): each interface label of the
+    chapter is declared, each declared one is an interface label of the chapter, and each sits directly above a
+    heading with the declared text in the chapter's pages."""
+    names = INTERFACE_LABEL_NAMES if names is None else names
+    expected = {label for label, chapter in names.items() if chapter == Path(chapter_dir).name}
+    failures = [f"interface label {label!r} is not declared in INTERFACE_LABELS" for label in sorted(expected - set(declared))]
+    failures += [f"INTERFACE_LABELS declares {label!r}, which is not an interface label of this chapter"
+                 for label in sorted(set(declared) - expected)]
+    found = heading_labels(chapter_dir)
+    for label, heading in sorted(declared.items()):
+        places = found.get(label, [])
+        if heading not in [h for _page, h in places]:
+            where = f"it is above {places[0][1]!r} in {places[0][0]}" if places else "no heading carries it"
+            failures.append(f"interface label {label!r} is not above {heading!r} ({where})")
+    return failures
+
+
+@pytest.mark.parametrize("chapter_dir", CHAPTER_DIRS, ids=CHAPTER_IDS)
+def test_interface_labels_sit_above_the_headings_their_chapter_declares(chapter_dir):
+    declared = chapter_constants(chapter_dir).INTERFACE_LABELS
+    assert isinstance(declared, dict) and all(isinstance(v, str) for v in declared.values())
+    failures = interface_label_failures(chapter_dir, declared)
+    assert not failures, "\n".join(failures)
+
+
+def test_every_interface_label_belongs_to_a_chapter():
+    assert set(INTERFACE_LABEL_NAMES.values()) <= set(CHAPTER_IDS)
+    assert all(label.startswith(f"sec-ch{int(chapter[:2])}-") for label, chapter in INTERFACE_LABEL_NAMES.items())
+
+
+def test_a_moved_undeclared_or_unlisted_interface_label_is_reported(tmp_path):
+    chapter = tmp_path / "02-x"
+    chapter.mkdir()
+    (chapter / "index.md").write_text("# T\n\n(sec-ch2-flops)=\n\n## Training Complexity\n\n(sec-ch2-a)=\n\n"
+                                      "## Other\n", encoding="utf-8")
+    names = {"sec-ch2-flops": "02-x", "sec-ch2-gone": "02-x", "sec-ch1-x": "01-y"}
+    ok = {"sec-ch2-flops": "Training Complexity", "sec-ch2-gone": "Other"}
+    assert interface_label_failures(chapter, ok, names) == [
+        "interface label 'sec-ch2-gone' is not above 'Other' (no heading carries it)"]
+    moved = {"sec-ch2-flops": "Other", "sec-ch2-gone": "Other", "sec-ch2-a": "Other"}
+    assert interface_label_failures(chapter, moved, names) == [
+        "INTERFACE_LABELS declares 'sec-ch2-a', which is not an interface label of this chapter",
+        "interface label 'sec-ch2-flops' is not above 'Other' (it is above 'Training Complexity' in index.md)",
+        "interface label 'sec-ch2-gone' is not above 'Other' (no heading carries it)"]
+    assert interface_label_failures(chapter, {}, names) == [
+        "interface label 'sec-ch2-flops' is not declared in INTERFACE_LABELS",
+        "interface label 'sec-ch2-gone' is not declared in INTERFACE_LABELS"]
+
+
 def test_every_heading_has_a_section_label():
-    bad, pinned = [], set()
+    bad = []
     for chapter_dir in CHAPTER_DIRS:
         for page in pages(chapter_dir):
             prefix = "sec-tdd-" if page.name == "tokenization-deep-dive.md" else f"sec-ch{int(chapter_dir.name[:2])}-"
@@ -128,30 +202,20 @@ def test_every_heading_has_a_section_label():
                 heading = HEADING.match(line)
                 if not heading:
                     continue
-                labels, k = [], i - 1
-                while k >= 1 and lines[k] == "" and TARGET.match(lines[k - 1]):
-                    labels.append(TARGET.match(lines[k - 1]).group(1))
-                    k -= 2
+                labels = labels_above(lines, i)
                 if not labels:
                     bad.append(f"{page.name}:L{i + 1}: heading has no target line above it: {line!r}")
                 for label in labels:
                     where = f"{page.name}:L{i + 1}: label {label!r}"
                     if not LABEL_FORM.fullmatch(label):
                         bad.append(f"{where} does not match sec-(ch1-6|tdd)-words")
-                    if label in INTERFACE_LABELS:
-                        if (chapter_dir.name, heading.group(1)) != INTERFACE_LABELS[label]:
-                            bad.append(f"{where} is on {heading.group(1)!r}, expected {INTERFACE_LABELS[label][1]!r}")
-                        else:
-                            pinned.add(label)
-                    elif not label.startswith(prefix):
+                    if not label.startswith(prefix):
                         bad.append(f"{where} lacks the prefix {prefix!r}")
                     if heading.group(1) == "Further Reading":
                         in_reading_list = True
                     elif in_reading_list != label.startswith(prefix + "further-reading-"):
                         bad.append(f"{where}: labels below 'Further Reading' start {prefix}further-reading-, "
                                    f"and no other label does")
-    bad += [f"interface label {label!r} is not above {INTERFACE_LABELS[label][1]!r}"
-            for label in sorted(set(INTERFACE_LABELS) - pinned)]
     assert not bad, "\n".join(bad)
 
 

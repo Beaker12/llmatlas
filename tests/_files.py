@@ -107,7 +107,8 @@ def chapter_check(name: str):
 def chapter_constants(chapter_dir: Path):
     """The per-chapter test module of `chapter_dir`, e.g. tests.test_ch03_snippets for 03-*.
 
-    Read SYNC_EXEMPT, RESULT_CLAIMS and MIN_FIGURES from the returned module.
+    Read SYNC_EXEMPT, RESULT_CLAIMS, NOT_A_RESULT, NOTATION_OK, MIN_FIGURES and INTERFACE_LABELS from the
+    returned module. Each may hold entries; a chapter edits only its own module.
     """
     number = Path(chapter_dir).name[:2]
     return importlib.import_module(f"tests.test_ch{number}_snippets")

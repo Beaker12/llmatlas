@@ -93,6 +93,8 @@ EXPECTED_MIN_FIGURES = [15, 12, 10, 10, 11, 12]
 def test_chapter_constants_load_for_every_chapter():
     for chapter_dir, minimum in zip(CHAPTER_DIRS, EXPECTED_MIN_FIGURES):
         module = chapter_constants(chapter_dir)
-        assert module.MIN_FIGURES == minimum, chapter_dir.name
-        assert isinstance(module.SYNC_EXEMPT, dict)
-        assert isinstance(module.RESULT_CLAIMS, list)
+        # A chapter may raise its minimum in its own file; the floor is the count at 774011c.
+        assert isinstance(module.MIN_FIGURES, int) and module.MIN_FIGURES >= minimum, chapter_dir.name
+        for name in ("SYNC_EXEMPT", "NOT_A_RESULT", "NOTATION_OK", "INTERFACE_LABELS"):
+            assert isinstance(getattr(module, name), dict), f"{chapter_dir.name}: {name}"
+        assert isinstance(module.RESULT_CLAIMS, list), chapter_dir.name

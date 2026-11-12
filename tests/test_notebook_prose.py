@@ -632,7 +632,9 @@ def test_code_directives_behind_colon_fences_and_wrapped_inline_code_are_code(tm
 
 def test_every_chapter_declares_a_not_a_result_dictionary():
     for chapter_dir in CHAPTER_DIRS:
-        assert chapter_constants(chapter_dir).NOT_A_RESULT == {}
+        declared = chapter_constants(chapter_dir).NOT_A_RESULT
+        assert isinstance(declared, dict), chapter_dir.name
+        assert all(isinstance(k, str) and isinstance(v, str) for k, v in declared.items()), chapter_dir.name
 
 
 COUNTED = [
