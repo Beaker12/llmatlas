@@ -190,9 +190,14 @@ def test_a_moved_undeclared_or_unlisted_interface_label_is_reported(tmp_path):
         "interface label 'sec-ch2-gone' is not declared in INTERFACE_LABELS"]
 
 
-def test_every_heading_has_a_section_label():
+FURTHER_READING = re.compile(r"further reading", re.I)
+
+
+def heading_label_failures(chapter_dirs):
+    """Headings without a target line, labels of the wrong form or prefix, and the Further Reading rule (the
+    heading matched case-insensitively): labels below it start <prefix>further-reading-, and no other does."""
     bad = []
-    for chapter_dir in CHAPTER_DIRS:
+    for chapter_dir in chapter_dirs:
         for page in pages(chapter_dir):
             prefix = "sec-tdd-" if page.name == "tokenization-deep-dive.md" else f"sec-ch{int(chapter_dir.name[:2])}-"
             text = page.read_text(encoding="utf-8")
@@ -211,12 +216,30 @@ def test_every_heading_has_a_section_label():
                         bad.append(f"{where} does not match sec-(ch1-6|tdd)-words")
                     if not label.startswith(prefix):
                         bad.append(f"{where} lacks the prefix {prefix!r}")
-                    if heading.group(1) == "Further Reading":
+                    if FURTHER_READING.fullmatch(heading.group(1).strip()):
                         in_reading_list = True
                     elif in_reading_list != label.startswith(prefix + "further-reading-"):
                         bad.append(f"{where}: labels below 'Further Reading' start {prefix}further-reading-, "
                                    f"and no other label does")
+    return bad
+
+
+def test_every_heading_has_a_section_label():
+    bad = heading_label_failures(CHAPTER_DIRS)
     assert not bad, "\n".join(bad)
+
+
+def test_the_further_reading_heading_is_matched_in_any_case(tmp_path):
+    chapter = tmp_path / "02-x"
+    chapter.mkdir()
+    page = ("# T\n\n(sec-ch2-intro)=\n\n## Intro\n\n(sec-ch2-further-reading)=\n\n## Further reading\n\n"
+            "(sec-ch2-further-reading-books)=\n\n### Books\n")
+    (chapter / "index.md").write_text(page, encoding="utf-8")
+    assert heading_label_failures([chapter]) == []
+    (chapter / "index.md").write_text(page.replace("further-reading-books", "books"), encoding="utf-8")
+    assert heading_label_failures([chapter]) == [
+        "index.md:L13: label 'sec-ch2-books': labels below 'Further Reading' start sec-ch2-further-reading-, "
+        "and no other label does"]
 
 
 def test_target_labels_are_unique_book_wide():

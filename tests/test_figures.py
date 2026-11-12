@@ -32,7 +32,7 @@ from tests._pages import blank_code, fences, line_of, pages
 LABEL = re.compile(r"fig-ch\d+-[a-z0-9]+(?:-[a-z0-9]+)*")
 FIGURE = re.compile(r"^([ \t]*)(`{3,}|:{3,})\{figure\}[ \t]+(\S+)[ \t]*\n((?:[ \t]*:[\w-]+:.*\n)*)([\s\S]*?)^\1\2[ \t]*$", re.M)
 NUMREF = re.compile(r"\{numref\}`(?:[^`<]*<)?([^`>]+?)>?`")
-TARGET_LINE = re.compile(r"^\(([^)\s]+)\)=[ \t]*\n(?:[ \t]*\n)*\Z", re.M)
+TARGET_LINE = re.compile(r"\(([^)\s]+)\)=[ \t]*")
 OUTPUT_MARK = re.compile(r"\s*%[ \t]*output(?:-shape)?[ \t]*\n\s*(`{3,})text[ \t]*\n")
 FIGURE_START = re.compile(r"\s*(?:\([^)\s]+\)=[ \t]*\n\s*)?(?:`{3,}|:{3,})\{figure\}")
 PLOT_ATTRS = {"savefig", "plot", "imshow", "bar", "hist", "scatter"}
@@ -78,6 +78,19 @@ def followed_by_figure(text, pos):
 SOURCE_SUFFIXES = {".dot", ".py", ".json"}
 
 
+def target_above(shown, start, indent):
+    """The label of a `(fig-chN-slug)=` target line above the figure at offset `start`: the previous non-blank
+    line, past any blank lines, written at the figure's own indentation (so a figure inside an admonition works)."""
+    before = shown[:start].split("\n")[:-1]
+    k = len(before) - 1
+    while k >= 0 and not before[k].strip():
+        k -= 1
+    if k < 0 or not before[k].startswith(indent) or before[k][len(indent):len(indent) + 1] in (" ", "\t"):
+        return None
+    m = TARGET_LINE.fullmatch(before[k][len(indent):])
+    return m.group(1) if m else None
+
+
 def parse_figures(text):
     """[(line, target, options dict, caption)] for the figure directives of `text`."""
     figures = []
@@ -87,9 +100,9 @@ def parse_figures(text):
         for line in m.group(4).splitlines():
             key, _, value = line.strip()[1:].partition(":")
             options[key] = value.strip()
-        above = TARGET_LINE.search(shown[max(0, m.start() - 200):m.start()])    # a `(fig-chN-slug)=` target line
+        above = target_above(shown, m.start(), m.group(1))    # a `(fig-chN-slug)=` target line
         if above and not (options.get("name") or options.get("label")):
-            options["name"] = above.group(1)
+            options["name"] = above
         figures.append((line_of(shown, m.start()), m.group(3), options, m.group(5).strip()))
     return figures
 
@@ -289,6 +302,20 @@ def test_a_label_may_be_a_myst_target_line_above_the_directive(tmp_path):
     assert any("'ramp' is not of the form" in f for f in figure_failures(chapter, 2))
     (chapter / "index.md").write_text(text.replace("Figure {numref}`fig-ch0-ramp` shows the ramp. ", ""), encoding="utf-8")
     only(figure_failures(chapter, 2), "fig-ch0-ramp is never referenced by {numref}")
+
+
+def test_a_target_line_is_found_past_blank_lines_and_inside_an_admonition():
+    figure = "```{figure} figures/ramp.*\n:alt: A.\n\nCaption.\n```\n"
+    indented = "".join(f"  {line}\n" if line else "\n" for line in figure.rstrip("\n").split("\n"))
+    inside = ("::::{note}\n" + "A long admonition sentence that pushes the target far back. " * 5 + "\n\n"
+              "  (fig-ch0-ramp)=\n" + "\n" * 3 + indented + "::::\n")
+    assert [f[2].get("name") for f in parse_figures(inside)] == ["fig-ch0-ramp"]
+    far = "(fig-ch0-ramp)=\n" + "   \n" * 120 + figure
+    assert [f[2].get("name") for f in parse_figures(far)] == ["fig-ch0-ramp"]
+    # Not a target of this figure: a prose line in between, or a different indentation.
+    assert [f[2].get("name") for f in parse_figures("(fig-ch0-ramp)=\n\nSome prose.\n\n" + figure)] == [None]
+    assert [f[2].get("name") for f in parse_figures("  (fig-ch0-ramp)=\n\n" + figure)] == [None]
+    assert [f[2].get("name") for f in parse_figures("(fig-ch0-ramp)=\n\n" + indented)] == [None]
 
 
 def test_a_directive_without_name_or_target_line_has_an_empty_label(tmp_path):

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-torch = pytest.importorskip("torch")
+import torch
 
 CH02 = Path(__file__).resolve().parents[1] / "chapters" / "02-mathematics" / "index.md"
 
