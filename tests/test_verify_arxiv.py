@@ -259,6 +259,35 @@ def test_http_404_is_not_found_and_other_failures_are_unreachable(monkeypatch):
 # --- whole-surname comparison (item 11) --------------------------------------------------------
 
 
+def crossref_record(container, authors):
+    return va.parse_crossref(json.dumps({"message": {"title": ["T"], "container-title": [container],
+                                                     "author": authors}}))
+
+
+def test_a_trailing_event_suffix_is_stripped_from_the_container_title():
+    record = crossref_record("Proceedings of the thirtieth annual ACM symposium on Theory of computing - STOC '98",
+                             [{"given": "Piotr", "family": "Indyk"}, {"given": "Rajeev", "family": "Motwani"}])
+    assert record["journal"] == "Proceedings of the thirtieth annual ACM symposium on Theory of computing"
+    entry = {"author": "Indyk, Piotr and Motwani, Rajeev",
+             "booktitle": "Proceedings of the Thirtieth Annual ACM Symposium on Theory of Computing"}
+    assert va.compare_crossref(entry, record) == []
+    assert crossref_record("Neural Information Processing - A Survey", [])["journal"] == \
+        "Neural Information Processing - A Survey"
+
+
+def test_compound_surnames_from_crossref_compare_whole():
+    split = crossref_record("Advances in Neural Information Processing Systems", [
+        {"given": "Guilherme", "family": "Penedo"}, {"given": "Loubna Ben", "family": "Allal"},
+        {"given": "Emanuele", "family": "La Malfa"}, {"name": "BigScience Workshop"}])
+    assert split["authors"] == ["Guilherme Penedo", "Loubna Ben Allal", "Emanuele La Malfa", "BigScience Workshop"]
+    assert va.authors_match("Penedo, Guilherme and Ben Allal, Loubna and La Malfa, Emanuele and "
+                            "{BigScience Workshop}", split["authors"]) == []
+    whole = crossref_record("X", [{"given": "Emanuele", "family": "La Malfa"}, {"given": "Loubna", "family": "Ben allal"}])
+    assert va.authors_match("La Malfa, Emanuele and Ben Allal, Loubna", whole["authors"]) == []
+    # Before: the family name alone ("Allal") could not match the entry's whole surname "Ben Allal".
+    assert va.authors_match("Ben Allal, Loubna", ["Allal"])
+
+
 def test_surnames_are_compared_whole():
     assert va.authors_match("Li, Wei", ["Wei Ali"])
     assert va.authors_match("Ali, Wei", ["Wei Li"])

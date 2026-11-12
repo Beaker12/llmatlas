@@ -4,7 +4,8 @@ Checks (all over the parsed entries; pybtex does the parsing):
 - no key defined twice, within a file or across files;
 - one paper, one key: no two entries share an eprint, a DOI or a URL (a doi.org URL counts as a DOI,
   an arxiv.org/abs URL as an eprint);
-- no raw `&` and no raw em dash in a title (write `\\&` and `---`);
+- no raw `&` and no raw em dash in a title, booktitle, journal, publisher, institution or note (write `\\&` and
+  `---`);
 - every key cited with a `{cite}`, `{cite:t}`, `{cite:p}`... role in a tracked .md file or in a notebook
   markdown cell exists;
 - required fields per entry type (see REQUIRED below);
@@ -74,12 +75,12 @@ def identifiers(entry):
         ids.add(("eprint", re.sub(r"v\d+$", "", eprint.lower())))
     doi = field(entry, "doi")
     if doi:
-        ids.add(("doi", doi.lower()))
+        ids.add(("doi", re.sub(r"^https?://(?:dx\.)?doi\.org/", "", doi.lower().strip())))
     url = field(entry, "url")
     if url:
         low = url.lower().rstrip("/")
         m = re.match(r"https?://(?:dx\.)?doi\.org/(.+)$", low)
-        a = re.match(r"https?://arxiv\.org/abs/(.+?)(?:v\d+)?$", low)
+        a = re.match(r"https?://arxiv\.org/(?:abs|pdf)/(.+?)(?:v\d+)?(?:\.pdf)?$", low)
         if m:
             ids.add(("doi", m.group(1)))
         elif a:
@@ -117,6 +118,9 @@ def gaps(entry):
     return missing_fields(entry) + ([] if identifiers(entry) else ["identifier"])
 
 
+TEXT_FIELDS = ("title", "booktitle", "journal", "publisher", "institution", "note")
+
+
 def check_bibliography(files):
     """Every failure string for the given bib files."""
     entries, failures = load(files)
@@ -130,11 +134,12 @@ def check_bibliography(files):
     for name, key, entry in entries:
         for ident in identifiers(entry):
             owners.setdefault(ident, []).append(key)
-        title = field(entry, "title")
-        if re.search(r"(?<!\\)&", title):
-            failures.append(f"{key}: raw & in title (write \\&)")
-        if "—" in title:
-            failures.append(f"{key}: raw em dash in title (write ---)")
+        for name in TEXT_FIELDS:
+            value = field(entry, name)
+            if re.search(r"(?<!\\)&", value):
+                failures.append(f"{key}: raw & in {name} (write \\&)")
+            if "\u2014" in value:
+                failures.append(f"{key}: raw em dash in {name} (write ---)")
         absent = [f for f in gaps(entry) if f not in KNOWN_INCOMPLETE.get(key, ())]
         if absent:
             failures.append(f"{key}: @{entry.type} lacks {', '.join(absent)}")
@@ -178,10 +183,19 @@ def test_bibliography_form():
     assert not failures, "\n".join(failures)
 
 
+def undefined_citations(keys, texts):
+    """'<label>: <key>' for each key cited in the (label, text) pairs `texts` that is not in `keys`."""
+    return [f"{label}: {key}" for label, text in texts for key in cited(text) if key not in keys]
+
+
 def test_every_cited_key_exists():
-    keys = defined_keys(bib_files())
-    failures = [f"{label}: {key}" for label, text in sources() for key in cited(text) if key not in keys]
+    failures = undefined_citations(defined_keys(bib_files()), sources())
     assert not failures, "undefined citation keys:\n" + "\n".join(failures)
+
+
+def test_a_cited_key_that_does_not_exist_is_reported():
+    texts = [("a.md", "As {cite}`one` and {cite:t}`two,missing` show."), ("b.ipynb:cell1", "{cite:p}`one`")]
+    assert undefined_citations({"one", "two"}, texts) == ["a.md: missing"]
 
 
 def test_known_incomplete_entries_are_still_incomplete():
@@ -212,6 +226,15 @@ BASE = """@article{one,
      " doi={10.1000/abc},\n}\n", "defined in"),
     ("@misc{three,\n title={Fish & chips}, year={2021}, url={https://example.org/a},\n}\n", "raw & in title"),
     ("@misc{four,\n title={No url}, year={2021},\n}\n", "lacks url"),
+    ("@misc{six,\n title={Fish and chips}, note={Part one \u2014 the fish}, year={2021}, url={https://example.org/b},\n}\n",
+     "raw em dash in note"),
+    ("@misc{seven,\n title={T}, publisher={Fish & Co}, year={2021}, url={https://example.org/c},\n}\n",
+     "raw & in publisher"),
+    ("@article{eight,\n title={Other}, author={Roe, Rick}, journal={J}, volume={2}, pages={3--4}, year={2021},"
+     " doi={https://doi.org/10.1000/XYZ},\n}\n", "doi 10.1000/xyz shared by eight, one"),
+    ("@misc{nine,\n title={T}, year={2021}, url={https://arxiv.org/pdf/2401.00001v2.pdf},\n}\n"
+     "@misc{ten,\n title={U}, year={2021}, url={https://arxiv.org/abs/2401.00001},\n}\n",
+     "eprint 2401.00001 shared by nine, ten"),
     ("@book{five,\n title={No link}, author={Roe, Rick}, publisher={P}, year={2021},\n}\n", "lacks identifier"),
 ])
 def test_checks_catch_problems(tmp_path, second, expect):

@@ -149,12 +149,23 @@ def parse_atom(xml: str):
     return records
 
 
+# A trailing event suffix on a Crossref container title, as in "... Theory of Computing - STOC '98".
+EVENT_SUFFIX = re.compile(r"\s+-\s+[A-Z][\w-]*\s*'\d{2}\s*$")
+
+
+def crossref_author(author) -> str:
+    """A Crossref author as written, given names then family name, so a compound surname that Crossref splits
+    between the two (given "Loubna Ben", family "Allal") still yields its whole surname; else the name field."""
+    name = " ".join(part for part in (author.get("given"), author.get("family")) if part)
+    return name or author.get("name", "")
+
+
 def parse_crossref(payload: str):
     msg = json.loads(payload)["message"]
-    container = (msg.get("container-title") or [""])[0]
+    container = EVENT_SUFFIX.sub("", (msg.get("container-title") or [""])[0])
     return {
         "title": (msg.get("title") or [""])[0],
-        "authors": [a.get("family") or a.get("name", "") for a in msg.get("author", [])],
+        "authors": [crossref_author(a) for a in msg.get("author", [])],
         "journal": html.unescape(container),
         "volume": msg.get("volume"),
         "pages": msg.get("page"),
