@@ -1,4 +1,8 @@
-"""The symbol grammar of tools/list_symbols.py, pinned by tests/fixtures/symbols/."""
+"""The symbol grammar of tools/list_symbols.py, pinned by tests/fixtures/symbols/.
+
+The symbol fixtures are pages like any other and must follow the page layout rules: display math goes on its
+own line, after a blank line (tests/test_math_not_escaped.py checks every tracked .md file, fixtures included).
+"""
 import subprocess
 import sys
 
@@ -186,12 +190,12 @@ def test_a_symbol_twice_in_one_unit_is_listed_once_for_that_unit():
     assert on_page()["A"][:2] == [
         (3, "The attention weights $A$ multiply $V$, and $A$ is a square matrix."),
         (3, "The weights $A$ sum to one per row.")]
-    assert on_page()["\\gamma"] == [(13, "A list item with the gain $\\gamma$ and $\\gamma$ again.")]
+    assert on_page()["\\gamma"] == [(11, "A list item with the gain $\\gamma$ and $\\gamma$ again.")]
 
 
 def test_display_math_is_shown_with_the_sentence_that_introduces_it():
-    assert on_page()["A"][2] == (10, "The attention output is: $$ O = A V $$")
-    assert on_page()["O"] == [(10, "The attention output is: $$ O = A V $$")]
+    assert on_page()["A"][2] == (9, "The attention output is: $$ O = A V $$")
+    assert on_page()["O"] == [(9, "The attention output is: $$ O = A V $$")]
     # A display block without an introducing colon is shown alone.
     assert ("definitions.md", 6, "$$y = W x$$") in concordance(FIXTURE)["y"]
 
@@ -202,14 +206,14 @@ def test_the_concordance_command_prints_one_symbol():
     assert sum(line.startswith("== ") for line in out) == 1
     assert [line for line in out if line.startswith("concordance.md")] == ["concordance.md:L3: The attention weights $A$ multiply $V$, and $A$ is a square matrix.",
                        "concordance.md:L3: The weights $A$ sum to one per row.",
-                       "concordance.md:L10: The attention output is: $$ O = A V $$"]
+                       "concordance.md:L9: The attention output is: $$ O = A V $$"]
 
 
 def test_the_concordance_command_prints_only_the_undeclared_symbols():
     out = run_concordance("--concordance", "--undeclared")
     headers = [line for line in out.splitlines() if line.startswith("== ")]
     assert "== \\Upsilon — UNDECLARED ==" in headers
-    assert "concordance.md:L14: An undeclared $\\Upsilon$ here." in out
+    assert "concordance.md:L12: An undeclared $\\Upsilon$ here." in out
     assert all(line.endswith("— UNDECLARED ==") for line in headers)
     assert "== A " not in out and "== \\chi " not in out
 
@@ -226,7 +230,7 @@ def test_a_symbol_with_two_rows_prints_one_header_per_meaning():
     out = run_concordance("--symbol", "m").splitlines()
     assert out[:2] == ["== m \u2014 position in a positional encoding or relative offset (m' a second position) ==",
                        "== m \u2014 Adam's first moment (m_t) =="]
-    assert "concordance.md:L16: The position $m$ has two rows in the global table." in out
+    assert "concordance.md:L14: The position $m$ has two rows in the global table." in out
 
 
 def test_the_tool_imports_no_test_module_and_runs_from_anywhere(tmp_path):

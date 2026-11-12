@@ -6,9 +6,7 @@ The temperature $\tau$ flattens the softmax. A hash $h$ maps a shingle $\chi$ to
 
 The attention output is:
 
-$$
-O = A V
-$$
+$$ O = A V $$
 
 - A list item with the gain $\gamma$ and $\gamma$ again.
 - An undeclared $\Upsilon$ here.
