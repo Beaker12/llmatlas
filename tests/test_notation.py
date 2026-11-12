@@ -1,18 +1,18 @@
 """Notation: one meaning per symbol, book-wide and in each chapter.
 
-Check name `notation`, one test per chapter. Failures, all in the chapter's math regions:
-- a banned pattern from BANNED (derived from the "Replaces" column of the plan's global notation table, each
-  scoped to the chapters and meaning its row names);
-- a banned phrase from BANNED_PHRASES: a use of a global symbol's spelling with another meaning that only the
-  prose around the math identifies ("capacity factor $c$"), matched against each line of the page;
-- "O(" in prose outside code and math (asymptotic order is \\mathcal{O} everywhere);
-- a symbol tools/list_symbols.py reports that is in neither tests/notation_global.txt nor the chapter's
-  notation-local.md;
-- a symbol with two different defining phrases ("where $x$ is ...", "$x$ denotes ...") in the chapter.
-
-Book-wide (not per chapter): across notation_global.txt and the six notation-local.md files no symbol has two
-meanings unless tests/notation_exceptions.txt lists it with exactly those meanings and a reason; every symbol in
-the tables is in the normal form list_symbols.py prints.
+Check name `notation`, one test per chapter. Failures, in what each layer does and does not guarantee:
+- Formula bans (BANNED) are exact: a pattern in a math region, scoped to chapters, from the plan's "Replaces"
+  column; the bans built from NO_MEANING report a symbol that has no meaning in that chapter, read with the
+  symbol grammar of tools/list_symbols.py. A wrong use the formula itself does not show is not caught here.
+- Phrase entries (BANNED_PHRASES) are a regression guard for wording close to the recorded lines, nothing
+  more: keyword cues near the symbol can miss a reworded wrong use and can match a correct sentence (which
+  the chapter then declares in its NOTATION_OK). test_known_limits_of_the_phrase_layer_are_recorded keeps one
+  example of each.
+- "O(" in prose; a symbol in neither notation_global.txt nor the chapter's notation-local.md; a symbol with
+  two different defining phrases ("where $x$ is ...") in the chapter.
+Book-wide: no symbol has two meanings across the tables unless notation_exceptions.txt lists it; every table
+symbol is in normal form. None of this confirms what a symbol means in a sentence: for a finished chapter a
+person reads `python tools/list_symbols.py <chapter-dir> --concordance` against the tables.
 """
 import re
 from collections import defaultdict
@@ -24,7 +24,7 @@ import pytest
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check, chapter_constants
 from tests._pages import blank_code, blank_inline_code, blank_math
 from tests.test_notebook_prose import prose_sentences
-from tools.list_symbols import LOCAL_LIST, definitions, is_transpose, normalise, pages, symbols
+from tools.list_symbols import LOCAL_LIST, definitions, is_transpose, normalise, pages, symbols, symbols_in_math
 from tools.unescape_math import math_regions
 
 GLOBAL = ROOT / "tests" / "notation_global.txt"
@@ -120,6 +120,48 @@ BANNED: list[tuple] = [
      frozenset({4})),
     (r"\\alpha\\,\s*E", "(proposed) Auxiliary-loss weight: alpha at CH6:352", frozenset({6})),
 ]
+
+
+# (chapter, symbol in normal form, what the chapter's tables use instead): symbols with no meaning in that chapter
+# under notation_global.txt and the chapter's notation-local.md, each found in the chapter's math when this list
+# was made. Each is banned exactly: a match counts only where list_symbols reads that symbol (so in chapter 2
+# P, P \odot G and O = PV are banned; \Pr, p, p_\theta, \mathrm{PE} and PPL are not). Several are also caught by
+# an older pattern above; these stay banned however the formula is written.
+NO_MEANING: list[tuple[int, str, str]] = [
+    (1, "P", "p_\\theta or p, a distribution"),
+    (1, "W_1", "W_{gate}, W_{up}, W_{down}"), (1, "W_2", "W_{gate}, W_{up}, W_{down}"),
+    (1, "W_3", "W_{gate}, W_{up}, W_{down}"),
+    (1, "\\mathbf{x}", "h^{(0)}_i, the embedding"),
+    (1, "b_1", "the plan's Biases row"), (1, "b_2", "the plan's Biases row"),
+    (1, "b_{out}", "the plan's Unembedding row"), (1, "pos", "m, the position"),
+    (2, "P", "A for attention weights, p for a distribution"),
+    (2, "P_{\\theta}", "p_\\theta"), (2, "P_{data}", "p_{data}"),
+    (2, "T_{\\max}", "t_{end}"), (2, "T_{warmup}", "t_{warm}"),
+    (2, "Y", "\\mathrm{Y}"), (2, "a", "a_N"),
+    (2, "\\theta_1", "\\theta^{(1)}"), (2, "h_1", "h^{(1)}"), (2, "h_L", "h^{(L)}"),
+    (2, "n_{in}", "d_{in}"), (2, "n_{out}", "d_{out}"),
+    (4, "w_1", "x_1"), (4, "w_N", "x_T"),
+    (6, "P", "\\bar{\\rho}, the batch-mean router probability"),
+    (6, "W_1", "W_{gate}, W_{up}, W_{down}"), (6, "W_2", "W_{gate}, W_{up}, W_{down}"),
+    (6, "\\alpha", "\\lambda_{aux}"),
+    (6, "\\theta_0", "\\omega_0"), (6, "\\theta_{d/2-1}", "\\omega_{d_k/2-1}"),
+    (6, "d_h", "d_k"), (6, "d_{ffn}", "d_{ff}"), (6, "d_{model}", "d"),
+]
+
+
+def _symbol_at(symbol):
+    """A BANNED filter: keep a match only where list_symbols reads exactly `symbol` starting at it."""
+    return lambda region, match: (symbol, match.start()) in symbols_in_math(region)
+
+
+def _symbol_start(symbol):
+    """A regex for where `symbol` can start: its leading command, or its first letter not inside a word."""
+    head = re.match(r"\\[A-Za-z]+|[A-Za-z]", symbol).group(0)
+    return re.escape(head) if head.startswith("\\") else rf"(?<![\\A-Za-z]){head}"
+
+
+BANNED += [(_symbol_start(sym), f"No meaning in ch. {chapter}: {sym} (write {instead})", frozenset({chapter}),
+            _symbol_at(sym)) for chapter, sym, instead in NO_MEANING]
 
 
 # Uses of a global symbol's spelling with another meaning that only the words around the math identify.
@@ -594,7 +636,8 @@ def test_a_clean_chapter_passes(tmp_path):
 
 def test_a_banned_pattern_is_reported_only_in_its_chapters(tmp_path):
     chapter = chapter_with(tmp_path, "The width $d_{model}$.\n")
-    assert banned_failures(chapter, 6) == ["index.md:L1: banned 'd_{model' (Model (residual) width: d_model in ch. 6)"]
+    assert banned_failures(chapter, 6) == ["index.md:L1: banned 'd_{model' (Model (residual) width: d_model in ch. 6)",
+                                           "index.md:L1: banned 'd' (No meaning in ch. 6: d_{model} (write d))"]
     assert banned_failures(chapter, 2) == []
 
 
@@ -654,3 +697,50 @@ def test_two_meanings_without_an_exception_are_reported(tmp_path):
     assert meaning_failures(table, none, [chapter]) == []
     none.write_text("d\tmodel width | other\tbecause\n", encoding="utf-8")
     assert len(meaning_failures(table, none, [chapter])) == 1
+
+
+# --- symbols with no meaning in a chapter (NO_MEANING) ------------------------------------------------------
+
+def _banned(tmp_path, math, number):
+    chapter = chapter_with(tmp_path, f"Math ${math}$ here.\n")
+    return [f for f in banned_failures(chapter, number) if "No meaning" in f]
+
+
+@pytest.mark.parametrize("number,symbol", [(n, s) for n, s, _ in NO_MEANING],
+                         ids=[f"ch{n}-{s}" for n, s, _ in NO_MEANING])
+def test_a_symbol_with_no_meaning_in_its_chapter_is_banned_there_alone(tmp_path, number, symbol):
+    known = {sym for sym, _ in global_rows()} | {sym for sym, _ in local_rows(CHAPTER_DIRS[number - 1])}
+    assert symbol not in known, f"{symbol!r} has a meaning in chapter {number}: no ban"
+    assert normalise(symbol) == [symbol]
+    assert len(_banned(tmp_path, symbol, number)) == 1
+    banned_in = {c for c, s, _ in NO_MEANING if s == symbol}
+    assert all(_banned(tmp_path, symbol, n) == [] for n in range(1, 7) if n not in banned_in)
+
+
+@pytest.mark.parametrize("math,banned", [
+    ("P", True), ("P \\odot G", True), ("O = PV", True), ("P_i", True),
+    ("\\Pr[A]", False), ("p", False), ("p_\\theta", False), ("\\mathrm{PE}", False), ("PPL", False),
+    ("\\mathbf{P}", False)])
+def test_bare_p_is_banned_in_chapter_2(tmp_path, math, banned):
+    found = [f for f in _banned(tmp_path, math, 2) if ": P (" in f]
+    assert bool(found) == banned, found
+
+
+def test_p_theta_is_banned_in_chapter_2_by_the_distribution_row_and_exactly(tmp_path):
+    # The older pattern for distributions catches P_{\theta} but not P_\theta; the exact ban catches both.
+    chapter = chapter_with(tmp_path, "Math $P_{\\theta}$ and $P_\\theta(x)$ here.\n")
+    failures = banned_failures(chapter, 2)
+    assert len([f for f in failures if "Data and model distributions" in f and "'P_{'" in f]) == 1
+    assert len([f for f in failures if "No meaning in ch. 2: P_{\\theta}" in f]) == 2
+    assert not [f for f in failures if ": P (" in f]
+
+
+def test_known_limits_of_the_phrase_layer_are_recorded():
+    """Two sentences an independent reviewer wrote. This records a limit, not a requirement: keyword cues cannot
+    tell these apart, and the control for both is a person reading the --concordance of tools/list_symbols.py."""
+    def hits(number, text):
+        return list(phrase_hits(text + "\n", [(i, e) for i, e in enumerate(BANNED_PHRASES) if e[0] == number]))
+    # A correct use that matches: L is the number of layers, but "tokens" is a wrong cue for chapter 6's L.
+    assert hits(6, "Each of the $L$ blocks processes all $n$ tokens.")
+    # A wrong use that escapes: tau as the clipping threshold, with none of the cues clip, threshold or norm.
+    assert not hits(2, "Gradients are rescaled whenever their magnitude exceeds $\\tau$.")
