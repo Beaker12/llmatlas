@@ -1,7 +1,9 @@
 # British to American spelling pairs, one `british<TAB>american` pair per line.
 # Source: VarCon (variant conversion info distributed with SCOWL), version 2020.12.07,
 # varcon/varcon.txt in https://github.com/en-wl/wordlist. Derived by tests/make_spelling_list.py:
-# pairs whose British form is not also an accepted American spelling in VarCon.
+# pairs whose British form is not also an accepted American spelling in VarCon. Words VarCon accepts in
+# American English (grey, catalogue, judgement ...) are not here; tests/spelling_house.txt adds the house
+# choices and the inflections VarCon lacks.
 #
 # VarCon licence notice, reproduced as the licence requires:
 #

@@ -1,13 +1,17 @@
 """American spelling throughout. Check name `spelling`, one test per chapter.
 
 Scanned: chapter prose (every *.md in the chapter directory), notebook markdown cells, string literals in notebook
-code cells and the committed text outputs of those cells, and (chapter 6) the string literals of
-tools/build_architecture_notebook.py.
+code cells and the committed text outputs of those cells, and the string literals of a chapter's generator script
+(tests/_files.py GENERATORS: chapter 6 has tools/build_architecture_notebook.py).
 Not scanned: code fences, inline code, math, block quotations, quoted text immediately followed by a citation,
 URLs and link targets, MyST labels and role targets ((label)=, {ref}`..`, {cite}`..`), directive option lines such
 as :name:, and the bibliography files.
+A quotation is exempt only when it is at most 300 characters, does not cross a blank line, and is followed at once by
+a citation.
 Words are matched whole and case-insensitively against tests/spelling_uk_us.txt (`british<TAB>american`, built from
-VarCon by tests/make_spelling_list.py) plus the phrase "per cent". No suffix patterns.
+VarCon by tests/make_spelling_list.py; words VarCon accepts in American English are not in it) and
+tests/spelling_house.txt (this book's supplement: inflections VarCon lacks, domain verbs such as tokenise, and house
+choices such as catalogue and grey), plus the phrase "per cent". No suffix patterns.
 Exceptions: tests/spelling_allow.txt (proper names and titles) and chapters/<dir>/spelling-allow.txt, one phrase per
 line, `#` comments; an allowed phrase is matched case-insensitively and hides itself from the scan.
 """
@@ -19,26 +23,28 @@ from pathlib import Path
 
 import pytest
 
-from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check
+from tests._files import CHAPTER_DIRS, CHAPTER_IDS, GENERATORS, ROOT, chapter_check
 from tests._notebooks import cell_text, notebooks, read
 from tests._pages import blank_code, blank_inline_code, blank_math, line_of, pages
 
 WORDLIST = ROOT / "tests" / "spelling_uk_us.txt"
 ALLOW = ROOT / "tests" / "spelling_allow.txt"
-GENERATOR = ROOT / "tools" / "build_architecture_notebook.py"
+HOUSE = ROOT / "tests" / "spelling_house.txt"
 WORD = re.compile(r"\b[A-Za-z]+\b")
 PER_CENT = re.compile(r"\bper\s+cent\b", re.I)
-QUOTED_CITED = re.compile(r"\"[^\"]{1,600}\"|“[^”]{1,600}”")
+QUOTED_CITED = re.compile(r"\"(?:[^\"\n]|\n(?![ \t]*\n)){1,300}\"|“(?:[^”\n]|\n(?![ \t]*\n)){1,300}”")
 CITED_AFTER = re.compile(r"\s*[,.;]?\s*\{cite(?::\w+)?\}`")
 
 
 @lru_cache(maxsize=None)
-def load_pairs(path=WORDLIST):
+def load_pairs(paths=(WORDLIST, HOUSE)):
+    """The pairs of the VarCon list and the house supplement, merged (the supplement wins)."""
     pairs = {}
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
-        if line and not line.startswith("#"):
-            british, american = line.split("\t")
-            pairs[british] = american
+    for path in paths:
+        for line in Path(path).read_text(encoding="utf-8").splitlines():
+            if line and not line.startswith("#"):
+                british, american = line.split("\t")
+                pairs[british] = american
     return pairs
 
 
@@ -116,7 +122,7 @@ def code_failures(source, where, pairs, phrases, first_line=1):
     return failures
 
 
-def spelling_failures(chapter_dir, pairs=None, phrases=None, generator=GENERATOR):
+def spelling_failures(chapter_dir, pairs=None, phrases=None, generators=GENERATORS, root=ROOT):
     chapter_dir = Path(chapter_dir)
     pairs = load_pairs() if pairs is None else pairs
     phrases = allowed_phrases(chapter_dir) if phrases is None else phrases
@@ -131,9 +137,9 @@ def spelling_failures(chapter_dir, pairs=None, phrases=None, generator=GENERATOR
             elif cell.cell_type == "code":
                 failures += code_failures(cell.source, where, pairs, phrases)
                 failures += words_in(cell_text(cell), f"{where} output", pairs, phrases)
-    if chapter_dir.name.startswith("06") and Path(generator).exists():
-        failures += code_failures(Path(generator).read_text(encoding="utf-8"), "tools/build_architecture_notebook.py",
-                                  pairs, phrases)
+    relative = generators.get(chapter_dir.name)
+    if relative and (Path(root) / relative).exists():
+        failures += code_failures((Path(root) / relative).read_text(encoding="utf-8"), relative, pairs, phrases)
     return failures
 
 
@@ -150,11 +156,11 @@ PAIRS = {"normalisation": "normalization", "colour": "color", "centre": "center"
 def failures_of_page(tmp_path, text, phrases=(), pairs=PAIRS):
     tmp_path.mkdir(parents=True, exist_ok=True)
     (tmp_path / "index.md").write_text(text, encoding="utf-8")
-    return spelling_failures(tmp_path, pairs=pairs, phrases=list(phrases), generator="/nonexistent")
+    return spelling_failures(tmp_path, pairs=pairs, phrases=list(phrases), generators={})
 
 
 def test_the_word_list_is_a_us_uk_mapping_with_a_licence_header():
-    pairs = load_pairs()
+    pairs = load_pairs((WORDLIST,))
     assert len(pairs) > 10000
     assert pairs["normalisation"] == "normalization" and pairs["behaviour"] == "behavior"
     for correct in ("smaller", "dialogue", "grey", "analyze", "color"):
@@ -206,18 +212,54 @@ def test_notebook_markdown_string_literals_and_outputs_are_scanned(tmp_path):
     cells[1]["outputs"] = [nbformat.v4.new_output("stream", name="stdout", text="the 1 centre\n")]
     (tmp_path / "examples").mkdir()
     nbformat.write(nbformat.v4.new_notebook(cells=cells), str(tmp_path / "examples" / "n.ipynb"))
-    assert spelling_failures(tmp_path, pairs=PAIRS, phrases=[], generator="/nonexistent") == [
+    assert spelling_failures(tmp_path, pairs=PAIRS, phrases=[], generators={}) == [
         "n.ipynb:cell 0:L3: 'colour' -> 'color'",
         "n.ipynb:cell 1:L2: 'centre' -> 'center'",
         "n.ipynb:cell 1:L2: 'behaviour' -> 'behavior'",
         "n.ipynb:cell 1 output:L1: 'centre' -> 'center'"]
 
 
-def test_generator_string_literals_are_scanned_for_chapter_6(tmp_path):
-    chapter = tmp_path / "06-x"
-    chapter.mkdir()
+def test_a_chapters_generator_string_literals_are_scanned(tmp_path):
+    chapter = tmp_path / "chapters" / "07-x"
+    chapter.mkdir(parents=True)
     (chapter / "index.md").write_text("Fine.\n", encoding="utf-8")
-    generator = tmp_path / "gen.py"
-    generator.write_text("x = 1  # colour\nCELL = '''a\nnormalisation'''\n", encoding="utf-8")
-    assert spelling_failures(chapter, pairs=PAIRS, phrases=[], generator=generator) == [
-        "tools/build_architecture_notebook.py:L3: 'normalisation' -> 'normalization'"]
+    (tmp_path / "tools").mkdir()
+    (tmp_path / "tools" / "gen.py").write_text("x = 1  # colour\nCELL = '''a\nnormalisation'''\n", encoding="utf-8")
+    generators = {"07-x": "tools/gen.py"}
+    assert spelling_failures(chapter, pairs=PAIRS, phrases=[], generators=generators, root=tmp_path) == [
+        "tools/gen.py:L3: 'normalisation' -> 'normalization'"]
+    assert spelling_failures(chapter, pairs=PAIRS, phrases=[], generators={}, root=tmp_path) == []
+    assert GENERATORS == {"06-architectures": "tools/build_architecture_notebook.py"}
+
+
+@pytest.mark.parametrize("word", ["tokenisation", "tokeniser", "detokenise", "anonymisation", "pseudonymise", "binarise",
+                                  "lemmatisation", "encyclopaedia", "catalogue", "grey", "learnt", "whilst", "ageing",
+                                  "Tokenisation"])
+def test_house_and_derived_spellings_are_flagged(word):
+    assert word.lower() in load_pairs()
+
+
+@pytest.mark.parametrize("word", ["dialogue", "smaller", "called", "towards", "analyses", "analyzes", "tokenization",
+                                  "catalog", "gray", "learned"])
+def test_correct_american_words_are_not_flagged(word):
+    assert word not in load_pairs()
+
+
+def test_the_house_list_is_a_hand_maintained_supplement_with_no_overlap():
+    head = HOUSE.read_text(encoding="utf-8")[:300]
+    assert "supplement" in head and "maintained by hand" in head
+    varcon = load_pairs((WORDLIST,))
+    house = load_pairs((HOUSE,))
+    assert len(house) > 1000 and not set(house) & set(varcon)
+    assert "Words VarCon accepts in" in WORDLIST.read_text(encoding="utf-8")[:900]
+
+
+def test_a_quotation_exemption_does_not_cross_a_blank_line_or_exceed_300_characters(tmp_path):
+    cited = " {cite}`smith2020x`.\n"
+    unbalanced = "He said \"start of a quote about the colour.\n\nNext paragraph with the colour and a \"" + "x" * 5 + "\"" + cited
+    assert failures_of_page(tmp_path / "a", unbalanced) == [
+        "index.md:L1: 'colour' -> 'color'", "index.md:L3: 'colour' -> 'color'"]
+    long_quote = "\"the colour " + "y" * 300 + "\"" + cited
+    assert failures_of_page(tmp_path / "b", long_quote) == ["index.md:L1: 'colour' -> 'color'"]
+    short_across_a_line = "\"the colour of\nit\"" + cited
+    assert failures_of_page(tmp_path / "c", short_across_a_line) == []

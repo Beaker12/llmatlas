@@ -28,6 +28,9 @@ SKIP_DIRS = {"_build", ".venv", "venv", ".claude", ".superpowers", ".jupyter_cac
 KNOWN_CHECKS = {"fences", "fences-live", "outputs", "outputs-live", "prose", "sync-chapter", "sync-generator",
                 "spelling", "figures", "structure", "exercises", "citations", "xrefs", "notation", "hygiene"}
 
+# Generator scripts whose string literals are chapter text, by chapter directory name (checked for spelling).
+GENERATORS = {"06-architectures": "tools/build_architecture_notebook.py"}
+
 CHAPTER_DIRS = sorted(p for p in (ROOT / "chapters").iterdir()
                       if p.is_dir() and not p.name.startswith((".", "_")))
 CHAPTER_IDS = [p.name for p in CHAPTER_DIRS]

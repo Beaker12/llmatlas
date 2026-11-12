@@ -21,7 +21,7 @@ BIB = [FIXTURE / "refs.bib"]
 
 def all_failures(chapter):
     bib = [chapter / "refs.bib"]
-    return {"spelling": spelling_failures(chapter, generator="/nonexistent"),
+    return {"spelling": spelling_failures(chapter, generators={}),
             "figures": figure_failures(chapter, 2),
             "exercises": page_failures(chapter), "structure": size_failures(chapter),
             "citations": citation_failures(chapter, bib), "xrefs": body_text_failures(chapter),
@@ -58,6 +58,6 @@ def test_each_check_fails_on_a_broken_copy_of_the_sample_chapter(tmp_path, old, 
 
 def test_an_allow_listed_british_proper_name_passes_in_the_sample_chapter(tmp_path):
     chapter = broken(tmp_path, "shows the ramp", "shows the ramp from the Centre for Fixtures")
-    assert any("'Centre'" in f for f in spelling_failures(chapter, generator="/nonexistent"))
+    assert any("'Centre'" in f for f in spelling_failures(chapter, generators={}))
     (chapter / "spelling-allow.txt").write_text("# names\nCentre for Fixtures\n", encoding="utf-8")
-    assert spelling_failures(chapter, generator="/nonexistent") == []
+    assert spelling_failures(chapter, generators={}) == []
