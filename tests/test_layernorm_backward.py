@@ -1,3 +1,5 @@
+# Owned by the chapter 2 task: it pins chapter 2's exact LaTeX, so the chapter 2 task edits LATEX_STRINGS here
+# whenever it changes those equations on the page (no other chapter or shared file is involved).
 """Numerically verify the hand-written gradient equations in chapter 02 (step 7 of the
 audit plan) and pin the exact LaTeX strings so the text cannot drift from the test."""
 from pathlib import Path

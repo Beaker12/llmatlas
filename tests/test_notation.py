@@ -28,7 +28,8 @@ import pytest
 
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check, chapter_constants
 from tests._pages import blank_code, blank_inline_code, blank_math
-from tools.notation_tables import (GLOBAL, _rows, global_rows, local_also_means, local_rows, paper_note_math,
+from tools.notation_tables import (GLOBAL, _rows, global_rows, local_also_means, local_rows, local_table,
+                                   paper_note_math,
                                    paper_note_spans, prose_sentences)
 from tools.list_symbols import LOCAL_LIST, definitions, is_transpose, normalise, pages, symbols, symbols_in_math
 from tools.unescape_math import math_regions
@@ -421,6 +422,7 @@ def meaning_failures(global_path=GLOBAL, exceptions_path=EXCEPTIONS, chapter_dir
     """
     meanings = defaultdict(dict)  # symbol -> {meaning: [where]}
     also = defaultdict(list)  # symbol -> [chapter whose local row fills "Also means"]
+    also_meanings = defaultdict(set)  # symbol -> {meaning of a local row that fills "Also means"}
     for sym, meaning in global_rows(global_path):
         meanings[sym].setdefault(meaning, []).append("notation_global.txt")
     global_meanings = {sym: set(found) for sym, found in meanings.items()}
@@ -430,17 +432,33 @@ def meaning_failures(global_path=GLOBAL, exceptions_path=EXCEPTIONS, chapter_dir
             if meaning in global_meanings.get(sym, set()):
                 failures.append(f"{Path(chapter_dir).name}/{LOCAL_LIST}: {sym!r} repeats a global row")
             meanings[sym].setdefault(meaning, []).append(f"{Path(chapter_dir).name}/{LOCAL_LIST}")
-        for sym in local_also_means(chapter_dir):
-            also[sym].append(Path(chapter_dir).name)
+        for row in local_table(chapter_dir):
+            if row["also"]:
+                also[row["symbol"]].append(Path(chapter_dir).name)
+                also_meanings[row["symbol"]].add(row["meaning"])
     allowed = exceptions(exceptions_path)
     for sym, found in sorted(meanings.items()):
         if len(found) > 1 and sym not in allowed and sym not in also:
             listing = "; ".join(f"{m!r} ({', '.join(w)})" for m, w in found.items())
             failures.append(f"{sym!r} has {len(found)} meanings and no exception: {listing}")
     for sym, (listed, _reason) in sorted(allowed.items()):
+        # An excepted symbol's meanings are those of its exception line plus those its "Also means" rows declare.
         found = set(meanings.get(sym, {}))
-        if found != listed:
-            failures.append(f"exception {sym!r} lists {sorted(listed)}, the tables give {sorted(found)}")
+        expected = listed | also_meanings[sym]
+        for meaning in sorted(found - expected):
+            places = meanings[sym][meaning]
+            local = [w.split("/")[0] for w in places if w.endswith(LOCAL_LIST)]
+            if local:
+                failures.append(f"{sym!r} has the meaning {meaning!r} in chapters/{local[0]}/{LOCAL_LIST}, beyond its "
+                                f"exception {sorted(listed)}: fill the row's 'Also means' column in "
+                                f"chapters/{local[0]}/{LOCAL_LIST} (the other meanings, and why the double use is "
+                                f"acceptable)")
+            else:
+                failures.append(f"exception {sym!r} lists {sorted(listed)}, the tables give {sorted(found)}: "
+                                f"update tests/notation_exceptions.txt")
+        if listed - found:
+            failures.append(f"exception {sym!r} lists {sorted(listed)}, the tables give {sorted(found)}: "
+                            f"update tests/notation_exceptions.txt")
     for sym, chapters in sorted(also.items()):
         if len(meanings.get(sym, {})) < 2:
             failures.append(f"{', '.join(chapters)}/{LOCAL_LIST}: {sym!r} fills 'Also means' but has one meaning; "
@@ -751,7 +769,9 @@ def test_two_meanings_without_an_exception_are_reported(tmp_path):
     none.write_text("d\tmodel width | distance\tbecause\n", encoding="utf-8")
     assert meaning_failures(table, none, [chapter]) == []
     none.write_text("d\tmodel width | other\tbecause\n", encoding="utf-8")
-    assert len(meaning_failures(table, none, [chapter])) == 1
+    stale = meaning_failures(table, none, [chapter])  # 'distance' is not listed, 'other' is not in the tables
+    assert len(stale) == 2 and "'distance' in chapters/01-x/notation-local.md" in stale[0], stale
+    assert stale[1].endswith("update tests/notation_exceptions.txt"), stale
 
 
 LOCAL_ALSO = "| Symbol | Meaning | First used | Rename | Also means |\n|---|---|---|---|---|\n"
@@ -772,6 +792,27 @@ def test_a_local_row_that_fills_also_means_accepts_a_second_meaning(tmp_path):
     assert meaning_failures(table, none, [plain]) == []
 
 
+def test_an_excepted_symbol_takes_a_further_meaning_only_with_also_means(tmp_path):
+    table = tmp_path / "g.txt"
+    table.write_text("h\thidden state\n", encoding="utf-8")
+    exc = tmp_path / "exc.txt"
+    exc.write_text("h\thidden state | MinHash hash function\tbecause\n", encoding="utf-8")
+    four = chapter_with(tmp_path / "04-x", "x\n", local=LOCAL_ALSO + "| $h$ | MinHash hash function | L1 |  |  |\n")
+    assert meaning_failures(table, exc, [four]) == []
+    row = "| $h$ | head index in a figure | L2 |  | {} |\n"
+    empty = chapter_with(tmp_path / "06-y", "x\n", local=LOCAL_ALSO + row.format(""))
+    assert meaning_failures(table, exc, [four, empty]) == [
+        "'h' has the meaning 'head index in a figure' in chapters/06-y/notation-local.md, beyond its exception "
+        "['MinHash hash function', 'hidden state']: fill the row's 'Also means' column in "
+        "chapters/06-y/notation-local.md (the other meanings, and why the double use is acceptable)"]
+    filled = chapter_with(tmp_path / "06-z", "x\n", local=LOCAL_ALSO + row.format("hidden state; MinHash hash function"))
+    assert meaning_failures(table, exc, [four, filled]) == []
+    # An exception line that names a meaning the tables no longer give is still reported.
+    assert meaning_failures(table, exc, []) == [
+        "exception 'h' lists ['MinHash hash function', 'hidden state'], the tables give ['hidden state']: "
+        "update tests/notation_exceptions.txt"]
+
+
 def test_a_filled_also_means_on_a_symbol_with_one_meaning_is_reported(tmp_path):
     table = tmp_path / "g.txt"
     table.write_text("d\tmodel width\n", encoding="utf-8")
@@ -780,14 +821,13 @@ def test_a_filled_also_means_on_a_symbol_with_one_meaning_is_reported(tmp_path):
         "03-x/notation-local.md: 'J' fills 'Also means' but has one meaning; empty the cell"]
 
 
-def test_the_also_means_column_is_found_by_its_header_and_is_empty_today(tmp_path):
+def test_the_also_means_column_is_found_by_its_header(tmp_path):
     chapter = chapter_with(tmp_path, "x\n")  # the four-column header: no "Also means"
     (tmp_path / LOCAL_LIST).write_text("| Symbol | Meaning | First used | Rename |\n|---|---|---|---|\n"
                                        "| $J$ | Jaccard similarity | L1 | sim |\n", encoding="utf-8")
     assert local_also_means(chapter) == {} and local_rows(chapter) == [("J", "Jaccard similarity")]
     for chapter_dir in CHAPTER_DIRS:
         assert "| Also means |" in (chapter_dir / LOCAL_LIST).read_text(encoding="utf-8"), chapter_dir.name
-        assert local_also_means(chapter_dir) == {}, chapter_dir.name
 
 
 # --- symbols with no meaning in a chapter (NO_MEANING) ------------------------------------------------------
@@ -817,13 +857,13 @@ def test_a_symbol_with_no_meaning_in_its_chapter_is_banned_there_alone(tmp_path,
 
 
 def test_declaring_a_no_meaning_symbol_in_the_chapter_lifts_its_ban(tmp_path):
-    """A copy of chapter 2's local list, with and without a row for the banned symbol a."""
-    local = (chapter_dir_of(2) / LOCAL_LIST).read_text(encoding="utf-8")
+    """A fixed local list, with and without a row for chapter 2's banned symbol a."""
+    local = LOCAL_ALSO + "| $\\Xi$ | a fixture symbol | index.md:L1 |  |  |\n"
     page = "The exponent $a$ here.\n"
     before = chapter_with(tmp_path / "before", page, local=local)
     assert [f for f in banned_failures(before, 2) if "No meaning" in f] == [
         "index.md:L1: banned 'a' (No meaning in ch. 2: a; write a_N)"]
-    after = chapter_with(tmp_path / "after", page, local=local.rstrip("\n") + "\n| $a$ | an exponent | index.md:L1 |  |  |\n")
+    after = chapter_with(tmp_path / "after", page, local=local + "| $a$ | an exponent | index.md:L1 |  |  |\n")
     assert banned_failures(after, 2) == [] and membership_failures(after) == []
     assert ("a", "an exponent") in local_rows(after) and len(local_rows(after)) == len(local_rows(before)) + 1
 

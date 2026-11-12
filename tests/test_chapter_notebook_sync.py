@@ -44,9 +44,16 @@ def first_notebook(chapter_name):
 
 
 def test_scaled_dot_product_attention_is_identical_in_notebooks_1_and_2():
-    one = notebook_defs(first_notebook("01-foundations"))["ScaledDotProductAttention"]
-    two = notebook_defs(first_notebook("02-mathematics"))["ScaledDotProductAttention"]
-    assert normalised(one) == normalised(two)
+    # Deliberate: the two chapters share this class; a chapter that renames or changes it changes both notebooks.
+    found = []
+    for chapter in ("01-foundations", "02-mathematics"):
+        path = first_notebook(chapter)
+        defs = notebook_defs(path)
+        assert "ScaledDotProductAttention" in defs, \
+            f"class ScaledDotProductAttention not found in {path.relative_to(ROOT)}"
+        found.append(defs["ScaledDotProductAttention"])
+    assert normalised(found[0]) == normalised(found[1]), \
+        "ScaledDotProductAttention differs between the chapter 1 and chapter 2 notebooks"
 
 
 def test_exemptions_in_every_chapter_name_a_shared_definition_and_a_reason():
