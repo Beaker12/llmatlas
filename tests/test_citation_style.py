@@ -7,13 +7,14 @@ Check name `citations`, one test per chapter. Failures:
 Surnames come from references.bib and bib/*.bib in the repository root.
 """
 import re
+import unicodedata
 
 import pytest
 
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check
 from tests._pages import blank_code, blank_inline_code, line_of, pages
 
-ET_AL = re.compile(r"et al\.,? \{cite\}")
+ET_AL = re.compile(r"et al\.,?\s+\{cite\}")
 PLAIN_CITE = re.compile(r"\{cite\}`([^`\n]+)`")
 BEFORE = re.compile(r"([^\W\d_][\w\-]*)(?:['\u2019]s)?\s*$")
 
@@ -31,6 +32,11 @@ def _braced(text, start):
         if depth == 0:
             return text[start + 1:i]
     return text[start + 1:]
+
+
+def fold(word):
+    """Case- and accent-folded form, so that Unal, Ünal and (from the bib) {\\\"U}nal compare equal."""
+    return "".join(c for c in unicodedata.normalize("NFKD", word) if not unicodedata.combining(c)).casefold()
 
 
 def _clean(name):
@@ -74,9 +80,9 @@ def citation_failures(chapter_dir, files=None):
             if not before:
                 continue
             word = before.group(1)
-            parts = {word, *word.split("-")}
+            parts = {fold(p) for p in (word, *word.split("-"))}
             for key in (k.strip() for k in m.group(1).split(",")):
-                if parts & known.get(key, set()):
+                if parts & {fold(s) for s in known.get(key, set())}:
                     failures.append(f"{page.name}:L{line_of(text, m.start())}: surname {word!r} before "
                                     f"{{cite}}`{key}`; use {{cite:t}}")
     return failures
@@ -112,6 +118,17 @@ def test_et_al_before_a_plain_cite_is_reported(tmp_path):
     assert citation_failures(chapter, files) == ["index.md:L3: 'et al.' followed by plain {cite}; use {cite:t}"]
     chapter, files = chapter_with(tmp_path / "b", "Smith et al., {cite}`smith2020x` found it.\n")
     assert len(citation_failures(chapter, files)) == 1
+
+
+def test_accents_are_folded_on_both_sides(tmp_path):
+    chapter, files = chapter_with(tmp_path, "The work of Ünal {cite}`smith2020x` and Unal {cite}`smith2020x`.\n")
+    assert [f.split(": ", 1)[1].split(" before")[0] for f in citation_failures(chapter, files)] == [
+        "surname 'Ünal'", "surname 'Unal'"]
+
+
+def test_a_line_break_between_et_al_and_cite_is_reported(tmp_path):
+    chapter, files = chapter_with(tmp_path, "Smith et al.\n{cite}`smith2020x` found it; Jones et al.   {cite}`x`.\n")
+    assert [f.split(": ")[0] for f in citation_failures(chapter, files)] == ["index.md:L1", "index.md:L2"]
 
 
 def test_a_surname_before_a_plain_cite_is_reported(tmp_path):

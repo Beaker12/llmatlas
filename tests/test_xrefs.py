@@ -32,9 +32,11 @@ def test_notebook_admonitions_use_labels_not_numbers(path):
 
 
 # Body text: references go through {ref} and {numref}, never a literal section number or an unwritten chapter.
-LAST_CHAPTER = 6
-SECTION_NUMBER = re.compile(r"\bSections?\s+\d+\.\d+")
-CHAPTER_NUMBERS = re.compile(r"\bChapters?\s+(\d+(?:\s*(?:,|and|to|or|–|-)\s*\d+)*)")
+LAST_CHAPTER = len(CHAPTER_DIRS)        # the chapters written so far: one directory each
+JOIN = r"\s*(?:,|and|or|to|–|-)\s*"
+SECTION_NUMBERS = re.compile(rf"\b(Sections?)\s+(\d+\.\d+(?:{JOIN}\d+\.\d+)*)")
+SIGN_NUMBERS = re.compile(rf"(§+)\s*(\d+(?:\.\d+)*(?:{JOIN}\d+(?:\.\d+)*)*)")
+CHAPTER_NUMBERS = re.compile(rf"\bChapters?\s+(\d+(?:{JOIN}\d+)*)")
 ROLE = re.compile(r"\{[\w:-]+\}`[^`\n]*`")
 
 
@@ -43,8 +45,10 @@ def body_text_failures(chapter_dir):
     for page in pages(chapter_dir):
         text = blank_code(page.read_text(encoding="utf-8"))
         text = blank_inline_code(blank_math(ROLE.sub(lambda m: " " * len(m.group(0)), text)))
-        for m in SECTION_NUMBER.finditer(text):
-            failures.append(f"{page.name}:L{line_of(text, m.start())}: literal {m.group(0)!r}; use {{ref}}")
+        for pattern in (SECTION_NUMBERS, SIGN_NUMBERS):
+            for m in pattern.finditer(text):
+                for number in re.findall(r"\d+(?:\.\d+)*", m.group(2)):
+                    failures.append(f"{page.name}:L{line_of(text, m.start())}: literal '{m.group(1)} {number}'; use {{ref}}")
         for m in CHAPTER_NUMBERS.finditer(text):
             numbers = [int(n) for n in re.findall(r"\d+", m.group(1))]
             if any(n > LAST_CHAPTER for n in numbers):
@@ -65,7 +69,16 @@ def _page(tmp_path, text):
 def test_a_literal_section_number_in_body_text_is_reported(tmp_path):
     chapter = _page(tmp_path, "Intro.\n\nSee Section 2.1 and Sections 3.2 and 3.3.\n")
     assert body_text_failures(chapter) == ["index.md:L3: literal 'Section 2.1'; use {ref}",
-                                           "index.md:L3: literal 'Sections 3.2'; use {ref}"]
+                                           "index.md:L3: literal 'Sections 3.2'; use {ref}",
+                                           "index.md:L3: literal 'Sections 3.3'; use {ref}"]
+
+
+def test_section_signs_are_reported_and_the_last_chapter_comes_from_the_directories(tmp_path):
+    chapter = _page(tmp_path, "See §3.1 and §§4.2-4.3 for details.\n")
+    assert body_text_failures(chapter) == ["index.md:L1: literal '§ 3.1'; use {ref}",
+                                           "index.md:L1: literal '§§ 4.2'; use {ref}",
+                                           "index.md:L1: literal '§§ 4.3'; use {ref}"]
+    assert LAST_CHAPTER == len(CHAPTER_DIRS) == 6
 
 
 def test_a_chapter_above_six_is_reported(tmp_path):
