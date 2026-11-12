@@ -22,9 +22,7 @@ Conditions: $x_{<i}$ and $\mathbb{E}_{z \sim p}$ and $w_{1:N}$.
 
 Operators are not symbols: $\log p + \exp(z) + \max_i a_i + \sum_{j=1}^{T} b_j + \operatorname{bucket}(r) + \mathrm{softmax}(S) + \text{loss} + \mathrm{FFN}_e(v) + \text{head}_c + \frac{1}{\tau}\sqrt{g}$.
 
-$$
-\mathcal{O}(N) + \mathrm{softmax}(QK^\top)
-$$
+$$\mathcal{O}(N) + \mathrm{softmax}(QK^\top)$$
 
 ```python
 x = "$not_math$"

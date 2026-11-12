@@ -64,7 +64,7 @@ def test_operator_and_function_names_are_not_symbols():
 
 def test_display_math_is_read_and_code_is_not():
     places = symbols(FIXTURE)
-    assert ("grammar.md", 26) in places["\\mathcal{O}"] and ("grammar.md", 26) in places["Q"]
+    assert ("grammar.md", 25) in places["\\mathcal{O}"] and ("grammar.md", 25) in places["Q"]
     assert "o" not in places and "not" not in places
 
 
@@ -84,7 +84,7 @@ def test_defining_phrases_are_extracted():
     assert found["B"] == [("definitions.md", 4, "the batch size")]
     assert found["\\theta"] == [("definitions.md", 4, "the parameters")]
     assert found["n_h"] == [("definitions.md", 4, "the number of heads")]
-    assert found["W"] == [("definitions.md", 10, "a weight matrix")]
+    assert found["W"] == [("definitions.md", 8, "a weight matrix")]
     assert "d" not in found and "\\mathcal{L}" not in found
 
 
