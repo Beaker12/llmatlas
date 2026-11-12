@@ -3,6 +3,9 @@
 Check name `notation`, one test per chapter. Failures, all in the chapter's math regions:
 - a banned pattern from BANNED (derived from the "Replaces" column of the plan's global notation table, each
   scoped to the chapters and meaning its row names);
+- a banned phrase from BANNED_PHRASES: a use of a global symbol's spelling with another meaning that only the
+  prose around the math identifies ("capacity factor $c$"), matched against each line of the page;
+- "O(" in prose outside code and math (asymptotic order is \\mathcal{O} everywhere);
 - a symbol tools/list_symbols.py reports that is in neither tests/notation_global.txt nor the chapter's
   notation-local.md;
 - a symbol with two different defining phrases ("where $x$ is ...", "$x$ denotes ...") in the chapter.
@@ -16,19 +19,29 @@ from collections import defaultdict
 from difflib import SequenceMatcher
 from pathlib import Path
 
+import subprocess
+
 import pytest
 
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check
-from tools.list_symbols import LOCAL_LIST, definitions, normalise, pages, symbols
+from tests._pages import blank_code, blank_inline_code, blank_math
+from tools.list_symbols import LOCAL_LIST, definitions, is_transpose, normalise, pages, symbols
 from tools.unescape_math import math_regions
 
 GLOBAL = ROOT / "tests" / "notation_global.txt"
 EXCEPTIONS = ROOT / "tests" / "notation_exceptions.txt"
 ALL = frozenset(range(0, 7))  # every chapter, and a directory without a chapter number (the sample chapter)
 
-# (regex over the text of one math region, the global row it comes from, the chapters it applies to).
+
+
+def _transpose(region, match):
+    return is_transpose(region, match.start())
+
+
+# (regex over the text of one math region, the global row it comes from, the chapters it applies to[, a filter
+# (region, match) -> bool that keeps only the matches that are the banned use]).
 # Rows marked "(proposed)" are additions from the Task 1 step 9 inventory, to be folded into the plan's table.
-BANNED: list[tuple[str, str, frozenset]] = [
+BANNED: list[tuple] = [
     (r"d_\{?(?:\\(?:text|mathrm)\{)?model", "Model (residual) width: d_model in ch. 6", frozenset({6})),
     (r"\\sqrt\{N\}", "Layers: N for residual layers at CH6:139", frozenset({6})),
     (r"\\text\{head\}_\{?h\b", "Attention heads: h as head count in ch. 1-2", frozenset({1, 2})),
@@ -88,10 +101,12 @@ BANNED: list[tuple[str, str, frozenset]] = [
     (r"(?<![\\\w])r(?![\w])", "Index letters: r as a worker rank at CH5:534", frozenset({5})),
     (r"\|D\|", "YaRN: the paper's |D| in the attention scale", frozenset({6})),
     # (proposed) rows from the Task 1 step 9 inventory
-    (r"\^\{?T\b", "(proposed) Transpose: ^\\top, never ^T", ALL),
+    (r"\^\s*\{?\s*T\b", "(proposed) Transpose: ^\\top, never ^T", ALL, _transpose),
+    (r"W_\{?i\}?\^\{?[QKV]\b", "(proposed) Attention projections: W_i^Q at CH1:839 is W_Q^{(i)}", frozenset({1})),
+    (r"(?<![\\\w{])W(?![\w])", "(proposed) World size: W at CH5:532-535 is n_{ranks}", frozenset({5})),
     (r"(?<![\\\w])P\s*[\(\[]|P\\left", "(proposed) Probability of an event: \\Pr, not P, in ch. 4", frozenset({4})),
-    (r"(?<![\\\w{])X\s*(?:>|\\sim)|[HI]\(X|X;\s*Y", "(proposed) Random variables: \\mathrm{X}, \\mathrm{Y}",
-     frozenset({2, 4})),
+    (r"(?<![\\\w{])X\s*(?:>|\\sim)|[HI]\(X|X;\s*Y", "(proposed) Random variables: \\mathrm{X}, \\mathrm{Y} in ch. 2; "
+     "\\Pr[\\text{Pareto}(9) > 1 - \\hat{p}] in ch. 4", frozenset({2, 4})),
     (r"(?<![\\\w])h_\{?(?:l|L|1)(?:\s*[+-]\s*1)?\}?(?![\w])|\\theta_1",
      "(proposed) Hidden state and parameters of layer l are h^{(l)}, theta^{(l)} in ch. 2", frozenset({2})),
     (r"p\s*-\s*y|-y/p", "(proposed) Kronecker delta: the one-hot target y at CH2:58", frozenset({2})),
@@ -106,6 +121,42 @@ BANNED: list[tuple[str, str, frozenset]] = [
      frozenset({4})),
     (r"\\alpha\\,\s*E", "(proposed) Auxiliary-loss weight: alpha at CH6:352", frozenset({6})),
 ]
+
+
+# (chapter, regex over one line of the page, the global row it comes from, what to write instead).
+# Each entry matches its chapter's text at commit 4f4ee01 (test_every_banned_phrase_matched_the_chapter_at_4f4ee01)
+# and must match nothing once the chapter is fixed.
+BANNED_PHRASES: list[tuple[int, str, str, str]] = [
+    (1, r"where \$V\$ is the vocabulary size", "Vocabulary: V as a size at CH1:277", "$|\\mathcal{V}|$"),
+    (2, r"distributions \$P\$ and \$Q\$|from \$P\$ using code optimized for \$Q\$",
+     "Data and model distributions: P, Q at CH2:104", "$p$ and $q$"),
+    (2, r"momentum parameter \$\\beta\$", "Momentum coefficient: beta at CH2:183", "$\\beta_{\\text{mom}}$"),
+    (2, r"where \$\\tau\$ is the clipping threshold", "Gradient-clipping threshold: tau at CH2:225",
+     "$g_{\\max}$"),
+    (2, r"\(g_i - \\frac\{1\}\{d\}\\sum_j g_j", "Upstream gradient: g_i, g_j at CH2:325", "$\\tilde{g}_i$, $\\tilde{g}_j$"),
+    (2, r"and loss \$L\$", "Loss: L at CH2:398", "$\\mathcal{L}$"),
+    (2, r"and \$V d\$ is the embedding table", "Vocabulary: V as a size at CH2:450", "$|\\mathcal{V}| d$"),
+    (2, r"and \$h\$ the number of heads", "Attention heads: h at CH2:451", "$n_h$"),
+    (2, r"where \$s\$ is the scale factor", "Loss-scaling factor: s at CH2:513", "$\\zeta$"),
+    (4, r"\$C\$ the total reference count", "(proposed) Reference total: C at CH4:466", "$T_{\\text{ref}}$"),
+    (4, r"With \$k\$ independent hash functions", "(proposed) MinHash: k at CH4:613", "$n_{\\text{hash}}$"),
+    (4, r"Split the \$k\$ positions", "(proposed) MinHash: k at CH4:615", "$n_{\\text{hash}}$"),
+    (4, r"\$k\$-means", "Index letters: k in k-means at CH4:760", "k-means, outside math"),
+    (5, r"with \$W\$ processes|every \$W\$-th shard|depends on \$W\$|independent of \$W\$",
+     "(proposed) World size: W at CH5:532-535", "$n_{\\text{ranks}}$"),
+    (6, r"with \$N\$ the number of residual layers", "Layers: N at CH6:139", "$2L$, the number of residual layers"),
+    (6, r"only to the previous \$W\$ tokens", "Sliding-window span: W at CH6:246", "$n_{\\text{win}}$"),
+    (6, r"receptive field by \$W\$", "Sliding-window span: W at CH6:246", "$n_{\\text{win}}$"),
+    (6, r"key at position \$n\$", "Positions: n as key position at CH6:261", "$m'$"),
+    (6, r"sequences up to \$L\$", "Trained context length: L at CH6:265", "$n_{\\text{train}}$"),
+    (6, r"divides the lowest by exactly \$s\$", "Context scale factor: s at CH6:275", "$s_{\\text{ctx}}$"),
+    (6, r"context length \$s\$", "Sequence or context length: s at CH6:502", "$n$"),
+    (6, r"chooses \$k\$ of them|grows with \$k\$", "Experts active per token: k at CH6:320", "$n_{\\text{act}}$"),
+    (6, r"keeps the top \$k\$", "Experts active per token: k at CH6:322", "$n_{\\text{act}}$"),
+    (6, r"top-\$k\$", "Experts active per token: top-k at CH6:362", "top-$n_{\\text{act}}$"),
+    (6, r"capacity factor \$c\$", "Capacity factor: c at CH6:354", "$\\phi$"),
+]
+PROSE_ORDER = re.compile(r"\bO\(")
 
 
 def chapter_number(chapter_dir) -> int:
@@ -149,16 +200,43 @@ def local_rows(chapter_dir) -> list[tuple[str, str]]:
 
 def banned_failures(chapter_dir, number=None):
     number = chapter_number(chapter_dir) if number is None else number
-    active = [(re.compile(p), row) for p, row, chapters in BANNED if number in chapters]
+    active = [(re.compile(entry[0]), entry[1], entry[3] if len(entry) > 3 else None)
+              for entry in BANNED if number in entry[2]]
     failures = []
     for page in pages(chapter_dir):
         text = page.read_text(encoding="utf-8")
         for start, end in math_regions(text):
             region = text[start:end]
-            for pattern, row in active:
+            for pattern, row, keep in active:
                 for m in pattern.finditer(region):
+                    if keep and not keep(region, m):
+                        continue
                     line = text.count("\n", 0, start) + 1 + region.count("\n", 0, m.start())
                     failures.append(f"{page.name}:L{line}: banned {m.group(0)!r} ({row})")
+    return failures
+
+
+def phrase_failures(chapter_dir, number=None):
+    number = chapter_number(chapter_dir) if number is None else number
+    active = [(re.compile(p), row, instead) for chapter, p, row, instead in BANNED_PHRASES if chapter == number]
+    failures = []
+    for page in pages(chapter_dir):
+        for line_number, line in enumerate(page.read_text(encoding="utf-8").splitlines(), start=1):
+            for pattern, row, instead in active:
+                for m in pattern.finditer(line):
+                    failures.append(f"{page.name}:L{line_number}: banned phrase {m.group(0)!r} ({row}); "
+                                    f"write {instead}")
+    return failures
+
+
+def prose_failures(chapter_dir):
+    """'O(' in prose, outside code, inline code and math."""
+    failures = []
+    for page in pages(chapter_dir):
+        text = blank_inline_code(blank_math(blank_code(page.read_text(encoding="utf-8"))))
+        for m in PROSE_ORDER.finditer(text):
+            failures.append(f"{page.name}:L{text.count(chr(10), 0, m.start()) + 1}: 'O(' in prose "
+                            f"(Asymptotic order: write $\\mathcal{{O}}(\\cdot)$)")
     return failures
 
 
@@ -181,8 +259,9 @@ def _phrase(text):
 
 
 def same_phrase(a, b):
+    """Whole normalised phrases are compared: identical, or near-identical (a typo or a plural), never a prefix."""
     a, b = _phrase(a), _phrase(b)
-    return a == b or a.startswith(b) or b.startswith(a) or SequenceMatcher(None, a, b).ratio() >= 0.85
+    return a == b or SequenceMatcher(None, a, b).ratio() >= 0.9
 
 
 def definition_failures(chapter_dir):
@@ -197,8 +276,8 @@ def definition_failures(chapter_dir):
 
 
 def notation_failures(chapter_dir, number=None, global_path=GLOBAL):
-    return (banned_failures(chapter_dir, number) + membership_failures(chapter_dir, global_path)
-            + definition_failures(chapter_dir))
+    return (banned_failures(chapter_dir, number) + phrase_failures(chapter_dir, number) + prose_failures(chapter_dir)
+            + membership_failures(chapter_dir, global_path) + definition_failures(chapter_dir))
 
 
 @pytest.mark.parametrize("chapter_dir", CHAPTER_DIRS, ids=CHAPTER_IDS)
@@ -250,6 +329,26 @@ def test_every_table_symbol_is_in_normal_form():
     assert not bad, "\n".join(bad)
 
 
+def _text_at_4f4ee01(number):
+    directory = next(d for d in CHAPTER_DIRS if chapter_number(d) == number)
+    try:
+        out = subprocess.run(["git", "show", f"4f4ee01:chapters/{directory.name}/index.md"], cwd=ROOT,
+                             capture_output=True, text=True)
+    except OSError:
+        return None
+    return out.stdout if out.returncode == 0 else None
+
+
+@pytest.mark.parametrize("entry", BANNED_PHRASES, ids=lambda e: f"ch{e[0]}:{e[1][:30]}")
+def test_every_banned_phrase_matched_the_chapter_at_4f4ee01(entry):
+    """A phrase pattern that matches nothing at 4f4ee01 would guard nothing; each must have matched then."""
+    number, pattern, row, _instead = entry
+    text = _text_at_4f4ee01(number)
+    if text is None:
+        pytest.skip("git or commit 4f4ee01 not available")
+    assert any(re.search(pattern, line) for line in text.splitlines()), f"{pattern!r} ({row}) matches nothing"
+
+
 def test_every_chapter_has_a_local_list():
     assert all((d / LOCAL_LIST).exists() for d in CHAPTER_DIRS)
 
@@ -265,7 +364,7 @@ def chapter_with(tmp_path, page, local="| Symbol | Meaning | First used | Rename
 
 def test_a_clean_chapter_passes(tmp_path):
     chapter = chapter_with(tmp_path, "Width $d$ and $d_k$, where $d_k$ is the per-head width.\n\n"
-                                     "Again, where $d_k$ is the per-head width of a head.\n",
+                                     "Again, where $d_k$ is the per-head widths.\n",
                            local="| Symbol | Meaning | First used | Rename |\n|---|---|---|---|\n"
                                  "| $J$ | Jaccard similarity | index.md:L1 |  |\n")
     assert notation_failures(chapter, number=6) == []
@@ -275,6 +374,34 @@ def test_a_banned_pattern_is_reported_only_in_its_chapters(tmp_path):
     chapter = chapter_with(tmp_path, "The width $d_{model}$.\n")
     assert banned_failures(chapter, 6) == ["index.md:L1: banned 'd_{model' (Model (residual) width: d_model in ch. 6)"]
     assert banned_failures(chapter, 2) == []
+
+
+@pytest.mark.parametrize("math,banned", [
+    ("\\sum_{i=1}^{T} x_i", []), ("\\prod_{i=1}^T x_i", []), ("\\sum_{i=1}^{T} x_i^T", ["^T"]),
+    ("QK^T", ["^T"]), ("\\mathbf{1}^T", ["^T"]), ("(AB)^T", ["^T"]), ("QK^\\top", [])])
+def test_the_transpose_ban_spares_upper_limits(tmp_path, math, banned):
+    chapter = chapter_with(tmp_path, f"Math ${math}$ here.\n")
+    found = [f.split("banned ")[1].split(" (")[0].strip("'") for f in banned_failures(chapter, 1)
+             if "Transpose" in f]
+    assert found == banned
+
+
+def test_a_banned_phrase_is_reported_only_in_its_chapter(tmp_path):
+    chapter = chapter_with(tmp_path, "Intro.\n\nEach buffer at capacity factor $c$ drops tokens.\n")
+    assert phrase_failures(chapter, 6) == ["index.md:L3: banned phrase 'capacity factor $c$' (Capacity factor: c at "
+                                           "CH6:354); write $\\phi$"]
+    assert phrase_failures(chapter, 4) == []
+
+
+def test_order_notation_in_prose_is_reported(tmp_path):
+    chapter = chapter_with(tmp_path, "1. **O(1) seeking.** Fine: $\\mathcal{O}(1)$, `O(n)` and\n\n"
+                                     "```python\nO(1)\n```\n")
+    assert prose_failures(chapter) == ["index.md:L1: 'O(' in prose (Asymptotic order: write $\\mathcal{O}(\\cdot)$)"]
+
+
+def test_a_prefix_is_not_the_same_phrase():
+    assert not same_phrase("the number", "the number of keys")
+    assert same_phrase("the per-head width", "per-head widths")
 
 
 def test_an_undeclared_symbol_is_reported(tmp_path):
