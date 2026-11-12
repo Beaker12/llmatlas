@@ -15,8 +15,9 @@ Symbol grammar
     expression such as i-1, 2i+1 or m') is dropped, unless it is written as text (\\epsilon_{\\text{ls}} is
     \\epsilon_{ls}, \\epsilon_{ls} is \\epsilon). Superscripts and primes are not part of the symbol;
     the symbols inside a superscript are listed on their own, except a label in LABELS (W^{UK} is W) and a
-    transpose (T or \\top after a symbol, a bracket or \\mathbf{1}); the T over \\sum or \\prod is a limit
-    and is listed. A run of three or more letters that is not an operator word is one name (pos). A subscript holding a relation or range
+    transpose (T or \\top after a symbol, a bracket or \\mathbf{1}); the T over a big operator (\\sum, \\prod,
+    \\bigoplus, \\lim, ..., with or without \\limits, scripts in either order) is a limit and is listed. A power
+    such as \\gamma^T cannot be told from a transpose and is read as one. A run of three or more letters that is not an operator word is one name (pos). A subscript holding a relation or range
     (x_{<i}, \\mathbb{E}_{x \\sim p}, w_{1:N}) is a condition: not part of the symbol, its symbols listed. Operator and function names (OPERATOR_NAMES,
     \\operatorname{...}, \\text{...}, multi-letter \\mathrm{...} and the bare words in OPERATOR_WORDS) are
     not symbols; the symbols in their subscripts and arguments are.
@@ -76,13 +77,14 @@ GREEK = {
 }
 INDEX_LETTERS = set("ijltms")
 INDEX = re.compile(r"[ijltms]{1,2}|(?=.*[ijltms])[ijltms0-9+\-',]+")
-# Superscript labels that are part of a symbol's name (W^{UK}, W^{DKV}, d_h^{R}): the labels that occur in the
-# chapters today. Their content is not listed; every other superscript is scanned for symbols.
-LABELS = {"UK", "UV", "DKV", "R"}
+# Superscript labels that are part of a symbol's name, as (base, label) pairs: the ones chapter 6 uses today
+# (W^{UK}, W^{UV}, W^{DKV}, d_h^{R}). x^{R} is not one, so its R is listed. Their content is not listed; every other superscript is scanned for symbols.
+LABELS = {("W", "UK"), ("W", "UV"), ("W", "DKV"), ("d_h", "R")}
 # A superscript T or \top on a symbol, a bracket or \mathbf{1} is a transpose, not the symbol T; on a big operator
 # (\sum, \prod, \bigcup, \bigcap, \lim, ...) it is an upper limit and is scanned.
 TRANSPOSE = re.compile(r"\s*(?:T|\\top)\s*")
-LIMIT_OPERATORS = re.compile(r"\\(?:sum|prod|bigcup|bigcap|coprod|lim|limsup|liminf|max|min|sup|inf|int)\s*$")
+LIMIT_OPERATORS = re.compile(r"\\(?:sum|prod|coprod|int|bigcup|bigcap|bigoplus|bigotimes|bigvee|bigwedge|lim|limsup|"
+                             r"liminf|max|min|sup|inf)\s*$")
 # A run of three or more Latin letters that is not an operator word is one name (pos), not a product of symbols.
 MIN_NAME_RUN = 3
 # A subscript holding a relation or range is a condition (x_{<i}, \mathbb{E}_{x \sim p}, w_{1:N}): it is
@@ -214,7 +216,9 @@ class _Parser:
             elif j < len(self.s) and self.s[j] == "^":
                 a, b, i = self._arg(j + 1)
                 label = re.sub(r"\\top|\s", "", self.s[a:b])
-                if not (TRANSPOSE.fullmatch(self.s[a:b]) or (base is not None and label in LABELS)):
+                named_base = base if not subscript else base + (f"_{subscript}" if len(subscript) == 1
+                                                                 else f"_{{{subscript}}}") if base else None
+                if not (TRANSPOSE.fullmatch(self.s[a:b]) or (named_base, label) in LABELS):
                     self.parse(a, b)
             elif j < len(self.s) and self.s[j] == "_" and subscript is None:
                 a, b, i = self._arg(j + 1)
@@ -233,23 +237,36 @@ class _Parser:
 
 
 def _script_head(text: str, caret: int) -> str:
-    """The text before the script chain that the superscript at `caret` belongs to (a subscript is skipped)."""
-    before = text[:caret].rstrip()
-    if before.endswith("}"):
-        depth, k = 0, len(before) - 1
-        while k >= 0:
-            depth += before[k] == "}"
-            depth -= before[k] == "{"
-            if depth == 0:
-                break
-            k -= 1
-        group_start = k
-    else:
-        group_start = len(before) - 1
-        if before[group_start - 1:group_start] == "\\":
-            group_start -= 1
-    rest = before[:group_start].rstrip()
-    return rest[:-1] if rest.endswith("_") else before
+    """The text before the script chain that the superscript at `caret` belongs to.
+
+    Scripts already in the chain (either order) and \\limits or \\nolimits are skipped, so the result ends
+    with the chain's base: \\sum in \\sum\\limits_{i=1}^{T}, x in x_i^T.
+    """
+    before = text[:caret]
+    while True:
+        before = before.rstrip()
+        m = re.search(r"\\(?:no)?limits$", before)
+        if m:
+            before = before[:m.start()]
+            continue
+        if before.endswith("}"):
+            depth, k = 0, len(before) - 1
+            while k >= 0:
+                depth += before[k] == "}"
+                depth -= before[k] == "{"
+                if depth == 0:
+                    break
+                k -= 1
+            head = before[:k].rstrip()
+            if head.endswith(("_", "^")):
+                before = head[:-1]
+                continue
+            return before
+        m = re.search(r"[_^]\s*(?:\\[A-Za-z]+|[A-Za-z0-9])$", before)
+        if m:
+            before = before[:m.start()]
+            continue
+        return before
 
 
 def is_transpose(text: str, caret: int) -> bool:
@@ -329,18 +346,65 @@ _AFTER = {
 }
 
 
-def _definitions_in(text: str):
+_LHS = re.compile(r"^(.*?)(?:=|\\approx|\\equiv)", re.S)
+_APPLIED = re.compile(r"^\s*(?:\\[A-Za-z]+\s*)*(.+?)\s*\((.*)\)\s*$", re.S)
+_CONTINUES = re.compile(r"(?:,|\band)\s*$")
+_LISTED = re.compile(r"\s+(?:is\s+|are\s+)?((?:the|a|an)\s+(?:(?!\band\b)[^,;:.$(){}`\n]){1,100})")
+_SENTENCE_END = re.compile(r"[.!?]\s|\n\s*\n")
+
+
+def _defined_symbol(math: str):
+    """(symbol, is_relation) for the math of a defining phrase, or (None, ...) when it defines no one symbol.
+
+    A bare symbol defines itself; a relation defines its left-hand side if that is one symbol ($G = ...$); an
+    application defines its function ($c(w)$, $\\min h(A)$ define c and h).
+    """
+    lhs = _LHS.match(math)
+    if lhs:
+        side = normalise(lhs.group(1))
+        return (side[0] if len(side) == 1 else None), True
+    if _RELATION.search(math):
+        return None, True
+    found = normalise(math)
+    if len(found) == 1:
+        return found[0], False
+    applied = _APPLIED.match(math)
+    if applied:
+        head = normalise(applied.group(1))
+        if len(head) == 1:
+            return head[0], False
+    return None, False
+
+
+def definitions_in_text(text: str):
+    """(symbol, line, phrase) for every defining phrase in a page's text, in order."""
+    chain_end = None  # end of the last definition that a list ("..., $b$ the ..., and $c$ the ...") may continue
     for start, end in math_regions(text):
         if text.startswith("$$", start):
             continue
-        found = symbols_in_math(text[start:end])
-        if len(found) != 1 or _RELATION.search(text[start:end]):
-            continue  # only a bare symbol can be defined: "where $d_k$ is", not "with $T = 1$ the"
+        symbol, relation = _defined_symbol(text[start:end].strip("$"))
+        if symbol is None:
+            continue
+        line = text.count("\n", 0, start) + 1
         before = text[max(0, start - 20):start]
         kind = next((k for k, pattern in _BEFORE.items() if pattern.search(before)), None)
+        if relation and kind not in ("where", "let"):
+            continue  # "with $T = 1$ the weights ...": a condition, not a definition
         m = _AFTER[kind].match(text, end) or (_AFTER[None].match(text, end) if kind else None)
         if m and _noun_phrase(m.group(1).strip()):
-            yield found[0][0], text.count("\n", 0, start) + 1, m.group(1).strip()
+            chain_end = m.end() if kind == "where" else None
+            yield symbol, line, m.group(1).strip()
+            continue
+        if (chain_end is not None and not relation and not _SENTENCE_END.search(text, chain_end, start)
+                and _CONTINUES.search(text[chain_end:start])):
+            m = _LISTED.match(text, end)
+            if m and _noun_phrase(m.group(1).strip()):
+                chain_end = m.end()
+                yield symbol, line, m.group(1).strip()
+
+
+def _definitions_in(text: str):
+    yield from definitions_in_text(text)
 
 
 def definitions(chapter_dir) -> dict[str, list[tuple[str, int, str]]]:

@@ -3,7 +3,7 @@ import subprocess
 import sys
 
 from tests._files import ROOT
-from tools.list_symbols import definitions, is_transpose, normalise, symbols
+from tools.list_symbols import definitions, definitions_in_text, is_transpose, normalise, symbols
 
 FIXTURE = ROOT / "tests" / "fixtures" / "symbols"
 
@@ -50,7 +50,9 @@ def test_superscripts_and_primes_are_not_part_of_the_symbol():
 
 
 def test_a_whitelisted_superscript_label_is_not_scanned():
-    assert on_line("Capital superscript labels:") == {"W", "d_h", "V"}
+    # The whitelist is of (base, label) pairs: V^{UK} is not one, so U and K are listed.
+    assert on_line("Capital superscript labels:") == {"W", "d_h", "V", "U", "K"}
+    assert normalise("x^{R} + W^{UK} + d_h^{R}") == ["x", "R", "W", "d_h"]
 
 
 def test_any_other_capital_superscript_is_scanned():
@@ -67,8 +69,37 @@ def test_a_transpose_is_not_a_symbol_but_an_upper_limit_is():
 def test_is_transpose_tells_a_transpose_from_a_limit():
     for math, expected in [("\\sum_{i=1}^{T}", [False]), ("\\prod_{i=1}^T", [False]),
                            ("\\sum_{i=1}^{T} x_i^T", [False, True]), ("QK^T", [True]),
-                           ("\\mathbf{1}^T", [True]), ("(AB)^T", [True]), ("x^\\top", [True]), ("x^2", [False])]:
+                           ("\\mathbf{1}^T", [True]), ("(AB)^T", [True]), ("x^\\top", [True]), ("x^2", [False]),
+                           ("\\sum\\limits_{i=1}^{T}", [False]), ("\\bigoplus_{i=1}^{T}", [False]),
+                           ("\\sum^{T}_{i=1}", [False]), ("\\prod\\nolimits^T_{i=1}", [False]),
+                           ("\\bigcup_{j}^{T}", [False]), ("\\gamma^T", [True])]:
         assert [is_transpose(math, k) for k, ch in enumerate(math) if ch == "^"] == expected, math
+
+
+def test_an_upper_limit_keeps_its_symbol():
+    assert normalise("\\sum\\limits_{i=1}^{T} x_i") == ["i", "T", "x"]
+    assert normalise("\\bigoplus_{i=1}^{T} x_i") == ["i", "T", "x"]
+
+
+def test_a_relation_defines_its_left_hand_side():
+    text = ("Given $O$, let $G = \\frac{\\partial \\mathcal{L}}{\\partial O} V^\\top$ be the gradient with respect "
+            "to the weights $A$. The pass is $2N + 2 L n d_{attn}$, where $d_{attn} = n_h d_k$ is the attention width.\n")
+    assert [(s, p) for s, _, p in definitions_in_text(text)] == [
+        ("G", "the gradient with respect to the weights"), ("d_{attn}", "the attention width")]
+
+
+def test_each_symbol_in_a_list_of_definitions_takes_its_phrase():
+    text = ("For a smoothed model, $q(w) = 1$ where $c(w)$ is the reference count of $w$, $C$ the total reference "
+            "count and $|V|$ the vocabulary size. If $h$ is a hash function and $\\min h(A)$ denotes the smallest "
+            "hash value among $A$'s shingles, then it holds.\n")
+    assert [(s, p) for s, _, p in definitions_in_text(text)] == [
+        ("c", "the reference count of"), ("C", "the total reference count"), ("V", "the vocabulary size"), ("h", "the smallest hash value among")]
+
+
+def test_junk_phrases_stay_excluded():
+    text = ("With $T = 1$ the weights are used as given; $T > 1$ upsamples. Both are consumed by the same sampler, "
+            "the latter with $w_s$ a function of the step.\n")
+    assert list(definitions_in_text(text)) == []
 
 
 def test_a_word_is_one_name_not_a_product():
