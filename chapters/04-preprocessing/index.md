@@ -215,7 +215,7 @@ The classifier returns a distribution over languages. Pipelines keep a document 
 
 Multilingual corpora run the same classifier and route each document to a per-language pipeline, because the quality thresholds in Section 4 (mean word length, stop-word counts, terminal punctuation) are language-specific. ROOTS {cite}`laurenccon2022bigscience` applies per-language parameter tables produced with native-speaker review.
 
-(sec-ch4-n-gram-identifier-from-scratch)=
+(sec-ch4-n-gram-identifier)=
 
 ### 3.2 A character n-gram identifier from scratch
 
@@ -961,7 +961,7 @@ assert contaminated_fraction(short_leak, index) > 0  # the 6-word example is ind
 assert contaminated_fraction(innocent, index) == 0.0
 ```
 
-(sec-ch4-what-overlap-misses)=
+(sec-ch4-overlap-misses)=
 
 ### 7.2 What overlap does not catch
 
@@ -1034,7 +1034,7 @@ Every threshold in Section 4 is a function of language. The practical approach, 
 
 ## 9. Assembling the Pipeline
 
-(sec-ch4-order-of-operations)=
+(sec-ch4-operation-order)=
 
 ### 9.1 Order of operations
 
@@ -1166,7 +1166,7 @@ The notebook section {ref}`nb-prep-pipeline` assembles normalisation, language i
 
 ## Further Reading
 
-(sec-ch4-corpus-construction-papers)=
+(sec-ch4-further-reading-corpus-construction-papers)=
 
 ### Corpus construction papers
 
@@ -1178,7 +1178,7 @@ The notebook section {ref}`nb-prep-pipeline` assembles normalisation, language i
 - [DataComp-LM](https://arxiv.org/abs/2406.11794) {cite}`li2024datacomp` - a controlled testbed for comparing data curation strategies
 - [The Pile](https://arxiv.org/abs/2101.00027) {cite}`gao2020pile` - a curated multi-source corpus and the arguments for source diversity
 
-(sec-ch4-deduplication-memorization)=
+(sec-ch4-further-reading-deduplication-memorization)=
 
 ### Deduplication and memorisation
 
@@ -1188,7 +1188,7 @@ The notebook section {ref}`nb-prep-pipeline` assembles normalisation, language i
 - [Scaling Data-Constrained Language Models](https://arxiv.org/abs/2305.16264) {cite}`muennighoff2023scaling` - how many epochs are safe
 - [SemDeDup](https://arxiv.org/abs/2303.09540) {cite}`abbas2023semdedup` - embedding-based deduplication
 
-(sec-ch4-quality-filtering-effects)=
+(sec-ch4-further-reading-quality-filtering-effects)=
 
 ### Quality filtering and its effects
 
@@ -1199,7 +1199,7 @@ The notebook section {ref}`nb-prep-pipeline` assembles normalisation, language i
 - [A Pretrainer's Guide to Training Data](https://arxiv.org/abs/2305.13169) {cite}`longpre2023pretrainers` - a controlled study of age, quality, toxicity and domain filters
 - [Datasheets for Datasets](https://arxiv.org/abs/1803.09010) {cite}`gebru2021datasheets` - the documentation template
 
-(sec-ch4-tools)=
+(sec-ch4-further-reading-tools)=
 
 ### Tools
 

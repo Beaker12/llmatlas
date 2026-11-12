@@ -123,6 +123,7 @@ def test_every_heading_has_a_section_label():
             prefix = "sec-tdd-" if page.name == "tokenization-deep-dive.md" else f"sec-ch{int(chapter_dir.name[:2])}-"
             text = page.read_text(encoding="utf-8")
             lines, prose = text.split("\n"), blank_code(text).split("\n")
+            in_reading_list = False
             for i, line in enumerate(prose):
                 heading = HEADING.match(line)
                 if not heading:
@@ -144,6 +145,11 @@ def test_every_heading_has_a_section_label():
                             pinned.add(label)
                     elif not label.startswith(prefix):
                         bad.append(f"{where} lacks the prefix {prefix!r}")
+                    if heading.group(1) == "Further Reading":
+                        in_reading_list = True
+                    elif in_reading_list != label.startswith(prefix + "further-reading-"):
+                        bad.append(f"{where}: labels below 'Further Reading' start {prefix}further-reading-, "
+                                   f"and no other label does")
     bad += [f"interface label {label!r} is not above {INTERFACE_LABELS[label][1]!r}"
             for label in sorted(set(INTERFACE_LABELS) - pinned)]
     assert not bad, "\n".join(bad)

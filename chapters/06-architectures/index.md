@@ -51,7 +51,7 @@ Read a modern model's `config.json` as a list of decisions. Each key is the answ
 
 The theme throughout is that architecture choices are constraints from somewhere else in the system. The head count is chosen for the cache, the expert count for the interconnect, the norm placement for the learning rate. A model table is therefore worth reading column by column.
 
-(sec-ch6-from-2017-to-2025-block)=
+(sec-ch6-block-2017-2025)=
 
 ## 1. From the 2017 Block to the 2025 Block
 
@@ -110,7 +110,7 @@ Beyond shapes, the models make different design choices, summarised here and dev
 The notebook section {ref}`nb-arch-configs` loads the configurations of the ungated models, rebuilds the parameter counts, and computes the derived columns (embedding share, feed-forward share, KV-cache bytes per token) used throughout this chapter.
 ```
 
-(sec-ch6-what-did-not-change)=
+(sec-ch6-unchanged-parts)=
 
 ### 1.2 What did not change
 
@@ -592,7 +592,7 @@ Second, attention scores and their application to the values add a term proporti
 
 Training a dense model of DeepSeek-V3's size would cost $6 \times 671\text{B} = 4.0$ TFLOPs per token, 18 times as much as the 0.22 TFLOPs that the sparse model needs.
 
-(sec-ch6-memory-at-inference)=
+(sec-ch6-inference-memory)=
 
 ### 8.4 Memory at inference
 
@@ -646,7 +646,7 @@ Decoder-only models dominate generation, but two other designs persist where the
 
 ## Further Reading
 
-(sec-ch6-models-technical-reports)=
+(sec-ch6-further-reading-models-technical-reports)=
 
 ### Models and technical reports
 
@@ -657,7 +657,7 @@ Decoder-only models dominate generation, but two other designs persist where the
 - [2 OLMo 2 Furious](https://arxiv.org/abs/2501.00656) {cite}`olmo2024olmo2` - reordered norms, QK-norm and the stability changes behind them, with open data and code
 - [DeepSeek-V2](https://arxiv.org/abs/2405.04434) {cite}`deepseek2024v2` and [DeepSeek-V3](https://arxiv.org/abs/2412.19437) {cite}`deepseek2024v3` - multi-head latent attention, fine-grained MoE, multi-token prediction and FP8 training
 
-(sec-ch6-attention-positions)=
+(sec-ch6-further-reading-attention-positions)=
 
 ### Attention and positions
 
@@ -666,7 +666,7 @@ Decoder-only models dominate generation, but two other designs persist where the
 - [Extending Context Window of Large Language Models via Positional Interpolation](https://arxiv.org/abs/2306.15595) {cite}`chen2023extending` and [YaRN](https://arxiv.org/abs/2309.00071) {cite}`peng2024yarn` - extending RoPE
 - [FlashAttention](https://arxiv.org/abs/2205.14135) {cite}`dao2022flashattention`, [FlashAttention-2](https://arxiv.org/abs/2307.08691) {cite}`dao2024flashattention2` and [PagedAttention](https://arxiv.org/abs/2309.06180) {cite}`kwon2023efficient` - the kernels and the cache manager
 
-(sec-ch6-normalization-activations)=
+(sec-ch6-further-reading-normalization-activations)=
 
 ### Normalization and activations
 
@@ -682,7 +682,7 @@ Decoder-only models dominate generation, but two other designs persist where the
 - [Mixture-of-Experts with Expert Choice Routing](https://arxiv.org/abs/2202.09368) {cite}`zhou2022mixture` - experts choose tokens
 - [DeepSeekMoE](https://arxiv.org/abs/2401.06066) {cite}`dai2024deepseekmoe` and [Auxiliary-Loss-Free Load Balancing](https://arxiv.org/abs/2408.15664) {cite}`wang2024auxiliary` - fine-grained, shared and bias-balanced experts
 
-(sec-ch6-other-designs)=
+(sec-ch6-further-reading-other-designs)=
 
 ### Other designs
 
@@ -690,7 +690,7 @@ Decoder-only models dominate generation, but two other designs persist where the
 - [Smarter, Better, Faster, Longer (ModernBERT)](https://arxiv.org/abs/2412.13663) {cite}`warner2024smarter`
 - [Mamba](https://arxiv.org/abs/2312.00752) {cite}`gu2023mamba`
 
-(sec-ch6-tools)=
+(sec-ch6-further-reading-tools)=
 
 ### Tools
 

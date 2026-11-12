@@ -113,7 +113,7 @@ Cross-entropy loss has favorable properties: it's convex in the output probabili
 
 ### 1.2 Information Theory Fundamentals
 
-(sec-ch2-entropy-and-language)=
+(sec-ch2-entropy-language)=
 
 #### Entropy and Language
 
@@ -501,7 +501,7 @@ $$N^* \propto C^a, \quad D^* \propto C^b$$
 
 where $a \approx 0.50$ and $b \approx 0.50$, suggesting equal scaling of parameters and data.
 
-(sec-ch2-implications-for-training)=
+(sec-ch2-training-implications)=
 
 #### Implications for Training
 
@@ -693,7 +693,7 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 
 ## Further Reading
 
-(sec-ch2-learning-path-beginners)=
+(sec-ch2-further-reading-learning-path-beginners)=
 
 ### Learning Path for Beginners
 
@@ -708,7 +708,7 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 4. [Mathematics for Machine Learning](https://mml-book.github.io/) - Free textbook covering linear algebra, calculus, and probability
 1. [MIT 18.065: Matrix Methods in Data Analysis](https://ocw.mit.edu/courses/18-065-matrix-methods-in-data-analysis-signal-processing-and-machine-learning-spring-2018/) - Gilbert Strang's course on mathematical foundations
 
-(sec-ch2-foundational-papers)=
+(sec-ch2-further-reading-foundational-papers)=
 
 ### Foundational Papers
 
@@ -716,7 +716,7 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 - [Scaling Laws for Neural Language Models](https://arxiv.org/abs/2001.08361) {cite}`kaplan2020scaling`: Mathematical analysis of scaling behavior ([arXiv:2001.08361](https://arxiv.org/abs/2001.08361))
 - [Training Compute-Optimal Large Language Models](https://arxiv.org/abs/2203.15556) {cite}`hoffmann2022training`: Chinchilla scaling laws ([arXiv:2203.15556](https://arxiv.org/abs/2203.15556))
 
-(sec-ch2-optimization-theory)=
+(sec-ch2-further-reading-optimization-theory)=
 
 ### Optimization Theory
 
@@ -732,7 +732,7 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 - [Cyclical Learning Rates](https://arxiv.org/abs/1506.01186) - Practical learning rate scheduling
 - [On the difficulty of training recurrent neural networks](https://proceedings.mlr.press/v28/pascanu13.html) {cite}`pascanu2013difficulty` - Gradient flow analysis
 
-(sec-ch2-numerical-methods-efficiency)=
+(sec-ch2-further-reading-numerical-methods-efficiency)=
 
 ### Numerical Methods and Efficiency
 
@@ -740,7 +740,7 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 - {cite}`you2019large`: Large batch training and scaling ([arXiv:1904.00962](https://arxiv.org/abs/1904.00962))
 - {cite}`shazeer2020glu`: Activation function analysis and GLU variants ([arXiv:2002.05202](https://arxiv.org/abs/2002.05202))
 
-(sec-ch2-mathematical-textbooks-references)=
+(sec-ch2-further-reading-mathematical-textbooks-references)=
 
 ### Mathematical Textbooks and References
 
@@ -748,7 +748,7 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 - {cite}`murphy2012machine`: Comprehensive machine learning mathematics textbook
 - {cite}`mackay2003information`: Information theory perspective on learning - [Online Book](http://www.inference.org.uk/mackay/itila/)
 
-(sec-ch2-scaling-laws-empirical-analysis)=
+(sec-ch2-further-reading-scaling-laws-empirical-analysis)=
 
 ### Scaling Laws and Empirical Analysis
 

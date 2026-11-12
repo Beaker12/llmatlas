@@ -56,7 +56,7 @@ These components work together to create models that can understand context, mai
 
 Large Language Models cannot directly process raw text—they require numerical representations. The process begins with **tokenization**, which breaks text into discrete units called tokens. This seemingly simple step profoundly affects model performance, computational efficiency, and language understanding capabilities.
 
-(sec-ch1-what-are-tokens)=
+(sec-ch1-token-definition)=
 
 #### What Are Tokens?
 
@@ -360,7 +360,7 @@ class TokenEmbedding(nn.Module):
         return self.embedding(x) * math.sqrt(self.d_model)
 ```
 
-(sec-ch1-embedding-sharing-and-tying)=
+(sec-ch1-embedding-sharing-tying)=
 
 #### Embedding Sharing and Tying
 
@@ -1215,7 +1215,7 @@ This progression established the foundation for today's LLMs and their remarkabl
 
 ## Further Reading
 
-(sec-ch1-learning-path-beginners)=
+(sec-ch1-further-reading-learning-path-beginners)=
 
 ### Learning Path for Beginners
 
@@ -1230,7 +1230,7 @@ This progression established the foundation for today's LLMs and their remarkabl
 4. [Understanding Large Language Models](https://magazine.sebastianraschka.com/p/understanding-large-language-models) by Sebastian Raschka
 5. [Linear Algebra for Machine Learning](https://www.deeplearningbook.org/contents/linear_algebra.html) - Deep Learning Book Chapter 2
 
-(sec-ch1-foundational-papers)=
+(sec-ch1-further-reading-foundational-papers)=
 
 ### Foundational Papers
 
@@ -1238,7 +1238,7 @@ This progression established the foundation for today's LLMs and their remarkabl
 - [Improving Language Understanding by Generative Pre-Training](https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf) {cite}`radford2018improving`: GPT and the decoder-only architecture
 - [BERT: Pre-training of Deep Bidirectional Transformers](https://arxiv.org/abs/1810.04805) {cite}`devlin2018bert`: BERT and bidirectional representations
 
-(sec-ch1-technical-implementation-resources)=
+(sec-ch1-further-reading-technical-implementation-resources)=
 
 ### Technical Implementation Resources
 
@@ -1254,7 +1254,7 @@ This progression established the foundation for today's LLMs and their remarkabl
 - [Tiktokenizer](https://tiktokenizer.vercel.app/) - Explore how GPT and other tokenizers split text
 - [Attention Patterns](https://github.com/jessevig/bertviz) - Visualize attention in BERT and GPT models
 
-(sec-ch1-advanced-topics-recent-research)=
+(sec-ch1-further-reading-advanced-topics-recent-research)=
 
 ### Advanced Topics and Recent Research
 
@@ -1275,7 +1275,7 @@ This progression established the foundation for today's LLMs and their remarkabl
 - [FlashAttention: Fast and Memory-Efficient Exact Attention](https://arxiv.org/abs/2205.14135) {cite}`dao2022flashattention` - Efficient attention computation
 - [LLaMA: Open and Efficient Foundation Language Models](https://arxiv.org/abs/2302.13971) {cite}`touvron2023llama` - Modern transformer design choices
 
-(sec-ch1-books-comprehensive-resources)=
+(sec-ch1-further-reading-books-comprehensive-resources)=
 
 ### Books and Comprehensive Resources
 
@@ -1283,7 +1283,7 @@ This progression established the foundation for today's LLMs and their remarkabl
 1. **[Deep Learning](https://www.deeplearningbook.org/)** by Ian Goodfellow, Yoshua Bengio, and Aaron Courville - Mathematical foundations
 1. **[Speech and Language Processing](https://web.stanford.edu/~jurafsky/slp3/)** by Dan Jurafsky and James H. Martin - NLP fundamentals
 
-(sec-ch1-practical-learning-projects)=
+(sec-ch1-further-reading-practical-learning-projects)=
 
 ### Practical Learning Projects
 
@@ -1292,14 +1292,14 @@ This progression established the foundation for today's LLMs and their remarkabl
 1. **Attention Visualization** - Create tools to visualize attention patterns in pre-trained models
 1. **Scaling Experiments** - Study how model performance changes with size using smaller versions
 
-(sec-ch1-documentation-apis)=
+(sec-ch1-further-reading-documentation-apis)=
 
 ### Documentation and APIs
 
 - [PyTorch Transformer Tutorial](https://docs.pytorch.org/tutorials/beginner/transformer_tutorial.html)
 - [TensorFlow Transformer Tutorial](https://www.tensorflow.org/text/tutorials/transformer)
 
-(sec-ch1-research-communities-updates)=
+(sec-ch1-further-reading-research-communities-updates)=
 
 ### Research Communities and Updates
 

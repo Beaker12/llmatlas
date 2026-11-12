@@ -78,7 +78,7 @@ Those numbers drive the design choices in the rest of the chapter: shards rather
 
 ## 2. Storage Formats and Layout
 
-(sec-ch5-formats-in-use)=
+(sec-ch5-formats-used)=
 
 ### 2.1 The formats in use
 
@@ -855,7 +855,7 @@ What no tool supplies is the discipline: that every version is produced by the b
 
 ## Further Reading
 
-(sec-ch5-formats-loaders-packing)=
+(sec-ch5-further-reading-formats-loaders-packing)=
 
 ### Formats, loaders and packing
 
@@ -867,7 +867,7 @@ What no tool supplies is the discipline: that every version is produced by the b
 - [DoReMi](https://arxiv.org/abs/2305.10429) {cite}`xie2023doremi` - learned mixture weights
 - [mT5](https://arxiv.org/abs/2010.11934) {cite}`xue2021mt5` - temperature sampling across languages
 
-(sec-ch5-documentation-auditing-governance)=
+(sec-ch5-further-reading-documentation-auditing-governance)=
 
 ### Documentation, auditing and governance
 
@@ -879,7 +879,7 @@ What no tool supplies is the discipline: that every version is produced by the b
 - [Poisoning Web-Scale Training Datasets is Practical](https://arxiv.org/abs/2302.10149) {cite}`carlini2024poisoning` - why distributed datasets need content hashes
 - [The Pile](https://arxiv.org/abs/2101.00027) {cite}`gao2020pile`, [Dolma](https://arxiv.org/abs/2402.00159) {cite}`soldaini2024dolma` and [FineWeb](https://arxiv.org/abs/2406.17557) {cite}`penedo2024fineweb` - corpora released with their documentation, statistics and code
 
-(sec-ch5-tools)=
+(sec-ch5-further-reading-tools)=
 
 ### Tools
 

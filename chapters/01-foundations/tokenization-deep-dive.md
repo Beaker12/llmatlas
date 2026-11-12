@@ -101,7 +101,7 @@ def build_vocab_coverage(corpus, coverage_threshold=0.95):
 
 ## T.2 Tokenization Impact on Model Behavior
 
-(sec-tdd-length-efficiency)=
+(sec-tdd-sequence-length-cost)=
 
 ### Length and Efficiency
 
@@ -238,7 +238,7 @@ Common vocabulary sizes and their trade-offs:
 - **Large (100K-150K)**: GPT-4's `cl100k_base` (~100k), Llama 3 (128k), Qwen (~150k); better compression of multilingual text and code
 - **Very large (250K+)**: Gemma (256k) and multilingual models; the embedding and output matrices become a noticeable share of a small model's parameters
 
-(sec-tdd-tokenization-efficiency)=
+(sec-tdd-efficiency-considerations)=
 
 ### Tokenization Efficiency
 
@@ -641,7 +641,7 @@ def create_multi_domain_tokenizer(domain_corpora, vocab_size=32000):
     return tokenizer, domain_performance
 ```
 
-(sec-tdd-practical-implementation)=
+(sec-tdd-implementation-walkthrough)=
 
 ## T.6 Practical Implementation
 
