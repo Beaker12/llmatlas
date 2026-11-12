@@ -2,7 +2,7 @@
 
 Only stream text and text/plain are compared (images and HTML are ignored). Text must match after the
 MASKS below are applied; numbers must agree to within one unit in the last printed digit, or the absolute
-tolerance in the cell's "tol" metadata; a cell with "compare": "shape" is compared by shape only. The
+tolerance in the cell's "tol" metadata (which applies to numbers with a decimal point; integers stay exact); a cell with "compare": "shape" is compared by shape only. The
 committed kernel metadata must name Python 3.12. One test per chapter, check name `outputs`.
 """
 import json
@@ -14,26 +14,28 @@ from pathlib import Path
 import pytest
 
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check
-from tests._notebooks import compare_cells, execute, kernel_failures, mask, notebooks, read
+from tests._notebooks import CELL_TIMEOUT, aborted, compare_cells, execute, kernel_failures, mask, notebooks, read
 
 # Text that legitimately differs between runs or machines; replaced before comparing.
 MASKS = [
-    (re.compile(r"(?<=version: )\S+"), "<version>"),                         # PyTorch version: 2.15.0+cpu
-    (re.compile(r"\b\d+\.\d+\.\d+\+[0-9A-Za-z.]+"), "<version>"),            # 2.15.0+cpu
-    (re.compile(r"(?<=: )\d+(?:\.\d+)? s(?=\])"), "<seconds>"),              # [configs: 1.3 s]
-    (re.compile(r"(?<=took )\d+(?:\.\d+)? ?(?:ms|s)\b"), "<seconds>"),       # took 3.2 s
-    (re.compile(r"(?:/tmp|/var/folders|/private/var)/[^\s'\")\]]+"), "<tmp>"),  # absolute temp paths
-    (re.compile(r"0x[0-9a-fA-F]{6,}"), "<address>"),                         # memory addresses
+    (re.compile(r"(?<!\w)(version: )\S+"), r"\1<version>"),                     # PyTorch version: 2.15.0+cpu
+    (re.compile(r"(?<![\w.])\d+\.\d+\.\d+\+[0-9A-Za-z.]+"), "<version>"),       # 2.15.0+cpu
+    (re.compile(r"(?<=: )\d+(?:\.\d+)? s(?=\])"), "<seconds>"),                  # [configs: 1.3 s]
+    (re.compile(r"(?<=took )\d+(?:\.\d+)? ?(?:ms|s)\b"), "<seconds>"),            # took 3.2 s
+    (re.compile(r"(?<![\w/.-])(?:/tmp|/var/folders|/private/var)/[^\s'\")\]]+"), "<tmp>"),  # absolute temp paths
+    (re.compile(r"(?<!\w)0x[0-9a-fA-F]{6,}"), "<address>"),                      # memory addresses
 ]
 
 
-def check_notebook(path, executed=None):
+def check_notebook(path, executed=None, timeout=CELL_TIMEOUT):
     """Failure strings for one notebook; `executed` is a pre-executed copy (else it is executed here)."""
     path = Path(path)
     committed = read(path)
     failures = [f"{path.name}: {m}" for m in kernel_failures(committed)]
     if executed is None:
-        executed = execute(path, offline=True)
+        executed = execute(path, offline=True, timeout=timeout)
+    if aborted(executed):
+        return failures + [f"{path.name}: execution aborted at {aborted(executed)}"]
     failures += [f"{path.name}: {m}" for m in compare_cells(committed, executed, MASKS)]
     return failures
 
@@ -142,3 +144,54 @@ def test_kernel_metadata_of_python_3_13_is_reported(tmp_path, executed):
 def test_an_error_in_a_cell_is_reported(tmp_path):
     failures = check_notebook(sample_copy(tmp_path, "mean = average(values)", "mean = undefined_name"))
     assert any("NameError" in f for f in failures)
+
+
+def test_the_version_mask_needs_the_word_version():
+    assert mask("conversion: 1.0", MASKS) != mask("conversion: 2.0", MASKS)
+    assert mask("conversion: 100.00%", MASKS) != mask("conversion: 37.00%", MASKS)
+    assert mask("PyTorch version: 2.14.1+cpu", MASKS) == mask("PyTorch version: 2.15.0+cpu", MASKS)
+    assert mask("torch 2.14.1+cpu", MASKS) == mask("torch 2.15.0+cu121", MASKS)
+
+
+def test_other_masks_do_not_hide_real_changes():
+    assert mask("root 83a9750489d9515d", MASKS) != mask("root bee3d1ab1ef47b34", MASKS)
+    assert mask("see data/tmp/a1", MASKS) != mask("see data/tmp/b2", MASKS)
+    assert mask("p0x1234 vs", MASKS) != mask("p0x9999 vs", MASKS)
+    assert mask("took 3 steps", MASKS) == "took 3 steps"
+
+
+def tiny_notebook(tmp_path, source):
+    import nbformat
+    nb = nbformat.v4.new_notebook()
+    nb.cells = [nbformat.v4.new_code_cell(source)]
+    nb.metadata["language_info"] = {"name": "python", "version": "3.12.1"}
+    path = tmp_path / "t.ipynb"
+    nbformat.write(nb, str(path))
+    return path
+
+
+def test_a_cell_that_times_out_is_reported_not_raised(tmp_path):
+    path = tiny_notebook(tmp_path, "import time\ntime.sleep(30)")
+    failures = check_notebook(path, timeout=1)
+    assert len(failures) == 1
+    assert failures[0].startswith("t.ipynb: execution aborted at cell 0: CellTimeoutError: ")
+
+
+def test_a_cell_that_kills_its_kernel_is_reported_not_raised(tmp_path):
+    path = tiny_notebook(tmp_path, "import os\nos._exit(1)")
+    failures = check_notebook(path, timeout=30)
+    assert len(failures) == 1
+    assert failures[0].startswith("t.ipynb: execution aborted at cell 0: DeadKernelError: ")
+
+
+def test_missing_committed_or_fresh_output_is_named(executed):
+    import copy
+    committed = read(SAMPLE)
+    fresh = copy.deepcopy(executed)
+    committed.cells[1].outputs = []
+    assert compare_cells(committed, fresh, MASKS) == [
+        "cell 1: no committed output (fresh output starts 'mean 2.5000')"]
+    committed = read(SAMPLE)
+    fresh.cells[3].outputs = []
+    assert compare_cells(committed, fresh, MASKS) == [
+        "cell 3: no fresh output (committed output starts 'summary: mean 2.5000 from 4 items')"]

@@ -6,15 +6,19 @@ Shape: same number of lines per cell, same text once numbers are replaced by a p
 import pytest
 
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, chapter_check
-from tests._notebooks import compare_cells, execute, notebooks, read
+from tests._notebooks import aborted, compare_cells, execute, notebooks, read
 from tests.test_notebook_outputs import MASKS
 
 
 def check_chapter_live(chapter_dir):
     failures = []
     for path in notebooks(chapter_dir):
+        executed = execute(path, offline=False)
+        if aborted(executed):
+            failures.append(f"{path.name}: execution aborted at {aborted(executed)}")
+            continue
         failures += [f"{path.name}: {m}"
-                     for m in compare_cells(read(path), execute(path, offline=False), MASKS, shape_only=True)]
+                     for m in compare_cells(read(path), executed, MASKS, shape_only=True)]
     return failures
 
 

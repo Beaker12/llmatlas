@@ -43,6 +43,12 @@ from tests._compare import compare_output, lines_match
     ("float32", "float64", False),
     ("float32", "float32", True),
     ("loss 0.5", "cost 0.5", False),
+    # dotted versions are exact tokens, also behind a letter
+    ("2.15.0", "2.15.0", True),
+    ("2.15.0", "2.14.0", False),
+    ("2.15.0", "2.15.1", False),
+    ("v2.15.0", "v2.15.1", False),
+    ("v2.15.0", "v2.15.0", True),
     # a differing count of numbers on a line
     ("1 2 3", "1 2", False),
     ("1 2", "1 2 3", False),

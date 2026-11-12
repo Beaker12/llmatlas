@@ -6,6 +6,8 @@ Rule for the numbers on a line (the text around them must be identical):
   comma-separated list such as `[1,2,3]` is three integers;
 - a number with a decimal point (`3.14`, `1.2e-3`) agrees to within one unit in its last printed digit
   (for scientific notation, in the last digit of the mantissa at the same exponent);
+- a token with two or more dots (`2.15.0`) is a version and must match exactly; a number never starts directly
+  after a `.` or a word character (so `v2.15.0` is plain text);
 - a percent sign is not part of the number.
 An absolute tolerance `tol` replaces the one-unit rule for numbers with a decimal point.
 """
@@ -13,7 +15,7 @@ import re
 from decimal import Decimal
 from itertools import zip_longest
 
-NUMBER = re.compile(r"(?<!\w)-?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?")
+NUMBER = re.compile(r"(?<![\w.])-?(?:\d+(?:\.\d+){2,}|(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?")
 
 
 def parse(text):
@@ -29,6 +31,10 @@ def one_unit(shown):
 
 def numbers_match(shown, actual, tol=None):
     """Whether two number tokens agree under the rule in the module docstring."""
+    if shown.count(".") >= 2:  # a dotted version such as 2.15.0 is one exact token
+        return shown == actual
+    if actual.count(".") >= 2:
+        return False
     if "." not in shown:
         return parse(shown) == parse(actual)
     allowed = one_unit(shown) if tol is None else Decimal(str(tol))

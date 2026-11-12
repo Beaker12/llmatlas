@@ -69,6 +69,12 @@ def compare_cells(committed, executed, masks=(), shape_only=False):
     index = {id(c): i for i, c in enumerate(committed.cells)}
     for a, b in zip(old, new):
         want, got = mask(cell_text(a), masks), mask(cell_text(b), masks)
+        if want.strip() and not got.strip():
+            failures.append(f"cell {index[id(a)]}: no fresh output (committed output starts {want.splitlines()[0]!r})")
+            continue
+        if got.strip() and not want.strip():
+            failures.append(f"cell {index[id(a)]}: no committed output (fresh output starts {got.splitlines()[0]!r})")
+            continue
         shape = shape_only or a.metadata.get("compare") == "shape"
         reason = compare_output(got, want, shape=shape, tol=None if shape else a.metadata.get("tol"))
         if reason:
@@ -113,7 +119,8 @@ def execute(path, offline=True, timeout=CELL_TIMEOUT):
     """Execute a temporary copy of the notebook and return the executed notebook.
 
     The copy sits in a fresh directory with the notebook's data/ directory beside it; that directory
-    is the kernel's working directory. Errors in cells are kept as outputs, not raised.
+    is the kernel's working directory. Errors in cells are kept as outputs. A timeout, a dead kernel or any
+    other exception from the client is not raised: it is recorded (see aborted()) and the cells run so far are kept.
     """
     path = Path(path)
     env = {"MPLBACKEND": "Agg", "PYTHONIOENCODING": "utf-8", "LLMATLAS_OFFLINE": "1" if offline else None}
@@ -122,6 +129,21 @@ def execute(path, offline=True, timeout=CELL_TIMEOUT):
         if (path.parent / "data").is_dir():
             shutil.copytree(path.parent / "data", Path(tmp) / "data")
         nb = read(Path(tmp) / path.name)
-        NotebookClient(nb, timeout=timeout, kernel_name="python3", allow_errors=True,
-                       resources={"metadata": {"path": tmp}}).execute()
+        current = {"cell": "?"}
+
+        def started(cell, cell_index):
+            current["cell"] = cell_index
+
+        client = NotebookClient(nb, timeout=timeout, kernel_name="python3", allow_errors=True,
+                                resources={"metadata": {"path": tmp}}, on_cell_start=started)
+        try:
+            client.execute()
+        except Exception as e:  # a timeout, a dead kernel or any other failure of the client
+            first = (str(e).strip().splitlines() or [""])[0]
+            nb.metadata["aborted"] = f"cell {current['cell']}: {type(e).__name__}: {first}"
         return nb
+
+
+def aborted(executed):
+    """'cell N: ErrorClass: message' if execution stopped early, else None."""
+    return executed.metadata.get("aborted")
