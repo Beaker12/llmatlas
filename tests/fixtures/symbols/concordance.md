@@ -12,3 +12,5 @@ $$
 
 - A list item with the gain $\gamma$ and $\gamma$ again.
 - An undeclared $\Upsilon$ here.
+
+The position $m$ has two rows in the global table.

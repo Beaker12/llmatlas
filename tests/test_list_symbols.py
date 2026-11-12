@@ -176,8 +176,8 @@ def run_concordance(*options):
 
 
 def test_the_concordance_is_grouped_in_the_order_of_the_tables():
-    # Global table order (tau, h, V, A, O, gamma), then the local list (chi), then the undeclared (Upsilon).
-    assert list(on_page()) == ["\\tau", "h", "V", "A", "O", "\\gamma", "\\chi", "\\Upsilon"]
+    # Global table order (m, tau, h, V, A, O, gamma), then the local list (chi), then the undeclared (Upsilon).
+    assert list(on_page()) == ["m", "\\tau", "h", "V", "A", "O", "\\gamma", "\\chi", "\\Upsilon"]
     undeclared = [s for s in concordance(FIXTURE) if s not in meanings(FIXTURE)]
     assert list(concordance(FIXTURE))[-len(undeclared):] == undeclared == sorted(undeclared)
 
@@ -220,3 +220,21 @@ def test_a_local_symbol_shows_its_local_meaning():
     assert "== \\chi — the fixture's shingle id ==" in out
     assert "== \\tau — temperature (sampling, source mixing, YaRN) ==" in out
     assert "concordance.md:L5: A hash $h$ maps a shingle $\\chi$ to a bucket." in out
+
+
+def test_a_symbol_with_two_rows_prints_one_header_per_meaning():
+    out = run_concordance("--symbol", "m").splitlines()
+    assert out[:2] == ["== m \u2014 position in a positional encoding or relative offset (m' a second position) ==",
+                       "== m \u2014 Adam's first moment (m_t) =="]
+    assert "concordance.md:L16: The position $m$ has two rows in the global table." in out
+
+
+def test_the_tool_imports_no_test_module_and_runs_from_anywhere(tmp_path):
+    check = ("import sys; sys.path.insert(0, '.'); import tools.list_symbols; "
+             "print('pytest' in sys.modules, any(m == 'tests' or m.startswith('tests.') for m in sys.modules))")
+    out = subprocess.run([sys.executable, "-I", "-c", check], cwd=ROOT, capture_output=True, text=True, check=True)
+    assert out.stdout.split() == ["False", "False"]
+    for cwd in (ROOT, tmp_path):
+        out = subprocess.run([sys.executable, str(ROOT / "tools" / "list_symbols.py"), str(FIXTURE), "--concordance"],
+                             cwd=cwd, capture_output=True, text=True, check=True).stdout
+        assert "== A \u2014 attention weights ==" in out

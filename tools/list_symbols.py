@@ -7,7 +7,7 @@ Usage:
     python tools/list_symbols.py chapters/02-mathematics --concordance [--symbol 'd_k'] [--undeclared]
 
 --concordance prints, per symbol (in the order of tests/notation_global.txt, then the chapter's local list,
-then the undeclared ones), a header "== <symbol> — <meaning or UNDECLARED> ==" and one line
+then the undeclared ones), a header "== <symbol> — <meaning or UNDECLARED> ==" per table row and one line
 "<page>:L<line>: <unit>" per sentence, list item or display block that uses it. A person reads it against the
 tables to confirm each symbol's meaning in a finished chapter; tests/test_notation.py cannot.
 
@@ -46,9 +46,8 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from tools.notation_tables import GLOBAL, LOCAL_LIST, global_rows, local_rows, prose_sentences  # noqa: E402
 from tools.unescape_math import math_regions  # noqa: E402
-
-LOCAL_LIST = "notation-local.md"
 
 # Operator and function names: commands that are never symbols. Any other command that is not a Greek
 # letter, a wrapper or an accent is ignored as well (\frac, \cdot, \left, ...); this list documents the
@@ -461,12 +460,10 @@ def concordance_of_text(text: str, page: str = "") -> list[tuple[str, str, int, 
     """(symbol, page, line, unit key, unit) for every symbol occurrence in a page's math, in order.
 
     The unit is the sentence or list item holding the occurrence, from the splitter the phrase layer of
-    tests/test_notation.py uses (tests.test_notebook_prose.prose_sentences), math in place and white space
+    tests/test_notation.py uses (tools.notation_tables.prose_sentences), math in place and white space
     collapsed. An occurrence in display math has the display block as its unit, preceded by the sentence that
     introduces it when the line before the block ends with a colon.
     """
-    from tests.test_notebook_prose import prose_sentences  # the phrase layer's unit splitter
-
     sentences = list(prose_sentences(text))
     consumed: dict[tuple[int, str], int] = {}  # (sentence index, math) -> occurrences already assigned
     found = []
@@ -495,9 +492,7 @@ def concordance_of_text(text: str, page: str = "") -> list[tuple[str, str, int, 
 
 
 def _tables(chapter_dir, global_path=None):
-    """(global rows, local rows) as (symbol, meaning) pairs, read with tests/test_notation.py's readers."""
-    from tests.test_notation import GLOBAL, global_rows, local_rows
-
+    """(global rows, local rows) as (symbol, meaning) pairs."""
     return global_rows(global_path or GLOBAL), local_rows(chapter_dir)
 
 
@@ -521,27 +516,28 @@ def concordance(chapter_dir, global_path=None) -> dict[str, list[tuple[str, int,
     return {s: occurrences[s] for s in order if s in occurrences}
 
 
-def meanings(chapter_dir, global_path=None) -> dict[str, str]:
-    """{symbol: meaning}: the chapter's local list where it has the symbol, else the global table's row(s)."""
+def meanings(chapter_dir, global_path=None) -> dict[str, list[str]]:
+    """{symbol: [meaning, ...]}: the chapter's local rows where it has the symbol, else the global table's rows."""
     global_table, local_table = _tables(chapter_dir, global_path)
-    result: dict[str, str] = {}
+    result: dict[str, list[str]] = {}
     for sym, meaning in global_table:
-        result[sym] = f"{result[sym]} | {meaning}" if sym in result else meaning
-    local: dict[str, str] = {}
+        result.setdefault(sym, []).append(meaning)
+    local: dict[str, list[str]] = {}
     for sym, meaning in local_table:
-        local[sym] = f"{local[sym]} | {meaning}" if sym in local else meaning
+        local.setdefault(sym, []).append(meaning)
     result.update(local)
     return result
 
 
 def concordance_lines(chapter_dir, symbol: str | None = None, undeclared: bool = False) -> list[str]:
-    """The --concordance output: a header per symbol, then one line per unit."""
+    """The --concordance output: a header line per meaning of each symbol (one per table row), then one line
+    per unit."""
     known = meanings(chapter_dir)
     out = []
     for sym, places in concordance(chapter_dir).items():
         if (symbol is not None and sym != symbol) or (undeclared and sym in known):
             continue
-        out.append(f"== {sym} — {known.get(sym, 'UNDECLARED')} ==")
+        out += [f"== {sym} — {meaning} ==" for meaning in known.get(sym, ["UNDECLARED"])]
         out += [f"{page}:L{line}: {unit}" for page, line, unit in places]
     return out
 

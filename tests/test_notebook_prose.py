@@ -18,6 +18,9 @@ import pytest
 
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check, chapter_constants
 from tests._notebooks import cell_text, notebooks, read
+from tools.notation_tables import (  # noqa: F401  (the prose unit splitter, shared with the tools)
+    ABBREVIATION, CODE_DIRECTIVES, FENCE_LINE, LIST_ITEM, blank_code, prose_sentences, prose_units,
+    split_sentences)
 
 NUMBER_WORDS = ["two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
                 "twice", "half", "double", "hundred", "thousand", "million", "billion"]
@@ -160,11 +163,6 @@ def admonition_sentences(text):
 
 
 INLINE_CODE = r"``(?:[^`\n]|\n(?!\n))*?``|`[^`\n]*(?:\n[^`\n]*)?`"   # a span may wrap across one line break
-FENCE_LINE = re.compile(r"^[ \t]*(`{3,}|~{3,}|:{3,})[ \t]*(.*?)[ \t]*$")
-# MyST directives whose content is code or markup, not prose; every other directive keeps its text
-CODE_DIRECTIVES = {"code-cell", "code-block", "sourcecode", "code", "math", "literalinclude", "raw", "eval-rst",
-                   "mermaid", "graphviz"}
-LIST_ITEM = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+")
 NOT_A_RESULT = [re.compile(p, re.I) for p in (
     r"\bChapters?\s+\d+(?:\s*(?:,|and|&|-|\u2013)\s*\d+)*",
     r"\bSections?\s+\d+(?:\.\d+)*",
@@ -193,81 +191,7 @@ UNIT_WORDS = {"gram", "grams", "bit", "byte", "D", "d", "shot", "way", "hop", "p
 CITE = "\x00cite"                                      # stands in for a {cite} role while tokens are classified
 LEAD = "([{\"'\u201c\u2018*_"
 TRAIL = ")]}\"'\u201d\u2019.,;:!?*_"
-ABBREVIATION = re.compile(r"(?:\be\.g|\bi\.e|\betc|\bvs|\bcf|\bal|\bFig|\bEq|\bSec|\bapprox|\bNo|(?<![A-Za-z])[A-Z])\.$")
 
-
-def blank_code(text):
-    """The text with every fenced code block (any info string, none, or a code directive) blanked.
-
-    Line count is kept. The fence lines of prose directives ({admonition}, {note}, ...) are blanked but their
-    content stays; a ::: fence is always a prose directive.
-    """
-    out, stack = [], []   # stack of (marker char, length, is_code)
-    for line in text.split("\n"):
-        m = FENCE_LINE.match(line)
-        if m:
-            marker, info = m.groups()
-            char, length = marker[0], len(marker)
-            if stack and stack[-1][0] == char and length >= stack[-1][1] and not info:
-                stack.pop()
-                out.append("")
-                continue
-            if not (stack and stack[-1][2]):
-                directive = re.match(r"\{([\w:-]+)\}", info)
-                is_code = ((directive is None and char != ":")
-                           or (directive is not None and directive.group(1) in CODE_DIRECTIVES))
-                stack.append((char, length, is_code))
-                out.append("")
-                continue
-        out.append("" if stack and stack[-1][2] else line)
-    return "\n".join(out)
-
-
-def prose_units(text):
-    """(first line, text) for each unit: a list item (with its wrapped lines) or a paragraph.
-
-    A blank line, a list-item marker or a heading starts a new unit; a wrapped line continues the current one.
-    """
-    units, current = [], None
-    for n, line in enumerate(blank_code(text).split("\n"), start=1):
-        if not line.strip() or re.match(r"^[ \t]*:[\w-]+:|^[ \t]*%", line):
-            current = None
-        elif re.match(r"^[ ]{0,3}#{1,6}[ \t]", line):
-            units.append((n, line))
-            current = None
-        elif LIST_ITEM.match(line):
-            current = [n, LIST_ITEM.sub("", line)]
-            units.append(current)
-        elif current is None:
-            current = [n, line.strip()]
-            units.append(current)
-        else:
-            current[1] += "\n" + line.strip()
-    return [(n, t) for n, t in units]
-
-
-def split_sentences(unit):
-    """(offset, sentence) pairs: split after . ! ? and white space, but not after an abbreviation."""
-    cuts = [0]
-    for m in re.finditer(r"(?<=[.!?])\s+", unit):
-        if not ABBREVIATION.search(unit[: m.start()]):
-            cuts.append(m.end())
-    cuts.append(len(unit))
-    return [(a, unit[a:b]) for a, b in zip(cuts, cuts[1:])]
-
-
-def prose_sentences(text):
-    """(line, sentence) for every sentence outside code: admonition bodies, list items and paragraphs.
-
-    The detector is deliberately wider than the admonition directives: chapter pages link notebook labels in
-    the Hands-On list and in body paragraphs as well, and those sentences may state results too. Each list
-    item is its own unit; sentences end at . ! ? followed by white space.
-    """
-    for start, unit in prose_units(text):
-        for a, piece in split_sentences(unit):
-            sentence = piece.strip()
-            if sentence:
-                yield start + unit.count("\n", 0, a), sentence
 
 
 def core(chunk):
