@@ -1,6 +1,6 @@
 """Reading chapter pages for the page-level checks.
 
-pages(chapter_dir)       every *.md directly in the chapter directory, sorted
+pages(chapter_dir)       every *.md directly in the chapter directory except notation-local.md, sorted
 blank_code(text)         the text with the lines of code fences replaced by empty lines (line numbers kept)
 blank_math(text)         the text with display and inline math replaced by spaces (positions kept)
 blank_inline_code(text)  the text with inline code spans replaced by spaces (positions kept)
@@ -18,7 +18,8 @@ CLOSING = re.compile(r"^\s*(`{3,}|~{3,}|:{3,})\s*$")
 
 
 def pages(chapter_dir):
-    return sorted(Path(chapter_dir).glob("*.md"))
+    # notation-local.md is the chapter's symbol list for tests/test_notation.py, not a page of the book.
+    return sorted(p for p in Path(chapter_dir).glob("*.md") if p.name != "notation-local.md")
 
 
 def _blank(match):
