@@ -8,7 +8,6 @@ q	query vector (q_m at position m) | a distribution (generic pair p, q)	Both are
 U	left singular vectors (U \Sigma R^\top) | unique tokens of source s (U_s)	The SVD lives in chapter 2's primer; U_s always carries its source subscript and lives in chapters 3 and 5.
 e	epochs of source s (e_s) | Euler's number	Euler's number is universal; e_s always carries its source subscript.
 x	token (x_i at position i, x_{<i} the prefix) | input row vector of a layer (xW)	Both are universal; a token is indexed by position inside a probability, a layer input appears as a function argument or in xW.
-W	weight matrix (generic; a label in its subscript or superscript names it) | world size (number of data-parallel ranks)	W is the world size in distributed-training documentation; chapter 5, the only user, has no weight matrix in its math.
 b	RoPE base (b' a rescaled base) | number of LSH bands	Settled by the plan for chapter 4 (LSH bands b, rows r are the standard symbols); chapter 4 has no RoPE.
 r	router logit (r_i for expert i) | rows per LSH band	Settled by the plan for chapter 4; chapter 4 has no router.
 h	hidden state (h^{(l)}_i at layer l, position i) | MinHash hash function (h_i the i-th)	The MinHash literature writes h for the hash function; chapter 4 has no hidden state in its math, and the hash function always takes an argument.

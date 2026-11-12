@@ -13,3 +13,5 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $d_{rope}$ | per-head width of the decoupled rotary query and key in latent attention | index.md:L179 | $d_h^{R}$ at L179, L238, L539 |
 | $\omega_0$ | highest RoPE frequency | index.md:L261 | $\theta_0$ at L261, L275, L293 |
 | $\omega_{d_k/2-1}$ | lowest RoPE frequency | index.md:L261 | $\theta_{d/2-1}$ at L261, L293 |
+
+In the complex-form RoPE proof (C6-12a) the complex conjugate is a superscript star, $k^{*}$, which is not a symbol ($k^{*}$ lists as $k$); never an overline, because the bar accent already means a batch mean ($\bar{\rho}$).

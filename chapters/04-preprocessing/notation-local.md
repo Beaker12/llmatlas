@@ -16,10 +16,10 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $r$ | rows per LSH band | index.md:L615 |  |
 | $a$ | coefficients of hash function $h_i$, written $a_{i,1}$ and $a_{i,0}$ | index.md:L621 | $a_i$, $b_i$ at L621 |
 | $P$ | prime modulus of the hash family | index.md:L621 | $p$ at L621 |
-| $\nu$ | integer id of a shingle, the input of a hash function | index.md:L621 | $x$ at L621 |
+| $\chi$ | integer id of a shingle, the input of a hash function | index.md:L621 | $x$ at L621 |
 | $\alpha$ | additive-smoothing constant | index.md:L466 |  |
 | $T_{ref}$ | tokens in the reference corpus of the n-gram model | index.md:L466 | $C$ at L466 |
-| $\hat{p}$ | quality classifier's score of a document | index.md:L549 | $s$ at L549 |
+| $\hat{p}$ | quality classifier's score of a document | index.md:L549 | $s$ at L549; $P(X > 1 - s)$ becomes $\Pr[\text{Pareto}(9) > 1 - \hat{p}]$, with no named random variable |
 | $n$ | order of an n-gram | index.md:L378 |  |
 | $x_T$ | last token of a $T$-token text | index.md:L462 | $w_N$ at L462 |
 | $T_{idx}$ | tokens indexed by a suffix array | index.md:L722 | $N$ at L722 |

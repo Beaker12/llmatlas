@@ -8,7 +8,9 @@ chapter writes today and must change to the symbol in the first column. This fil
 | Symbol | Meaning | First used | Rename |
 |---|---|---|---|
 | $M$ | document mask ($M_{ij} = 1$ when position $i$ may attend to position $j$) | index.md:L385 |  |
-| $W$ | world size (number of data-parallel ranks) | index.md:L532 |  |
+| $n_{ranks}$ | world size (number of data-parallel ranks) | index.md:L532 | $W$ at L532, L534, L535 |
 | $\Pi$ | keyed bijection on example indices that fixes the within-epoch order | reserved: C5-08 |  |
 | $n_{ex}$ | number of examples in an epoch | reserved: C5-08 |  |
 | $n_{loader}$ | DataLoader worker processes per rank | reserved: C5-11 |  |
+
+The per-source count of documents drawn by step $t$ (C5-08) is the operator $\operatorname{drawn}_s(t)$, not a symbol.

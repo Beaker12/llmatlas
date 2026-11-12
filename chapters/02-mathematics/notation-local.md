@@ -29,3 +29,8 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\hat{g}$ | mini-batch gradient estimate | reserved: C2-12 |  |
 | $\sigma_g$ | standard deviation of a per-example gradient (mini-batch noise) | reserved: C2-12 |  |
 | $n_{rank}$ | rank kept by a low-rank approximation | reserved: C2-12 |  |
+| $z_{ff}$ | pre-activation of the feed-forward hidden layer | reserved: C2-12 |  |
+| $\mathrm{X}$ | a random variable | index.md:L118 | $X$ at L118 (and at L96, where $H(X)$ becomes $H(p)$) |
+| $\mathrm{Y}$ | a second random variable | index.md:L118 | $Y$ at L118 |
+
+The generic activation in the feed-forward gradients (C2-12) is the operator $\operatorname{act}(\cdot)$, not a symbol. Jacobians are written $\partial y / \partial x$; $J$ is chapter 4's Jaccard similarity.

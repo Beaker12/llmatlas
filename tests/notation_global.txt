@@ -56,7 +56,7 @@ W	weight matrix (generic; a label in its subscript or superscript names it)
 W_E	embedding matrix
 W_{out}	unembedding matrix
 E	number of experts
-\mathrm{i}	imaginary unit
+\mathrm{i}	imaginary unit (the complex conjugate is a superscript star, k^{*}, never an overline: the bar accent is a batch mean)
 H	entropy H(p) and cross-entropy H(p, q)
 U	left singular vectors (U \Sigma R^\top)
 U	unique tokens of source s (U_s)
@@ -123,6 +123,4 @@ z	logits
 I	identity matrix
 \mathbb{R}	the real numbers
 \pi	the circle constant
-\mathrm{X}	a random variable
-\mathrm{Y}	a second random variable
 n_{bytes}	number of bytes in a text (bits per byte)
