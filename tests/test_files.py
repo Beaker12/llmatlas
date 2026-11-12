@@ -1,7 +1,7 @@
 """The shared test helpers in tests/_files.py."""
 import pytest
 
-from tests._files import CHAPTER_DIRS, pending, report, tracked
+from tests._files import CHAPTER_DIRS, chapter_constants, pending, report, tracked
 
 
 def test_tracked_fails_when_nothing_matches():
@@ -43,3 +43,14 @@ def test_report_fails_strictly_when_a_pending_check_passes(tmp_path):
     (tmp_path / ".review-pending").write_text("fences\n", encoding="utf-8")
     with pytest.raises(pytest.fail.Exception, match="remove it"):
         report(tmp_path, "fences", [])
+
+
+EXPECTED_MIN_FIGURES = [15, 12, 10, 10, 11, 12]
+
+
+def test_chapter_constants_load_for_every_chapter():
+    for chapter_dir, minimum in zip(CHAPTER_DIRS, EXPECTED_MIN_FIGURES):
+        module = chapter_constants(chapter_dir)
+        assert module.MIN_FIGURES == minimum, chapter_dir.name
+        assert isinstance(module.SYNC_EXEMPT, dict)
+        assert isinstance(module.RESULT_CLAIMS, list)

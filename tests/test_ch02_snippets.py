@@ -12,6 +12,14 @@ import torch.nn.functional as F  # noqa: E402
 CH02 = Path(__file__).resolve().parents[1] / "chapters" / "02-mathematics" / "index.md"
 FENCE = re.compile(r"```python\n([\s\S]*?)```")
 
+SYNC_EXEMPT: dict[str, str] = {}  # name -> reason it may differ between the chapter and its notebook
+
+# (chapter regex, notebook-output regex, comparator); each regex has exactly one capture group.
+# Comparator: eq, gt, lt or approx:<rel>, applied as `chapter_value <op> notebook_value`.
+RESULT_CLAIMS: list[tuple[str, str, str]] = []
+
+MIN_FIGURES: int = 12
+
 
 def fence_containing(marker: str) -> str:
     for m in FENCE.finditer(CH02.read_text(encoding="utf-8")):

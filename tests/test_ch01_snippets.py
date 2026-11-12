@@ -12,6 +12,14 @@ FENCE = re.compile(r"```python\n([\s\S]*?)```")
 
 CH01_DIR = Path(__file__).resolve().parents[1] / "chapters" / "01-foundations"
 
+SYNC_EXEMPT: dict[str, str] = {}  # name -> reason it may differ between the chapter and its notebook
+
+# (chapter regex, notebook-output regex, comparator); each regex has exactly one capture group.
+# Comparator: eq, gt, lt or approx:<rel>, applied as `chapter_value <op> notebook_value`.
+RESULT_CLAIMS: list[tuple[str, str, str]] = []
+
+MIN_FIGURES: int = 15
+
 
 def ch01_fence(marker: str) -> str:
     for page in sorted(CH01_DIR.glob("*.md")):

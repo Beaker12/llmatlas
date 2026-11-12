@@ -14,6 +14,7 @@ Per-chapter checks
         def test_something(chapter_dir):
             chapter_check("something")(chapter_dir, my_failures(chapter_dir))
 """
+import importlib
 import subprocess
 from fnmatch import fnmatchcase
 from pathlib import Path
@@ -81,3 +82,12 @@ def chapter_check(name: str):
     def check(chapter_dir: Path, failures: list[str]) -> None:
         report(chapter_dir, name, failures)
     return check
+
+
+def chapter_constants(chapter_dir: Path):
+    """The per-chapter test module of `chapter_dir`, e.g. tests.test_ch03_snippets for 03-*.
+
+    Read SYNC_EXEMPT, RESULT_CLAIMS and MIN_FIGURES from the returned module.
+    """
+    number = Path(chapter_dir).name[:2]
+    return importlib.import_module(f"tests.test_ch{number}_snippets")
