@@ -1,0 +1,5 @@
+digraph schematic {
+  rankdir=LR;
+  node [shape=box, fontname="DejaVu Sans"];
+  input -> output;
+}
