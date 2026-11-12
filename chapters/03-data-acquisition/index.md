@@ -2,6 +2,8 @@
 
 Every token a language model is trained on was written by someone, stored somewhere, and copied into the training set by a decision that a person or a pipeline made. This chapter is about those decisions: where the text that trains a modern model comes from, how it is obtained at the scale of trillions of tokens, what may legally and ethically be used, and how the pieces are combined into a corpus. Chapter 4 picks up where this one stops, with the cleaning that turns raw acquisitions into training-ready text, and Chapter 5 with keeping the result versioned and reproducible.
 
+(sec-ch3-learning-objectives)=
+
 ## Learning Objectives
 
 By the end of this chapter, you will understand:
@@ -12,6 +14,8 @@ By the end of this chapter, you will understand:
 - The main curated sources (Wikipedia, books, scientific papers, source code, forums and dialogue) and what each contributes
 - The copyright, licensing and consent questions around training data, and how the major open corpora answer them
 - How to turn a token budget into a mixture of sources, and how to document what was collected
+
+(sec-ch3-hands-on-learning)=
 
 ## Hands-On Learning
 
@@ -24,6 +28,8 @@ The accompanying notebook, [Data Acquisition Demo](examples/data_acquisition_dem
 - Writing a provenance manifest with content hashes for everything fetched ({ref}`nb-acq-provenance`)
 
 Everything runs on a CPU in about a minute. The network fetches total a few megabytes; if a source is unreachable, or if `LLMATLAS_OFFLINE=1` is set, the notebook falls back to committed samples under `examples/data/` so that the results, and the assertions, are reproducible.
+
+(sec-ch3-chapter-overview)=
 
 ## Chapter Overview
 
@@ -43,7 +49,11 @@ Imagine being asked to assemble a library for someone who will read every book i
 
 Acquisition is where a model's knowledge, its languages, its biases and its legal exposure are all fixed. The cleaning in Chapter 4 can remove what should not have been collected; it cannot add what was never acquired.
 
+(sec-ch3-what-a-pretraining-corpus-is)=
+
 ## 1. What a Pretraining Corpus Is Made Of
+
+(sec-ch3-the-published-mixtures)=
 
 ### 1.1 The published mixtures
 
@@ -59,6 +69,8 @@ The training sets of the major models are reported, when they are reported at al
 
 Three things stand out. The web is the bulk of every corpus, because nothing else is large enough. Curated sources are small in tokens but upweighted: Wikipedia is 3% of GPT-3's training tokens while being a tiny fraction of the raw data, and LLaMA samples it for more than two epochs. And the totals have grown fifty-fold in four years, from GPT-3's 300B tokens to the 15T of FineWeb and the roughly 15T used by Llama 3, which is why the question of whether the supply of human-written text is finite {cite}`villalobos2024run` is now taken seriously.
 
+(sec-ch3-tokens-documents-and-bytes)=
+
 ### 1.2 Tokens, documents and bytes
 
 Corpus sizes are quoted in three units and the conversions are rough:
@@ -68,6 +80,8 @@ Corpus sizes are quoted in three units and the conversions are rough:
 - **Tokens** are what training cost and the scaling laws count. English prose runs about four characters per token with a GPT-style tokenizer, so one terabyte of UTF-8 text is roughly 250 billion tokens; code and non-Latin scripts tokenize less efficiently.
 
 The retention figures in Chapter 4 apply on top of this: of a snapshot's two billion pages, a cleaned English corpus keeps perhaps a tenth. Fifteen trillion tokens is therefore not one snapshot but ninety-six of them (FineWeb), each deduplicated on its own; FineWeb found that deduplicating across snapshots removed the good pages that recur in every crawl and kept the junk that appears once.
+
+(sec-ch3-epochs)=
 
 ### 1.3 How much is enough
 
@@ -80,11 +94,17 @@ Two results set the limits of stretching a fixed corpus:
 
 Both results bear directly on acquisition. If repeated tokens are nearly free, then a small, high-quality source is worth collecting even though it will be seen many times. If the stock is finite, then every source lost to opt-outs or licensing is a permanent reduction, and synthetic data (Section 7) stops being optional.
 
+(sec-ch3-the-open-web-common-crawl)=
+
 ## 2. The Open Web: Common Crawl
+
+(sec-ch3-what-common-crawl-is)=
 
 ### 2.1 What Common Crawl is
 
 Common Crawl is a non-profit foundation that has crawled the web since 2008, on a regular (roughly monthly to bi-monthly) schedule since 2013, and publishes every snapshot, free of charge, on Amazon S3 under the Open Data program. Each snapshot is a sample of the web, not a copy: a few billion pages selected by a crawl frontier that balances breadth across domains against depth within them, fetched over two to three weeks, with per-domain page budgets derived from a harmonic-centrality ranking of hosts so that no single site dominates. Common Crawl is the raw material for C4, RefinedWeb, FineWeb, Dolma's web portion, OSCAR, mC4 and CulturaX, and for the web portion of nearly every model whose training data has been described. A critical analysis of it as a training source {cite}`baack2024critical` is worth reading before building on it: the crawl over-represents English, under-represents the parts of the web behind login walls or heavy JavaScript, and, being a sample, is not the web.
+
+(sec-ch3-snapshots-segments-and-files)=
 
 ### 2.2 Snapshots, segments and files
 
@@ -151,9 +171,13 @@ print({h.get("WARC-Type") for h, _ in records})  # {'warcinfo', 'request', 'resp
 
 The `Range` request is the key technique: it fetches a few hundred kilobytes out of a gigabyte-sized file, which makes it possible to look at a snapshot without downloading it. Production pipelines stream whole files, and the same `warc_records` logic, written in a streaming form, is the inner loop of every WARC reader.
 
+(sec-ch3-the-index-and-targeted-retrieval)=
+
 ### 2.3 The index and targeted retrieval
 
 Common Crawl also publishes a URL index for each snapshot, queryable through the CDX API (`index.commoncrawl.org/<crawl-id>-index?url=…&output=json`), which returns the WARC filename, byte offset and length of every capture of a URL or URL prefix. Combined with a range request this retrieves a single page from a 90 TB snapshot in one round trip. It is how researchers study a particular site's history across snapshots, and how a corpus builder can pull every capture of a chosen list of domains without scanning the whole snapshot. The index server is shared and rate limited, so bulk use goes through the columnar index files (`cc-index-table`, in Parquet on S3) and a query engine rather than the HTTP API.
+
+(sec-ch3-corpora-derived-from-common-crawl)=
 
 ### 2.4 Corpora derived from Common Crawl
 
@@ -178,11 +202,17 @@ Two trends run through the table. Later corpora re-extract from WARC with a boil
 The notebook section {ref}`nb-acq-crawl` downloads the manifest of a current snapshot, range-fetches the first 256 KB of its first WARC file, parses the records, tabulates record types and declared payload types, and shows the HTTP response and HTML of one page, so that you can see exactly what a crawl contains before any cleaning.
 ```
 
+(sec-ch3-crawling-the-web-yourself)=
+
 ## 3. Crawling the Web Yourself
+
+(sec-ch3-when-a-published-crawl-is)=
 
 ### 3.1 When a published crawl is not enough
 
 Common Crawl covers the open, static, mostly English web as of a few weeks ago. Teams crawl for themselves when they need freshness (news, prices, documentation that changes), depth on a chosen set of sites (every page of a documentation site rather than the few a broad crawl sampled), content that needs a browser to render, or languages and regions the broad crawl under-samples. The cost is real: Common Crawl's snapshot of two to three billion pages represents two to three weeks of fetching at a sustained rate of one to two thousand pages per second, and a team crawling at that rate has to run the politeness and legal machinery below itself.
+
+(sec-ch3-robots-txt-and-the-politeness)=
 
 ### 3.2 robots.txt and the politeness conventions
 
@@ -215,6 +245,8 @@ for agent in ["*", "Googlebot", "CCBot", "GPTBot", "Google-Extended"]:
 
 The user agents in that list are the ones that matter for training data: `CCBot` is Common Crawl, `GPTBot` is OpenAI's crawler, `Google-Extended` is Google's token for opting out of model training without leaving search, and `ClaudeBot`, `anthropic-ai`, `Bytespider`, `PerplexityBot` and `Applebot-Extended` are the others most often named in robots files. A site that disallows `CCBot` removes itself from every future Common Crawl snapshot, and therefore from every corpus derived from one.
 
+(sec-ch3-crawler-architecture)=
+
 ### 3.3 Crawler architecture
 
 A crawler at corpus scale is a distributed system with four parts:
@@ -231,17 +263,25 @@ Rendering is the expensive option. A page that builds its content with JavaScrip
 The notebook section {ref}`nb-acq-robots` parses two robots.txt files with the standard library: Wikipedia's (28 KB, one of the most detailed on the web, which treats search and training crawlers alike) and a major news site's, which allows Googlebot and disallows every AI crawler by name. It counts the Disallow rules per agent in each.
 ```
 
+(sec-ch3-the-economics)=
+
 ### 3.4 The economics
 
 Order-of-magnitude arithmetic for a billion-page crawl: pages average about 100 KB of HTML, so the raw fetch is 100 TB of transfer, which is free as cloud ingress but costs a few thousand dollars in NAT-gateway or bandwidth charges, and far more if the crawl is then moved between regions or clouds. Compressed, the WARC output is about a third of that. Fetching at an aggregate 5,000 pages per second takes two to three days of wall-clock time on a few hundred small machines; politeness, not hardware, sets that rate. Extraction and filtering, by comparison, are a few CPU-milliseconds per page and run in hours. The dominant cost of a serious crawl is not any of these but the engineering of the frontier and the handling of the long tail of malformed responses, redirect loops, tar pits and hosts that respond slowly enough to tie up a fetcher without timing out.
+
+(sec-ch3-curated-sources)=
 
 ## 4. Curated Sources
 
 The web supplies volume; the sources in this section supply things the web is short of: long documents, reliable facts, technical reasoning, working code and natural conversation. Each is a small fraction of a corpus and each is sampled several times over.
 
+(sec-ch3-wikipedia-and-the-wikimedia-projects)=
+
 ### 4.1 Wikipedia and the Wikimedia projects
 
 Wikipedia is in every corpus. The Wikimedia Foundation publishes complete database dumps of every language edition twice a month (`dumps.wikimedia.org`), licensed CC BY-SA 4.0, as XML with the wikitext markup; converting wikitext to clean text (templates, infoboxes, references, tables) is the main work, and the `wikimedia/wikipedia` dataset on Hugging Face is a widely used pre-converted version. English Wikipedia is about 4.5 billion words, roughly 5 billion tokens or 0.03% of a 15T-token corpus, and models typically see it two to four times. Wiktionary, Wikibooks, Wikisource and Wikidata are published the same way; Dolma includes Wikibooks alongside Wikipedia.
+
+(sec-ch3-books)=
 
 ### 4.2 Books
 
@@ -254,6 +294,8 @@ Books are the best source of long-range structure (a plot, an argument, a chapte
 
 The practical rule in 2026: use public-domain text, text whose licence explicitly allows the use, or text you have licensed, and keep the receipts. Books3 in The Pile is the cautionary example of what happens otherwise.
 
+(sec-ch3-scientific-and-technical-papers)=
+
 ### 4.3 Scientific and technical papers
 
 Papers supply formal argument, mathematics and domain vocabulary. The accessible sources:
@@ -263,6 +305,8 @@ Papers supply formal argument, mathematics and domain vocabulary. The accessible
 - **PubMed Central** offers the open-access subset of biomedical literature in bulk XML, licence by licence.
 
 PDF extraction is the technical problem: two-column layouts, equations, tables and footnotes come out scrambled from generic tools, which is why pipelines prefer LaTeX or publisher XML wherever it exists. Where only PDFs exist, document-understanding models trained for the job, Nougat {cite}`blecher2023nougat` for academic PDFs and olmOCR {cite}`poznanski2025olmocr` at corpus scale, now recover text, equations and tables well enough that scanned books and papers have become an acquisition channel in their own right.
+
+(sec-ch3-source-code)=
 
 ### 4.4 Source code
 
@@ -274,6 +318,8 @@ Code is a few per cent of every mixture and is kept even in models not aimed at 
 
 Licence filtering is the acquisition-time decision that matters most for code: a permissive-only corpus is smaller but can be released and used without the copyleft question that GPL-licensed code raises for model outputs.
 
+(sec-ch3-forums-dialogue-and-question-answering)=
+
 ### 4.5 Forums, dialogue and question answering
 
 Conversation teaches turn-taking, register and the question-answer form that instruction tuning (Chapter 10) later refines. The sources have become harder to obtain:
@@ -282,6 +328,8 @@ Conversation teaches turn-taking, register and the question-answer form that ins
 - **Stack Exchange** published a quarterly dump of every question and answer on its sites under CC BY-SA, which is in The Pile and LLaMA, and is the single best source of paired technical questions and answers; in 2024 the dump moved behind a login with terms that restrict its use for training.
 - **Mailing lists, IRC logs and email archives**, the Ubuntu IRC logs and the Enron email corpus in The Pile, supply informal dialogue.
 - **Subtitles and transcripts** (OpenSubtitles, YouTube captions) supply spoken-register dialogue; their licensing is unsettled and most recent open corpora omit them.
+
+(sec-ch3-news-government-and-legal-text)=
 
 ### 4.6 News, government and legal text
 
@@ -292,9 +340,13 @@ News archives are mostly licensed commercially now; the open sources are the CC-
 The notebook section {ref}`nb-acq-sources` pulls a hundred documents each from FineWeb, FineWeb-Edu and C4, and fifty each from Wikipedia and the French portion of FineWeb-2, through the Hugging Face rows API, and compares document lengths, language scores, domain concentration and the FineWeb-Edu educational score, so that the differences described in this section are visible in real data rather than asserted.
 ```
 
+(sec-ch3-rights-licenses-and-consent)=
+
 ## 5. Rights, Licences and Consent
 
 This section describes the landscape as of 2026 and is not legal advice. The questions are live in several courts, the answers differ by jurisdiction, and a team assembling a corpus for anything beyond research should have counsel involved from the start.
+
+(sec-ch3-copyright-and-the-training-question)=
 
 ### 5.1 Copyright and the training question
 
@@ -306,9 +358,13 @@ Almost every document on the web is under copyright from the moment it is writte
 
 The practical consequences for acquisition: keep the record of where each document came from and under what terms (Section 9); prefer sources that are public domain, openly licensed, or licensed to you; treat shadow libraries and scraped paywalled content as liabilities, whatever the fair-use argument; and build the machinery to honour opt-outs, because a document that was lawful to collect may not be lawful to keep.
 
+(sec-ch3-dataset-licenses-are-not-content)=
+
 ### 5.2 Dataset licences are not content licences
 
 A dataset on a hub carries a licence (ODC-BY, CC BY, Apache 2.0, "other"), and it is tempting to read that licence as permission to train on the contents. It is not. The dataset licence covers the compilation and the curation work; the documents inside keep their own rights. FineWeb and Dolma are both released under ODC-BY with an explicit note that Common Crawl's terms of use apply to the underlying pages. The Data Provenance Initiative {cite}`longpre2023data` audited more than 1,800 widely used fine-tuning datasets and found that more than 70% of the licences were omitted on the hosting platforms and more than half of those stated were wrong, frequently in the permissive direction, with the original sources often restricting commercial use where the hub listing did not. The lesson is to trace every dataset to its sources and read the sources' terms, which is tedious and is the job.
+
+(sec-ch3-robots-txt-opt-outs-and)=
 
 ### 5.3 robots.txt, opt-outs and the shrinking commons
 
@@ -322,6 +378,8 @@ Opt-out mechanisms beyond robots.txt:
 
 A corpus built today should record, per document, the robots.txt state at fetch time and should be rebuilt against current opt-outs before each new training run. The cost of doing so is small; the cost of not doing so is a model that cannot be shipped.
 
+(sec-ch3-what-the-open-corpora-decided)=
+
 ### 5.4 What the open corpora decided
 
 | Corpus                                  | Content licence position                                        | Opt-out                                   | Known problems                                          |
@@ -333,9 +391,13 @@ A corpus built today should record, per document, the robots.txt state at fetch 
 | FineWeb {cite}`penedo2024fineweb`       | ODC-BY on the compilation; Common Crawl terms apply             | Email removal requests honoured           | Web only, so inherits every robots.txt gap              |
 | RedPajama-V2 {cite}`weber2024redpajama` | Released with quality signals so users apply their own filters  | Via Common Crawl                          | 100T raw tokens, deliberately unfiltered                |
 
+(sec-ch3-personal-data-and-sensitive-sources)=
+
 ### 5.5 Personal data and sensitive sources
 
 Data-protection law (the GDPR and its relatives) applies to personal data regardless of copyright, which is why acquisition should avoid sources that are mostly personal data (people directories, leaked databases, social profiles) rather than relying on the redaction in Chapter 4 to fix them later. Health records, children's content and content from regions with strict localisation rules are usually excluded at the source level for the same reason.
+
+(sec-ch3-the-infrastructure-that-is-replacing)=
 
 ### 5.6 The infrastructure that is replacing robots.txt
 
@@ -347,11 +409,17 @@ Three developments in 2025 are turning the informal conventions above into machi
 
 One acquisition-time risk is specific to how corpora are distributed. Many web datasets are published as URL lists rather than text, and Carlini et al. {cite}`carlini2024poisoning` showed that buying expired domains on those lists is enough to insert chosen content into anyone who later re-downloads the dataset; content hashes recorded at collection time (Section 9) are the defence.
 
+(sec-ch3-multilingual-and-low-resource-sources)=
+
 ## 6. Multilingual and Low-Resource Sources
+
+(sec-ch3-the-english-skew)=
 
 ### 6.1 The English skew
 
 Roughly 45% of Common Crawl's pages are English, which is already a large over-representation relative to the world's speakers, and every filtering stage makes the skew worse because the filters were tuned on English. A model trained on an English-dominant corpus can still speak other languages, but it does so with less data, fewer facts and a tokenizer that spends several tokens per word, which raises its cost and lowers its quality for most of the world's people.
+
+(sec-ch3-the-multilingual-corpora)=
 
 ### 6.2 The multilingual corpora
 
@@ -366,11 +434,17 @@ Roughly 45% of Common Crawl's pages are English, which is already a large over-r
 
 The recurring finding, first established by the audit of Kreutzer et al. {cite}`kreutzer2022quality` across mC4, OSCAR and other crawled corpora and repeated in the MADLAD-400 audit, is that automatic language identification produces hundreds of "languages" that on inspection are noise, boilerplate, mislabelled majority-language text or machine translation. Below the top hundred or so languages, a human who reads the language has to look at the data. FineWeb-2's rehydration step makes a second point: a page that many sites copied was, on average, worth copying, so after deduplication FineWeb-2 up-samples the surviving copy in proportion to its cluster size, and for languages with little data this recovers a large share of the usable signal.
 
+(sec-ch3-beyond-the-crawl)=
+
 ### 6.3 Beyond the crawl
 
 For languages the web under-serves, acquisition reaches for sources that the web pipeline skips: religious texts and their translations (the Bible and Quran exist in more languages than any other document), government publications and legal codes in official languages, broadcaster transcripts, Wikipedia editions, OPUS and other parallel corpora assembled for machine translation, and community collections such as those gathered for ROOTS and by Masakhane for African languages. These are small, but a few million tokens of genuine text in a language is worth more than a billion tokens of mislabelled crawl.
 
+(sec-ch3-synthetic-data)=
+
 ## 7. Synthetic Data
+
+(sec-ch3-why-generate-text)=
 
 ### 7.1 Why generate text
 
@@ -381,15 +455,23 @@ If the stock of human-written text is the binding constraint, text generated by 
 - **Rephrased web**: rewriting crawled pages in a cleaner style with a model, then training on the rewritten version, gives a cleaner corpus of the same size.
 - **Translation and augmentation** for low-resource languages, where a model translates high-resource text into a target language.
 
+(sec-ch3-what-can-go-wrong)=
+
 ### 7.2 What can go wrong
 
 Synthetic data inherits the generating model's errors, style and gaps, and feeding it back repeatedly compounds them. Shumailov et al. {cite}`shumailov2024curse` showed that models trained on the outputs of earlier models lose the tails of the distribution first, so that after a few generations rare content disappears and the model's outputs converge on a narrow, repetitive mode. The practical mitigations are to keep synthetic data a minority of the mixture, to keep human-written data in every generation, to anchor generation in real documents (rephrasing, grounded question writing) rather than free generation, and to mark synthetic data as such in provenance records. The last matters beyond your own pipeline: model-generated text is now a growing fraction of the open web, so future crawls contain it whether or not it was labelled.
 
+(sec-ch3-mixture-design-and-token-budgeting)=
+
 ## 8. Mixture Design and Token Budgeting
+
+(sec-ch3-from-compute-to-tokens)=
 
 ### 8.1 From compute to tokens
 
 Chapter 2's relation $C \approx 6ND$ fixes the token count once the budget and the model size are chosen. For an 8B-parameter model and $10^{24}$ FLOPs that is about 20T tokens; for the Chinchilla optimum at the same budget, $N \approx \sqrt{C/120} \approx 91$B and $D \approx 1.8$T. Production practice sits between: a model sized for inference cost, trained on as many tokens as the data allows.
+
+(sec-ch3-epochs-and-unique-tokens)=
 
 ### 8.2 Epochs and unique tokens
 
@@ -398,6 +480,8 @@ Each source $s$ has $U_s$ unique tokens after cleaning. If the mixture assigns i
 $$e_s = \frac{w_s D}{U_s} \le e_{\max} \approx 4 \quad \text{for every source } s, \qquad \sum_s w_s = 1$$
 
 Small, high-quality sources (Wikipedia, textbooks, papers) hit the cap first and are the reason mixtures cannot simply weight sources by preference.
+
+(sec-ch3-setting-the-weights)=
 
 ### 8.3 Setting the weights
 
@@ -408,6 +492,8 @@ Three ways the weights get set:
 - **By ablation.** The FineWeb {cite}`penedo2024fineweb` and DataComp-LM {cite}`li2024datacomp` protocol, training small models on candidate mixtures and comparing benchmarks, is the method of last resort and the one most teams actually use for the final decision.
 
 A fourth, increasingly common choice is **curriculum**: training on the full mixture for most of the run and then "annealing" on a small, high-quality subset (FineWeb-Edu, textbooks, instruction-like data) in the final few per cent of steps, which the Llama 3 report and several open models describe as a measurable gain.
+
+(sec-ch3-a-budgeting-procedure)=
 
 ### 8.4 A budgeting procedure
 
@@ -472,7 +558,11 @@ The procedure says nothing about whether the preferred weights are good; it only
 The notebook section {ref}`nb-acq-mixture` starts from a compute budget, derives the token count with the Chapter 2 relation, runs `plan_mixture` over a realistic table of sources, plots the planned epochs per source against the four-epoch line, and shows what happens to the plan when a quarter of the high-quality web slice is lost to opt-outs, the rate the consent study measured for the best-maintained domains.
 ```
 
+(sec-ch3-provenance-and-documentation)=
+
 ## 9. Provenance and Documentation
+
+(sec-ch3-what-to-record)=
 
 ### 9.1 What to record
 
@@ -514,11 +604,15 @@ assert other["sha256"] != rec["sha256"]                                        #
 print(json.dumps(rec, indent=1)[:200])
 ```
 
+(sec-ch3-datasheets-and-data-cards)=
+
 ### 9.2 Datasheets and data cards
 
 Datasheets for Datasets {cite}`gebru2021datasheets` is the standard template: motivation, composition, collection process, preprocessing, uses, distribution and maintenance, each as a list of questions with answers. Dolma's datasheet is a good complete example, and Hugging Face dataset cards are the lightweight version that every hosted dataset should have. The questions that acquisition has to answer, and that are most often left blank, are the collection ones: who collected it, over what period, with what mechanism, under what terms, and what was deliberately excluded.
 
 A documentation practice that goes further is to publish measurements of the corpus itself. What's In My Big Data {cite}`elazar2024whats` ran a fixed battery of analyses (duplication, benchmark contamination, toxic and personal content, domain and language distributions, the most frequent documents) over ten open corpora and found, among other things, that C4 and the Pile contained benchmark test sets and that several corpora were dominated by a handful of domains. Running the same battery over your own corpus before training is cheaper than discovering the answers from the model.
+
+(sec-ch3-handing-off)=
 
 ### 9.3 Handing off
 
@@ -528,6 +622,8 @@ The output of acquisition is a set of raw shards plus a manifest: one provenance
 :class: tip
 The notebook section {ref}`nb-acq-provenance` writes a provenance record for every fetch made earlier in the notebook, checks every committed sample against the checksums recorded when it was collected, and prints the manifest that would accompany the samples into Chapter 4.
 ```
+
+(sec-ch3-exercises)=
 
 ## Exercises
 
@@ -539,7 +635,11 @@ The notebook section {ref}`nb-acq-provenance` writes a provenance record for eve
 1. **Low-resource audit.** Take fifty documents labelled as a language you read from mC4 or OSCAR and classify each by hand as genuine text, boilerplate, mislabelled or machine-translated. Compare your rate with the MADLAD-400 audit for that language.
 1. **A datasheet.** Write the collection-process section of a datasheet for the samples the notebook fetched, answering every question in the Datasheets template that applies.
 
+(sec-ch3-further-reading)=
+
 ## Further Reading
+
+(sec-ch3-corpora-and-their-papers)=
 
 ### Corpora and their papers
 
@@ -553,6 +653,8 @@ The notebook section {ref}`nb-acq-provenance` writes a provenance record for eve
 - [S2ORC](https://arxiv.org/abs/1911.02782) {cite}`lo2020s2orc` - open-access papers as full text with licences tracked
 - [A Critical Analysis of Common Crawl](https://doi.org/10.1145/3630106.3659033) {cite}`baack2024critical` - what the crawl is and is not
 
+(sec-ch3-rights-consent-and-provenance)=
+
 ### Rights, consent and provenance
 
 - [Consent in Crisis](https://arxiv.org/abs/2407.14933) {cite}`longpre2024consent` - the year the web started opting out
@@ -563,6 +665,8 @@ The notebook section {ref}`nb-acq-provenance` writes a provenance record for eve
 - [The Common Pile v0.1](https://arxiv.org/abs/2506.05209) {cite}`kandpal2025common` - an 8 TB openly licensed corpus and a model trained on it
 - [Poisoning Web-Scale Training Datasets is Practical](https://arxiv.org/abs/2302.10149) {cite}`carlini2024poisoning` - why URL-list datasets need content hashes
 
+(sec-ch3-scale-mixtures-and-synthetic-data)=
+
 ### Scale, mixtures and synthetic data
 
 - [Will we run out of data?](https://arxiv.org/abs/2211.04325) {cite}`villalobos2024run` - the size of the stock of human text
@@ -572,11 +676,15 @@ The notebook section {ref}`nb-acq-provenance` writes a provenance record for eve
 - [Textbooks Are All You Need](https://arxiv.org/abs/2306.11644) {cite}`gunasekar2023textbooks` and [Self-Instruct](https://arxiv.org/abs/2212.10560) {cite}`wang2023selfinstruct` - synthetic pretraining and instruction data
 - [AI models collapse when trained on recursively generated data](https://doi.org/10.1038/s41586-024-07566-y) {cite}`shumailov2024curse` - the failure mode of synthetic data
 
+(sec-ch3-multilingual)=
+
 ### Multilingual
 
 - [mT5 and mC4](https://arxiv.org/abs/2010.11934) {cite}`xue2021mt5`, [OSCAR](https://arxiv.org/abs/2201.06642) {cite}`abadji2022oscar`, [CulturaX](https://arxiv.org/abs/2309.09400) {cite}`nguyen2023culturax`
 - [Quality at a Glance](https://arxiv.org/abs/2103.12028) {cite}`kreutzer2022quality` and [MADLAD-400](https://arxiv.org/abs/2309.04662) {cite}`kudugunta2023madlad` - the audits that found which "languages" in crawled corpora were real
 - [The BigScience ROOTS Corpus](https://arxiv.org/abs/2303.03915) {cite}`laurenccon2022bigscience` - community-sourced multilingual acquisition
+
+(sec-ch3-tools-and-services)=
 
 ### Tools and services
 

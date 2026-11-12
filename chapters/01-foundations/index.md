@@ -2,6 +2,8 @@
 
 Large Language Models represent a paradigm shift in natural language processing, achieving unprecedented capabilities through the transformer architecture and massive scale training. This chapter establishes the foundational concepts necessary to understand how these models work, their historical development, and the core principles that enable their remarkable performance.
 
+(sec-ch1-learning-objectives)=
+
 ## Learning Objectives
 
 By the end of this chapter, you will understand:
@@ -11,6 +13,8 @@ By the end of this chapter, you will understand:
 - The transformer architecture and its key components
 - The language modeling objective and evaluation metrics
 - The historical evolution from RNNs to modern transformers
+
+(sec-ch1-hands-on-learning)=
 
 ## Hands-On Learning
 
@@ -23,6 +27,8 @@ The notebook provides executable, assertion-checked code for:
 - Scaled dot-product and multi-head attention with attention maps ({ref}`nb-attn-attention`)
 - A post-LN transformer block ({ref}`nb-attn-transformer`)
 - The causal mask and the next-token objective with perplexity ({ref}`nb-attn-lm`)
+
+(sec-ch1-chapter-overview)=
 
 ## Chapter Overview
 
@@ -40,11 +46,17 @@ Large Language Models (LLMs) like ChatGPT work by understanding and generating t
 
 These components work together to create models that can understand context, maintain coherent conversations, and generate human-like text by learning statistical patterns from enormous amounts of text data.
 
+(sec-ch1-tokenization-and-embeddings)=
+
 ## 1. Tokenization and Embeddings
+
+(sec-ch1-understanding-tokenization)=
 
 ### 1.1 Understanding Tokenization
 
 Large Language Models cannot directly process raw text—they require numerical representations. The process begins with **tokenization**, which breaks text into discrete units called tokens. This seemingly simple step profoundly affects model performance, computational efficiency, and language understanding capabilities.
+
+(sec-ch1-what-are-tokens)=
 
 #### What Are Tokens?
 
@@ -65,6 +77,8 @@ The choice of tokenization granularity creates fundamental trade-offs:
 | Character   | Small (\<100)      | Very Long       | Perfect      | Low                |
 | Byte-level  | Fixed (256)        | Longest         | Perfect      | Lowest             |
 
+(sec-ch1-the-vocabulary-size-dilemma)=
+
 #### The Vocabulary Size Dilemma
 
 Vocabulary size directly impacts:
@@ -76,7 +90,11 @@ Vocabulary size directly impacts:
 
 **Example**: A 50k vocabulary with 4096-dimensional embeddings requires 200M parameters just for embeddings—before any transformer layers!
 
+(sec-ch1-tokenization-algorithms)=
+
 ### 1.2 Tokenization Algorithms
+
+(sec-ch1-word-level-tokenization)=
 
 #### Word-Level Tokenization
 
@@ -104,6 +122,8 @@ tokens = word_tokenize(text)
 - Out-of-vocabulary (OOV) words become `<UNK>` tokens
 - Inefficient for languages without clear word boundaries (Chinese, Japanese)
 
+(sec-ch1-character-level-tokenization)=
+
 #### Character-Level Tokenization
 
 Processes text character by character:
@@ -130,6 +150,8 @@ tokens = char_tokenize(text)
 - Very long sequences
 - Loss of semantic coherence
 - Difficult to learn word-level patterns
+
+(sec-ch1-byte-pair-encoding-bpe)=
 
 #### Byte Pair Encoding (BPE)
 
@@ -226,6 +248,8 @@ print(f"Tokens: {tokens}")
 1. **Unigram LM** {cite}`kudo2018subword`: starts from a large candidate vocabulary and prunes it, keeping the segmentation with the highest probability
 1. **SentencePiece** {cite}`kudo2018sentencepiece` is a *toolkit*, not an algorithm: it implements both BPE and unigram on raw text without pre-tokenization
 
+(sec-ch1-sentencepiece)=
+
 #### SentencePiece
 
 SentencePiece {cite}`kudo2018sentencepiece` treats text as raw Unicode sequences without pre-tokenization:
@@ -268,9 +292,13 @@ print(f"IDs: {ids}")
 The notebook's tokenization section ({ref}`nb-attn-tokenization`) builds a tiny word-level vocabulary and runs the BPE merge loop step by step, printing the splits after every merge. For WordPiece, unigram and SentencePiece in practice, see {doc}`tokenization-deep-dive`.
 ```
 
+(sec-ch1-embeddings-and-positional-encoding)=
+
 ### 1.3 Embeddings and Positional Encoding
 
 For vocabulary construction, special tokens, cross-lingual issues and a full tokenizer implementation, see {doc}`tokenization-deep-dive`.
+
+(sec-ch1-embedding-spaces)=
 
 #### Embedding Spaces
 
@@ -279,6 +307,8 @@ Once tokenized, each token is mapped to a high-dimensional vector through an **e
 $$\mathbf{x}_i = E[\text{token}_i]$$
 
 These embeddings are learned during training to capture semantic relationships. Similar tokens develop similar vector representations, enabling the model to generalize across related concepts {cite}`mikolov2013efficient`.
+
+(sec-ch1-understanding-embedding-dimensions)=
 
 #### Understanding Embedding Dimensions
 
@@ -296,6 +326,8 @@ The embedding dimension $d$ is a crucial hyperparameter that affects:
 - Matrix multiplications: O(d × other_dim)
 - Memory usage: V × d parameters just for embeddings
 - Attention computation: Affects all transformer operations
+
+(sec-ch1-embedding-initialization-strategies)=
 
 #### Embedding Initialization Strategies
 
@@ -327,6 +359,8 @@ class TokenEmbedding(nn.Module):
         # Scale embeddings by sqrt(d_model) following original transformer
         return self.embedding(x) * math.sqrt(self.d_model)
 ```
+
+(sec-ch1-embedding-sharing-and-tying)=
 
 #### Embedding Sharing and Tying
 
@@ -367,6 +401,8 @@ class TransformerWithTiedEmbeddings(nn.Module):
 - Enforces consistency between input and output representations
 - Often improves performance on language modeling tasks
 
+(sec-ch1-subword-embedding-composition)=
+
 #### Subword Embedding Composition
 
 For subword tokens, embeddings must compose meaningfully:
@@ -385,6 +421,8 @@ happiness_embedding = embedding_matrix[token_to_id["happiness"]]  # [d_model]
 # It must learn that "un" is a negation prefix
 # This happens through attention and context
 ```
+
+(sec-ch1-embedding-visualization-and-analysis)=
 
 #### Embedding Visualization and Analysis
 
@@ -441,6 +479,10 @@ semantic_groups = [
 for group in semantic_groups:
     visualize_embeddings(model.embeddings.weight, tokenizer.token_to_id, group)
 ```
+
+(sec-ch1-rope)=
+
+(sec-ch1-relative-bias)=
 
 #### Positional Encodings
 
@@ -663,6 +705,8 @@ Models since 2022 almost all use RoPE {cite}`su2021roformer` or ALiBi {cite}`pre
 The notebook ({ref}`nb-attn-positional`) visualises sinusoidal and learned encodings, implements a learned relative-position bias and a rotary (RoPE) transform, and asserts RoPE's two defining properties: rotation preserves vector norms, and query-key dot products depend only on the relative offset.
 ```
 
+(sec-ch1-advanced-embedding-implementation)=
+
 #### Advanced Embedding Implementation
 
 ```python
@@ -803,7 +847,11 @@ print(f"Embedding norm: {embeddings.norm(dim=-1).mean():.3f}")
 For runnable versions of the ideas in this section, see the accompanying notebook: [Attention Mechanisms Demo](examples/attention_mechanisms_demo.ipynb). Its sections are linked from each part of this chapter.
 ```
 
+(sec-ch1-attention-mechanisms)=
+
 ## 2. Attention Mechanisms
+
+(sec-ch1-the-attention-revolution)=
 
 ### 2.1 The Attention Revolution
 
@@ -813,6 +861,8 @@ Attention mechanisms revolutionized sequence modeling by allowing models to focu
 :class: note
 The notebook implements scaled dot-product and multi-head attention in eval mode, asserts that every row of attention weights sums to 1, and plots per-head attention maps and entropies ({ref}`nb-attn-attention`).
 ```
+
+(sec-ch1-self-attention-fundamentals)=
 
 #### Self-Attention Fundamentals
 
@@ -828,6 +878,8 @@ Self-attention computes a weighted representation of the input sequence, where w
 
 The scaling factor $\sqrt{d_k}$, where $d_k$ is the per-head key dimension, keeps the dot products at unit variance so the softmax does not saturate {cite}`vaswani2017attention`.
 
+(sec-ch1-multi-head-attention)=
+
 #### Multi-Head Attention
 
 Multi-head attention runs multiple attention mechanisms in parallel, allowing the model to attend to different types of relationships:
@@ -837,6 +889,8 @@ $$\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, ..., \text{head}_h)W_
 where each head is:
 
 $$\text{head}_i = \text{Attention}(QW_i^Q, KW_i^K, VW_i^V)$$
+
+(sec-ch1-attention-patterns-and-interpretability)=
 
 ### 2.2 Attention Patterns and Interpretability
 
@@ -903,11 +957,17 @@ class MultiHeadAttention(nn.Module):
         return self.W_o(attn_output)
 ```
 
+(sec-ch1-transformer-architecture)=
+
 ## 3. Transformer Architecture
+
+(sec-ch1-the-complete-architecture)=
 
 ### 3.1 The Complete Architecture
 
 The transformer architecture {cite}`vaswani2017attention` combines attention mechanisms with several key components to create a powerful sequence-to-sequence model.
+
+(sec-ch1-layernorm)=
 
 #### Layer Normalization
 
@@ -917,11 +977,15 @@ $$\text{LayerNorm}(x) = \gamma \odot \frac{x - \mu}{\sigma} + \beta$$
 
 where $\mu$ and $\sigma$ are the mean and standard deviation computed across the feature dimension (with a small $\epsilon$ added inside the square root of $\sigma$ for numerical stability), and $\gamma$, $\beta$ are learned per-feature scale and shift.
 
+(sec-ch1-residual-connections)=
+
 #### Residual Connections
 
 Residual connections help gradient flow in deep networks:
 
 $$\text{output} = \text{LayerNorm}(x + \text{Sublayer}(x))$$
+
+(sec-ch1-feed-forward-networks)=
 
 #### Feed-Forward Networks
 
@@ -930,6 +994,8 @@ Each transformer layer includes a position-wise feed-forward network:
 $$\text{FFN}(x) = \max(0, xW_1 + b_1)W_2 + b_2$$
 
 This provides non-linear transformations and typically uses a hidden dimension 4× larger than the model dimension.
+
+(sec-ch1-architectural-variants)=
 
 ### 3.2 Architectural Variants
 
@@ -971,6 +1037,8 @@ class TransformerBlock(nn.Module):
 :class: tip
 The notebook ({ref}`nb-attn-transformer`) assembles one post-LN transformer block from multi-head attention, a position-wise feed-forward network, layer normalization and residual connections, and shows what layer normalization does to activations of different scales. It does not train a model; that is left as an exercise.
 ```
+
+(sec-ch1-modern-block)=
 
 ### 3.3 What Changed Since 2017
 
@@ -1031,7 +1099,11 @@ class PreLNBlock(nn.Module):
         return x + self.ffn(self.norm2(x))
 ```
 
+(sec-ch1-language-modeling-objective)=
+
 ## 4. Language Modeling Objective
+
+(sec-ch1-next-token-prediction)=
 
 ### 4.1 Next-Token Prediction
 
@@ -1040,6 +1112,8 @@ Modern LLMs are trained on the **causal language modeling** objective, predictin
 $$P(x_{t+1} | x_1, x_2, ..., x_t)$$
 
 This autoregressive formulation enables text generation and captures the statistical structure of language.
+
+(sec-ch1-causal-masking)=
 
 #### Causal Masking
 
@@ -1053,6 +1127,8 @@ def create_causal_mask(seq_length):
     return mask == 0  # True for allowed positions
 ```
 
+(sec-ch1-training-process)=
+
 ### 4.2 Training Process
 
 The training objective maximizes the likelihood of the training data:
@@ -1064,6 +1140,8 @@ Where the model outputs probability distributions over the vocabulary:
 $$P(x_i | x_{<i}) = \text{softmax}(W_{\text{out}} h_{i-1} + b_{\text{out}})$$
 
 where $h_{i-1}$ is the final-layer hidden state at position $i-1$, which under causal masking has seen exactly $x_{<i}$.
+
+(sec-ch1-perplexity)=
 
 ### 4.3 Evaluation Metrics
 
@@ -1078,7 +1156,11 @@ Perplexity was introduced as the effective branching factor of a language model 
 The notebook ({ref}`nb-attn-lm`) builds the causal mask, applies it inside attention, adds a language-model head, and computes cross-entropy and perplexity for an untrained model so you can see what "no better than guessing" looks like. Optimization, schedules and gradient flow are in the Chapter 2 notebook ({ref}`nb-math-optimizers`, {ref}`nb-math-backprop`).
 ```
 
+(sec-ch1-historical-context)=
+
 ## 5. Historical Context
+
+(sec-ch1-evolution-from-rnns)=
 
 ### 5.1 Evolution from RNNs
 
@@ -1094,6 +1176,8 @@ The path to transformers involved several key developments:
 
 **Attention mechanisms** {cite}`bahdanau2014neural` first appeared in machine translation, allowing models to focus on relevant source positions when generating target words.
 
+(sec-ch1-the-transformer-breakthrough)=
+
 ### 5.2 The Transformer Breakthrough
 
 "Attention Is All You Need" {cite}`vaswani2017attention` demonstrated that attention alone could achieve state-of-the-art results without recurrence or convolution. Key innovations included:
@@ -1101,6 +1185,8 @@ The path to transformers involved several key developments:
 - Self-attention for capturing dependencies regardless of distance
 - Parallel processing enabling efficient training
 - Multi-head attention for capturing diverse relationships
+
+(sec-ch1-scaling-to-language-models)=
 
 ### 5.3 Scaling to Language Models
 
@@ -1113,6 +1199,8 @@ The transformer's success in machine translation led to its adoption for languag
 
 This progression established the foundation for today's LLMs and their remarkable capabilities.
 
+(sec-ch1-exercises)=
+
 ## Exercises
 
 1. **Tokenization Analysis**: Compare BPE and unigram tokenization (both available in SentencePiece) on multilingual text. How do vocabulary sizes affect model performance?
@@ -1123,7 +1211,11 @@ This progression established the foundation for today's LLMs and their remarkabl
 
 1. **Architecture Comparison**: Implement encoder-only, decoder-only, and encoder-decoder variants. When might each be preferred?
 
+(sec-ch1-further-reading)=
+
 ## Further Reading
+
+(sec-ch1-learning-path-for-beginners)=
 
 ### Learning Path for Beginners
 
@@ -1138,11 +1230,15 @@ This progression established the foundation for today's LLMs and their remarkabl
 4. [Understanding Large Language Models](https://magazine.sebastianraschka.com/p/understanding-large-language-models) by Sebastian Raschka
 5. [Linear Algebra for Machine Learning](https://www.deeplearningbook.org/contents/linear_algebra.html) - Deep Learning Book Chapter 2
 
+(sec-ch1-foundational-papers)=
+
 ### Foundational Papers
 
 - [Attention Is All You Need](https://arxiv.org/abs/1706.03762) {cite}`vaswani2017attention`: The original transformer paper
 - [Improving Language Understanding by Generative Pre-Training](https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf) {cite}`radford2018improving`: GPT and the decoder-only architecture
 - [BERT: Pre-training of Deep Bidirectional Transformers](https://arxiv.org/abs/1810.04805) {cite}`devlin2018bert`: BERT and bidirectional representations
+
+(sec-ch1-technical-implementation-resources)=
 
 ### Technical Implementation Resources
 
@@ -1157,6 +1253,8 @@ This progression established the foundation for today's LLMs and their remarkabl
 - [Transformer Explainer](https://poloclub.github.io/transformer-explainer/) - Interactive visualization tool
 - [Tiktokenizer](https://tiktokenizer.vercel.app/) - Explore how GPT and other tokenizers split text
 - [Attention Patterns](https://github.com/jessevig/bertviz) - Visualize attention in BERT and GPT models
+
+(sec-ch1-advanced-topics-and-recent-research)=
 
 ### Advanced Topics and Recent Research
 
@@ -1177,11 +1275,15 @@ This progression established the foundation for today's LLMs and their remarkabl
 - [FlashAttention: Fast and Memory-Efficient Exact Attention](https://arxiv.org/abs/2205.14135) {cite}`dao2022flashattention` - Efficient attention computation
 - [LLaMA: Open and Efficient Foundation Language Models](https://arxiv.org/abs/2302.13971) {cite}`touvron2023llama` - Modern transformer design choices
 
+(sec-ch1-books-and-comprehensive-resources)=
+
 ### Books and Comprehensive Resources
 
 1. **[Natural Language Processing with Transformers](https://github.com/nlp-with-transformers/notebooks)** by Lewis Tunstall, Leandro von Werra, and Thomas Wolf
 1. **[Deep Learning](https://www.deeplearningbook.org/)** by Ian Goodfellow, Yoshua Bengio, and Aaron Courville - Mathematical foundations
 1. **[Speech and Language Processing](https://web.stanford.edu/~jurafsky/slp3/)** by Dan Jurafsky and James H. Martin - NLP fundamentals
+
+(sec-ch1-practical-learning-projects)=
 
 ### Practical Learning Projects
 
@@ -1190,10 +1292,14 @@ This progression established the foundation for today's LLMs and their remarkabl
 1. **Attention Visualization** - Create tools to visualize attention patterns in pre-trained models
 1. **Scaling Experiments** - Study how model performance changes with size using smaller versions
 
+(sec-ch1-documentation-and-apis)=
+
 ### Documentation and APIs
 
 - [PyTorch Transformer Tutorial](https://docs.pytorch.org/tutorials/beginner/transformer_tutorial.html)
 - [TensorFlow Transformer Tutorial](https://www.tensorflow.org/text/tutorials/transformer)
+
+(sec-ch1-research-communities-and-updates)=
 
 ### Research Communities and Updates
 

@@ -2,6 +2,8 @@
 
 The remarkable capabilities of Large Language Models emerge from sophisticated mathematical foundations spanning linear algebra, probability theory, information theory, and optimization. This chapter establishes the mathematical framework necessary to understand transformer architectures, training dynamics, and the scaling laws that govern LLM performance.
 
+(sec-ch2-learning-objectives)=
+
 ## Learning Objectives
 
 By the end of this chapter, you will understand:
@@ -11,6 +13,8 @@ By the end of this chapter, you will understand:
 - How backpropagation flows through transformer architectures
 - Scaling laws that predict LLM performance and compute requirements
 - Numerical stability considerations in large-scale training
+
+(sec-ch2-chapter-overview)=
 
 ## Chapter Overview
 
@@ -28,6 +32,8 @@ The mathematics underlying Large Language Models can be understood through sever
 
 These mathematical principles work together to enable LLMs to learn patterns from vast amounts of text and generate coherent, contextually appropriate responses.
 
+(sec-ch2-hands-on-learning)=
+
 ## Hands-On Learning
 
 For interactive implementations and visualizations of the mathematical concepts in this chapter, see the accompanying Jupyter notebook: [Mathematical Foundations Demo](examples/mathematical_foundations_demo.ipynb)
@@ -41,13 +47,19 @@ The notebook provides executable, assertion-checked code for:
 - Kaplan and Chinchilla scaling laws, parameter counts and training memory ({ref}`nb-math-scaling`)
 - fp16/bf16 precision, loss scaling, gradient clipping and initialisation ({ref}`nb-math-numerics`)
 
+(sec-ch2-linear-algebra-you-need)=
+
 ## 0. Linear Algebra You Need
 
 Everything a transformer does is a sequence of matrix products followed by simple element-wise functions. Three facts carry most of the weight.
 
+(sec-ch2-sqrt-dk)=
+
 ### 0.1 A matrix is a map between spaces
 
 A weight matrix $W \in \mathbb{R}^{d_{\text{in}} \times d_{\text{out}}}$ turns a row vector $x \in \mathbb{R}^{d_{\text{in}}}$ into $xW \in \mathbb{R}^{d_{\text{out}}}$. Stacking $n$ inputs as the rows of $X \in \mathbb{R}^{n \times d_{\text{in}}}$ applies the same map to all of them at once, $XW$, which is why a batch of tokens costs one matrix product rather than $n$ separate ones. A query-key score matrix $QK^T \in \mathbb{R}^{n \times n}$ is the table of all pairwise dot products $q_i \cdot k_j$; the $\sqrt{d_k}$ scaling keeps those dot products at unit variance when $q$ and $k$ have unit-variance entries, since a sum of $d_k$ such products has variance $d_k$.
+
+(sec-ch2-the-softmax-jacobian)=
 
 ### 0.2 The softmax Jacobian
 
@@ -57,15 +69,23 @@ $$\frac{\partial p_i}{\partial z_j} = p_i(\delta_{ij} - p_j), \qquad \text{so fo
 
 This is the identity behind the attention gradient in Section 3.3 and behind cross-entropy's gradient $p - y$ (take $g = -y/p$ for a one-hot target $y$). It also explains saturation: if one $p_i \approx 1$ then every factor $p_i(\delta_{ij} - p_j)$ is near zero, and no gradient flows through that softmax.
 
+(sec-ch2-norms-conditioning-and-why-scale)=
+
 ### 0.3 Norms, conditioning and why scale matters
 
 The operator norm $\|W\|_2$ is the largest factor by which $W$ can stretch a vector. A stack of $L$ layers multiplies these factors, which is why gradients vanish or explode geometrically with depth unless each layer is kept near norm 1, by initialization scale (Section 5.2), by normalization (Section 3.2) or by residual connections (Section 3.1). The Chapter 2 notebook measures all three on a twelve-layer stack.
 
+(sec-ch2-probability-and-information-theory)=
+
 ## 1. Probability and Information Theory
+
+(sec-ch2-foundations-of-language-modeling)=
 
 ### 1.1 Foundations of Language Modeling
 
 Language modeling is fundamentally a probabilistic task—predicting the likelihood of word sequences. Understanding the mathematical foundations provides insight into why LLMs work and how to improve them.
+
+(sec-ch2-probability-distributions-over-sequences)=
 
 #### Probability Distributions Over Sequences
 
@@ -74,6 +94,8 @@ Given a vocabulary $\mathcal{V}$ and sequence $x = (x_1, x_2, ..., x_n)$, langua
 $$P(x) = \prod_{i=1}^{n} P(x_i | x_{<i})$$
 
 This autoregressive factorization enables tractable modeling of exponentially large sequence spaces.
+
+(sec-ch2-cross-entropy-loss)=
 
 #### Cross-Entropy Loss
 
@@ -87,7 +109,11 @@ $$\mathcal{L}(\theta) = -\frac{1}{N} \sum_{i=1}^{N} \log P_{\theta}(x_i | x_{<i}
 
 Cross-entropy loss has favorable properties: it's convex in the output probabilities and provides strong gradients for incorrect predictions {cite}`murphy2012machine`.
 
+(sec-ch2-information-theory-fundamentals)=
+
 ### 1.2 Information Theory Fundamentals
+
+(sec-ch2-entropy-and-language)=
 
 #### Entropy and Language
 
@@ -98,6 +124,8 @@ $$H(X) = -\sum_{x} P(x) \log P(x)$$
 Using $\log_2$ gives entropy in bits; the natural logarithm gives nats. The code in this chapter uses natural logarithms, so its values are in nats.
 
 For language, entropy measures the average information content per symbol. Shannon's experiments put the entropy of printed English at roughly 0.6 to 1.3 bits per character, far below the ~4.7 bits of a uniform choice over the alphabet, which is what makes language predictable {cite}`shannon1951prediction`.
+
+(sec-ch2-cross-entropy-and-kl-divergence)=
 
 #### Cross-Entropy and KL Divergence
 
@@ -111,6 +139,8 @@ $$D_{KL}(P || Q) = \sum_{x} P(x) \log \frac{P(x)}{Q(x)} = H(P, Q) - H(P)$$
 
 Minimizing cross-entropy loss is equivalent to minimizing KL divergence between data and model distributions.
 
+(sec-ch2-mutual-information)=
+
 #### Mutual Information
 
 **Mutual information** measures the amount of information shared between variables:
@@ -118,6 +148,8 @@ Minimizing cross-entropy loss is equivalent to minimizing KL divergence between 
 $$I(X; Y) = \sum_{x,y} P(x,y) \log \frac{P(x,y)}{P(x)P(y)}$$
 
 Mutual information is the quantity that language modeling implicitly exploits: a context that shares a lot of information with the next token makes that token predictable.
+
+(sec-ch2-practical-applications)=
 
 ### 1.3 Practical Applications
 
@@ -159,11 +191,17 @@ def kl_divergence(p, q):
 The notebook section {ref}`nb-math-information-theory` implements entropy, cross-entropy and KL divergence in bits, shows how entropy falls as a softmax sharpens, and computes the perplexity of an untrained model.
 ```
 
+(sec-ch2-optimization-fundamentals)=
+
 ## 2. Optimization Fundamentals
+
+(sec-ch2-gradient-descent-and-variants)=
 
 ### 2.1 Gradient Descent and Variants
 
 Optimization lies at the heart of LLM training. Understanding the mathematical properties of different optimizers explains their behavior during training.
+
+(sec-ch2-stochastic-gradient-descent)=
 
 #### Stochastic Gradient Descent
 
@@ -173,6 +211,8 @@ $$\theta_{t+1} = \theta_t - \eta \nabla_\theta \mathcal{L}(\theta_t)$$
 
 where $\eta$ is the learning rate and $\nabla_\theta \mathcal{L}$ is the gradient of the loss function.
 
+(sec-ch2-momentum)=
+
 #### Momentum
 
 Momentum accelerates optimization by accumulating gradients:
@@ -181,6 +221,8 @@ $$v_{t+1} = \beta v_t + \nabla_\theta \mathcal{L}(\theta_t)$$
 $$\theta_{t+1} = \theta_t - \eta v_{t+1}$$
 
 The momentum parameter $\beta$ (typically 0.9) controls how much previous gradients influence the current update {cite}`polyak1964some`.
+
+(sec-ch2-adam-optimizer)=
 
 #### Adam Optimizer
 
@@ -195,9 +237,13 @@ $$\theta_{t+1} = \theta_t - \frac{\eta}{\sqrt{\hat{v}_t} + \epsilon} \hat{m}_t$$
 
 Adam's adaptive learning rates work particularly well for sparse gradients common in NLP.
 
+(sec-ch2-learning-rate-scheduling)=
+
 ### 2.2 Learning Rate Scheduling
 
 Effective training requires careful learning rate management:
+
+(sec-ch2-linear-warmup)=
 
 #### Linear Warmup
 
@@ -210,11 +256,15 @@ $$\eta_t = \begin{cases}
 
 Warmup prevents large gradient updates early in training when parameters are randomly initialized.
 
+(sec-ch2-cosine-annealing)=
+
 #### Cosine Annealing
 
 Cosine schedules provide smooth learning rate decay:
 
 $$\eta_t = \eta_{\min} + \frac{1}{2}(\eta_{\max} - \eta_{\min})\left(1 + \cos\left(\frac{t - T_{\text{warmup}}}{T_{\max} - T_{\text{warmup}}} \pi\right)\right)$$
+
+(sec-ch2-gradient-clipping)=
 
 ### 2.3 Gradient Clipping
 
@@ -283,11 +333,17 @@ class AdamWWithWarmup:
 The notebook section {ref}`nb-math-optimizers` implements SGD, momentum and Adam from scratch (Adam is asserted to match `torch.optim.Adam`), compares them on the Rosenbrock function ({ref}`nb-math-rosenbrock`), and plots warm-up with cosine, inverse-square-root and constant schedules ({ref}`nb-math-schedules`).
 ```
 
+(sec-ch2-backpropagation-through-transformers)=
+
 ## 3. Backpropagation Through Transformers
+
+(sec-ch2-gradient-flow-in-deep-networks)=
 
 ### 3.1 Gradient Flow in Deep Networks
 
 Understanding how gradients flow through transformer architectures reveals why certain design choices (layer normalization, residual connections) are crucial for training stability.
+
+(sec-ch2-the-vanishing-gradient-problem)=
 
 #### The Vanishing Gradient Problem
 
@@ -296,6 +352,8 @@ In deep networks, gradients can become exponentially small:
 $$\frac{\partial \mathcal{L}}{\partial \theta_1} = \frac{\partial \mathcal{L}}{\partial h_L} \prod_{l=2}^{L} \frac{\partial h_l}{\partial h_{l-1}} \frac{\partial h_1}{\partial \theta_1}$$
 
 If $\left\|\frac{\partial h_l}{\partial h_{l-1}}\right\| < 1$, gradients vanish as depth increases.
+
+(sec-ch2-pre-post-ln)=
 
 #### Residual Connections
 
@@ -308,6 +366,8 @@ The gradient becomes:
 $$\frac{\partial h_{l+1}}{\partial h_l} = I + \frac{\partial F(h_l)}{\partial h_l}$$
 
 The identity term gives every layer a direct path for the gradient, so a deep stack no longer multiplies a long chain of possibly small Jacobians {cite}`he2016deep`. It does not by itself bound the gradient's magnitude: where normalization sits relative to the residual branch matters, and the original post-LN transformer needs learning-rate warm-up precisely because its gradients at initialization are not well behaved, which is why most later models normalize before each sublayer (pre-LN) {cite}`xiong2020layer`.
+
+(sec-ch2-layer-normalization-mathematics)=
 
 ### 3.2 Layer Normalization Mathematics
 
@@ -327,6 +387,8 @@ $$\frac{\partial \mathcal{L}}{\partial x_i} = \frac{1}{\sigma}\left(g_i - \frac{
 where $g_j = \gamma_j \frac{\partial \mathcal{L}}{\partial y_j}$ carries the per-feature scale and $\hat{x}_j = (x_j-\mu)/\sigma$ is the normalized input.
 
 Layer normalization provides more stable gradients than batch normalization in sequence models.
+
+(sec-ch2-attention-gradient-analysis)=
 
 ### 3.3 Attention Gradient Analysis
 
@@ -387,11 +449,17 @@ def attention_gradients(Q, K, V, grad_output):
 The notebook section {ref}`nb-math-backprop` implements scaled dot-product attention and reports its input gradients, and {ref}`nb-math-layernorm` compares gradient norms through twelve linear layers with and without layer normalization, with residual connections, and with a Xavier-scaled initialisation, so you can see which of these actually prevents vanishing.
 ```
 
+(sec-ch2-scaling-laws-and-compute)=
+
 ## 4. Scaling Laws and Compute
+
+(sec-ch2-the-scaling-hypothesis)=
 
 ### 4.1 The Scaling Hypothesis
 
 Empirical observations reveal predictable relationships between model size, compute, and performance. These **scaling laws** guide resource allocation and model design decisions.
+
+(sec-ch2-parameter-scaling)=
 
 #### Parameter Scaling
 
@@ -401,6 +469,8 @@ $$L(N) = \left(\frac{N_c}{N}\right)^{\alpha_N}$$
 
 where $N$ counts non-embedding parameters, $N_c \approx 8.8 \times 10^{13}$ is a fitted scale and $\alpha_N \approx 0.076$ for language modeling.
 
+(sec-ch2-data-scaling)=
+
 #### Data Scaling
 
 Similarly, performance improves with dataset size $D$:
@@ -409,6 +479,8 @@ $$L(D) = \left(\frac{D_c}{D}\right)^{\alpha_D}$$
 
 with $\alpha_D \approx 0.095$.
 
+(sec-ch2-compute-scaling)=
+
 #### Compute Scaling
 
 Training compute also follows a power law. On the compute-efficient frontier (the best loss reachable with a given budget), Kaplan et al. report
@@ -416,6 +488,8 @@ Training compute also follows a power law. On the compute-efficient frontier (th
 $$L(C_{\min}) = \left(\frac{C_c^{\min}}{C_{\min}}\right)^{\alpha_C^{\min}}, \qquad C_c^{\min} \approx 3.1 \times 10^{8}\ \text{PF-days},\quad \alpha_C^{\min} \approx 0.050$$
 
 where compute is measured in petaflop/s-days (one PF-day is $8.64 \times 10^{19}$ FLOPs).
+
+(sec-ch2-chinchilla-scaling-laws)=
 
 ### 4.2 Chinchilla Scaling Laws
 
@@ -427,11 +501,17 @@ $$N^* \propto C^a, \quad D^* \propto C^b$$
 
 where $a \approx 0.50$ and $b \approx 0.50$, suggesting equal scaling of parameters and data.
 
+(sec-ch2-implications-for-training)=
+
 #### Implications for Training
 
 Chinchilla scaling implies that many large models are "undertrained"—better performance could be achieved with smaller models trained on more data. This has significant implications for training efficiency and inference costs.
 
+(sec-ch2-computational-complexity)=
+
 ### 4.3 Computational Complexity
+
+(sec-ch2-flops)=
 
 #### Training Complexity
 
@@ -442,6 +522,8 @@ Training a transformer requires $O(n \cdot d^2 + n^2 \cdot d)$ operations per la
 - $O(n^2 \cdot d)$: the attention scores and their application to the values
 
 For long sequences, attention dominates; for large models, linear layers dominate.
+
+(sec-ch2-memory-requirements)=
 
 #### Memory Requirements
 
@@ -494,15 +576,23 @@ Weights and optimizer state alone are close to three terabytes, which is why a 1
 The notebook section {ref}`nb-math-scaling` plots the Kaplan parameter, data and compute laws (with GPT-2, GPT-3 and LLaMA-70B placed on the parameter curve) and the Chinchilla allocation derived from C = 6ND and D = 20N, and {ref}`nb-math-memory` computes parameter counts, training memory and FLOPs per step for the GPT-2 and GPT-3 model sizes, asserting that the 175B configuration comes out at 175B.
 ```
 
+(sec-ch2-numerical-stability-considerations)=
+
 ## 5. Numerical Stability Considerations
+
+(sec-ch2-floating-point-precision)=
 
 ### 5.1 Floating Point Precision
 
 Training large models requires careful attention to numerical precision:
 
+(sec-ch2-mixed-precision-training)=
+
 #### Mixed Precision Training
 
 **FP16** (half precision) reduces memory and increases speed but can cause numerical instability. **Mixed precision** {cite}`micikevicius2017mixed` uses FP16 for most operations but FP32 for loss computation and gradient updates.
+
+(sec-ch2-loss-scaling)=
 
 #### Loss Scaling
 
@@ -514,13 +604,19 @@ where $s$ is the scale factor.
 
 Dynamic loss scaling adjusts the scale factor to maximize gradient precision without overflow.
 
+(sec-ch2-bfloat16)=
+
 #### bfloat16
 
 **bf16** keeps fp32's 8 exponent bits and gives up mantissa bits instead, so it covers the same range as fp32 and needs no loss scaling at all. Nearly every large model trained since 2022 (PaLM, the LLaMA family and their successors) uses bf16 for activations and gradients with an fp32 master copy of the weights; fp16 with loss scaling remains the choice on hardware without bf16 support.
 
+(sec-ch2-initialization-strategies)=
+
 ### 5.2 Initialization Strategies
 
 Proper initialization is crucial for stable training:
+
+(sec-ch2-xavier-glorot-initialization)=
 
 #### Xavier/Glorot Initialization
 
@@ -528,15 +624,21 @@ For layers with $n_{\text{in}}$ inputs and $n_{\text{out}}$ outputs:
 
 $$W \sim \mathcal{N}\left(0, \frac{2}{n_{\text{in}} + n_{\text{out}}}\right)$$
 
+(sec-ch2-he-initialization)=
+
 #### He Initialization
 
 For ReLU activations:
 
 $$W \sim \mathcal{N}\left(0, \frac{2}{n_{\text{in}}}\right)$$
 
+(sec-ch2-residual-init)=
+
 #### Transformer-Specific Initialization
 
 Deep residual networks also scale their initialization with depth: Fixup {cite}`zhang2019fixup` shows that with the right depth-dependent scaling of the residual branches a transformer can be trained with no normalization layers at all, and GPT-2 scales the residual-branch weights by $1/\sqrt{2L}$ for the same reason.
+
+(sec-ch2-gradient-accumulation)=
 
 ### 5.3 Gradient Accumulation
 
@@ -573,6 +675,8 @@ def train_with_gradient_accumulation(model, data_loader, optimizer, accumulation
 The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surviving it), clips a global gradient norm and plots before/after, compares Xavier and He initialisation statistics, and {ref}`nb-math-loss-scaling` simulates dynamic loss scaling.
 ```
 
+(sec-ch2-exercises)=
+
 ## Exercises
 
 1. **Information Theory**: Calculate the entropy of character distributions in different languages. How does this relate to compression ratios?
@@ -585,7 +689,11 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 
 1. **Numerical Stability**: Experiment with different initialization schemes and observe their effects on training stability.
 
+(sec-ch2-further-reading)=
+
 ## Further Reading
+
+(sec-ch2-learning-path-for-beginners)=
 
 ### Learning Path for Beginners
 
@@ -600,11 +708,15 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 4. [Mathematics for Machine Learning](https://mml-book.github.io/) - Free textbook covering linear algebra, calculus, and probability
 1. [MIT 18.065: Matrix Methods in Data Analysis](https://ocw.mit.edu/courses/18-065-matrix-methods-in-data-analysis-signal-processing-and-machine-learning-spring-2018/) - Gilbert Strang's course on mathematical foundations
 
+(sec-ch2-foundational-papers)=
+
 ### Foundational Papers
 
 - [Attention Is All You Need](https://arxiv.org/abs/1706.03762) {cite}`vaswani2017attention`: The original transformer paper with mathematical details ([arXiv:1706.03762](https://arxiv.org/abs/1706.03762))
 - [Scaling Laws for Neural Language Models](https://arxiv.org/abs/2001.08361) {cite}`kaplan2020scaling`: Mathematical analysis of scaling behavior ([arXiv:2001.08361](https://arxiv.org/abs/2001.08361))
 - [Training Compute-Optimal Large Language Models](https://arxiv.org/abs/2203.15556) {cite}`hoffmann2022training`: Chinchilla scaling laws ([arXiv:2203.15556](https://arxiv.org/abs/2203.15556))
+
+(sec-ch2-optimization-theory)=
 
 ### Optimization Theory
 
@@ -620,17 +732,23 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 - [Cyclical Learning Rates](https://arxiv.org/abs/1506.01186) - Practical learning rate scheduling
 - [On the difficulty of training recurrent neural networks](https://proceedings.mlr.press/v28/pascanu13.html) {cite}`pascanu2013difficulty` - Gradient flow analysis
 
+(sec-ch2-numerical-methods-and-efficiency)=
+
 ### Numerical Methods and Efficiency
 
 - {cite}`micikevicius2017mixed`: Mixed precision training techniques ([arXiv:1710.03740](https://arxiv.org/abs/1710.03740))
 - {cite}`you2019large`: Large batch training and scaling ([arXiv:1904.00962](https://arxiv.org/abs/1904.00962))
 - {cite}`shazeer2020glu`: Activation function analysis and GLU variants ([arXiv:2002.05202](https://arxiv.org/abs/2002.05202))
 
+(sec-ch2-mathematical-textbooks-and-references)=
+
 ### Mathematical Textbooks and References
 
 - {cite}`goodfellow2016deep`: Deep learning mathematical foundations - [Online Book](https://www.deeplearningbook.org/)
 - {cite}`murphy2012machine`: Comprehensive machine learning mathematics textbook
 - {cite}`mackay2003information`: Information theory perspective on learning - [Online Book](http://www.inference.org.uk/mackay/itila/)
+
+(sec-ch2-scaling-laws-and-empirical-analysis)=
 
 ### Scaling Laws and Empirical Analysis
 

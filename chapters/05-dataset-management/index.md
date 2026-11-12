@@ -2,6 +2,8 @@
 
 A pretraining corpus is not a file. It is tens of thousands of shards, produced by a pipeline from sources that change, consumed by training runs that must be reproducible, audited after the fact for what they contained, and edited when something has to come out. This chapter covers the engineering that makes that manageable: how the data is laid out on disk, how a version is named and verified, how documents are tokenized, packed and mixed into training batches, how a run resumes without repeating or skipping data, and how a dataset is documented and governed over its life. Chapter 3 acquired the text and Chapter 4 cleaned it; this chapter turns the result into an artifact that a training job can depend on.
 
+(sec-ch5-learning-objectives)=
+
 ## Learning Objectives
 
 By the end of this chapter, you will understand:
@@ -12,6 +14,8 @@ By the end of this chapter, you will understand:
 - How sources are mixed by weight and temperature, with epoch caps, and how a sampler is made deterministic and resumable
 - How data is sharded across many training processes without duplication, and why the global batch should not depend on the number of processes
 - What statistics, tests and documents accompany a dataset version, and how removal requests are handled
+
+(sec-ch5-hands-on-learning)=
 
 ## Hands-On Learning
 
@@ -25,6 +29,8 @@ The accompanying notebook, [Dataset Management Demo](examples/dataset_management
 - Dataset statistics, a data contract, and a data card generated from the manifest ({ref}`nb-dm-governance`)
 
 Everything runs on a CPU in seconds and uses only the standard library and NumPy.
+
+(sec-ch5-chapter-overview)=
 
 ## Chapter Overview
 
@@ -44,7 +50,11 @@ Think of a training dataset the way a software team thinks of a release. Source 
 
 The theme is that reproducibility is cheap when it is designed in and impossible to retrofit. A dataset built by hand in a notebook, shuffled with an unseeded call and written over an older copy, cannot be reproduced, diffed, or audited, and every experiment trained on it is uninterpretable.
 
+(sec-ch5-the-dataset-as-a-build)=
+
 ## 1. The Dataset as a Build Artifact
+
+(sec-ch5-what-has-to-be-reproducible)=
 
 ### 1.1 What has to be reproducible
 
@@ -56,13 +66,19 @@ Three distinct things are called "the dataset" and each needs its own handling:
 
 Reproducing a model means reproducing the third from the second, which means the second has to be fixed and the transformation has to be deterministic. The practical rule used by every serious training codebase: a run's configuration names a corpus version by hash, a tokenizer by hash, and a data seed, and the loader is a pure function of those.
 
+(sec-ch5-the-scale-of-the-problem)=
+
 ### 1.2 The scale of the problem
 
 A 15-trillion-token corpus is roughly 60 TB of UTF-8 text, 30 TB as 16-bit token ids, or 60 TB as the 32-bit ids that vocabularies above 65,536 entries need. Stored as 100 MB shards, it is a few hundred thousand files. A training run over it with a 4-million-token global batch takes nearly four million steps, each of which must fetch the right batch in well under the time the accelerators take to process the previous one, from storage that is usually a network object store rather than a local disk.
 
 Those numbers drive the design choices in the rest of the chapter: shards rather than files small enough to list, token arrays rather than text that needs parsing, indexes that locate a document without scanning, and sampling that computes the next batch's location arithmetically rather than by maintaining a queue.
 
+(sec-ch5-storage-formats-and-layout)=
+
 ## 2. Storage Formats and Layout
+
+(sec-ch5-the-formats-in-use)=
 
 ### 2.1 The formats in use
 
@@ -77,6 +93,8 @@ Those numbers drive the design choices in the rest of the chapter: shards rather
 Most pipelines use two of these: a text format for everything up to and including the released corpus, and a tokenized binary for training. The text format is what gets versioned and documented; the binary is derived from it and the tokenizer, and is rebuilt rather than versioned.
 
 The Hugging Face hub converts hosted corpora to Parquet for its viewer and `datasets` streams Parquet, JSON Lines and other formats from the hub without downloading everything {cite}`lhoest2021datasets`. The Megatron-LM codebase {cite}`shoeybi2019megatron` (the paper is about model parallelism; the data format lives in the repository), GPT-NeoX and their descendants train from an indexed binary format, a flat array of token ids alongside an array of document offsets. Mosaic's streaming format and WebDataset shards exist for the case where training reads directly from object storage and sequential throughput matters more than random access.
+
+(sec-ch5-sharding)=
 
 ### 2.2 Sharding
 
@@ -155,6 +173,8 @@ with tempfile.TemporaryDirectory() as tmp:
 ```
 
 The `mtime=0` argument matters more than it looks. A gzip header records a modification time, and `gzip.open` fills it with the current time, so the same documents compressed a second apart produce different bytes and different hashes. A shard's hash has to be a function of its content alone, or every rebuild looks like a new version. Zstandard frames carry no timestamp; tar and zip archives do, and need the same treatment.
+
+(sec-ch5-tokenized-binaries-and-the-document)=
 
 ### 2.3 Tokenized binaries and the document index
 
@@ -239,7 +259,11 @@ The tokenizer hash is the part people skip and regret. Two tokenizers with the s
 The notebook section {ref}`nb-dm-formats` writes a corpus as JSON Lines shards and as a tokenized binary with offsets, verifies both against their manifests, and compares the bytes per token of each layout.
 ```
 
+(sec-ch5-versioning)=
+
 ## 3. Versioning
+
+(sec-ch5-a-version-is-a-set)=
 
 ### 3.1 A version is a set of hashes
 
@@ -289,6 +313,8 @@ assert diff_manifests(v1, v2) == {
 }
 ```
 
+(sec-ch5-immutability-and-naming)=
+
 ### 3.2 Immutability and naming
 
 A released version is never modified. If a shard is found to be corrupt or to contain something that must be removed, a new version is cut without it, and the old version's manifest is kept so that models trained on it can be audited. The two conventions that make this workable:
@@ -297,6 +323,8 @@ A released version is never modified. If a shard is found to be corrupt or to co
 - **Semantic-style versioning** for the tags, with an agreed meaning: a patch change removes or corrects shards without changing the pipeline; a minor change reruns the pipeline with changed parameters; a major change alters the sources or the schema. The point is less the numbers than having a rule for which experiments remain comparable.
 
 A dataset tag is the thing a training configuration references. A configuration that says `data: fineweb-edu-v1.2.0` with the tag resolved to a root hash at launch and recorded in the run's metadata is reproducible; one that says `data: /mnt/data/fineweb-edu/latest` is not.
+
+(sec-ch5-lineage)=
 
 ### 3.3 Lineage
 
@@ -307,7 +335,11 @@ Each version records how it was made: the versions of its inputs, the pipeline c
 The notebook section {ref}`nb-dm-versioning` builds a manifest for the corpus written earlier, rebuilds it with one document changed and one removed, and shows that the version root changes while the diff names exactly the affected shards. It then verifies a downloaded copy against the manifest and detects a corrupted shard.
 ```
 
+(sec-ch5-tokenization-and-packing)=
+
 ## 4. Tokenization and Packing
+
+(sec-ch5-from-documents-to-sequences)=
 
 ### 4.1 From documents to sequences
 
@@ -380,6 +412,8 @@ n_pieces = sum(max(1, -(-len(d) // 255)) for d in docs)  # pieces of at most 255
 assert (packed != -1).sum() == sum(len(d) for d in docs) + n_pieces  # every token kept, one EOD per piece
 ```
 
+(sec-ch5-cross-document-attention)=
+
 ### 4.2 Cross-document attention
 
 When a sequence holds several documents, causal attention lets a token in the second document attend to the first, which is both a waste (the first document is irrelevant) and a source of the model learning spurious dependencies. The fix is a document mask: a token attends only to earlier tokens of its own document. With a segment id per position, the mask is $M_{ij} = [j \le i] \cdot [s_i = s_j]$, block-diagonal within the causal triangle. Efficient attention kernels accept this as a list of segment boundaries rather than a full matrix.
@@ -417,7 +451,11 @@ Whether to mask is a choice. Many pretraining runs did not, on the grounds that 
 The notebook section {ref}`nb-dm-packing` packs the same corpus by chunking and by best-fit, reports the split and padding rates, plots the distribution of documents per sequence, and renders the document-causal mask for the fullest packed sequence.
 ```
 
+(sec-ch5-mixing-and-sampling)=
+
 ## 5. Mixing and Sampling
+
+(sec-ch5-weights-temperature-and-epochs)=
 
 ### 5.1 Weights, temperature and epochs
 
@@ -429,6 +467,8 @@ Given weights $w_s$ that sum to one, the sampler draws each document's source wi
 - **Epoch caps** bound how many times a source is repeated. If source $s$ has $N_s$ tokens and the run needs $D$ tokens, source $s$ is seen $p_s D / N_s$ times; beyond about four repetitions the marginal token is worth much less {cite}`muennighoff2023scaling`. A cap re-normalises the weights of the uncapped sources once a capped one has used its budget.
 
 Learned weights (DoReMi {cite}`xie2023doremi`, which fits static $w_s$ with a small proxy model) and curricula that change the mixture over training are both consumed by the same sampler, the latter with $w_s$ a function of the step. The cap is stated in tokens; the sampler below counts documents, which production samplers replace with token counts from the index.
+
+(sec-ch5-determinism-and-resumption)=
 
 ### 5.2 Determinism and resumption
 
@@ -510,6 +550,8 @@ assert flat.probs[flat.names.index("wiki")] > a.probs[a.names.index("wiki")]
 
 The `seek` method replays draws, which is fine for millions of steps and a few sources. Production samplers are designed differently so that no replay is needed: the mixture is fixed in advance as a schedule of phases (the caps are applied when the schedule is computed, not as the run proceeds), the source for slot $t$ is a hash of `(seed, t)` under that schedule, and the within-source cursor at step $t$ is a count obtainable from a prefix sum, so that any step is $O(1)$. The price is that the schedule must be recomputed if the weights change mid-run.
 
+(sec-ch5-shuffling-at-the-right-granularity)=
+
 ### 5.3 Shuffling at the right granularity
 
 Three levels of shuffling exist and they are not interchangeable:
@@ -525,7 +567,11 @@ Streaming loaders compromise with a shuffle buffer: read shards in a seeded orde
 The notebook section {ref}`nb-dm-sampler` runs the mixture sampler, plots the realised source fractions at several temperatures with the tempered target weights marked, shows the epoch cap re-normalising the mixture once the smallest source is exhausted, and checks resumption at a hundred random steps.
 ```
 
+(sec-ch5-distributed-loading)=
+
 ## 6. Distributed Loading
+
+(sec-ch5-sharding-across-ranks)=
 
 ### 6.1 Sharding across ranks
 
@@ -578,6 +624,8 @@ for W in (1, 2, 4, 8, 16):
     assert sorted(ids.tolist()) == list(range(step * B, (step + 1) * B))
 ```
 
+(sec-ch5-throughput)=
+
 ### 6.2 Throughput
 
 The loader's job is to never make the accelerator wait. The arithmetic for a modern run: a step over a 4-million-token batch on a large cluster takes a few seconds; the batch is 8 MB of `uint16` ids (16 MB as `uint32`), spread over all ranks, so each rank reads kilobytes per step, trivial for local disk and comfortable for object storage with a few requests in flight. Text formats change the picture less in volume than in work: the same batch is some 16 MB of UTF-8 that must be decompressed, parsed and tokenized, which is CPU time on the step's critical path unless it is prefetched, and whose output depends on the tokenizer library's version at run time. This is the practical argument for pre-tokenized binaries: not storage (gzip-compressed text is comparable in size to 16-bit ids), but zero parsing, random access, and a token stream fixed when the dataset is built rather than when it is read.
@@ -589,7 +637,11 @@ The remaining ingredients are standard: a few worker processes per rank that pre
 The notebook section {ref}`nb-dm-distributed` simulates eight ranks under both designs, checks that each covers the corpus exactly once, and shows the global batch at a fixed step staying identical as the world size changes under global indexing and changing under shard assignment.
 ```
 
+(sec-ch5-statistics-tests-and-monitoring)=
+
 ## 7. Statistics, Tests and Monitoring
+
+(sec-ch5-what-to-compute-for-every)=
 
 ### 7.1 What to compute for every version
 
@@ -603,6 +655,8 @@ A dataset version ships with its statistics, computed by the build and stored ne
 - Overlap with the evaluation suite after decontamination, per benchmark, reported as a number even when it is zero
 
 Elazar et al. {cite}`elazar2024whats` built exactly this kind of inspection tooling for the public corpora and found, among other things, that benchmark contamination and duplicated content were common across them. Statistics that are computed rather than asserted are the defence.
+
+(sec-ch5-data-contracts)=
 
 ### 7.2 Data contracts
 
@@ -669,6 +723,8 @@ assert any("books" in f for f in check_contract(stats, {**plan, "books": 0.1}, t
 assert any("exceeds" in f for f in check_contract(stats, plan, tolerance=0.08, max_len=1000))
 ```
 
+(sec-ch5-canaries-and-drift)=
+
 ### 7.3 Canaries and drift
 
 Two monitoring practices borrowed from other fields:
@@ -681,7 +737,11 @@ Two monitoring practices borrowed from other fields:
 The notebook section {ref}`nb-dm-governance` computes per-source statistics for the demo corpus, runs a contract against a plan, injects a canary and finds it, and renders a data card from the manifest and statistics.
 ```
 
+(sec-ch5-documentation-and-governance)=
+
 ## 8. Documentation and Governance
+
+(sec-ch5-data-cards-and-datasheets)=
 
 ### 8.1 Data cards and datasheets
 
@@ -694,11 +754,15 @@ The pretraining corpora that are well documented (The Pile {cite}`gao2020pile`, 
 
 Croissant, a machine-readable metadata vocabulary built on schema.org, is becoming the common format for the card's structured part (sources, licences, fields, splits) so that hubs and loaders can read it; the prose part still needs a person.
 
+(sec-ch5-licenses-and-the-provenance-record)=
+
 ### 8.2 Licences and the provenance record
 
 A corpus mixes sources under different terms, and the terms travel with the data. The version's metadata records, per source, the licence or terms under which it was obtained, the opt-out policy applied and the date, and any restrictions that propagate to models trained on it. Longpre et al. {cite}`longpre2023data` audited the licences attached to popular fine-tuning datasets and found that a majority were mislabelled or had their restrictions dropped as they were repackaged; the only remedy is to carry the record forward from acquisition (Chapter 3) through every version rather than reconstructing it later.
 
 Access control follows from the record. A corpus with a non-commercial source cannot be released under a commercial licence as a whole, so either the source is separated into its own shards with their own terms, or the released version excludes it. Keeping sources in separate shards, which the naming convention in Section 2.2 already does, is what makes this a manifest operation rather than a rebuild.
+
+(sec-ch5-removal)=
 
 ### 8.3 Removal
 
@@ -741,7 +805,11 @@ assert index.locate("not present") == []
 
 The index is cheap: one hash per document, which the build computes anyway for deduplication, and a key-value store that fits on one machine even at tens of billions of entries.
 
+(sec-ch5-putting-it-together)=
+
 ## 9. Putting It Together
+
+(sec-ch5-the-build)=
 
 ### 9.1 The build
 
@@ -756,6 +824,8 @@ A dataset build, in the sense of a software build, is a script under version con
 
 Everything a training run needs is then a tag. A run's configuration names the tag, the loader resolves it to a manifest at launch and records the root hash in the run metadata, and from then on the run's data is a function of that hash, the seed and the step.
 
+(sec-ch5-tooling)=
+
 ### 9.2 Tooling
 
 The pieces exist as libraries, and most teams assemble rather than write them:
@@ -769,6 +839,8 @@ The pieces exist as libraries, and most teams assemble rather than write them:
 
 What no tool supplies is the discipline: that every version is produced by the build, that no shard is edited in place, that every run names a tag, and that the statistics and the card are updated with the data rather than after it.
 
+(sec-ch5-exercises)=
+
 ## Exercises
 
 1. **Bytes per token.** Take a few thousand documents and store them as gzip JSON Lines, as a `uint16` token binary, and as a `uint32` token binary. Report bytes per token for each and the time to read every document back. At what point does the text format's inspectability stop being worth its cost?
@@ -779,7 +851,11 @@ What no tool supplies is the discipline: that every version is produced by the b
 1. **World-size invariance.** Implement a loader under both designs of Section 6.1 and resume a simulated run at step 500 with the world size changed from 8 to 4. Which design gives the same batches, and what does the other one skip or repeat?
 1. **A removal request.** Pick a document in the notebook's corpus and carry out the three steps of Section 8.3: locate it, cut a new version without it, and list the versions (and, hypothetically, the models) affected. How long did each step take, and which would have been impossible without the index?
 
+(sec-ch5-further-reading)=
+
 ## Further Reading
+
+(sec-ch5-formats-loaders-and-packing)=
 
 ### Formats, loaders and packing
 
@@ -791,6 +867,8 @@ What no tool supplies is the discipline: that every version is produced by the b
 - [DoReMi](https://arxiv.org/abs/2305.10429) {cite}`xie2023doremi` - learned mixture weights
 - [mT5](https://arxiv.org/abs/2010.11934) {cite}`xue2021mt5` - temperature sampling across languages
 
+(sec-ch5-documentation-auditing-and-governance)=
+
 ### Documentation, auditing and governance
 
 - [Datasheets for Datasets](https://arxiv.org/abs/1803.09010) {cite}`gebru2021datasheets` and [Data Cards](https://arxiv.org/abs/2204.01075) {cite}`pushkarna2022data` - the documentation templates
@@ -800,6 +878,8 @@ What no tool supplies is the discipline: that every version is produced by the b
 - [The Secret Sharer](https://arxiv.org/abs/1802.08232) {cite}`carlini2019secret` - canaries for measuring memorisation
 - [Poisoning Web-Scale Training Datasets is Practical](https://arxiv.org/abs/2302.10149) {cite}`carlini2024poisoning` - why distributed datasets need content hashes
 - [The Pile](https://arxiv.org/abs/2101.00027) {cite}`gao2020pile`, [Dolma](https://arxiv.org/abs/2402.00159) {cite}`soldaini2024dolma` and [FineWeb](https://arxiv.org/abs/2406.17557) {cite}`penedo2024fineweb` - corpora released with their documentation, statistics and code
+
+(sec-ch5-tools)=
 
 ### Tools
 

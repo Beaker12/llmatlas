@@ -2,7 +2,11 @@
 
 This page collects the tokenizer material from Chapter 1 that goes beyond what you need to follow the transformer: modern tokenizers, special tokens, vocabulary construction, cross-lingual and domain issues, quality metrics, a complete BPE tokenizer, and analysis tools. Read {doc}`index` first.
 
+(sec-tdd-t-1-modern-tokenization-strategies)=
+
 ## T.1 Modern Tokenization Strategies
+
+(sec-tdd-tiktoken-openai-s-tokenizer)=
 
 ### Tiktoken (OpenAI's Tokenizer)
 
@@ -29,6 +33,8 @@ print(f"Token count: {len(tokens)}")
 print(f"Decoded: {decoded}")
 ```
 
+(sec-tdd-multi-modal-tokenization)=
+
 ### Multi-Modal Tokenization
 
 Modern models handle multiple modalities:
@@ -37,6 +43,8 @@ Modern models handle multiple modalities:
 - **Image tokens**: Patch embeddings or discrete visual tokens
 - **Audio tokens**: Spectrogram patches or audio codebook tokens
 - **Special tokens**: Task indicators, separators, padding
+
+(sec-tdd-vocabulary-construction-strategies)=
 
 ### Vocabulary Construction Strategies
 
@@ -89,7 +97,11 @@ def build_vocab_coverage(corpus, coverage_threshold=0.95):
     return vocab
 ```
 
+(sec-tdd-t-2-tokenization-impact-on)=
+
 ## T.2 Tokenization Impact on Model Behavior
+
+(sec-tdd-length-and-efficiency)=
 
 ### Length and Efficiency
 
@@ -131,6 +143,8 @@ print(f"Subword tokens ({len(subword_tokens)}): {subword_tokens}")
 - Longer sequences require more memory
 - Processing time scales with sequence length
 
+(sec-tdd-linguistic-bias)=
+
 ### Linguistic Bias
 
 Tokenization can introduce linguistic biases:
@@ -151,6 +165,8 @@ texts = [
 # This creates unfair computational costs for non-English text
 ```
 
+(sec-tdd-out-of-vocabulary-handling)=
+
 ### Out-of-Vocabulary Handling
 
 Different strategies for unknown tokens:
@@ -160,7 +176,11 @@ Different strategies for unknown tokens:
 1. **Character fallback**: Fall back to character-level for unknown segments
 1. **Byte fallback**: Ultimate fallback to byte representation
 
+(sec-tdd-t-3-special-tokens-and)=
+
 ## T.3 Special Tokens and Their Roles
+
+(sec-tdd-common-special-tokens)=
 
 ### Common Special Tokens
 
@@ -178,6 +198,8 @@ SPECIAL_TOKENS = {
     "<|im_end|>": "End of instruction/message",
 }
 ```
+
+(sec-tdd-token-ids-and-embeddings)=
 
 ### Token IDs and Embeddings
 
@@ -201,7 +223,11 @@ class Tokenizer:
         return self.detokenize(tokens)  # Your detokenization logic
 ```
 
+(sec-tdd-t-4-practical-considerations)=
+
 ## T.4 Practical Considerations
+
+(sec-tdd-choosing-vocabulary-size)=
 
 ### Choosing Vocabulary Size
 
@@ -211,6 +237,8 @@ Common vocabulary sizes and their trade-offs:
 - **Medium (32K-50K)**: GPT-2 (50k), the original LLaMA (32k); the usual choice for research-scale models
 - **Large (100K-150K)**: GPT-4's `cl100k_base` (~100k), Llama 3 (128k), Qwen (~150k); better compression of multilingual text and code
 - **Very large (250K+)**: Gemma (256k) and multilingual models; the embedding and output matrices become a noticeable share of a small model's parameters
+
+(sec-tdd-tokenization-efficiency)=
 
 ### Tokenization Efficiency
 
@@ -237,6 +265,8 @@ def benchmark_tokenization(texts, tokenizer):
     }
 ```
 
+(sec-tdd-reversibility-and-information-loss)=
+
 ### Reversibility and Information Loss
 
 Good tokenizers should be reversible:
@@ -258,7 +288,11 @@ def test_reversibility(tokenizer, texts):
     return failures
 ```
 
+(sec-tdd-t-5-tokenization-challenges-and)=
+
 ## T.5 Tokenization Challenges and Solutions
+
+(sec-tdd-cross-lingual-tokenization)=
 
 ### Cross-Lingual Tokenization
 
@@ -301,6 +335,8 @@ chinese_text = "我喜欢学习自然语言处理"
 # Word-level (with segmentation): ["我", "喜欢", "学习", "自然语言处理"]
 # Subword: ["我", "喜欢", "学", "习", "自然", "语言", "处理"]
 ```
+
+(sec-tdd-handling-special-cases)=
 
 ### Handling Special Cases
 
@@ -365,6 +401,8 @@ numerical_examples = [
 # ["3.14159", "1,234,567.89", "2023", "-", "12", "-", "25"]
 ```
 
+(sec-tdd-domain-adaptation)=
+
 ### Domain Adaptation
 
 **Medical Text**:
@@ -418,6 +456,8 @@ legal_text = "The aforementioned clause notwithstanding the heretofore provision
 # Need specialized vocabulary for legal corpus
 ```
 
+(sec-tdd-quality-metrics-for-tokenization)=
+
 ### Quality Metrics for Tokenization
 
 ```python
@@ -470,6 +510,8 @@ def compare_tokenizers(tokenizers, test_corpus):
 
     return df
 ```
+
+(sec-tdd-best-practices-for-tokenization)=
 
 ### Best Practices for Tokenization
 
@@ -599,9 +641,13 @@ def create_multi_domain_tokenizer(domain_corpora, vocab_size=32000):
     return tokenizer, domain_performance
 ```
 
+(sec-tdd-t-6-practical-implementation)=
+
 ## T.6 Practical Implementation
 
 This section provides hands-on implementation of tokenization and embedding concepts:
+
+(sec-tdd-complete-tokenization-pipeline)=
 
 ### Complete Tokenization Pipeline
 
@@ -824,6 +870,8 @@ print(f"Original: {test_text}")
 print(f"Encoded: {encoded}")      # [2, ..., 3]: <BOS> ... <EOS>
 print(f"Decoded: {decoded}")
 ```
+
+(sec-tdd-tokenization-analysis-tools)=
 
 ### Tokenization Analysis Tools
 

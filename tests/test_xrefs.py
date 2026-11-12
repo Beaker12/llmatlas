@@ -92,3 +92,41 @@ def test_roles_code_and_math_are_exempt(tmp_path):
     text = ("See {ref}`Section 2.1 <sec-ch1-a>` and {numref}`Chapter 10`, `Section 2.2`, $Chapter 9$.\n\n"
             "```text\nSection 4.4 and Chapter 12\n```\n\nSection 2 and Chapter 5 are fine.\n")
     assert body_text_failures(_page(tmp_path, text)) == []
+
+
+# Section labels: every level 2-4 heading of the chapter pages and the deep-dive carries a target line
+# `(label)=` and a blank line directly above it. Interface labels (named by other chapters) are exempt from
+# the prefix rule; they sit on a host heading, which may carry two target lines.
+INTERFACE_LABELS = {"sec-ch1-perplexity", "sec-ch1-layernorm", "sec-ch1-modern-block", "sec-ch1-rope",
+                    "sec-ch1-relative-bias", "sec-ch2-sqrt-dk", "sec-ch2-pre-post-ln", "sec-ch2-flops",
+                    "sec-ch2-residual-init", "sec-ch3-epochs", "sec-ch4-dedup-scope"}
+HEADING = re.compile(r"^#{2,4} ")
+TARGET = re.compile(r"^\(([A-Za-z0-9_.:-]+)\)=$")
+
+
+def test_every_heading_has_a_section_label_and_labels_are_unique():
+    bad, seen = [], {}
+    for chapter_dir in CHAPTER_DIRS:
+        for page in pages(chapter_dir):
+            prefix = "sec-tdd-" if page.name == "tokenization-deep-dive.md" else f"sec-ch{int(chapter_dir.name[:2])}-"
+            text = page.read_text(encoding="utf-8")
+            lines, prose = text.split("\n"), blank_code(text).split("\n")
+            for i, line in enumerate(prose):
+                target = TARGET.match(line)
+                if target:
+                    label = target.group(1)
+                    if label in seen:
+                        bad.append(f"{page.name}:L{i + 1}: label {label!r} also at {seen[label]}")
+                    seen[label] = f"{page.name}:L{i + 1}"
+                if not HEADING.match(line):
+                    continue
+                labels, k = [], i - 1
+                while k >= 1 and lines[k] == "" and TARGET.match(lines[k - 1]):
+                    labels.append(TARGET.match(lines[k - 1]).group(1))
+                    k -= 2
+                if not labels:
+                    bad.append(f"{page.name}:L{i + 1}: heading has no target line above it: {line!r}")
+                bad += [f"{page.name}:L{i + 1}: label {label!r} lacks the prefix {prefix!r}"
+                        for label in labels if not (label.startswith(prefix) or label in INTERFACE_LABELS)]
+    assert not bad, "\n".join(bad)
+    assert INTERFACE_LABELS <= set(seen), f"interface labels missing: {sorted(INTERFACE_LABELS - set(seen))}"
