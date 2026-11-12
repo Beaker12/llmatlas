@@ -73,3 +73,31 @@ def blank_inline_code(text: str, keep_roles: bool = False) -> str:
 
 def line_of(text: str, pos: int) -> int:
     return text.count("\n", 0, pos) + 1
+
+
+def fences(text: str):
+    """The code fences of `text` as dicts {info, body, line, end}: info string, body, 1-based line of the opening
+    fence, and the character offset at the end of the closing fence line. Fences inside a directive are found; a
+    longer outer fence (four backticks) protects the fences it contains. Directive fences are not returned."""
+    found, stack, code, offset = [], [], None, 0
+    for number, line in enumerate(text.split("\n"), start=1):
+        end = offset + len(line)
+        if code:
+            m = CLOSING.match(line)
+            if m and m.group(1)[0] == code["char"] and len(m.group(1)) >= code["size"]:
+                found.append({"info": code["info"], "body": text[code["body"]:offset], "line": code["line"], "end": end})
+                code = None
+        else:
+            m = FENCE.match(line)
+            if m:
+                char, size, role, rest = m.group(1)[0], len(m.group(1)), m.group(2), m.group(3)
+                if not role and not rest.strip() and stack and stack[-1][0] == char and size >= stack[-1][1]:
+                    stack.pop()
+                elif char == ":" or (role and _directive_name(role) not in CODE_DIRECTIVES):
+                    if role:
+                        stack.append((char, size))
+                else:
+                    code = {"char": char, "size": size, "info": ((role or "") + rest).strip(), "line": number,
+                            "body": end + 1}
+        offset = end + 1
+    return found

@@ -15,6 +15,7 @@ Slow, one test per chapter: if figures/make_figures.py exists, run it with a tem
 each SVG it writes is byte-identical to the committed one. A chapter without the script passes trivially; with the
 script this test is asserted directly (not through .review-pending), because a stale figure is never pending.
 """
+import ast
 import hashlib
 import os
 import re
@@ -26,26 +27,70 @@ from pathlib import Path
 import pytest
 
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check, chapter_constants
-from tests._pages import blank_code, line_of, pages
+from tests._pages import blank_code, fences, line_of, pages
 
 LABEL = re.compile(r"fig-ch\d+-[a-z0-9]+(?:-[a-z0-9]+)*")
 FIGURE = re.compile(r"^([ \t]*)(`{3,}|:{3,})\{figure\}[ \t]+(\S+)[ \t]*\n((?:[ \t]*:[\w-]+:.*\n)*)([\s\S]*?)^\1\2[ \t]*$", re.M)
 NUMREF = re.compile(r"\{numref\}`(?:[^`<]*<)?([^`>]+?)>?`")
-PYTHON_FENCE = re.compile(r"^```python[ \t]*\n(.*?)^```[ \t]*$", re.M | re.S)
-PLOTS = re.compile(r"plt\.(?:show|savefig)\(|\.savefig\(|\b(?:plt|ax|axs|axes|ax\d+)(?:\[[^\]]*\])?\.(?:plot|imshow)\(")
-AFTER_FENCE = re.compile(r"\s*(?:%[ \t]*output(?:-shape)?[ \t]*\n\s*(`{3,})text[ \t]*\n[\s\S]*?\n\1[ \t]*\n)?\s*(?:`{3,}|:{3,})\{figure\}")
+TARGET_LINE = re.compile(r"^\(([^)\s]+)\)=[ \t]*\n(?:[ \t]*\n)*\Z", re.M)
+OUTPUT_MARK = re.compile(r"\s*%[ \t]*output(?:-shape)?[ \t]*\n\s*(`{3,})text[ \t]*\n")
+FIGURE_START = re.compile(r"\s*(?:\([^)\s]+\)=[ \t]*\n\s*)?(?:`{3,}|:{3,})\{figure\}")
+PLOT_ATTRS = {"savefig", "plot", "imshow", "bar", "hist", "scatter"}
+
+
+def _plot_call(node):
+    if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+        return False
+    attr, base = node.func.attr, node.func.value
+    return attr in PLOT_ATTRS or (attr == "show" and isinstance(base, ast.Name) and base.id in ("plt", "pyplot"))
+
+
+def plots(source):
+    """True when a plotting call is reachable from module level, directly or in a function the fence calls there."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    functions = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    top = [n for n in tree.body if n not in functions.values()]
+    seen, queue = set(), list(top)
+    while queue:
+        node = queue.pop()
+        for sub in ast.walk(node):
+            if _plot_call(sub):
+                return True
+            if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) and sub.func.id in functions \
+                    and sub.func.id not in seen:
+                seen.add(sub.func.id)
+                queue.append(functions[sub.func.id])
+    return False
+
+
+def followed_by_figure(text, pos):
+    """True when, after optional blank lines and an optional `% output` block, a {figure} directive opens."""
+    m = OUTPUT_MARK.match(text, pos)
+    if m:
+        closing = re.compile(rf"^{re.escape(m.group(1))}[ \t]*$", re.M).search(text, m.end())
+        if not closing:
+            return False
+        pos = closing.end()
+    return bool(FIGURE_START.match(text, pos))
 SOURCE_SUFFIXES = {".dot", ".py", ".json"}
 
 
 def parse_figures(text):
     """[(line, target, options dict, caption)] for the figure directives of `text`."""
     figures = []
-    for m in FIGURE.finditer(blank_code(text)):
+    shown = blank_code(text)     # offsets below are into `shown`, which keeps every line number
+    for m in FIGURE.finditer(shown):
         options = {}
         for line in m.group(4).splitlines():
             key, _, value = line.strip()[1:].partition(":")
             options[key] = value.strip()
-        figures.append((line_of(text, m.start()), m.group(3), options, m.group(5).strip()))
+        above = TARGET_LINE.search(shown[max(0, m.start() - 200):m.start()])    # a `(fig-chN-slug)=` target line
+        if above and not (options.get("name") or options.get("label")):
+            options["name"] = above.group(1)
+        figures.append((line_of(shown, m.start()), m.group(3), options, m.group(5).strip()))
     return figures
 
 
@@ -76,12 +121,11 @@ def figure_failures(chapter_dir, min_figures):
             for suffix in (".svg", ".pdf"):
                 if not (figures_dir / (m.group(1) + suffix)).exists():
                     failures.append(f"{where}: figures/{m.group(1)}{suffix} does not exist")
-        for m in PYTHON_FENCE.finditer(text):
-            body = m.group(1)
-            if body.lstrip().startswith("# pseudo-code") or not PLOTS.search(body):
+        for fence in fences(text):
+            if fence["info"] != "python" or fence["body"].lstrip().startswith("# pseudo-code") or not plots(fence["body"]):
                 continue
-            if not AFTER_FENCE.match(text, m.end()):
-                failures.append(f"{page.name}:L{line_of(text, m.start())}: plotting fence is not followed by a {{figure}}")
+            if not followed_by_figure(text, fence["end"]):
+                failures.append(f"{page.name}:L{fence['line']}: plotting fence is not followed by a {{figure}}")
     for label, where in labels.items():
         if label not in numrefs:
             failures.append(f"{where}: figure {label} is never referenced by {{numref}}")
@@ -112,20 +156,24 @@ def figure_failures(chapter_dir, min_figures):
 
 
 def regeneration_failures(chapter_dir, out_dir):
-    script = Path(chapter_dir) / "figures" / "make_figures.py"
-    if not script.exists():
-        return []
-    env = {**os.environ, "MPLBACKEND": "Agg"}
-    done = subprocess.run([sys.executable, str(script), str(out_dir)], capture_output=True, text=True, env=env)
-    if done.returncode:
-        return [f"figures/make_figures.py: exit {done.returncode}: {done.stderr.strip().splitlines()[-1:]}"]
-    failures = []
-    for svg in sorted(Path(out_dir).glob("*.svg")):
-        committed = Path(chapter_dir) / "figures" / svg.name
-        if not committed.exists():
-            failures.append(f"figures/{svg.name}: written by make_figures.py but not committed")
-        elif committed.read_bytes() != svg.read_bytes():
-            failures.append(f"figures/{svg.name}: differs from the committed file; run make_figures.py and commit")
+    figures_dir = Path(chapter_dir) / "figures"
+    script = figures_dir / "make_figures.py"
+    written, failures = set(), []
+    if script.exists():
+        env = {**os.environ, "MPLBACKEND": "Agg"}
+        done = subprocess.run([sys.executable, str(script), str(out_dir)], capture_output=True, text=True, env=env)
+        if done.returncode:
+            return [f"figures/make_figures.py: exit {done.returncode}: {done.stderr.strip().splitlines()[-1:]}"]
+        for svg in sorted(Path(out_dir).glob("*.svg")):
+            written.add(svg.name)
+            committed = figures_dir / svg.name
+            if not committed.exists():
+                failures.append(f"figures/{svg.name}: written by make_figures.py but not committed")
+            elif committed.read_bytes() != svg.read_bytes():
+                failures.append(f"figures/{svg.name}: differs from the committed file; run make_figures.py and commit")
+    for svg in sorted(figures_dir.glob("*.svg")):
+        if svg.name not in written and not svg.with_suffix(".dot").exists():
+            failures.append(f"figures/{svg.name}: no .dot source and not written by make_figures.py (orphan plot)")
     return failures
 
 
@@ -226,6 +274,57 @@ def test_a_changed_dot_without_a_new_hash_is_reported(tmp_path):
     only(figure_failures(chapter, 2), "figures/schematic.dot: hash differs")
     (chapter / "figures" / "SOURCES.sha256").unlink()
     only(figure_failures(chapter, 2), "no line in figures/SOURCES.sha256")
+
+
+TARGET_FIGURE = ("(fig-ch0-ramp)=\n\n```{figure} figures/ramp.*\n:alt: A straight line rising from one to three.\n\n"
+                 "A ramp, drawn by the fence above and written by `figures/make_figures.py`.\n```\n")
+
+
+def test_a_label_may_be_a_myst_target_line_above_the_directive(tmp_path):
+    chapter = copy(tmp_path, RAMP, TARGET_FIGURE)
+    assert figure_failures(chapter, 2) == []
+    # still checked against the {numref} uses and the slug form
+    text = (chapter / "index.md").read_text(encoding="utf-8")
+    (chapter / "index.md").write_text(text.replace("(fig-ch0-ramp)=", "(ramp)="), encoding="utf-8")
+    assert any("'ramp' is not of the form" in f for f in figure_failures(chapter, 2))
+    (chapter / "index.md").write_text(text.replace("Figure {numref}`fig-ch0-ramp` shows the ramp. ", ""), encoding="utf-8")
+    only(figure_failures(chapter, 2), "fig-ch0-ramp is never referenced by {numref}")
+
+
+def test_a_directive_without_name_or_target_line_has_an_empty_label(tmp_path):
+    chapter = copy(tmp_path, ":name: fig-ch0-ramp\n")
+    assert any("figure label '' is not of the form" in f for f in figure_failures(chapter, 2))
+
+
+def test_a_fence_that_only_defines_a_plotting_function_is_not_a_plotting_fence():
+    defines = "import matplotlib.pyplot as plt\n\ndef draw(xs):\n    plt.plot(xs)\n    plt.show()\n"
+    assert not plots(defines)
+    assert plots(defines + "\ndraw([1, 2])\n")
+    assert plots("import matplotlib.pyplot as plt\nplt.show()\n")
+    assert plots("fig, ax = plt.subplots()\nax.bar([1], [2])\n")
+    assert not plots("print('plot')\nx.append(1)\n") and not plots("def broken(:\n")
+
+
+def test_four_backtick_fences_and_fences_in_admonitions_are_checked(tmp_path):
+    body = "import matplotlib.pyplot as plt\nplt.show()\n"
+    page = f"````python\n{body}````\n\n```{{admonition}} X\n```python\n{body}```\n```\n"
+    chapter = copy(tmp_path, "## 3. Shared function\n", "## 3. Shared function\n\n" + page)
+    failures = [f for f in figure_failures(chapter, 2) if "plotting fence" in f]
+    assert len(failures) == 2
+
+
+def test_the_check_is_fast_on_the_longest_chapter():
+    import time
+    longest = max(CHAPTER_DIRS, key=lambda d: sum(len(p.read_text(encoding="utf-8")) for p in pages(d)))
+    start = time.perf_counter()
+    figure_failures(longest, 0)
+    assert time.perf_counter() - start < 0.5
+
+
+def test_an_orphan_svg_is_reported_by_the_regeneration_check(tmp_path):
+    chapter = copy(tmp_path)
+    (chapter / "figures" / "orphan.svg").write_text("<svg/>", encoding="utf-8")
+    only(regeneration_failures(chapter, tmp_path / "out"), "figures/orphan.svg: no .dot source and not written")
 
 
 @pytest.mark.slow
