@@ -2,10 +2,11 @@
 no runtime pip installs, and small enough to review."""
 import json
 import re
-import subprocess
 from pathlib import Path
 
 import pytest
+
+from tests._files import tracked
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_BYTES = 1_000_000
@@ -13,9 +14,7 @@ PIP_INSTALL = re.compile(r"""(!|%)pip\s+install|pip["']?\s*,\s*["']install|pip i
 
 
 def notebooks():
-    out = subprocess.run(["git", "ls-files", "*.ipynb", "**/*.ipynb"], cwd=ROOT,
-                         capture_output=True, text=True).stdout.split()
-    return sorted({ROOT / p for p in out})
+    return tracked("*.ipynb")
 
 
 @pytest.mark.parametrize("path", notebooks(), ids=lambda p: p.name)

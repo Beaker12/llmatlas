@@ -8,16 +8,17 @@ from pathlib import Path
 
 import pytest
 
+from tests._files import tracked
+
 ROOT = Path(__file__).resolve().parents[1]
 FENCE = re.compile(r"```python\n([\s\S]*?)```")
 MARKER = "# pseudo-code"
 
 
 def fences():
-    out = subprocess.run(["git", "ls-files", "chapters/*.md", "chapters/**/*.md"], cwd=ROOT,
-                         capture_output=True, text=True).stdout.split()
-    for rel in sorted(set(out)):
-        text = (ROOT / rel).read_text(encoding="utf-8")
+    for path in tracked("chapters/**/*.md"):
+        rel = path.relative_to(ROOT).as_posix()
+        text = path.read_text(encoding="utf-8")
         for m in FENCE.finditer(text):
             line = text[: m.start()].count("\n") + 2
             yield pytest.param(rel, line, m.group(1), id=f"{rel}:{line}")

@@ -1,10 +1,10 @@
 """Fail if any Markdown page contains mdformat-style escaped LaTeX inside math."""
 import re
-import subprocess
 from pathlib import Path
 
 import pytest
 
+from tests._files import tracked
 from tools.unescape_math import math_regions
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,10 +13,7 @@ DOUBLED = re.compile(r"\\\\(?!\s|$)")
 
 
 def tracked_markdown():
-    out = subprocess.run(
-        ["git", "ls-files", "*.md", "**/*.md"], cwd=ROOT, capture_output=True, text=True
-    ).stdout.split()
-    return sorted({ROOT / p for p in out})
+    return tracked("*.md")
 
 
 @pytest.mark.parametrize("path", tracked_markdown(), ids=lambda p: str(p.relative_to(ROOT)))

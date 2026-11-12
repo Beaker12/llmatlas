@@ -1,10 +1,11 @@
 """Chapter admonitions that point readers at a notebook must not use 'Section N' or
 'cells N-M' references, which drift; they use MyST {ref} labels instead."""
 import re
-import subprocess
 from pathlib import Path
 
 import pytest
+
+from tests._files import tracked
 
 ROOT = Path(__file__).resolve().parents[1]
 ADMONITION = re.compile(r"```\{admonition\}[^\n]*\n[\s\S]*?```", re.MULTILINE)
@@ -12,9 +13,7 @@ BAD = re.compile(r"\b(Sections?\s+\d+(?:-\d+)?|cells?\s+\d+(?:-\d+)?)\b", re.IGN
 
 
 def chapter_pages():
-    out = subprocess.run(["git", "ls-files", "chapters/*/index.md", "chapters/*/*.md"], cwd=ROOT,
-                         capture_output=True, text=True).stdout.split()
-    return sorted({ROOT / p for p in out})
+    return tracked("chapters/*/*.md")
 
 
 @pytest.mark.parametrize("path", chapter_pages(), ids=lambda p: str(p.relative_to(ROOT)))
