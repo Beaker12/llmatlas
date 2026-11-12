@@ -1,0 +1,36 @@
+% One-page smoke test for non-Latin text under XeLaTeX. Build from the repository root:
+%   xelatex tools/latex_smoke/fonts.tex
+% For a machine without the Noto fonts, override the names first:
+%   xelatex "\def\cjkfontname{WenQuanYi Zen Hei}\def\arabicfontname{FreeSerif}\input{tools/latex_smoke/fonts.tex}"
+% The samples live in samples.txt, which check_pdf.sh also reads.
+\documentclass{article}
+\usepackage{fontspec}
+\usepackage{polyglossia}
+\setmainlanguage{english}
+\usepackage{fancyvrb}
+\usepackage{hyperref}  % Sphinx loads hyperref before the preamble below; keep that order here
+\providecommand{\cjkfontname}{Noto Sans CJK SC}
+\providecommand{\arabicfontname}{Noto Naskh Arabic}
+% --- keep in sync with latex_elements.preamble in _config.yml --------------------------
+\setmainfont{FreeSerif}
+\setsansfont{FreeSans}
+\setmonofont{FreeMono}
+\usepackage[Latin,Greek]{ucharclasses}  % same options as sphinx-jupyterbook-latex, which loads it again
+\usepackage{xeCJK}
+\setCJKmainfont{\cjkfontname}
+\setCJKmonofont{\cjkfontname}
+\usepackage{bidi}
+\newfontfamily\arabicfont[Script=Arabic]{\arabicfontname}
+\setTransitionsFor{Arabic}{\begingroup\arabicfont\beginR}{\endR\endgroup}
+% ----------------------------------------------------------------------------------------
+% sphinx-jupyterbook-latex loads these after the preamble above
+\usepackage[Latin,Greek]{ucharclasses}
+\usepackage{unicode-math}
+\begin{document}
+\section*{Body text}
+\begingroup\parindent=0pt \parskip=4pt
+\input{tools/latex_smoke/samples.txt}
+\endgroup
+\section*{Verbatim}
+\VerbatimInput{tools/latex_smoke/samples.txt}
+\end{document}

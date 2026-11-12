@@ -36,7 +36,7 @@ jobs:
         run: pytest -m live tests/
 
       - name: Check external links
-        run: jupyter-book build . --builder linkcheck
+        run: make linkcheck VENV_DIR=$(dirname "$(dirname "$(which python)")")
 
       - name: Verify arXiv and Crossref metadata
         run: python tools/verify_arxiv.py

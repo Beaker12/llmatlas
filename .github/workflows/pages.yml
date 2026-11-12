@@ -98,7 +98,8 @@ jobs:
         run: latexmk -xelatex -interaction=nonstopmode -halt-on-error llmatlas.tex
 
       - name: Check the book PDF
-        run: bash tools/latex_smoke/check_pdf.sh _build/latex/llmatlas.pdf
+        # The book does not contain every smoke sample; check the embedded fonts only.
+        run: CHECK_SAMPLES=0 bash tools/latex_smoke/check_pdf.sh _build/latex/llmatlas.pdf
 
       - uses: actions/upload-artifact@v4
         with:
