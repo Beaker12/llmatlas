@@ -2013,7 +2013,7 @@ mean 10,000: chunking splits 84.0% of documents; best-fit pads 0.48% and splits 
 At a mean of 100 tokens, chunking splits only 2.4% of documents, so packing buys little. At 1,000 it splits 23.2%, while best-fit splits only the 1.6% of documents longer than the sequence, for 0.03% padding: this is where packing pays. At 10,000 most documents are longer than the sequence and are split by either method, 84.0% against 66.5%, and the gain shrinks again. Packing stops being worth its complexity when documents are either much shorter than the sequence or mostly longer than it.
 ````
 
-1. **The mask's effect.** Count how much of the causal attention the document mask removes when documents averaging 1,000 tokens are concatenated and cut into 4,096-token sequences, and how many tokens have a different context with the mask than without it. Then train two small decoders, like the `TinyLM` of the [Chapter 6 notebook](../06-architectures/examples/architecture_demo.ipynb) but scaled down to train on a CPU in seconds, on such sequences with and without the mask, from the same initial weights and on the same batches, and compare their held-out loss by the position of the token within its document.
+1. **The mask's effect.** Count how much of the causal attention the document mask removes when documents averaging 1,000 tokens are concatenated and cut into 4,096-token sequences, and how many tokens have a different context with the mask than without it. Then train two small decoders, like the `TinyLM` of the [Chapter 6 notebook](../06-architectures/examples/architecture_demo.ipynb) but scaled down to train on a CPU in seconds, on such sequences with and without the mask, from the same initial weights and on the same batches, and compare their held-out loss by position within the document: the loss at position 0 is that of predicting the document's second token from its first, the loss at position 1 that of predicting its third token from the first two, and so on.
 
 ````{admonition} Solution 4
 :class: dropdown
@@ -2111,12 +2111,13 @@ for seed in (0, 1):
         with torch.no_grad():
             loss = F.cross_entropy(model(x, doc_mask).reshape(-1, VOCAB), y.reshape(-1), reduction="none").view_as(seg)
         loss_by[seed, doc_mask] = [loss[changed & (position >= lo) & (position <= hi)].mean().item() for lo, hi in buckets]
-print("held-out loss by position in document:   0    1-3    4-7   8-15    16+")
+print(f"{'held-out loss by position in document':40s}" + " ".join(f"{h:>6}" for h in ("0", "1-3", "4-7", "8-15", "16+")))
 for (seed, doc_mask), row in loss_by.items():
-    print(f"seed {seed}, {'document mask' if doc_mask else 'causal only':13s}            " + " ".join(f"{v:6.2f}" for v in row))
+    label = f"seed {seed}, {'document mask' if doc_mask else 'causal only'}"
+    print(f"{label:40s}" + " ".join(f"{v:6.2f}" for v in row))
 for seed in (0, 1):
     gap = [a - b for a, b in zip(loss_by[seed, False], loss_by[seed, True])]
-    print(f"seed {seed}, gap (causal - mask)              " + " ".join(f"{g:+6.2f}" for g in gap))
+    print(f"{f'seed {seed}, gap (causal - mask)':40s}" + " ".join(f"{g:+6.2f}" for g in gap))
     assert gap[0] < 0  # at a document's first token the mask does not help
     assert min(gap[2:]) > 0.2  # from position 4 on it lowers the loss by more than 0.2
 ```
@@ -2126,16 +2127,16 @@ for seed in (0, 1):
 ```text
 995 sequences: the mask removes 62.0% of the causal attention pairs
 and changes the context of 75.6% of the tokens
-held-out loss by position in document:   0    1-3    4-7   8-15    16+
-seed 0, causal only                4.22   4.23   4.10   3.99   3.89
-seed 0, document mask              4.70   4.34   3.64   3.49   3.48
-seed 1, causal only                4.19   4.23   4.10   3.99   3.90
-seed 1, document mask              4.84   4.33   3.66   3.45   3.47
-seed 0, gap (causal - mask)               -0.48  -0.11  +0.46  +0.51  +0.41
-seed 1, gap (causal - mask)               -0.64  -0.10  +0.45  +0.55  +0.43
+held-out loss by position in document        0    1-3    4-7   8-15    16+
+seed 0, causal only                       4.22   4.23   4.10   3.99   3.89
+seed 0, document mask                     4.70   4.34   3.64   3.49   3.48
+seed 1, causal only                       4.19   4.23   4.10   3.99   3.90
+seed 1, document mask                     4.84   4.33   3.66   3.45   3.47
+seed 0, gap (causal - mask)              -0.48  -0.11  +0.46  +0.51  +0.41
+seed 1, gap (causal - mask)              -0.64  -0.10  +0.45  +0.55  +0.43
 ```
 
-The mask removes 62.0% of the causal attention pairs and changes the context of 75.6% of the tokens: every token after the first document boundary of its sequence. The change is largest for a document's first tokens, which without the mask see up to several thousand tokens of an unrelated document and with it see only the document's own tokens. For the training comparison the listing scales the setting down by 64, to 64-token sequences and documents averaging 16 tokens, and trains a two-layer decoder for 200 steps with and without the document mask, from the same initial weights and on the same batches, for two seeds. Each document repeats a random pattern of three to eight tokens, so its first tokens cannot be predicted and its later tokens can be copied from earlier in the same document, while nothing in an earlier document helps. The held-out loss is averaged by the position of the token in its document, over the tokens whose context the mask changes. The losses depend in their last digits on the machine, so the output above is the shape of one run, and the result is what the listing asserts for every seed: at a document's first token the gap (loss without the mask minus loss with it) is negative, and from position 4 on the mask lowers the loss by more than 0.2. In the run shown, the masked model is worse than chance at the first token (4.70 and 4.84 against ln 63 ≈ 4.14), because it sees nothing but that token, while the unmasked model stays near chance, a gap of −0.48 and −0.64. From position 4 on the gain is +0.41 to +0.55, because the unmasked model's attention also reaches the previous document's pattern, and it stays near +0.4 beyond position 16 in documents this short. The expectation that the gap is largest at a document's very first tokens is therefore wrong as stated: it is largest at the first positions the model can predict from the document itself.
+The mask removes 62.0% of the causal attention pairs and changes the context of 75.6% of the tokens: every token after the first document boundary of its sequence. The change is largest for a document's first tokens, which without the mask see up to several thousand tokens of an unrelated document and with it see only the document's own tokens. For the training comparison the listing scales the setting down by 64, to 64-token sequences and documents averaging 16 tokens, and trains a two-layer decoder for 200 steps with and without the document mask, from the same initial weights and on the same batches, for two seeds. Each document repeats a random pattern of three to eight tokens, so its first tokens cannot be predicted and its later tokens can be copied from earlier in the same document, while nothing in an earlier document helps. The held-out loss is averaged by the position of the token in its document, over the tokens whose context the mask changes. The losses depend in their last digits on the machine, so the output above is the shape of one run, and the result is what the listing asserts for every seed: the gap (loss without the mask minus loss with it) is negative at position 0, the prediction of a document's second token from its first, and from position 4 on the mask lowers the loss by more than 0.2. In the run shown, both models are near or above the chance level of ln 63 ≈ 4.14 at position 0, and the masked model is the further above it (4.70 and 4.84 against 4.22 and 4.19 without the mask), a gap of −0.48 and −0.64; the listing does not measure why. From position 4 on, where the document has a pattern to copy, the gain is between +0.41 and +0.55 in every bucket and both seeds, and the output shows no clear peak: it is about the same at positions 4 to 7, 8 to 15 and beyond 16.
 ````
 
 1. **Seeking across mixture phases.** The `StrideSampler` of {ref}`sec-ch5-determinism-resumption` seeks in constant work for one fixed mixture, but runs often change the mixture partway through. Extend its cursors $\operatorname{drawn}_s(t)$ to a schedule of two phases: weights 0.7, 0.15 and 0.15 for web, wiki and code until step 5,000, then 0.5, 0.25 and 0.25. Verify the closed form against iteration: seeking to step $t$ and iterating to it must agree at a thousand random steps.
