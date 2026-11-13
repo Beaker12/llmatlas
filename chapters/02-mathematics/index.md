@@ -121,7 +121,7 @@ Cross-entropy loss has favorable properties: it's convex in the output probabili
 
 $$H(p) = -\sum_{x} p(x) \log p(x)$$
 
-Using $\log_2$ gives entropy in bits; the natural logarithm gives nats. The code in this chapter uses natural logarithms, so its values are in nats.
+Using $\log_2$ gives entropy in bits; the natural logarithm gives nats. The entropy and KL functions below use $\log_2$ and return bits; the cross-entropy loss uses the natural logarithm, as PyTorch does, so it and the perplexity built on it are in nats.
 
 For language, entropy measures the average information content per symbol. Shannon's experiments put the entropy of printed English at roughly 0.6 to 1.3 bits per character, far below the ~4.7 bits of a uniform choice over the alphabet, which is what makes language predictable {cite}`shannon1951prediction`.
 
@@ -156,34 +156,72 @@ Mutual information is the quantity that language modeling implicitly exploits: a
 ```python
 import torch
 import torch.nn.functional as F
-import numpy as np
 
 
-def cross_entropy_loss(logits, targets):
+def entropy(probs: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
     """
-    Compute cross-entropy loss between model predictions and targets.
+    Compute Shannon entropy of probability distribution, in bits.
+    
+    H(p) = -∑ p(x) log₂ p(x)
+    
+    Args:
+        probs: Probability distribution [batch_size, num_classes]
+        eps: Small constant for numerical stability
+    
+    Returns:
+        Entropy values [batch_size]
+    """
+    return -torch.sum(probs * torch.log2(probs + eps), dim=-1)
 
+
+def cross_entropy_loss(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    """
+    Compute cross-entropy loss between predictions and targets.
+    
+    H(p, q) = -∑ p(x) log q(x), in nats
+    
     Args:
         logits: Model outputs [batch_size, vocab_size]
         targets: True token indices [batch_size]
+    
+    Returns:
+        Cross-entropy loss (scalar)
     """
     log_probs = F.log_softmax(logits, dim=-1)
     return F.nll_loss(log_probs, targets)
 
 
-def perplexity(loss):
-    """Convert cross-entropy loss to perplexity."""
+def kl_divergence(p: torch.Tensor, q: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+    """
+    Compute Kullback-Leibler divergence between distributions.
+    
+    D_KL(p || q) = ∑ p(x) log₂(p(x) / q(x)), in bits. Where q(x) = 0 and p(x) > 0 the
+    true divergence is infinite; the eps clamp keeps it finite, so treat such values as 'very large'.
+    
+    Args:
+        p: True distribution [batch_size, num_classes]
+        q: Approximate distribution [batch_size, num_classes]
+        eps: Small constant for numerical stability
+    
+    Returns:
+        KL divergence values [batch_size]
+    """
+    return torch.sum(p * torch.log2((p + eps) / (q + eps)), dim=-1)
+
+
+def perplexity(loss: torch.Tensor) -> torch.Tensor:
+    """
+    Convert cross-entropy loss to perplexity.
+    
+    Perplexity = exp(H(p, q)), with H in nats
+    
+    Args:
+        loss: Cross-entropy loss
+    
+    Returns:
+        Perplexity value
+    """
     return torch.exp(loss)
-
-
-def entropy(probs):
-    """Compute entropy of probability distribution."""
-    return -torch.sum(probs * torch.log(probs + 1e-8), dim=-1)
-
-
-def kl_divergence(p, q):
-    """Compute KL divergence between distributions p and q."""
-    return torch.sum(p * torch.log((p + 1e-8) / (q + 1e-8)), dim=-1)
 ```
 
 ```{admonition} Hands-On Practice
