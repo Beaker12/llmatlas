@@ -28,14 +28,17 @@ The theme throughout is that none of these decisions is neutral. Every filter en
 
 ## Learning Objectives
 
-By the end of this chapter, you will understand:
+By the end of this chapter, you will be able to:
 
-- Why a large fraction of raw web text is discarded before training, and what the retained fraction looks like
-- How to extract, normalize and language-identify text so that later stages see consistent input
-- The heuristic, perplexity-based and classifier-based quality filters used by the major open corpora, and how to measure whether a filter helps
-- Exact, near-duplicate and substring deduplication, including a MinHash and locality-sensitive hashing implementation
-- How personal data, toxic content and benchmark test sets are detected and removed
-- How the stages fit into a reproducible, shard-parallel pipeline with auditable drop statistics
+- Explain why a large fraction of raw web text is discarded before training, and how the retained fraction compounds across stages
+- Extract main text from HTML, normalize Unicode, and identify a document's language with a character n-gram classifier
+- Apply the Gopher quality and repetition rules, rank documents by perplexity under a reference model, and train a hashed n-gram quality classifier whose score feeds a Pareto keep rule
+- Explain why machine-generated text is hard to filter, using the base-rate arithmetic of a detector
+- Measure whether a filter helps with a controlled ablation that reports the retained fraction
+- Implement exact (hash and Bloom filter), line- and paragraph-level, near-duplicate (MinHash with LSH, SimHash) and substring (suffix array) deduplication, choose the LSH bands and rows for a similarity threshold, and say how per-snapshot and global deduplication differ
+- Redact personal data, detect secrets in code, and decontaminate a corpus against benchmarks with $n$-gram overlap, knowing what each misses
+- Adapt the pipeline to source code, mathematics and multilingual text
+- Assemble the stages into an ordered, sharded, idempotent pipeline with auditable drop statistics
 
 (sec-ch4-hands-on-learning)=
 
@@ -1110,7 +1113,7 @@ Locality-sensitive hashing (LSH) {cite}`indyk1998approximate` then turns the sig
 
 $$\Pr[\text{candidate}] = 1 - (1 - J^r)^b$$
 
-which is a steep S-curve with its midpoint near $(1/b)^{1/r}$. Choosing $b$ and $r$ sets the similarity threshold. {numref}`fig-ch4-minhash-bands` shows one comparison on a short signature.
+which is a steep S-curve whose threshold, the similarity at which it is steepest, is near $(1/b)^{1/r}$; it reaches 0.5 slightly below that, as the third exercise computes. Choosing $b$ and $r$ sets the similarity threshold. {numref}`fig-ch4-minhash-bands` shows one comparison on a short signature.
 
 ```{figure} figures/minhash-bands.*
 :name: fig-ch4-minhash-bands
@@ -1120,7 +1123,7 @@ which is a steep S-curve with its midpoint near $(1/b)^{1/r}$. Choosing $b$ and 
 Banding two MinHash signatures (illustrative values) with $n_{hash} = 16$, $b = 4$ and $r = 4$. Green positions hold the same minimum in both documents, red ones differ. Twelve of the sixteen agree, so the signature estimates $J \approx 0.75$. A band is hashed as a whole, so bands 1, 3 and 4, each with at least one differing position, land in different buckets; band 2 matches in all four rows, and one matching band is enough to make the pair a candidate.
 ```
 
-Gopher {cite}`rae2021scaling` used 13-word shingles and removed one document of any pair with Jaccard similarity above 0.8; it does not report the number of hash functions. {cite:t}`lee2022deduplicating` used 5-word shingles with a 9,000-value signature in $b = 20$ bands of $r = 450$ rows, then confirmed candidate pairs with edit similarity above 0.8. RefinedWeb {cite}`penedo2023refinedweb` copied those MinHash settings (9,000 hashes in 20 buckets of 450) without a separate verification step; at those settings the midpoint of the banding curve is $(1/20)^{1/450} \approx 0.993$, so banding alone catches only near-identical pairs. FineWeb used 5-word shingles with 112 hash functions in 14 bands of 8 rows, which it describes as targeting documents at least 75% similar: a pair at $J = 0.75$ becomes a candidate with probability $1 - (1 - 0.75^8)^{14} \approx 0.77$, and the curve crosses 0.5 near $J = 0.69$. Dolma relied on exact matching of URLs, documents and paragraphs through a Bloom filter rather than MinHash. The implementation below uses a universal hash family $h_i(\chi) = (a_{i,1} \chi + a_{i,0}) \bmod P$ over the 32-bit integer id $\chi$ of a shingle, with $P$ a large prime, which is what most production implementations do.
+Gopher {cite}`rae2021scaling` used 13-word shingles and removed one document of any pair with Jaccard similarity above 0.8; it does not report the number of hash functions. {cite:t}`lee2022deduplicating` used 5-word shingles with a 9,000-value signature in $b = 20$ bands of $r = 450$ rows, then confirmed candidate pairs with edit similarity above 0.8. RefinedWeb {cite}`penedo2023refinedweb` copied those MinHash settings (9,000 hashes in 20 buckets of 450) without a separate verification step; at those settings the banding curve's threshold is $(1/20)^{1/450} \approx 0.993$, so banding alone catches only near-identical pairs. FineWeb used 5-word shingles with 112 hash functions in 14 bands of 8 rows, which it describes as targeting documents at least 75% similar: a pair at $J = 0.75$ becomes a candidate with probability $1 - (1 - 0.75^8)^{14} \approx 0.77$, and the curve crosses 0.5 near $J = 0.69$. Dolma relied on exact matching of URLs, documents and paragraphs through a Bloom filter rather than MinHash. The implementation below uses a universal hash family $h_i(\chi) = (a_{i,1} \chi + a_{i,0}) \bmod P$ over the 32-bit integer id $\chi$ of a shingle, with $P$ a large prime, which is what most production implementations do.
 
 ```python
 import hashlib
@@ -1311,11 +1314,11 @@ b=16 r= 8:  64 clusters, precision 1.000, recall 0.721
 b= 8 r=16: 152 clusters, precision 1.000, recall 0.033
 ```
 
-With $b = 32$ bands of $r = 4$ rows the curve's midpoint is $(1/32)^{1/4} \approx 0.42$, well below the copies' similarity, and every family is recovered. At $r = 8$ the midpoint rises to about 0.71, near the similarity of two edited copies, and recall falls to 0.721; at $r = 16$ it is about 0.88 and almost nothing is found. Union-find adds recall that banding alone does not have: two copies that never share a bucket still land in one cluster when each shares one with the source. Precision is 1 at every setting here because random documents share no shingles; on a real crawl precision is limited by pages that share a template but not content, which is why the threshold is set by measuring both numbers on a labeled sample. {numref}`fig-ch4-lsh-curves` plots these curves with the notebook's measured candidate rates.
+With $b = 32$ bands of $r = 4$ rows the curve's threshold is $(1/32)^{1/4} \approx 0.42$, well below the copies' similarity, and every family is recovered. At $r = 8$ the threshold rises to about 0.71, near the similarity of two edited copies, and recall falls to 0.721; at $r = 16$ it is about 0.88 and almost nothing is found. Union-find adds recall that banding alone does not have: two copies that never share a bucket still land in one cluster when each shares one with the source. Precision is 1 at every setting here because random documents share no shingles; on a real crawl precision is limited by pages that share a template but not content, which is why the threshold is set by measuring both numbers on a labeled sample. {numref}`fig-ch4-lsh-curves` plots these curves with the notebook's measured candidate rates.
 
 ```{figure} figures/lsh-curves.*
 :name: fig-ch4-lsh-curves
-:alt: Four S-shaped curves of candidate probability against Jaccard similarity, with midpoints at 0.42, 0.71, 0.72 and 0.88, and measured points from the notebook lying on the b = 16, r = 8 curve.
+:alt: Four S-shaped curves of candidate probability against Jaccard similarity, with thresholds marked at 0.42, 0.71, 0.72 and 0.88, and measured points from the notebook lying on the b = 16, r = 8 curve.
 :width: 100%
 
 The probability $1 - (1 - J^r)^b$ that a pair becomes a candidate, for the three bandings of the listing and FineWeb's 14 bands of 8 rows, with each curve's $(1/b)^{1/r}$ marked. The curves are the formula; the open circles are measured by the notebook cell tagged `figure:lsh-curves`, for $b = 16$, $r = 8$ on synthetic shingle sets, 300 signature draws per point; they follow the formula to within 0.041. The same signature length gives very different thresholds depending on how it is split.
@@ -1470,7 +1473,7 @@ The example of the suffix-array listing above. Top: the 35 tokens; the 13-token 
 
 ### 5.5 Semantic deduplication
 
-MinHash finds documents that share words. SemDeDup {cite}`abbas2023semdedup` finds documents that share meaning: embed every document with a pretrained encoder, cluster the embeddings with k-means, and within each cluster remove all but one of any group of documents whose cosine similarity is at least $1 - \epsilon$. The paper sets $\epsilon$ by how much data is to go: the 37% LAION result below used $\epsilon = 0.07$, a cosine similarity of at least 0.93. On LAION-440M it removed 37% of the data with no loss in zero-shot ImageNet accuracy and 50% with a loss below half a point; on C4, models trained for several epochs on SemDeDup-pruned subsets matched the single-epoch full-data baseline with 10 to 15% less compute.
+MinHash finds documents that share words. SemDeDup {cite}`abbas2023semdedup` finds documents that share meaning: embed every document with a pretrained encoder, cluster the embeddings with k-means, and within each cluster remove all but one of any group of documents whose cosine similarity is at least $1 - \epsilon_{dup}$. The paper sets $\epsilon_{dup}$ by how much data is to go: the 37% LAION result below used $\epsilon_{dup} = 0.07$, a cosine similarity of at least 0.93. On LAION-440M it removed 37% of the data with no loss in zero-shot ImageNet accuracy and 50% with a loss below half a point; on C4, models trained for several epochs on SemDeDup-pruned subsets matched the single-epoch full-data baseline with 10 to 15% less compute.
 
 The cost is an embedding pass over the corpus, which is a forward pass of a small model per document, and the risk is removing paraphrases that a model would benefit from seeing both of. It is applied last among the deduplication stages and, in most published pipelines, conservatively.
 
