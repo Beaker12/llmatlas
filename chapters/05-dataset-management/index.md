@@ -494,9 +494,8 @@ for policy in ("eod", "bos+eod"):
     )
 stream = with_special_tokens(docs, "bos+eod")
 starts = np.flatnonzero(stream == BOS)
-assert starts.size == len(docs) and np.all(
-    stream[starts[1:] - 1] == EOD
-)  # every BOS follows an EOD
+# every BOS follows an EOD
+assert starts.size == len(docs) and np.all(stream[starts[1:] - 1] == EOD)
 assert not loss_mask(stream)[
     starts[1:] - 1
 ].any()  # and is never trained on as a target
@@ -650,17 +649,15 @@ def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-content = {
-    f"shard_{i:03d}": f"shard {i}".encode() for i in range(10)
-}  # uncompressed bytes
+# uncompressed bytes
+content = {f"shard_{i:03d}": f"shard {i}".encode() for i in range(10)}
 manifest = [{"path": path, "sha256": sha(data)} for path, data in content.items()]
 root = merkle_root(manifest)
 proof = inclusion_proof(manifest, "shard_006")
 print(f"root of 10 shards: {root[:16]}..., proof for shard_006: {len(proof)} hashes")
 assert verify_inclusion("shard_006", sha(content["shard_006"]), proof, root)
-assert not verify_inclusion(
-    "shard_007", sha(content["shard_007"]), proof, root
-)  # shard_006 only
+# shard_006 only
+assert not verify_inclusion("shard_007", sha(content["shard_007"]), proof, root)
 
 # The order of the listing is not part of the version: the root sorts by path
 assert merkle_root(manifest[::-1]) == root
@@ -971,9 +968,8 @@ def split_of(key: str, salt: str = "split-v1", validation: float = 0.01) -> str:
 
 rng = np.random.default_rng(1)
 v1 = [f"doc{i}" for i in range(100_000)]
-v2 = [d for d in v1 if rng.random() > 0.05] + [
-    f"new{i}" for i in range(8000)
-]  # 5% removed, 8,000 added
+# 5% removed, 8,000 added
+v2 = [d for d in v1 if rng.random() > 0.05] + [f"new{i}" for i in range(8000)]
 
 # A fresh random 1% split per version puts most of v1's validation set into v2's
 # training set
@@ -994,12 +990,10 @@ assert leak_random > 0.9 and leak_hash == 0.0
 
 # Near-duplicates must share a split: key the hash on the duplicate cluster, not the
 # document
-pairs = [
-    (f"page{i}", f"page{i}-mirror") for i in range(20_000)
-]  # each page and a near-copy of it
-cluster_of = {
-    doc: f"cluster{i}" for i, pair in enumerate(pairs) for doc in pair
-}  # from near-duplicate detection
+# each page and a near-copy of it
+pairs = [(f"page{i}", f"page{i}-mirror") for i in range(20_000)]
+# from near-duplicate detection
+cluster_of = {doc: f"cluster{i}" for i, pair in enumerate(pairs) for doc in pair}
 split_by_doc = sum(split_of(a) != split_of(b) for a, b in pairs)
 split_by_cluster = sum(
     split_of(cluster_of[a]) != split_of(cluster_of[b]) for a, b in pairs
@@ -1093,13 +1087,11 @@ assert packed.shape[1] == 256 and chunked.shape[1] == 256
 # Packing needs more sequences than chunking, by about the padding fraction (nothing is
 # dropped)
 assert chunked.shape[0] <= packed.shape[0] <= chunked.shape[0] * 1.1
-assert (packed != -1).sum() == sum(
-    len(d) + 1 for d in docs
-)  # every token kept, one EOD per document
+# every token kept, one EOD per document
+assert (packed != -1).sum() == sum(len(d) + 1 for d in docs)
 assert (packed == 0).sum() == len(docs)
-long_doc, _ = best_fit_pack(
-    [list(range(1, 601))], seq_len=256
-)  # a 600-token document: three pieces, one EOD
+# a 600-token document: three pieces, one EOD
+long_doc, _ = best_fit_pack([list(range(1, 601))], seq_len=256)
 assert long_doc.shape[0] == 3 and (long_doc == 0).sum() == 1
 print(f"chunking: {chunked.shape[0]} sequences, {split_frac:.1%} of documents split")
 print(f"best-fit packing: {packed.shape[0]} sequences, {pad_frac:.2%} padding")
@@ -1164,9 +1156,8 @@ def document_causal_mask(sequence, eod: int = 0, pad: int = -1) -> np.ndarray:
     seg = segment_ids(sequence, eod)
     causal = np.tril(np.ones((len(seg), len(seg)), dtype=bool))
     same_doc = seg[:, None] == seg[None, :]
-    valid = (
-        np.asarray(sequence) != pad
-    )  # padding attends to nothing and is attended by nothing
+    # padding attends to nothing and is attended by nothing
+    valid = np.asarray(sequence) != pad
     return causal & same_doc & valid[:, None] & valid[None, :]
 
 
@@ -1177,9 +1168,8 @@ assert mask[4, 3] and mask[4, 4]  # within document 1, causal
 assert not mask[4, 1]  # document 1 cannot see document 0
 assert not mask[3, 4]  # and not the future
 assert mask.sum() == 3 + 2 + 1 + 4 + 3 + 2 + 1 + 1
-assert (
-    document_causal_mask(seq + [-1, -1]).sum() == mask.sum()
-)  # padding adds no allowed pairs
+# padding adds no allowed pairs
+assert document_causal_mask(seq + [-1, -1]).sum() == mask.sum()
 print("segment ids:", segment_ids(seq).tolist())
 print(
     "allowed pairs:",
@@ -1235,9 +1225,8 @@ def padding_fraction(lengths, batch_size: int, bucketed: bool, rng) -> float:
     """Fraction of a padded batch that is padding, each batch padded to its longest
     example."""
     order = rng.permutation(len(lengths))
-    if (
-        bucketed
-    ):  # sort a pool of 50 batches by length, cut it into batches, shuffle the batches
+    # sort a pool of 50 batches by length, cut it into batches, shuffle the batches
+    if bucketed:
         pool = batch_size * 50
         order = np.concatenate(
             [
@@ -1253,9 +1242,8 @@ def padding_fraction(lengths, batch_size: int, bucketed: bool, rng) -> float:
 
 
 rng = np.random.default_rng(0)
-lengths = np.clip(
-    rng.lognormal(mean=5.0, sigma=0.8, size=32_000).astype(int), 8, 4096
-)  # fine-tuning examples
+# fine-tuning examples
+lengths = np.clip(rng.lognormal(mean=5.0, sigma=0.8, size=32_000).astype(int), 8, 4096)
 random_pad = padding_fraction(lengths, 32, bucketed=False, rng=np.random.default_rng(1))
 bucket_pad = padding_fraction(lengths, 32, bucketed=True, rng=np.random.default_rng(1))
 print(f"median length {np.median(lengths):.0f}, longest {lengths.max()}")
@@ -1325,9 +1313,8 @@ import numpy as np
 
 names = ["web", "wiki", "code"]
 docs = np.array([600, 120, 200])  # documents per source, as in the notebook
-mean_len = np.array(
-    [500, 2000, 800]
-)  # mean tokens per document, assumed for the example
+# mean tokens per document, assumed for the example
+mean_len = np.array([500, 2000, 800])
 w = np.array([0.6, 0.25, 0.15])  # target weights
 doc_prob = (w / mean_len) / (
     w / mean_len
@@ -1337,9 +1324,8 @@ for label, p in (
     ("weights as document probabilities", w),
     ("weights as token shares", doc_prob),
 ):
-    share = (
-        p * mean_len / (p * mean_len).sum()
-    )  # each source's share of the training tokens
+    # each source's share of the training tokens
+    share = p * mean_len / (p * mean_len).sum()
     draws_to_cap = 4 * docs / p  # expected draws until each source has had four epochs
     first = int(np.argmin(draws_to_cap))
     tokens = draws_to_cap[first] * (p * mean_len).sum()
@@ -1404,17 +1390,15 @@ class MixtureSampler:
 
     def reset(self):
         self.step = 0
-        self.cursor = np.zeros(
-            len(self.names), dtype=np.int64
-        )  # documents consumed per source
+        # documents consumed per source
+        self.cursor = np.zeros(len(self.names), dtype=np.int64)
         self.rng = np.random.default_rng(self.seed)
         self._perm = [None] * len(self.names)
 
     def _permutation(self, s: int, epoch: int):
         if self._perm[s] is None or self._perm[s][0] != epoch:
-            prng = np.random.default_rng(
-                [self.seed, s, epoch]
-            )  # keyed by (seed, source, epoch)
+            # keyed by (seed, source, epoch)
+            prng = np.random.default_rng([self.seed, s, epoch])
             self._perm[s] = (epoch, prng.permutation(self.sizes[s]))
         return self._perm[s][1]
 
@@ -1511,9 +1495,8 @@ class FeistelPermutation:
 
     def __init__(self, n: int, key: bytes, rounds: int = 4):
         self.n, self.key, self.rounds = n, key, rounds
-        self.half = max(
-            1, ((n - 1).bit_length() + 1) // 2
-        )  # 4**half >= n, and 4**half < 4 * n for n > 1 (n = 1 gives 4)
+        # 4**half >= n, and 4**half < 4 * n for n > 1 (n = 1 gives 4)
+        self.half = max(1, ((n - 1).bit_length() + 1) // 2)
         self.mask = (1 << self.half) - 1
         self.evaluations = 0
 
@@ -1533,9 +1516,8 @@ class FeistelPermutation:
         if not 0 <= i < self.n:
             raise IndexError(i)
         x = self._encrypt(i)
-        while (
-            x >= self.n
-        ):  # cycle-walking: re-encrypt until the value falls back into range(n)
+        # cycle-walking: re-encrypt until the value falls back into range(n)
+        while x >= self.n:
             x = self._encrypt(x)
         return x
 
@@ -1625,14 +1607,12 @@ for s in sizes:  # the closed-form count agrees with counting the stream
         sampler.drawn(s, t) == sum(1 for x, _ in stream[:t] if x == s)
         for t in (0, 7, 333, 1999)
     )
-resumed = StrideSampler(
-    sizes, weights, seed=1
-)  # a fresh process that knows only the step counter
+# a fresh process that knows only the step counter
+resumed = StrideSampler(sizes, weights, seed=1)
 assert [resumed[t] for t in range(1234, 1300)] == stream[1234:1300]
 wiki = [d for s, d in stream if s == "wiki"]
-assert sorted(wiki[:50]) == list(range(50)) and sorted(wiki[50:100]) == list(
-    range(50)
-)  # each epoch is a permutation
+# each epoch is a permutation
+assert sorted(wiki[:50]) == list(range(50)) and sorted(wiki[50:100]) == list(range(50))
 print("drawn by step 2000:", {s: sampler.drawn(s, 2000) for s in sorted(sizes)})
 print(
     "sample at step 1,000,000,007:",
@@ -2100,9 +2080,8 @@ fixed = [
     for w in range(n_loader)
     for x in worker_items(r, world_size, n, w, n_loader, True)
 ]
-assert len(naive) == n_loader * len(
-    set(naive)
-)  # every sample of the rank n_loader times
+# every sample of the rank n_loader times
+assert len(naive) == n_loader * len(set(naive))
 assert sorted(fixed) == list(range(n))  # each sample once across all ranks and workers
 ```
 
@@ -2255,9 +2234,8 @@ def relabeled_rate(a, b, threshold: float, trials: int, seed: int) -> float:
     """Share of random relabelings of the pooled sample with D above `threshold`: the
     false-alarm rate measured on the data themselves, ties included."""
     pooled = np.sort(np.concatenate([a, b]))
-    run_end = np.append(
-        pooled[1:] != pooled[:-1], True
-    )  # D is read where a run of ties ends
+    # D is read where a run of ties ends
+    run_end = np.append(pooled[1:] != pooled[:-1], True)
     rng = np.random.default_rng(seed)
     above = 0
     for _ in range(trials):
@@ -2270,16 +2248,13 @@ def relabeled_rate(a, b, threshold: float, trials: int, seed: int) -> float:
 
 
 rng = np.random.default_rng(7)
-v1 = (
-    rng.lognormal(mean=6.0, sigma=1.0, size=20_000).astype(int) + 1
-)  # document lengths in tokens, version 1
-v2_same = (
-    rng.lognormal(mean=6.0, sigma=1.0, size=20_000).astype(int) + 1
-)  # same distribution, new draw
+# document lengths in tokens, version 1
+v1 = rng.lognormal(mean=6.0, sigma=1.0, size=20_000).astype(int) + 1
+# same distribution, new draw
+v2_same = rng.lognormal(mean=6.0, sigma=1.0, size=20_000).astype(int) + 1
 v2_bug = v2_same.copy()
-tables = (
-    rng.random(v2_bug.size) < 0.15
-)  # an extractor update drops the tables from 15% of documents ...
+# an extractor update drops the tables from 15% of documents ...
+tables = rng.random(v2_bug.size) < 0.15
 v2_bug[tables] = (v2_bug[tables] * 0.6).astype(
     int
 ) + 1  # ... which removes 40% of their tokens
@@ -2431,9 +2406,8 @@ def constituent(doc_id: str, n_shards: int) -> int:
 
 
 rng = np.random.default_rng(0)
-requests = [
-    f"doc{i}" for i in rng.choice(10_000_000, size=5, replace=False)
-]  # five removal requests
+# five removal requests
+requests = [f"doc{i}" for i in rng.choice(10_000_000, size=5, replace=False)]
 for n_shards in (1, 8, 64):
     hit = {constituent(d, n_shards) for d in requests}
     print(
@@ -2622,9 +2596,8 @@ for i in range(1000):
         f"doc {i} line {j}: " + " ".join(rng.choice(list("abcdefgh"), size=6))
         for j in range(10)
     ]
-    k = int(
-        rng.choice(6, p=[0.5, 0.2, 0.15, 0.01, 0.07, 0.07])
-    )  # the last k of the ten lines repeat the first
+    # the last k of the ten lines repeat the first
+    k = int(rng.choice(6, p=[0.5, 0.2, 0.15, 0.01, 0.07, 0.07]))
     lines[10 - k :] = [lines[0]] * k
     docs.append({"id": f"doc{i:04d}", "text": "\n".join(lines)})
 
@@ -2969,9 +2942,9 @@ seed 1, document mask                 0.181  4.88            4.67     3.57
 seed 1, mask, EOD opens               0.035  4.36            4.32     3.91
 ```
 
-The mask removes 62.0% of the causal attention pairs and changes the context of 75.6% of the tokens: every token after the first document boundary of its sequence. The change is largest for a document's first tokens, which without the mask see up to several thousand tokens of an unrelated document and with it see only the document's own tokens. For the training comparison the listing scales the setting down by 64, to 64-token sequences and documents averaging 16 tokens, and trains a two-layer decoder for 200 steps in three ways, from the same initial weights and on the same batches, for two seeds: with causal attention only; with the document mask; and with the document mask but each end-of-document (EOD) token counted as the first token of the document it opens instead of the last of the one it ends, so that a document's first token can attend to the EOD before it. Each document repeats a random pattern of three to eight tokens, so its first tokens cannot be predicted and its later tokens can be copied from earlier in the same document, while nothing in an earlier document helps. The held-out loss is averaged by the position of the token in its document, over the tokens whose context the mask changes; a gap row is the causal model's loss minus that of the named model. The losses depend in their last digits on the machine, so the output above is the shape of one run, and the result is what the listing asserts for every seed.
+The mask removes 62.0% of the causal attention pairs and changes the context of 75.6% of the tokens: every token after the first document boundary of its sequence. The change is largest for a document's first tokens, which without the mask see up to several thousand tokens of an unrelated document and with it see only the document's own tokens. For the training comparison the listing scales the setting down by 64, to 64-token sequences and documents averaging 16 tokens, and trains a two-layer decoder for 200 steps in three ways, from the same initial weights and on the same batches, for two seeds: with causal attention only; with the document mask; and with the document mask but each end-of-document (EOD) token counted as the first token of the document it opens instead of the last of the one it ends, so that a document's first token can attend to the EOD before it. Each document repeats a random pattern of three to eight tokens, so its first tokens cannot be predicted and its later tokens can be copied from earlier in the same document, while nothing in an earlier document helps. The held-out loss is averaged by the position of the token in its document, over the tokens whose context the mask changes; a gap row is the causal model's loss minus that of the named model. The losses depend in their last digits on the machine, so the output above is the shape of one run. The listing asserts, for each of the two seeds, only the inequalities in its last lines, with their margins; every other number below is an observation in the run shown.
 
-From position 4 on, where the document has a pattern to copy, both masked models lower the loss by more than 0.2 (by 0.41 to 0.63 in the run shown, with no clear peak across positions 4 to 7, 8 to 15 and beyond 16). At position 0, the prediction of a document's second token from its first, the plain document mask raises the loss by more than 0.3 (by 0.48 and 0.64 in the run shown). The best constant prediction there costs 4.09 nats, not ln 63 ≈ 4.14, because 8.2% of these targets are the EOD token; the causal models are near it (4.22 and 4.19), the masked ones well above it (4.70 and 4.84). The probe at the end of the listing, on the targets that do not repeat the input token, finds the cause. Under the plain mask a document's first token can attend only to itself, so nothing in its context tells it apart from a later token of a document, where the model has learned to predict from what the document has already shown. It makes two errors there. It gives 0.18 of its probability to the next token repeating the input, against 0.013 and 0.015 for the causal model, though a document's second token repeats its first only by chance; taking that mass away and renormalizing lowers its loss on these targets by 0.21 (4.74 to 4.53 and 4.88 to 4.67). And what is left is sharper than the targets allow: its entropy is 3.60 and 3.57 nats, against 3.99 and 3.98 for the causal model, on targets that are close to uniform, where any concentration of probability raises the loss. Its loss without the repeat exceeds its entropy by 0.93 and 1.10 nats, the causal model's by 0.21 and 0.20: it is confident about tokens that are no more likely than the others, and that confidence is the remaining 0.33 and 0.49 nats (4.53 against 4.20, 4.67 against 4.18). The third model tests the cause. With the EOD in its context, a document's first token gives 0.03 of its probability to a repeat, the entropy of the rest is back to 3.93 and 3.91, and the cost at position 0 falls from 0.48 and 0.64 to 0.05 and 0.16, while the gain from position 4 on stays; the listing asserts each of these for both seeds, the recovery at position 0 as more than 0.3. So the mask's cost at a document's first token is not the context it removes, which cannot help predict an unrelated document, but the missing signal that a document has begun: in this experiment one visible token before each document, here the previous document's EOD, is enough to restore it.
+From position 4 on, where the document has a pattern to copy, both masked models lower the loss by more than 0.2 (by 0.41 to 0.63 in the run shown, with no clear peak across positions 4 to 7, 8 to 15 and beyond 16). At position 0, the prediction of a document's second token from its first, the plain document mask raises the loss by more than 0.3 (by 0.48 and 0.64 in the run shown). The best constant prediction there costs 4.09 nats, not ln 63 ≈ 4.14, because 8.2% of these targets are the EOD token; the causal models are near it (4.22 and 4.19), the masked ones well above it (4.70 and 4.84). The probe at the end of the listing measures, on the targets at position 0 that do not repeat the input token, how much probability each model gives to a repeat and how concentrated the rest of its prediction is. A plausible reading, which the probe does not prove, is that under the plain mask a document's first token can attend only to itself, so nothing in its context tells it apart from a later token of a document, where the model has learned to predict from what the document has already shown. The probe shows two differences from the causal model (asserted: the repeat probability is more than five times the causal model's, and the entropy of the rest lower by more than 0.2 nats). In the run shown, the plain-mask model gives 0.18 of its probability to the next token repeating the input, against 0.013 and 0.015 for the causal model, though a document's second token repeats its first only by chance; taking that mass away and renormalizing lowers its loss on these targets by 0.21 (4.74 to 4.53 and 4.88 to 4.67). What is left is also sharper than these targets seem to allow: its entropy is 3.60 and 3.57 nats, against 3.99 and 3.98 for the causal model, on targets that are close to uniform, where any concentration of probability raises the loss. Its loss without the repeat exceeds its entropy by 0.93 and 1.10 nats, the causal model's by 0.21 and 0.20: it is confident about tokens that are no more likely than the others, and that confidence accounts for the remaining 0.33 and 0.49 nats (4.53 against 4.20, 4.67 against 4.18). The third model asks whether the missing EOD matters. With the EOD in its context, in the run shown, a document's first token gives 0.03 and 0.035 of its probability to a repeat, the entropy of the rest is 3.93 and 3.91, and the cost at position 0 falls from 0.48 and 0.64 to 0.05 and 0.16 nats, while the gain from position 4 on stays. The listing asserts, for both seeds, that the repeat probability is less than half the plain mask's, that the entropy of the rest is more than 0.2 nats higher than the plain mask's, that the cost at position 0 falls by more than 0.3, and that both masked models gain more than 0.2 from position 4 on. These results fit the account that most of the mask's cost at a document's first token comes from the missing signal that a document has begun, rather than from the context the mask removes, which cannot help predict an unrelated document: one visible token before each document, here the previous document's EOD, restores most of it. A small difference remains at position 0 even with the EOD visible (0.05 and 0.16 nats in the run shown), and this experiment does not examine it.
 ````
 
 1. **Seeking across mixture phases.** The `StrideSampler` of
@@ -3096,11 +3069,8 @@ stream is all the step number can restore.
 ```python
 import numpy as np
 
-N, B, N_SHARDS = (
-    64_000,
-    64,
-    64,
-)  # samples, global batch, shards: one epoch is 1,000 steps
+# samples, global batch, shards: one epoch is 1,000 steps
+N, B, N_SHARDS = (64_000, 64, 64)
 STEPS, RESUME = N // B, 500
 PERM = np.random.default_rng(0).permutation(N)
 
@@ -3185,11 +3155,8 @@ def manifest(contents: dict) -> dict:
 
 
 versions = {"v1.0": build(0, 800), "v1.1": build(0, 1000), "v1.2": build(100, 1200)}
-trained_on = {
-    "model-a": "v1.0",
-    "model-b": "v1.1",
-    "model-c": "v1.2",
-}  # the lineage graph, one edge each
+# the lineage graph, one edge each
+trained_on = {"model-a": "v1.0", "model-b": "v1.1", "model-c": "v1.2"}
 target = "document 150"
 
 # Step 1, locate: one lookup in an index the build filled with one hash per document
