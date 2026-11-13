@@ -90,7 +90,7 @@ def softmax_saturation(out):
         ax.annotate(f"$p_1 = {p8:.4f}$, derivative {p8 * (1 - p8):.2g}", (8, p8 * (1 - p8)), xytext=offset,
                     textcoords="offset points", ha=align[0], va=align[1], color=color)
     ax.axvline(8, color=GREY, ls="--", lw=1)
-    ax.text(7.85, 1.3e-6, "gap 8: the standard deviation of one\nunscaled score at $d_k = 64$\n(of a gap between two scores: $8\\sqrt{2} = 11.3$)", ha="right",
+    ax.text(7.85, 1.3e-6, "gap 8: the standard deviation\nof one unscaled score at $d_k = 64$\n(the difference of two scores\nhas $8\\sqrt{2} = 11.3$)", ha="right",
             va="bottom", color=GREY)
     ax.set_yscale("log")
     ax.set_ylim(1e-6, 0.6)
@@ -166,10 +166,10 @@ def allocation_lines(out):
         ax.plot(compute, base * (compute / c0) ** exps[1], color=ORANGE, lw=2,
                 label=f"Chinchilla, exponent {exps[1]:.2f}", zorder=2)
         # The hollow star leaves the 67 B Table 3 dot, which sits almost on Chinchilla's own size, visible.
-        ax.plot(c0, base, "*", mfc="none", mec="black", mew=1.2, ms=16, zorder=3, label="Chinchilla (70 B, 1.4 T tokens)")
+        ax.plot(c0, base, "*", mfc="none", mec="black", mew=1.2, ms=16, zorder=3, label="Chinchilla, 70 B")
         ax.plot([6 * n * d for n, d in table3], [row[column] for row in table3], "o", color=ORANGE, mec="black",
                 ms=5, zorder=4, label="Table 3, 4 rows")
-        ax.legend(loc="upper left", fontsize=8, frameon=False)
+        ax.legend(loc="upper left", fontsize=10, frameon=False)
         ax.set_xscale("log")
         ax.set_yscale("log")
         ax.set_xlabel("training compute $C = 6ND$ (FLOPs)")

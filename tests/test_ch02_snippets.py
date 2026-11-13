@@ -269,3 +269,32 @@ def test_fix_round_numbers_in_prose_and_solutions():
     assert round(8 * 4096 / 3) == 10923
     assert round(2 * 8 * 2048 * 12288 * 96 / 1e9, 1) == 38.7
     assert round(1e-10 / (1e-10 + 1e-8), 4) == 0.0099
+
+
+def test_adam_step_without_epsilon_is_bounded_by_kingma_ba_section_2_1():
+    """Chapter 2, sec-ch2-epsilon-placement: with negligible eps, |m_hat|/sqrt(v_hat) <= (1 - beta1)/sqrt(1 - beta2) = 3.16;
+    5,000 zero gradients followed by one nonzero gradient give a step of 3.15 lr, a dense constant gradient about lr."""
+    import math
+
+    def last_step(grads):
+        p = torch.zeros(1, requires_grad=True)
+        # eps = 0 would make the zero-gradient steps 0/0 (the first job of eps); 1e-300 avoids that and is
+        # negligible against sqrt(v_hat) once a gradient is nonzero.
+        opt = torch.optim.Adam([p], lr=1.0, eps=1e-300)
+        before = 0.0
+        for g in grads:
+            before = p.item()
+            p.grad = torch.tensor([g])
+            with torch.no_grad():
+                opt.step()
+        return abs(p.item() - before)
+
+    torch.set_default_dtype(torch.float64)
+    try:
+        sparse = last_step([0.0] * 5000 + [1.0])
+        dense = last_step([1.0] * 100)
+    finally:
+        torch.set_default_dtype(torch.float32)
+    bound = 0.1 / math.sqrt(0.001)
+    assert round(bound, 2) == 3.16 and round(sparse, 2) == 3.15 and sparse <= bound
+    assert abs(dense - 1.0) < 1e-9

@@ -1,4 +1,5 @@
 // One block, pre-LN (top) and post-LN (bottom). Rendered with rankdir LR. The thick path is the residual stream:
+// The pre-LN identity edge is kept straight (group "spine", weight 8) so its label sits beside it, not on it.
 // in post-LN it passes the LayerNorm, in pre-LN it reaches h^(l+1) through the addition alone (Jacobian I).
 digraph pre_post_ln {
   graph [fontname="DejaVu Sans", fontsize=14, nodesep=0.3, ranksep=0.45];
@@ -21,15 +22,15 @@ digraph pre_post_ln {
 
   subgraph cluster_pre {
     label=<pre-LN:  h<SUP>(l+1)</SUP> = h<SUP>(l)</SUP> + F(LN(h<SUP>(l)</SUP>))>; fontsize=16; labelloc="b"; color="#4a5568"; style="rounded,filled"; fillcolor="#eaf4ea";
-    b_in  [label=<h<SUP>(l)</SUP>>, fontsize=16, color="#4a5568", fillcolor="#e8eef7"];
+    b_in  [label=<h<SUP>(l)</SUP>>, group="spine", fontsize=16, color="#4a5568", fillcolor="#e8eef7"];
     b_ln  [label="LN", fontsize=16, color="#4a5568", fillcolor="#f4b183"];
     b_f   [label="F", fontsize=16, color="#4a5568", fillcolor="#ffffff"];
-    b_add [label="+", shape=circle, width=0.4, fixedsize=true, color="#4a5568", fillcolor="#ffffff"];
-    b_out [label=<h<SUP>(l+1)</SUP>>, fontsize=16, color="#4a5568", fillcolor="#e8eef7"];
+    b_add [label="+", group="spine", shape=circle, width=0.4, fixedsize=true, color="#4a5568", fillcolor="#ffffff"];
+    b_out [label=<h<SUP>(l+1)</SUP>>, group="spine", fontsize=16, color="#4a5568", fillcolor="#e8eef7"];
     b_in -> b_ln [color="#4a5568"];
     b_ln -> b_f [color="#4a5568"];
     b_f -> b_add [color="#4a5568"];
-    b_in -> b_add [xlabel="identity, Jacobian I", fontsize=16, color="#2ca02c", fontcolor="#1f6f1f", penwidth=2.4];
+    b_in -> b_add [label="identity, Jacobian I", weight=8, fontsize=16, color="#2ca02c", fontcolor="#1f6f1f", penwidth=2.4];
     b_add -> b_out [color="#2ca02c", penwidth=2.4];
   }
 }
