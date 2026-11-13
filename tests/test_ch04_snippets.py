@@ -170,7 +170,7 @@ def test_solution_5_original_pattern_is_the_pages_and_the_extended_one_scores_9_
 
 
 def test_solution_6_scores_agree_with_the_pages_decontamination_functions():
-    ns = run('question = "Which of the following')
+    ns = run('"Which of the following is the best explanation for why the sky appears')
     page = run("def contamination_index(")
     for n in (13, 8):
         index = page["contamination_index"]([ns["question"]], n)
