@@ -408,6 +408,15 @@ encodings = {name: get_encoding(name) for name in names}
 print(f"{'Language':<10}" + "".join(f"{name:>13}" for name in names))
 for language, text in texts.items():
     print(f"{language:<10}" + "".join(f"{len(encodings[n].encode(text)):>13}" for n in names))
+
+# With LLMATLAS_WRITE_DATA=1 (run from the chapter's figures/data directory) also save the counts for the figure
+if os.environ.get("LLMATLAS_WRITE_DATA") == "1":
+    import json
+
+    counts = {lang: {"characters": len(text), **{n: len(encodings[n].encode(text)) for n in names}}
+              for lang, text in texts.items()}
+    with open("tokens_per_language.json", "w", encoding="utf-8") as f:
+        json.dump({"encodings": names, "counts": counts}, f, indent=1, ensure_ascii=False)
 ```
 
 % output
@@ -419,6 +428,15 @@ French                6            3            3
 Spanish               4            2            2
 Japanese             10            4            2
 Arabic               12           10            4
+```
+
+{numref}`fig-ch1-tokens-per-language` divides each count by the text's length in characters.
+
+```{figure} figures/tokens-per-language.*
+:name: fig-ch1-tokens-per-language
+:alt: Grouped bars for English, French, Spanish, Japanese and Arabic. English is 18 tokens per 100 characters in all three encodings; Japanese falls from 143 in gpt2 to 57 in cl100k_base and 29 in o200k_base; Arabic from 92 to 77 to 31.
+
+Tokens per 100 characters for the five greetings above, from the counts the listing prints (saved in `figures/data/tokens_per_language.json`). The greetings are 7 to 16 characters long, so each bar rests on a handful of tokens.
 ```
 
 (sec-tdd-out-of-vocabulary-handling)=
@@ -956,16 +974,26 @@ def analyze_token_frequency(corpus, tokenizer):
 
     # Plot frequency distribution
     frequencies = sorted(token_counts.values(), reverse=True)
-    plt.figure(figsize=(10, 6))
-    plt.loglog(range(1, len(frequencies) + 1), frequencies)
-    plt.xlabel("Token Rank")
+    plt.figure(figsize=(7, 3.6))
+    plt.loglog(range(1, len(frequencies) + 1), frequencies, marker=".", linestyle="none")
+    plt.xlabel("Token rank")
     plt.ylabel("Frequency")
-    plt.title("Token Frequency Distribution (Zipf's Law)")
+    plt.title("Token frequency distribution (Zipf's law)")
     plt.grid(True)
     plt.show()
 
     return token_counts
 ```
+
+```{figure} figures/word-frequency.*
+:name: fig-ch1-word-frequency
+:alt: Log-log scatter of word frequency against rank: about 440 occurrences for the most frequent word, falling roughly along a straight line to a long tail of words that occur once.
+
+`analyze_token_frequency` applied to the paragraphs of this chapter's main page, split into lowercase words (run by `figures/make_figures.py`). On log-log axes frequency falls roughly linearly with rank, which is Zipf's law.
+```
+
+{numref}`fig-ch1-word-frequency` shows the plot for this chapter's own text.
+
 
 **4. Multi-Domain Tokenization**:
 
@@ -1281,9 +1309,12 @@ def compare_position_encodings():
     for method, params in results.items():
         print(f"{method:<19}", " ".join(f"{p:>9,}" for p in params))
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(7, 3.6))
+    styles = {"Sinusoidal": ("o", "-"), "Learned absolute": ("s", "-"), "Relative bias (T5)": ("^", "-"),
+              "RoPE": ("x", "--")}  # sinusoidal and RoPE overlap at zero, so they differ in marker and dash
     for method, params in results.items():
-        plt.plot(seq_lens, params, marker="o", label=method)
+        marker, dash = styles[method]
+        plt.plot(seq_lens, params, marker=marker, linestyle=dash, label=method)
     plt.xlabel("Maximum sequence length")
     plt.ylabel("Additional parameters")
     plt.title("Positional encoding parameter cost (sinusoidal and RoPE add none)")
@@ -1304,6 +1335,14 @@ Relative bias (T5)        256       256       256       256       256
 RoPE                        0         0         0         0         0
 ```
 
+```{figure} figures/position-parameter-cost.*
+:name: fig-ch1-position-parameter-cost
+:alt: Four lines over maximum lengths 128 to 4096: learned absolute rises to about 2.1 million parameters; relative bias stays at 256; sinusoidal and RoPE stay at 0 and overlap.
+
+The listing's plot, $d = 512$. Sinusoidal and RoPE coincide at zero (circles and crosses).
+```
+
+{numref}`fig-ch1-position-parameter-cost` plots these numbers. 
 Only learned absolute positions grow with the maximum length, by $d$ parameters per position; T5's bias table is fixed at 32 buckets times 8 heads.
 
 (sec-tdd-advanced-embedding-implementation)=

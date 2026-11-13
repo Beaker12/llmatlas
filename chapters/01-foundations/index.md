@@ -56,6 +56,16 @@ These components work together to create models that can understand context, mai
 
 Large Language Models cannot directly process raw text—they require numerical representations. The process begins with **tokenization**, which breaks text into discrete units called tokens. This seemingly simple step profoundly affects model performance, computational efficiency, and language understanding capabilities.
 
+{numref}`fig-ch1-tokenization-pipeline` follows one sentence through every stage of this chapter's first two sections.
+
+```{figure} figures/tokenization_pipeline.*
+:name: fig-ch1-tokenization-pipeline
+:alt: Five stages from top to bottom: normalization, pre-tokenization, subword model, vocabulary lookup and embedding lookup, each beside its result for the text The cat sat: three chunks, the tokens The, cat and sat, the ids 464, 3797 and 3332, and a 3 by 768 matrix.
+:width: 78%
+
+From text to the model's input. Left, the stages; right, what each gives for "The cat sat" with GPT-2's tokenizer (ids from tiktoken's `gpt2` encoding; Ġ is how GPT-2's vocabulary writes a leading space; $d = 768$ is the smallest GPT-2).
+```
+
 (sec-ch1-token-definition)=
 
 #### What Are Tokens?
@@ -246,6 +256,15 @@ print(f"Tokens: {bpe.encode('helper')}")  # an unseen word splits into learned s
 ```text
 Merges: [('h', 'e'), ('he', 'l'), ('hel', 'l'), ('hell', 'o')]
 Tokens: ['hel', 'p', 'e', 'r', '</w>']
+```
+
+{numref}`fig-ch1-bpe-merges` shows the corpus after each merge: frequent pairs grow into whole words (hello), while a word seen once (world) stays split into characters.
+
+```{figure} figures/bpe-merges.*
+:name: fig-ch1-bpe-merges
+:alt: Five rows of boxed symbols for the words hello, world, help and held, each ending in an end-of-word marker. Row by row the highlighted symbol grows from he to hel to hell to hello, while world never changes.
+
+The four merges of the listing on its corpus (hello twice, world, help, held), drawn by `figures/make_figures.py` from the listing's own `SimpleBPE`. Each row is the corpus after one more merge; the symbol just created is highlighted. Merge 1 picks h + e over e + l, which also occurs 4 times, because `max` returns the first pair counted.
 ```
 
 **Other subword algorithms**:
@@ -452,6 +471,16 @@ Attention by itself does not see the order of its inputs, so positional informat
 
 Without positional information and without a mask, self-attention treats each sentence as a multiset of tokens: permuting the inputs permutes the outputs in the same way and changes nothing else, so these two sentences, which hold the same tokens, get the same set of output vectors. A causal decoder is not completely order-blind even without positions, because its mask lets position $m$ attend to exactly $m$ earlier-or-equal tokens; but that is a weak signal, and every model below supplies positions explicitly.
 
+The sinusoidal and learned schemes below both add a position vector to each token vector, as in {numref}`fig-ch1-embedding-composition`.
+
+```{figure} figures/embedding_composition.*
+:name: fig-ch1-embedding-composition
+:alt: Token ids go through a token embedding lookup in W_E and positions go through a positional encoding; the two n by d results are added to give the input X.
+:width: 68%
+
+Absolute positions are added to the token embeddings before the first block. RoPE instead acts inside attention ({ref}`sec-ch1-rope`), and the relative bias adds to the attention scores.
+```
+
 (sec-ch1-sinusoidal-positions)=
 
 #### Sinusoidal Positional Encoding
@@ -504,22 +533,22 @@ def visualize_positional_encoding(max_seq_len=100, d_model=64):
     print(f"encoding table: {tuple(pe.shape)}, values from {pe.min():.4f} to {pe.max():.4f}")
     print(f"position 0: {pe[0, :4].tolist()}")
 
-    plt.figure(figsize=(12, 8))
-    plt.imshow(pe.T.numpy(), cmap="RdBu", aspect="auto")
-    plt.colorbar()
-    plt.title("Sinusoidal Positional Encodings")
-    plt.xlabel("Position")
+    plt.figure(figsize=(7, 3.6))
+    plt.imshow(pe.T.numpy(), cmap="RdBu", aspect="auto", vmin=-1, vmax=1)
+    plt.colorbar(label="Encoding value")
+    plt.title("Sinusoidal positional encodings")
+    plt.xlabel("Position m")
     plt.ylabel("Dimension")
     plt.show()
 
-    # Show how encoding changes with position for first few dimensions
-    plt.figure(figsize=(12, 6))
-    for i in range(6):
-        plt.plot(pe[:50, i].numpy(), label=f"dim {i}")
-    plt.legend()
-    plt.title("Positional Encoding Values by Dimension")
-    plt.xlabel("Position")
-    plt.ylabel("Encoding Value")
+    # Show how encoding changes with position: the frequency falls as the dimension grows
+    plt.figure(figsize=(7, 3.2))
+    for dim, style in ((0, "-"), (8, "--"), (16, "-."), (32, ":")):
+        plt.plot(pe[:50, dim].numpy(), linestyle=style, label=f"dimension {dim}")
+    plt.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0), frameon=False)
+    plt.title("Encoding value by position")
+    plt.xlabel("Position m")
+    plt.ylabel("Encoding value")
     plt.show()
 
 
@@ -534,7 +563,24 @@ encoding table: (100, 64), values from -1.0000 to 1.0000
 position 0: [0.0, 1.0, 0.0, 1.0]
 ```
 
+```{figure} figures/sinusoidal-heatmap.*
+:name: fig-ch1-sinusoidal-heatmap
+:alt: Heatmap of 64 dimensions by 100 positions: the lowest dimensions alternate red and blue every few positions, higher dimensions change ever more slowly, and the top rows are almost constant.
+
+The encoding table the listing prints, $m < 100$ and $d = 64$, drawn by its first plot. Each pair of dimensions is a sine and cosine whose wavelength grows with the dimension index.
+```
+
+```{figure} figures/sinusoidal-lines.*
+:name: fig-ch1-sinusoidal-lines
+:alt: Four curves over positions 0 to 49: dimension 0 oscillates fast, dimension 8 more slowly, dimension 16 completes less than one cycle and dimension 32 rises almost linearly.
+
+The listing's second plot: dimensions 0, 8, 16 and 32 over the first 50 positions. Their angular frequencies are 1, 0.32, 0.1 and 0.01 radians per position.
+```
+
 Position 0 is $(0, 1, 0, 1, \dots)$ because $\sin 0 = 0$ and $\cos 0 = 1$, and every entry stays within $[-1, 1]$.
+
+{numref}`fig-ch1-sinusoidal-heatmap` shows the whole table and {numref}`fig-ch1-sinusoidal-lines` a few of its rows: low dimensions change fast enough to tell neighboring positions apart, high ones slowly enough to separate distant ones.
+
 
 (sec-ch1-learned-positions)=
 
@@ -726,6 +772,15 @@ score at (3, 6):   -10.75
 norm before and after rotation: 8.370 8.370
 ```
 
+{numref}`fig-ch1-rope-rotation` draws the $d_k = 2$ example: moving both positions by 7 turns both vectors and leaves the angle between them alone.
+
+```{figure} figures/rope-rotation.*
+:name: fig-ch1-rope-rotation
+:alt: Two unit circles. In each, a query arrow and a key arrow are separated by an arc labeled 2: on the left at angles 3 and 5, on the right at angles 10 and 12.
+
+The worked number above with $d_k = 2$ and $\omega_0 = 1$: the rotated query and key at $m = 3, m' = 5$ (left) and $m = 10, m' = 12$ (right) point in different directions, but the angle between them is the same, so the score is the same.
+```
+
 (sec-ch1-position-scheme-choice)=
 
 #### Which Scheme Models Use
@@ -742,6 +797,15 @@ The notebook ({ref}`nb-attn-positional`) visualizes sinusoidal and learned encod
 ## 3. Historical Context
 
 The pieces of the previous two sections, and the attention of the next, were not designed at once. This section follows them from counting word sequences to the open-weight models of 2024.
+
+{numref}`fig-ch1-history-timeline` places the milestones on one time axis.
+
+```{figure} figures/history-timeline.*
+:name: fig-ch1-history-timeline
+:alt: A timeline on a year axis broken between 2008 and 2012: LSTM in 1997 and the neural language model in 2003, then word2vec, seq2seq and attention in 2013 to 2014, the transformer in 2017, ELMo, GPT and BERT in 2018, GPT-2, T5 and BART in 2019, GPT-3 in 2020, InstructGPT and ChatGPT in 2022, LLaMA and Mistral 7B in 2023 and Llama 3 in 2024.
+
+The milestones this section discusses, placed by year of publication or release (sources in the text). Most of them fall in the last decade.
+```
 
 (sec-ch1-ngram-neural-lm)=
 
@@ -852,6 +916,16 @@ Self-attention computes a weighted representation of the input sequence, where w
 
 The scaling factor $\sqrt{d_k}$, where $d_k$ is the per-head key dimension, keeps the dot products at unit variance so the softmax does not saturate {cite}`vaswani2017attention`.
 
+{numref}`fig-ch1-scaled-dot-product-attention` follows the shapes through the formula.
+
+```{figure} figures/scaled_dot_product_attention.*
+:name: fig-ch1-scaled-dot-product-attention
+:alt: X feeds three projections Q, K and V; Q and K give the n by n scores divided by the square root of d_k, an optional mask adds minus infinity, the softmax gives weights A, and A times V gives the n by d_v output O.
+:width: 68%
+
+Scaled dot-product attention with the shape of every intermediate. The $n \times n$ score and weight matrices are what makes attention quadratic in $n$ ({ref}`sec-ch1-attention-complexity`).
+```
+
 (sec-ch1-attention-worked-example)=
 
 #### A Worked Example
@@ -891,6 +965,15 @@ output:
         [0.7517, 0.7517]])
 ```
 
+{numref}`fig-ch1-attention-worked-example` shows the same two matrices as heatmaps.
+
+```{figure} figures/attention-worked-example.*
+:name: fig-ch1-attention-worked-example
+:alt: Two 3 by 3 heatmaps. Scores: 0.7071 where two tokens share a coordinate, 0 between tokens 1 and 2, 1.4142 for token 3 with itself. Weights: rows 0.4011, 0.1978, 0.4011; 0.1978, 0.4011, 0.4011; 0.2483, 0.2483, 0.5035.
+
+The listing's scores and weights. The softmax keeps the order of each row's scores but makes them positive and sum to 1; the zero score still gets weight 0.1978.
+```
+
 (sec-ch1-attention-complexity)=
 
 #### Cost in Time and Memory
@@ -926,6 +1009,16 @@ where each head projects the input $X$ with its own matrices:
 $$\text{head}_i = \text{Attention}(XW_Q^{(i)}, XW_K^{(i)}, XW_V^{(i)}), \qquad W_Q^{(i)}, W_K^{(i)} \in \mathbb{R}^{d \times d_k}, \quad W_V^{(i)} \in \mathbb{R}^{d \times d_v}, \quad 1 \le i \le n_h$$
 
 with $d_k = d_v = d/n_h$, so the heads together cost as much as one head of width $d$. The single projection $W_Q$ of the previous equations is the $n_h$ matrices $W_Q^{(i)}$ placed side by side, $W_Q = [W_Q^{(1)} \cdots W_Q^{(n_h)}] \in \mathbb{R}^{d \times d}$, and likewise for $W_K$ and $W_V$; that is how the code below computes all heads with one matrix product and then splits the columns into heads. For cross-attention the queries come from one sequence and the keys and values from another, so the key length may differ from the query length; the listing below shows both cases.
+
+{numref}`fig-ch1-multi-head-attention` shows the split and the concatenation.
+
+```{figure} figures/multi_head_attention.*
+:name: fig-ch1-multi-head-attention
+:alt: X is projected to Q, K and V of width d, the columns are split into n_h heads of width d_k, each head runs attention, the heads are concatenated back to width d and multiplied by W_O.
+:width: 70%
+
+Multi-head attention: one projection of width $d$, split into $n_h$ heads of $d_k = d/n_h$ columns, attention in each head, concatenation and the output projection $W_O$.
+```
 
 ```python
 import math
@@ -1265,6 +1358,16 @@ output:  (3, 4)
 
 The decoder's output then goes through the same final normalization and unembedding as in {ref}`sec-ch1-end-to-end`. The `MultiHeadAttention` listing in {ref}`sec-ch1-multi-head-attention` runs the multi-head version of this case when it is called with a second sequence as keys and values.
 
+{numref}`fig-ch1-encoder-decoder` puts the two stacks side by side.
+
+```{figure} figures/encoder_decoder.*
+:name: fig-ch1-encoder-decoder
+:alt: Left, the encoder: source tokens through self-attention and a feed-forward network, repeated L_enc times, giving H_enc. Right, the decoder: target tokens through masked self-attention, cross-attention that takes keys and values from H_enc, and a feed-forward network, repeated L_dec times, then the next-token distribution.
+:width: 72%
+
+The encoder-decoder transformer of {cite:t}`vaswani2017attention`. $H_{enc}$ is computed once and feeds the cross-attention of every decoder block.
+```
+
 (sec-ch1-architectural-variants)=
 
 ### 5.2 Architectural Variants
@@ -1274,6 +1377,15 @@ While the original transformer was designed for machine translation, different v
 - **GPT** {cite}`radford2018improving`: Decoder-only architecture with causal masking
 - **BERT** {cite}`devlin2018bert`: Encoder-only architecture with bidirectional attention
 - **T5** {cite}`raffel2019exploring`: Encoder-decoder architecture treating all tasks as text-to-text
+
+The three differ in which positions may attend to which, as {numref}`fig-ch1-mask-patterns` shows.
+
+```{figure} figures/mask-patterns.*
+:name: fig-ch1-mask-patterns
+:alt: Three grids of allowed query-key pairs: encoder-only is fully dark; decoder-only is dark on and below the diagonal; the decoder of an encoder-decoder sees all four source columns and the target columns on and below the diagonal.
+
+Allowed (dark) and masked (light) query-key pairs for four source tokens s1 to s4 and three target tokens t1 to t3. The red line separates the cross-attention keys (source) from the decoder's own keys.
+```
 
 (sec-ch1-masked-lm)=
 
@@ -1332,6 +1444,16 @@ The block above is the 2017 design. Later models change it in some of the follow
 - **Rotary position embeddings.** Positions enter through RoPE on the queries and keys ({ref}`sec-ch1-rope`), not through vectors added to the input {cite}`su2021roformer`.
 - **Grouped-query attention.** Several query heads share one key/value head, shrinking the KV cache that dominates inference memory at long context {cite}`ainslie2023gqa`.
 - **No biases, tied or untied embeddings, larger vocabularies.** Linear layers usually drop their bias terms; vocabularies grew from 32k to 128k-256k (see {ref}`sec-tdd-choosing-vocabulary-size`).
+
+{numref}`fig-ch1-transformer-block-norms` shows the first change for the attention sublayer; the feed-forward sublayer repeats the pattern.
+
+```{figure} figures/transformer_block_norms.*
+:name: fig-ch1-transformer-block-norms
+:alt: Left, post-LN: x goes through multi-head attention, is added to the residual x, then normalized. Right, pre-LN: x is normalized, goes through attention and is added to the unnormalized x.
+:width: 83%
+
+Post-LN normalizes the sum, so the residual stream passes through a normalization in every block; pre-LN normalizes only the sublayer's input, so the residual path from input to output is the identity.
+```
 
 Chapter 6 ({doc}`../06-architectures/index`) takes each of these in turn, adds multi-head latent attention, sliding-window attention and mixture-of-experts layers, and counts the parameters and cache of real models.
 
@@ -1410,6 +1532,15 @@ def create_causal_mask(seq_length: int) -> torch.Tensor:
     return mask == 0  # True for allowed positions, False for masked
 ```
 
+For the four inputs of the next listing the mask is {numref}`fig-ch1-causal-mask`.
+
+```{figure} figures/causal-mask.*
+:name: fig-ch1-causal-mask
+:alt: A 4 by 4 grid over the tokens bos, the, cat, sat: zeros on and below the diagonal, minus infinity above it.
+
+The causal mask as it is added to the scores: 0 where a query may attend, $-\infty$ where the key is later, so the softmax gives those keys weight 0. `create_causal_mask(4)` is `True` exactly where this grid shows 0.
+```
+
 (sec-ch1-teacher-forcing)=
 
 #### Teacher Forcing, Shifted Targets, BOS and EOS
@@ -1485,6 +1616,16 @@ top-p, p = 0.9  the=0.455 a=0.276 cat=0.167 dog=0.102 pizza=0.000
 ```
 
 Halving the temperature raises the top token from 0.445 to 0.643. Top-k with $k_{top} = 2$ keeps "the" and "a" and rescales them by $1/(0.445 + 0.270)$. Top-p with $p_{top} = 0.9$ needs four tokens, because the first three hold only $0.445 + 0.270 + 0.164 = 0.879$; on a more confident distribution the same $p_{top}$ would keep fewer. In practice temperature is combined with top-k or top-p, and the chosen token is then drawn from the result.
+
+{numref}`fig-ch1-autoregressive-loop` summarizes the generation loop that any of these rules plugs into.
+
+```{figure} figures/autoregressive_loop.*
+:name: fig-ch1-autoregressive-loop
+:alt: The prompt goes into the model, which gives a next-token distribution; a token is chosen; if it is EOS or the length limit is reached generation stops, otherwise the token is appended and the model runs again.
+:width: 61%
+
+Generation: one forward pass per new token. Training does not loop, because teacher forcing supplies the true tokens ({ref}`sec-ch1-teacher-forcing`).
+```
 
 (sec-ch1-training-process)=
 
