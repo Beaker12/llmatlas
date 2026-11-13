@@ -280,7 +280,7 @@ Real profiles are built from megabytes of text per language, and real classifier
 
 ```{admonition} Normalisation and Language Identification
 :class: tip
-The notebook section {ref}`nb-prep-normalize` applies the normaliser to a corpus containing mojibake, zero-width characters and decomposed accents, and {ref}`nb-prep-langid` builds the n-gram identifier from a small parallel corpus and shows how its confidence collapses as documents get shorter.
+The notebook section {ref}`nb-prep-normalize` applies the normaliser to a corpus containing mojibake, zero-width characters and decomposed accents, and {ref}`nb-prep-langid` builds the n-gram identifier from a small parallel corpus and measures how its accuracy falls as the text it sees gets shorter, and that its margin does not warn of those errors.
 ```
 
 (sec-ch4-quality-filtering)=
@@ -409,40 +409,48 @@ A page that repeats itself, whether because of a template, a scraper bug or a sp
 | Fraction of characters in duplicate 9-grams    | 0.11      |
 | Fraction of characters in duplicate 10-grams   | 0.10      |
 
-The n-gram measures are computed over words. "Fraction of characters in the most common n-gram" is the number of occurrences of the most frequent n-gram, times its character length, divided by the document's character count. "Fraction of characters in duplicate n-grams" scans the document left to right; when an n-gram has been seen before, its characters are counted and the scan skips ahead by $n$ words, so a repeated passage is counted once per repeat rather than once per overlapping window. This follows the public implementations in datatrove and Dolma.
+The n-gram measures are computed over words. "Fraction of characters in the most common n-gram" is the number of occurrences of the most frequent n-gram, times its character length, divided by the length of the whole document in characters, spaces and newlines included. "Fraction of characters in duplicate n-grams" scans the document left to right; when an n-gram has been seen before, its characters are counted and the scan skips ahead by $n$ words, so a repeated passage is counted once per repeat rather than once per overlapping window. Paragraphs are the pieces of text between blank lines and lines the pieces between newlines; a paragraph or line is a duplicate when the same text has appeared earlier in the document, and its characters are added to the duplicate count. These definitions follow datatrove's `GopherRepetitionFilter`, which divides every character count by `len(text)`, counts the spaces inside a most common n-gram and not those inside a duplicate n-gram; the one difference below is that words are whitespace-separated here, where datatrove uses a word tokenizer for the document's language.
 
 ```python
+import re
 from collections import Counter
 
 
 def repetition_stats(text: str) -> dict:
-    """Line- and n-gram-level repetition fractions in the style of Rae et al. (2021)."""
-    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    """Paragraph-, line- and n-gram-level repetition fractions in the style of Rae et al. (2021).
+
+    Every character fraction is divided by len(text), as datatrove's GopherRepetitionFilter does.
+    """
+    total_chars = max(1, len(text))
     words = text.split()
-    total_chars = max(1, sum(len(w) for w in words))
     stats = {}
 
-    if lines:
-        line_counts = Counter(lines)
-        dup_lines = sum(c - 1 for c in line_counts.values())
-        dup_line_chars = sum(len(line) * (c - 1) for line, c in line_counts.items())
-        stats["dup_line_frac"] = dup_lines / len(lines)
-        stats["dup_line_char_frac"] = dup_line_chars / max(1, sum(map(len, lines)))
+    # A paragraph or line counts as a duplicate when the same text has appeared before.
+    for unit, parts in (("para", re.split(r"\n{2,}", text.strip())), ("line", re.split(r"\n+", text))):
+        seen, dup_parts, dup_chars = set(), 0, 0
+        for part in parts:
+            if part in seen:
+                dup_parts += 1
+                dup_chars += len(part)
+            else:
+                seen.add(part)
+        stats[f"dup_{unit}_frac"] = dup_parts / len(parts)
+        stats[f"dup_{unit}_char_frac"] = dup_chars / total_chars
 
     for n in (2, 3, 4):
-        grams = Counter(tuple(words[i : i + n]) for i in range(len(words) - n + 1))
+        grams = Counter(" ".join(words[i : i + n]) for i in range(len(words) - n + 1))
         if grams:
             gram, count = grams.most_common(1)[0]
-            stats[f"top_{n}gram_char_frac"] = count * sum(map(len, gram)) / total_chars
+            stats[f"top_{n}gram_char_frac"] = len(gram) * count / total_chars
 
     for n in range(5, 11):
         seen = set()
         dup_chars = 0
         i = 0
         while i < len(words) - n + 1:
-            gram = tuple(words[i : i + n])
+            gram = "".join(words[i : i + n])
             if gram in seen:
-                dup_chars += sum(map(len, gram))
+                dup_chars += len(gram)
                 i += n  # count a repeat once, then move past it
             else:
                 seen.add(gram)
@@ -453,6 +461,8 @@ def repetition_stats(text: str) -> dict:
 
 
 THRESHOLDS = {
+    "dup_para_frac": 0.30,
+    "dup_para_char_frac": 0.20,
     "dup_line_frac": 0.30,
     "dup_line_char_frac": 0.20,
     "top_2gram_char_frac": 0.20,

@@ -77,3 +77,18 @@ def test_repeated_spans_returns_one_maximal_span_when_the_repeat_is_longer_than_
     repeated_spans = run("def repeated_spans")["repeated_spans"]
     tokens = ["x1"] + "a b c d e f g h".split() + ["x2"] + "a b c d e f g h".split() + ["x3"]
     assert repeated_spans(tokens, 4) == [(10, 18)]
+
+
+def test_repetition_stats_divides_by_len_text_and_measures_paragraphs_as_datatrove_does():
+    # C4-16 / D18: datatrove's GopherRepetitionFilter divides every character count by len(text) and
+    # counts duplicate paragraphs (split on blank lines) as well as duplicate lines.
+    repetition_stats = run("def repetition_stats")["repetition_stats"]
+    text = "one two three\n\none two three"  # 28 characters, two identical paragraphs
+    stats = repetition_stats(text)
+    assert stats["dup_para_frac"] == 0.5
+    assert stats["dup_para_char_frac"] == 13 / 28
+    assert stats["dup_line_frac"] == 0.5
+    assert stats["dup_line_char_frac"] == 13 / 28
+    assert stats["top_2gram_char_frac"] == len("one two") * 2 / 28  # spaces inside the n-gram count
+    # the six words hold only two 5-grams and they differ, so no 5-gram is a duplicate
+    assert stats["dup_5gram_char_frac"] == 0
