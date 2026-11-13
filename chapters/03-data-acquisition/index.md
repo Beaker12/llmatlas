@@ -80,9 +80,9 @@ The training sets of the major models are reported, when they are reported at al
 
 ```{figure} figures/mixtures.*
 :name: fig-ch3-mixtures
-:alt: Five horizontal stacked bars, one per mixture, split into web crawl, curated web, books, papers and code. GPT-3 is 60, 25 and 16 percent; The Pile 18, 17, 15, 37 and 8; LLaMA 1 82, 6.5, 4.5, 2.5 and 4.5; Dolma 80, 3, 0.2, 2.3 and 13; FineWeb 100 percent web crawl.
+:alt: Five horizontal stacked bars, one per mixture, split into web crawl, curated web, books, papers, code and other, the last being 5 percent of The Pile and 1.5 percent of Dolma. GPT-3 is 60, 25 and 16 percent; The Pile 18, 17, 15, 37 and 8; LLaMA 1 82, 6.5, 4.5, 2.5 and 4.5; Dolma 80, 3, 0.2, 2.3 and 13; FineWeb 100 percent web crawl.
 
-The published mixtures of the table above. Shares are as published and rounded, so GPT-3's row sums to 101%; the gaps in The Pile and Dolma are sources the table does not place in a column. GPT-3 and LLaMA 1 are shares of training tokens, The Pile of bytes, Dolma and FineWeb of corpus tokens.
+The published mixtures of the table above. Numbers are percentages as published and rounded, so GPT-3's row sums to 101%. "Other" is what the five columns leave of 100%: 5% of The Pile and 1.5% of Dolma come from sources the table does not place in a column. GPT-3 and LLaMA 1 are shares of training tokens, The Pile of bytes, Dolma and FineWeb of corpus tokens.
 ```
 
 Three things stand out. The web is the bulk of every corpus, because nothing else is large enough. Curated sources are small in tokens but upweighted: Wikipedia is 3% of GPT-3's training tokens while being a tiny fraction of the raw data, and LLaMA samples it for more than two epochs. And the totals have grown fifty-fold in four years, from GPT-3's 300B tokens to the 15T of FineWeb and the roughly 15T used by Llama 3 {cite}`grattafiori2024llama`, which is why the question of whether the supply of human-written text is finite {cite}`villalobos2024run` is now taken seriously.
@@ -151,7 +151,7 @@ A WARC file is a sequence of gzip members, one per record, so that any record ca
 
 ```{figure} figures/snapshot-layout.*
 :name: fig-ch3-snapshot-layout
-:alt: Tree from crawl-data/CC-MAIN-2026-39 to 100 segments, each with warc, wet and wat directories of about 90, 7 and 16 TB per snapshot. One WARC file is drawn as a row of gzip members (warcinfo, request, response, metadata), with the response member at offset 48,374,322 and 9,882 bytes long highlighted. A URL index line with that filename, offset and length leads to a range request that fetches exactly that member.
+:alt: Tree from crawl-data/CC-MAIN-2026-39 to 100 segments, each with warc, wet and wat directories of about 90, 7 and 16 TB per snapshot. One WARC file is drawn as a row of gzip members (request, response, metadata), with the response member at offset 48,374,322 and 9,882 bytes long highlighted. A URL index line with that filename, offset and length leads to a range request that fetches exactly that member.
 
 The layout of a snapshot. The manifest lists 100,000 WARC files, 1,000 per segment, each about a gigabyte and made of one gzip member per record. An index line gives a record's file, offset and length; the range request `bytes=48374322-48384203` fetches that member alone, and it decompresses without the rest of the file.
 ```
@@ -698,7 +698,7 @@ Consent in Crisis {cite}`longpre2024consent` measured, across C4, RefinedWeb and
 :name: fig-ch3-consent-restrictions
 :alt: Line plot from July 2022 to April 2024 of the percentage of tokens fully restricted by robots.txt. Three dashed red lines for head domains stay between 2 and 5 percent until August 2023, then rise steeply to between 19 and 32 percent by April 2024. Three solid blue lines for the full corpora stay near 1 to 2 percent and rise to between 5 and 7 percent.
 
-Share of tokens fully restricted to AI crawlers by robots.txt, by domain tier; data read from Fig. 2 of {cite:t}`longpre2024consent`. Each tier has three lines, one per corpus (C4, RefinedWeb and Dolma); the published figure does not label which line is which corpus, so they are drawn alike. Head domains are the most-used, most actively maintained sources in each corpus.
+Share of tokens fully restricted to AI crawlers by robots.txt, by domain tier; data read from Fig. 2 of {cite:t}`longpre2024consent`. Each tier has three lines, one for each of the three corpora the paper studied (C4, RefinedWeb and Dolma); the source figure does not label which line is which corpus, so they are drawn alike. Head domains are the most-used, most actively maintained sources in each corpus.
 ```
 
 Opt-out mechanisms beyond robots.txt:

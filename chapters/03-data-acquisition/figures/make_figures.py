@@ -45,20 +45,23 @@ def mixtures(out):
     """Section 1.1: the five published mixtures as stacked horizontal bars."""
     data = rows("mixtures.csv")
     parts = [("web_crawl", "Web crawl", "#4c72b0"), ("curated_web", "Curated web", "#8fb3de"),
-             ("books", "Books", "#dd8452"), ("papers", "Papers", "#55a868"), ("code", "Code", "#8172b3")]
-    fig, ax = plt.subplots(figsize=(7.2, 3.3))
+             ("books", "Books", "#dd8452"), ("papers", "Papers", "#55a868"), ("code", "Code", "#8172b3"),
+             ("other", "Other", "#bbbbbb")]
+    for r in data:     # "Other" is what the five columns leave of 100% (GPT-3's published shares sum to 101%)
+        r["other"] = max(0.0, 100 - sum(float(r[k]) for k, _, _ in parts[:-1]))
+    fig, ax = plt.subplots(figsize=(7.6, 3.4))
     names = [r["name"] for r in data][::-1]
     left = [0.0] * len(names)
     for key, label, color in parts:
         values = [float(r[key]) for r in data][::-1]
         ax.barh(names, values, left=left, color=color, edgecolor="white", linewidth=0.8, label=label)
         for i, (x0, v) in enumerate(zip(left, values)):
-            if v >= 6:
-                ax.text(x0 + v / 2, i, f"{v:g}%", ha="center", va="center", fontsize=8,
+            if v >= 3:
+                ax.text(x0 + v / 2, i, f"{v:g}", ha="center", va="center", fontsize=8 if v >= 6 else 7,
                         color="white" if key in ("web_crawl", "papers", "code") else "black")
         left = [a + b for a, b in zip(left, values)]
     ax.set_xlim(0, 101)
-    ax.set_xlabel("share of the mixture (%)")
+    ax.set_xlabel("share of the mixture (%); segment labels in percent")
     ax.legend(ncol=5, fontsize=8, loc="lower center", bbox_to_anchor=(0.5, 1.0), frameon=False)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
@@ -70,12 +73,12 @@ def corpus_sizes(out):
     """Section 1.3: tokens per model or corpus by year, against the estimated stock of public text."""
     data = rows("corpus_sizes.csv")
     fig, ax = plt.subplots(figsize=(7.0, 3.8))
-    ax.axhspan(100e12, 1000e12, xmin=0, xmax=1, color="#fde0c5", zorder=0)
-    ax.axhline(300e12, color="#d9822b", linestyle="--", linewidth=1)
-    ax.text(2019.6, 300e12, "stock of public text: about 300T tokens\n(90% interval 100T to 1,000T)",
-            va="center", fontsize=8, color="#8a4b0f", bbox={"facecolor": "#fde0c5", "edgecolor": "none", "pad": 1})
     ax.axvspan(2026, 2032, ymin=0, ymax=1, color="#eeeeee", zorder=0)
-    ax.text(2029, 4e10, "projected\nexhaustion\n2026 to 2032", ha="center", fontsize=8, color="#444444")
+    ax.text(2029, 2e12, "projected\nexhaustion\n2026 to 2032", ha="center", va="center", fontsize=8, color="#444444")
+    ax.axhspan(100e12, 1000e12, xmin=0, xmax=1, color="#f9c99a", alpha=0.6, linewidth=0, zorder=1)
+    ax.axhline(300e12, color="#d9822b", linestyle="--", linewidth=1, zorder=2)
+    ax.text(2019.6, 1.15e15, "stock of public text: about 300T tokens (dashed), 90% interval 100T to 1,000T (band)",
+            va="bottom", fontsize=8, color="#8a4b0f")
     SHIFT = {"FineWeb": -0.15, "Llama 3": 0.15}
     offsets = {"GPT-3": (6, -4), "LLaMA 1": (6, -4), "Dolma": (6, -4), "FineWeb": (-8, -3), "Llama 3": (8, -3)}
     for r in data:
@@ -94,7 +97,7 @@ def corpus_sizes(out):
     ax.set_xticks(range(2020, 2033, 2))
     ax.set_xlabel("year")
     ax.set_ylabel("tokens (log scale)")
-    ax.legend(fontsize=8, loc="upper left", frameon=False)
+    ax.legend(fontsize=8, loc="lower right", frameon=True, facecolor="white", edgecolor="#cccccc")
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
     fig.tight_layout()

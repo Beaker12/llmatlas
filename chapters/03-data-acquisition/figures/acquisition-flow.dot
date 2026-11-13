@@ -1,17 +1,17 @@
 digraph acquisition_flow {
   graph [fontname="DejaVu Sans", fontsize=13, nodesep=0.25, ranksep=0.45, pad=0.2];
-  node [fontname="DejaVu Sans", fontsize=12, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=11, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
-  subgraph cluster_sources { label="Sources (sections 2, 3, 4, 6, 7)"; style="rounded,filled"; fillcolor="#edf2f7"; color="#4a5568"; fontsize=12;
-    cc [label="Common Crawl\nsnapshots (WARC, WET)"];
-    own [label="Your own crawl\n(polite fetch loop)"];
-    curated [label="Curated sources\nWikipedia, books, papers,\ncode, forums"];
-    synth [label="Synthetic text\n(generated, recorded\nwith its generator)"];
+  node [fontname="DejaVu Sans", fontsize=15, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=12, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
+  subgraph cluster_sources { label="Sources"; style="rounded,filled"; fillcolor="#edf2f7"; color="#4a5568"; fontsize=13;
+    cc [label="Common Crawl\nsnapshots"];
+    own [label="Your own\ncrawl"];
+    curated [label="Curated: wiki,\nbooks, papers,\ncode, forums"];
+    synth [label="Synthetic\ntext"];
   }
-  rights [label="Rights at acquisition (section 5)\nlicense, robots.txt and\nopt-outs at fetch time,\npersonal data", fillcolor="#fde7cf"];
-  manifest [label=<<B>Provenance manifest</B> (section 9)<BR/>one record per document:<BR/>URL, crawl date, license,<BR/>robots state, SHA-256>, fillcolor="#dbeafe"];
-  plan [label=<Mixture plan (section 8)<BR/>weight <I>w</I><SUB>s</SUB> and epochs <I>e</I><SUB>s</SUB><BR/>per source, <I>e</I><SUB>s</SUB> ≤ <I>e</I><SUB>max</SUB>>, fillcolor="#dbeafe"];
-  ch4 [label="Chapter 4\nextraction, filtering,\ndeduplication", fillcolor="#dcfce7"];
-  ch5 [label="Chapter 5\nversioned shards,\nsampling by the plan", fillcolor="#dcfce7"];
+  rights [label=<<B>Rights at acquisition</B><BR/>licenses, robots.txt,<BR/>opt-outs, personal data>, fillcolor="#fde7cf"];
+  manifest [label=<<B>Provenance manifest</B><BR/>per document: URL, date,<BR/>license, robots state, SHA-256>, fillcolor="#dbeafe"];
+  plan [label=<<B>Mixture plan</B><BR/>weight <I>w</I><SUB>s</SUB> and epochs <I>e</I><SUB>s</SUB><BR/>per source, <I>e</I><SUB>s</SUB> ≤ <I>e</I><SUB>max</SUB>>, fillcolor="#dbeafe"];
+  ch4 [label=<<B>Preprocessing</B><BR/>extraction, filtering,<BR/>deduplication>, fillcolor="#dcfce7"];
+  ch5 [label=<<B>Dataset management</B><BR/>versioned shards,<BR/>sampling by the plan>, fillcolor="#dcfce7"];
   cc -> rights; own -> rights; curated -> rights; synth -> rights;
   rights -> manifest -> ch4 -> ch5;
   manifest -> plan -> ch5;

@@ -1,22 +1,18 @@
 digraph crawler_architecture {
-  graph [fontname="DejaVu Sans", fontsize=13, nodesep=0.3, ranksep=0.45, pad=0.2];
-  node [fontname="DejaVu Sans", fontsize=12, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=11, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
-  seeds [label="Seed URLs\nand sitemaps", fillcolor="#edf2f7"];
-  subgraph cluster_frontier { label="Frontier: one queue per host"; style="rounded,filled"; fillcolor="#edf2f7"; color="#4a5568"; fontsize=12;
-    qa [label="host a: due now"]; qb [label="host b: due in 2 s"]; qc [label="host c: …"];
-  }
-  sched [label="Scheduler\nserve the host whose\ndelay expires first\n(at most one request\nper host per 2 s)", fillcolor="#dbeafe"];
-  robots [label="robots.txt cache\none fetch per host,\nread as RFC 9309 says", fillcolor="#dbeafe"];
-  fetchers [label="Fetchers\nDNS, connection pools,\ntimeouts, back off\non 429 and 503", fillcolor="#dbeafe"];
-  warc [label="WARC writer\nrequest, response and\nmetadata records", fillcolor="#dcfce7"];
-  dedup [label="Content dedup\nmirrors, soft-404 pages", fillcolor="#fde7cf"];
-  links [label="Extract links,\ncanonicalize (RFC 3986),\ndrop URLs in the seen-set", fillcolor="#fde7cf"];
-  seeds -> qa; seeds -> qb; seeds -> qc;
-  qa -> sched; qb -> sched; qc -> sched;
+  graph [fontname="DejaVu Sans", fontsize=15, nodesep=0.25, ranksep=0.4, pad=0.15];
+  node [fontname="DejaVu Sans", fontsize=15, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=14, fontcolor="#1a202c", color="#4a5568", penwidth=1.3];
+  frontier [shape=plain, style="", label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#4a5568" BGCOLOR="#edf2f7"><TR><TD BORDER="0"><B>Frontier</B><BR/>one queue per host,<BR/>seeded from sitemaps</TD></TR><TR><TD BGCOLOR="#ffffff">host a: due now</TD></TR><TR><TD BGCOLOR="#ffffff">host b: in 2 s</TD></TR><TR><TD BGCOLOR="#ffffff">host c: …</TD></TR></TABLE>>];
+  robots [label="robots.txt\ncache", fillcolor="#dbeafe"];
+  sched [label="Scheduler\nhost due first;\n1 request per\nhost per 2 s", fillcolor="#dbeafe"];
+  fetchers [label="Fetchers\nDNS, timeouts,\nback off on\n429, 503", fillcolor="#dbeafe"];
+  warc [label="WARC writer", fillcolor="#dcfce7"];
+  dedup [label="Content dedup", fillcolor="#fde7cf"];
+  links [label="Extract and\ncanonicalize links,\ndrop seen URLs", fillcolor="#fde7cf"];
+  back [label="New URLs join\ntheir host's queue", style="rounded,filled,dashed", fillcolor="#edf2f7"];
+  frontier -> sched;
   robots -> sched [style=dashed, label=" allowed?"];
   sched -> fetchers -> warc;
   fetchers -> dedup -> links;
-  back [label="New URLs join\ntheir host's queue\nin the frontier", style="rounded,filled,dashed", fillcolor="#edf2f7"];
   links -> back [style=dashed];
   {rank=same; sched; robots}
   {rank=same; warc; dedup; links; back}
