@@ -993,7 +993,7 @@ def analyze_token_frequency(corpus, tokenizer):
 ```{figure} figures/word-frequency.*
 :name: fig-ch1-word-frequency
 :width: 83%
-:alt: Log-log scatter of word frequency against rank: about 440 occurrences for the most frequent word, falling roughly along a straight line to a long tail of words that occur once.
+:alt: Log-log scatter of word frequency against rank: about 580 occurrences for the most frequent word, falling roughly along a straight line to a long tail of words that occur once.
 
 `analyze_token_frequency` applied to the prose of this chapter's main page (its paragraphs, without code and display math), split into lowercase words of letters only; `figures/make_figures.py` runs it. The dashed line has slope −1, Zipf's law anchored at the most frequent word. The counts fall more slowly than the line over the first few hundred ranks and then end in a long tail of words seen once or twice.
 ```
@@ -1315,16 +1315,17 @@ def compare_position_encodings():
     for method, params in results.items():
         print(f"{method:<19}", " ".join(f"{p:>9,}" for p in params))
 
-    plt.figure(figsize=(7, 3.6))
+    plt.figure(figsize=(6.4, 3.6))
     styles = {"Sinusoidal": ("o", "-"), "Learned absolute": ("s", "-"), "Relative bias (T5)": ("^", "-"),
               "RoPE": ("x", "--")}  # sinusoidal and RoPE overlap at zero, so they differ in marker and dash
     for method, params in results.items():
         marker, dash = styles[method]
         plt.plot(seq_lens, [p / 1e6 for p in params], marker=marker, linestyle=dash, label=method)
-    plt.xlabel("Maximum sequence length")
-    plt.ylabel("Additional parameters (millions)")
-    plt.title("Positional encoding parameter cost (sinusoidal and RoPE add none)")
-    plt.legend()
+    plt.xlabel("Maximum sequence length", fontsize=11.5)
+    plt.ylabel("Additional parameters (millions)", fontsize=11.5)
+    plt.title("Parameter cost of positions (sinusoidal and RoPE add none)", fontsize=12)
+    plt.tick_params(labelsize=11)
+    plt.legend(fontsize=11)
     plt.grid(True)
     plt.show()
 
@@ -1343,7 +1344,7 @@ RoPE                        0         0         0         0         0
 
 ```{figure} figures/position-parameter-cost.*
 :name: fig-ch1-position-parameter-cost
-:width: 83%
+:width: 77%
 :alt: Four lines over maximum lengths 128 to 4096: learned absolute rises to about 2.1 million parameters; relative bias stays at 256; sinusoidal and RoPE stay at 0 and overlap.
 
 The listing's plot, $d = 512$, in millions of parameters. Only learned absolute positions grow with the length. Three lines lie on the axis: T5's relative bias is a constant 256 parameters (32 buckets times 8 heads), too few to leave the axis at this scale, and sinusoidal and RoPE add none.

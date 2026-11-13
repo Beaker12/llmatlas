@@ -58,7 +58,7 @@ Large Language Models cannot directly process raw text—they require numerical 
 
 ```{figure} figures/tokenization_pipeline.*
 :name: fig-ch1-tokenization-pipeline
-:width: 80%
+:width: 87%
 :alt: Five stages from top to bottom: normalization, pre-tokenization, subword model, vocabulary lookup and embedding lookup, each beside its result for the text The cat sat: three chunks, the tokens The, cat and sat, the ids 464, 3797 and 3332, and a 3 by 768 matrix.
 
 From text to the model's input. Left, the stages; right, what each gives for "The cat sat" with GPT-2's tokenizer (ids from tiktoken's `gpt2` encoding; Ġ is how GPT-2's vocabulary writes a leading space; $d = 768$ is the smallest GPT-2).
@@ -474,8 +474,8 @@ The sinusoidal and learned schemes below both add a position vector to each toke
 
 ```{figure} figures/embedding_composition.*
 :name: fig-ch1-embedding-composition
-:width: 72%
-:alt: Token ids go through a token embedding lookup in W_E and positions go through a positional encoding; the two n by d results are added to give the input X.
+:width: 94%
+:alt: Token ids go through a lookup in the token embedding matrix and positions go through a positional encoding; the two n by d results are added to give the input X.
 
 Absolute positions are added to the token embeddings before the first block. RoPE instead acts inside attention ({ref}`sec-ch1-rope`), and the relative bias adds to the attention scores.
 ```
@@ -541,13 +541,14 @@ def visualize_positional_encoding(max_seq_len=100, d_model=64):
     plt.show()
 
     # Show how encoding changes with position: the frequency falls as the dimension grows
-    plt.figure(figsize=(7, 3.2))
+    plt.figure(figsize=(6, 3.2))
     for dim, style in ((0, "-"), (8, "--"), (16, "-."), (32, ":")):
         plt.plot(pe[:50, dim].numpy(), linestyle=style, label=f"Dimension {dim}")
-    plt.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0), frameon=False)
-    plt.title("Encoding value by position")
-    plt.xlabel("Position $m$")
-    plt.ylabel("Encoding value")
+    plt.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0), frameon=False, fontsize=11)
+    plt.tick_params(labelsize=11)
+    plt.title("Encoding value by position", fontsize=12)
+    plt.xlabel("Position $m$", fontsize=11.5)
+    plt.ylabel("Encoding value", fontsize=11.5)
     plt.show()
 
 
@@ -572,7 +573,7 @@ The encoding table the listing prints, $m < 100$ and $d = 64$, drawn by its firs
 
 ```{figure} figures/sinusoidal-lines.*
 :name: fig-ch1-sinusoidal-lines
-:width: 100%
+:width: 98%
 :alt: Four curves over positions 0 to 49: dimension 0 oscillates fast, dimension 8 more slowly, dimension 16 completes less than one cycle and dimension 32 rises almost linearly.
 
 The listing's second plot: dimensions 0, 8, 16 and 32 over the first 50 positions. Their angular frequencies are 1, 0.32, 0.1 and 0.01 radians per position.
@@ -923,7 +924,7 @@ The scaling factor $\sqrt{d_k}$, where $d_k$ is the per-head key dimension, keep
 
 ```{figure} figures/scaled_dot_product_attention.*
 :name: fig-ch1-scaled-dot-product-attention
-:width: 71%
+:width: 70%
 :alt: X feeds three projections Q, K and V; Q and K give the n by n scores divided by the square root of d_k, an optional mask adds minus infinity, the softmax gives weights A, and A times V gives the n by d_v output O.
 
 Scaled dot-product attention with the shape of every intermediate. The $n \times n$ score and weight matrices are what makes attention quadratic in $n$ ({ref}`sec-ch1-attention-complexity`).
@@ -1366,8 +1367,8 @@ The decoder's output then goes through the same final normalization and unembedd
 
 ```{figure} figures/encoder_decoder.*
 :name: fig-ch1-encoder-decoder
-:width: 75%
-:alt: Left, the encoder: source tokens through self-attention and a feed-forward network, repeated L_enc times, giving H_enc. Right, the decoder: target tokens through masked self-attention, cross-attention that takes keys and values from H_enc, and a feed-forward network, repeated L_dec times, then the next-token distribution.
+:width: 83%
+:alt: Left, the encoder: source tokens through self-attention and a feed-forward network, repeated block after block, giving the encoder output H_enc. Right, the decoder: target tokens through masked self-attention, cross-attention that takes keys and values from H_enc, and a feed-forward network, repeated block after block, then the next-token distribution.
 
 The encoder-decoder transformer of {cite:t}`vaswani2017attention`. $H_{enc}$ is computed once and feeds the cross-attention of every decoder block.
 ```

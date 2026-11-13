@@ -2,14 +2,14 @@ digraph MultiHeadAttention {
     graph [fontname="Arial" fontsize=13 bgcolor=white label=<<b>Split the columns into nₕ heads of dₖ = d / nₕ</b>> labelloc=t];
 
     x [label=<<b>Input X</b>  (n × d)> shape=box style="rounded,filled" fillcolor="#fffaf0" color="#975a16" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
-    qkv [label=<<b>Q, K, V = XW_Q, XW_K, XW_V</b>   (each n × d)> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    qkv [label=<<b>Q, K, V = XW<sub>Q</sub>, XW<sub>K</sub>, XW<sub>V</sub></b>   (each n × d)> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     h1 [label=<<b>Head 1</b><br/>n × dₖ> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     h2 [label=<<b>Head 2</b><br/>n × dₖ> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     hd [label=<…> shape=box style="rounded,filled" fillcolor="white" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c" penwidth=0 width=0.4];
     hn [label=<<b>Head nₕ</b><br/>n × dₖ> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     { rank=same; h1; h2; hd; hn; }
     cat [label=<<b>Concatenate</b>   n × nₕdᵥ = n × d> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
-    o [label=<<b>Output projection W_O</b>   (n × d)> shape=box style="rounded,filled" fillcolor="#f0fff4" color="#276749" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    o [label=<<b>Output projection W<sub>O</sub></b>   (n × d)> shape=box style="rounded,filled" fillcolor="#f0fff4" color="#276749" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     qkv -> h1 [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
     h1 -> cat [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
     qkv -> h2 [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];

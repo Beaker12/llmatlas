@@ -20,9 +20,14 @@
 <!-- qkv -->
 <g id="node2" class="node">
 <title>qkv</title>
-<path fill="#ebf4ff" stroke="#2d3748" stroke-width="1.4" d="M353.9,-329C353.9,-329 69.93,-329 69.93,-329 63.93,-329 57.93,-323 57.93,-317 57.93,-317 57.93,-296.6 57.93,-296.6 57.93,-290.6 63.93,-284.6 69.93,-284.6 69.93,-284.6 353.9,-284.6 353.9,-284.6 359.9,-284.6 365.9,-290.6 365.9,-296.6 365.9,-296.6 365.9,-317 365.9,-317 365.9,-323 359.9,-329 353.9,-329"/>
-<text xml:space="preserve" text-anchor="start" x="79.53" y="-303.9" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Q, K, V = XW_Q, XW_K, XW_V</text>
-<text xml:space="preserve" text-anchor="start" x="264.1" y="-303.9" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"> &#160;&#160;(each n × d)</text>
+<path fill="#ebf4ff" stroke="#2d3748" stroke-width="1.4" d="M343.05,-329C343.05,-329 80.78,-329 80.78,-329 74.78,-329 68.78,-323 68.78,-317 68.78,-317 68.78,-296.6 68.78,-296.6 68.78,-290.6 74.78,-284.6 80.78,-284.6 80.78,-284.6 343.05,-284.6 343.05,-284.6 349.05,-284.6 355.05,-290.6 355.05,-296.6 355.05,-296.6 355.05,-317 355.05,-317 355.05,-323 349.05,-329 343.05,-329"/>
+<text xml:space="preserve" text-anchor="start" x="90.38" y="-303.9" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Q, K, V = XW</text>
+<text xml:space="preserve" text-anchor="start" x="168.75" y="-303.9" font-family="Helvetica,sans-Serif" font-weight="bold" baseline-shift="sub" font-size="13.00" fill="#1a202c">Q</text>
+<text xml:space="preserve" text-anchor="start" x="178.86" y="-303.9" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">, XW</text>
+<text xml:space="preserve" text-anchor="start" x="207.03" y="-303.9" font-family="Helvetica,sans-Serif" font-weight="bold" baseline-shift="sub" font-size="13.00" fill="#1a202c">K</text>
+<text xml:space="preserve" text-anchor="start" x="216.42" y="-303.9" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">, XW</text>
+<text xml:space="preserve" text-anchor="start" x="244.58" y="-303.9" font-family="Helvetica,sans-Serif" font-weight="bold" baseline-shift="sub" font-size="13.00" fill="#1a202c">V</text>
+<text xml:space="preserve" text-anchor="start" x="253.25" y="-303.9" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"> &#160;&#160;(each n × d)</text>
 </g>
 <!-- x&#45;&gt;qkv -->
 <g id="edge9" class="edge">
@@ -105,9 +110,10 @@
 <!-- o -->
 <g id="node8" class="node">
 <title>o</title>
-<path fill="#f0fff4" stroke="#276749" stroke-width="1.4" d="M316.85,-44.4C316.85,-44.4 106.98,-44.4 106.98,-44.4 100.98,-44.4 94.98,-38.4 94.98,-32.4 94.98,-32.4 94.98,-12 94.98,-12 94.98,-6 100.98,0 106.98,0 106.98,0 316.85,0 316.85,0 322.85,0 328.85,-6 328.85,-12 328.85,-12 328.85,-32.4 328.85,-32.4 328.85,-38.4 322.85,-44.4 316.85,-44.4"/>
-<text xml:space="preserve" text-anchor="start" x="116.58" y="-19.3" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Output projection W_O</text>
-<text xml:space="preserve" text-anchor="start" x="258.85" y="-19.3" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"> &#160;&#160;(n × d)</text>
+<path fill="#f0fff4" stroke="#276749" stroke-width="1.4" d="M313.23,-44.4C313.23,-44.4 110.6,-44.4 110.6,-44.4 104.6,-44.4 98.6,-38.4 98.6,-32.4 98.6,-32.4 98.6,-12 98.6,-12 98.6,-6 104.6,0 110.6,0 110.6,0 313.23,0 313.23,0 319.23,0 325.23,-6 325.23,-12 325.23,-12 325.23,-32.4 325.23,-32.4 325.23,-38.4 319.23,-44.4 313.23,-44.4"/>
+<text xml:space="preserve" text-anchor="start" x="120.2" y="-19.3" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Output projection W</text>
+<text xml:space="preserve" text-anchor="start" x="245.12" y="-19.3" font-family="Helvetica,sans-Serif" font-weight="bold" baseline-shift="sub" font-size="13.00" fill="#1a202c">O</text>
+<text xml:space="preserve" text-anchor="start" x="255.23" y="-19.3" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"> &#160;&#160;(n × d)</text>
 </g>
 <!-- cat&#45;&gt;o -->
 <g id="edge10" class="edge">

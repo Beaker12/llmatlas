@@ -17,7 +17,7 @@ digraph TokenizationPipeline {
     e3 [label=<464, 3797, 3332> shape=box style="rounded,filled" fillcolor="#fffaf0" color="#975a16" penwidth=1.4 fontsize=13 fontcolor="#1a202c" width=3.1];
     { rank=same; s3; e3; }
     s3 -> e3 [style=dotted arrowhead=none color="#975a16" penwidth=1.2];
-    s4 [label=<<b>Embedding lookup</b><br/>one row of W_E per id> shape=box style="rounded,filled" fillcolor="#f0fff4" color="#276749" penwidth=1.4 fontsize=13 fontcolor="#1a202c" width=2.4];
+    s4 [label=<<b>Embedding lookup</b><br/>one row of the embedding matrix per id> shape=box style="rounded,filled" fillcolor="#f0fff4" color="#276749" penwidth=1.4 fontsize=13 fontcolor="#1a202c" width=2.4];
     e4 [label=<X: 3 × 768 (d = 768)> shape=box style="rounded,filled" fillcolor="#fffaf0" color="#975a16" penwidth=1.4 fontsize=13 fontcolor="#1a202c" width=3.1];
     { rank=same; s4; e4; }
     s4 -> e4 [style=dotted arrowhead=none color="#975a16" penwidth=1.2];

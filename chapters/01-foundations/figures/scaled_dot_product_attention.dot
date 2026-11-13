@@ -2,9 +2,9 @@ digraph ScaledDotProductAttention {
     graph [fontname="Arial" fontsize=13 bgcolor=white];
 
     x [label=<<b>Input X</b>  (n × d)> shape=box style="rounded,filled" fillcolor="#fffaf0" color="#975a16" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
-    q [label=<<b>Q = XW_Q</b><br/>n × dₖ> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
-    k [label=<<b>K = XW_K</b><br/>n × dₖ> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
-    v [label=<<b>V = XW_V</b><br/>n × dᵥ> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    q [label=<<b>Queries Q</b><br/>n × dₖ> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    k [label=<<b>Keys K</b><br/>n × dₖ> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    v [label=<<b>Values V</b><br/>n × dᵥ> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     { rank=same; q; k; v; }
     s [label=<<b>Scores S = QKᵀ / √dₖ</b>   (n × n)> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     m [label=<<b>Mask (optional)</b>: add −∞ to hidden pairs> shape=box style="rounded,filled" fillcolor="#fff5f5" color="#9b2c2c" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
