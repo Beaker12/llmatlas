@@ -498,11 +498,12 @@ Absolute positions are added to the token embeddings before the first block. RoP
 
 The original transformer uses sinusoidal positional encodings {cite}`vaswani2017attention`:
 
-$$PE_{(m, 2i)} = \sin\left(\frac{m}{10000^{2i/d}}\right)$$
-$$PE_{(m, 2i+1)} = \cos\left(\frac{m}{10000^{2i/d}}\right)$$
+$$\operatorname{PE}_{(m, 2i)} = \sin\left(\frac{m}{10000^{2i/d}}\right)$$
+$$\operatorname{PE}_{(m, 2i+1)} = \cos\left(\frac{m}{10000^{2i/d}}\right)$$
 
 where:
 
+- $\operatorname{PE}_{(m, j)}$ is component $j$ of the positional encoding added to the token embedding at position $m$
 - $m$ is the position in the sequence
 - $i$ indexes the sine-cosine pairs, $0 \le i < d/2$
 - $d$ is the embedding dimension
@@ -657,7 +658,7 @@ Instead of adding absolute positions to the input, a relative scheme makes atten
 
 $$S_{mm'} = q_m \cdot k_{m'} + \operatorname{rb}(\operatorname{bucket}(m - m'))$$
 
-T5 does not divide the dot product by $\sqrt{d_k}$; its reference implementation in the `transformers` library {cite}`wolf2020transformers` sets the score scale of `T5Attention` to 1.
+Here $\operatorname{rb}$ is a learned table of scalars and $\operatorname{bucket}$ maps an offset to a row of it; both are described below. T5 does not divide the dot product by $\sqrt{d_k}$; its reference implementation in the `transformers` library {cite}`wolf2020transformers` sets the score scale of `T5Attention` to 1.
 
 The function $\operatorname{bucket}$ maps an offset to one of 32 buckets. Small offsets get a bucket each; larger ones share buckets whose width grows logarithmically, up to an offset of 128, beyond which all offsets share the last bucket. In the encoder, which attends in both directions, half of the buckets are for keys before or at the query and half for keys after it. For keys at or before the query, offsets 0 to 7 have their own buckets, and an offset $8 \le m - m' < 128$ goes to bucket
 
