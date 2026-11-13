@@ -411,12 +411,12 @@ assert results["zstd-19"] > results["zstd-3"] > results["lz4"]
 % output-shape
 
 ```text
-lz4       ratio 1.73, compress 207 MB/s, decompress 679 MB/s
-zstd-1    ratio 2.76, compress 170 MB/s, decompress 529 MB/s
-zstd-3    ratio 2.77, compress 105 MB/s, decompress 379 MB/s
-zstd-19   ratio 3.25, compress 2 MB/s, decompress 597 MB/s
-gzip-6    ratio 2.85, compress 6 MB/s, decompress 195 MB/s
-brotli-9  ratio 3.02, compress 5 MB/s, decompress 216 MB/s
+lz4       ratio 1.73, compress 213 MB/s, decompress 693 MB/s
+zstd-1    ratio 2.76, compress 160 MB/s, decompress 387 MB/s
+zstd-3    ratio 2.77, compress 99 MB/s, decompress 413 MB/s
+zstd-19   ratio 3.25, compress 1 MB/s, decompress 608 MB/s
+gzip-6    ratio 2.85, compress 6 MB/s, decompress 197 MB/s
+brotli-9  ratio 3.02, compress 4 MB/s, decompress 222 MB/s
 ```
 
 (sec-ch5-versioning)=
@@ -831,6 +831,45 @@ Whether to mask is a choice. Many pretraining runs did not, on the grounds that 
 The notebook section {ref}`nb-dm-packing` packs the same corpus by chunking and by best-fit, reports the split and padding rates, plots the distribution of documents per sequence, and renders the document-causal mask for the fullest packed sequence.
 ```
 
+(sec-ch5-length-bucketing)=
+
+### 4.3 Length bucketing for fine-tuning
+
+Fine-tuning data is the case where padding is the norm: examples are short, of very different lengths, and often kept one per sequence so that the loss can be masked to the response. A batch is padded to its longest example, so a batch drawn at random from a long-tailed length distribution is mostly padding. Length bucketing groups examples of similar length into the same batch and then shuffles the batches, so that the order across steps stays random while the padding within a batch shrinks; the Hugging Face Trainer offers it as `group_by_length`, which groups "samples of roughly the same length together (to minimize padding and be more efficient)" {cite}`huggingface2026trainer`. The listing draws 32,000 example lengths with a median of 147 tokens, batches them 32 at a time, and sorts within pools of 50 batches: padding falls from 75.7% of the batch to 13.0%. The cost is a weak correlation between length and step within a pool, which is why the pool is shuffled before it is cut and the batches after.
+
+```python
+import numpy as np
+
+
+def padding_fraction(lengths, batch_size: int, bucketed: bool, rng) -> float:
+    """Fraction of a padded batch that is padding, each batch padded to its longest example."""
+    order = rng.permutation(len(lengths))
+    if bucketed:  # sort a pool of 50 batches by length, cut it into batches, shuffle the batches
+        pool = batch_size * 50
+        order = np.concatenate([chunk[np.argsort(lengths[chunk])] for chunk in np.array_split(order, max(1, len(order) // pool))])
+    batches = [order[i : i + batch_size] for i in range(0, len(order), batch_size)]
+    if bucketed:
+        rng.shuffle(batches)
+    padded = sum(len(b) * lengths[b].max() for b in batches)
+    return 1 - lengths.sum() / padded
+
+
+rng = np.random.default_rng(0)
+lengths = np.clip(rng.lognormal(mean=5.0, sigma=0.8, size=32_000).astype(int), 8, 4096)  # fine-tuning examples
+random_pad = padding_fraction(lengths, 32, bucketed=False, rng=np.random.default_rng(1))
+bucket_pad = padding_fraction(lengths, 32, bucketed=True, rng=np.random.default_rng(1))
+print(f"median length {np.median(lengths):.0f}, longest {lengths.max()}")
+print(f"padding: random batches {random_pad:.1%}, length-bucketed {bucket_pad:.1%}")
+assert bucket_pad < random_pad / 5
+```
+
+% output
+
+```text
+median length 147, longest 3485
+padding: random batches 75.7%, length-bucketed 13.0%
+```
+
 (sec-ch5-mixing-sampling)=
 
 ## 5. Mixing and Sampling
@@ -1125,6 +1164,43 @@ The remaining ingredients are standard: a few worker processes per rank that pre
 ```{admonition} Sharding Across Ranks
 :class: tip
 The notebook section {ref}`nb-dm-distributed` simulates eight ranks under both designs, checks that each covers the corpus exactly once, and shows the global batch at a fixed step staying identical as the world size changes under global indexing and changing under shard assignment.
+```
+
+(sec-ch5-loader-workers)=
+
+### 6.3 Worker processes within a rank
+
+Each rank usually reads through $n_{\text{loader}}$ worker processes, which is a second level of splitting below the ranks, and the place where a common bug lives. With a map-style dataset the loader hands each worker a list of indices, and nothing is read twice. With an iterable dataset, the kind a streaming loader is, every worker receives a copy of the whole dataset object; the PyTorch documentation warns that "naive multi-process loading will often result in duplicated data" {cite}`pytorch2026data`. Each worker then yields the rank's entire stream, and the rank trains on every sample $n_{\text{loader}}$ times. The loss curve looks normal, only the effective dataset is smaller. The fix is to split the rank's stream again by worker inside the dataset's iterator, using the worker's id and the worker count that `torch.utils.data.get_worker_info()` reports. The listing simulates four ranks of three workers each over 1,200 samples: without the split each sample is seen three times, and with it once.
+
+```python
+def rank_stream(rank: int, world_size: int, n: int):
+    """The sample ids a rank owns: every world_size-th id."""
+    return range(rank, n, world_size)
+
+
+def worker_items(rank, world_size, n, worker_id, num_workers, split_by_worker: bool):
+    """What one DataLoader worker of one rank yields from an iterable dataset. Each worker holds
+    a full replica, so without splitting each one yields the rank's whole stream."""
+    stream = rank_stream(rank, world_size, n)
+    return list(stream[worker_id::num_workers]) if split_by_worker else list(stream)
+
+
+world_size, n_loader, n = 4, 3, 1200
+for split in (False, True):
+    seen = [x for r in range(world_size) for w in range(n_loader) for x in worker_items(r, world_size, n, w, n_loader, split)]
+    print(f"split by worker {split!s:5s}: {len(seen):,} samples yielded, {len(set(seen)):,} distinct, "
+          f"each seen {len(seen) / len(set(seen)):.0f} times")
+naive = [x for w in range(n_loader) for x in worker_items(0, world_size, n, w, n_loader, False)]
+fixed = [x for r in range(world_size) for w in range(n_loader) for x in worker_items(r, world_size, n, w, n_loader, True)]
+assert len(naive) == n_loader * len(set(naive))  # every sample of the rank n_loader times
+assert sorted(fixed) == list(range(n))  # each sample once across all ranks and workers
+```
+
+% output
+
+```text
+split by worker False: 3,600 samples yielded, 1,200 distinct, each seen 3 times
+split by worker True : 1,200 samples yielded, 1,200 distinct, each seen 1 times
 ```
 
 (sec-ch5-statistics-tests-monitoring)=
