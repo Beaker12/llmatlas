@@ -24,7 +24,7 @@ The chapter builds byte pair encoding (BPE) by hand. Production tokenizers use f
 
 ### WordPiece
 
-WordPiece was introduced by {cite:t}`schuster2012japanese` for Japanese and Korean voice search, was later used in Google's neural translation system {cite}`wu2016google`, and is the tokenizer of BERT {cite}`devlin2018bert`. Training starts, as BPE does, from single characters and merges pairs, but the 2012 paper chooses each new unit "in a greedy way ... to maximize likelihood on the language model training data", not by frequency. The paper describes this rule but gives no exact scoring formula, and Google never released its implementation; the score below is the reconstruction in the Hugging Face course {cite}`huggingface2026wordpiece`, which merges the pair with the highest
+WordPiece was introduced by {cite:t}`schuster2012japanese` for Japanese and Korean voice search, was later used in Google's neural translation system {cite}`wu2016google`, and is the tokenizer of BERT {cite}`devlin2018bert`. Training starts, as BPE does, from single characters and merges pairs, but the 2012 paper chooses each new unit "in a greedy way ... to maximize likelihood on the language model training data", not by frequency. The paper describes this rule but gives no exact scoring formula, and Google never released the trainer that paper describes (TensorFlow Text later released a different, top-down vocabulary learner {cite}`tensorflow2024subwords`); the score below is the reconstruction in the Hugging Face course {cite}`huggingface2026wordpiece`, which merges the pair with the highest
 
 $$\operatorname{score}(\text{pair}) = \frac{\operatorname{count}(\text{pair})}{\operatorname{count}(\text{first piece}) \cdot \operatorname{count}(\text{second piece})}.$$
 
@@ -1353,7 +1353,7 @@ The width $d$ of the embedding is also the width of every vector in the residual
 
 | Model | $d$ | Source |
 | ----- | --- | ------ |
-| T5-small | 512 | its released configuration (`d_model`) |
+| T5-small | 512 | its released configuration (`d_model`) {cite}`google2023t5smallconfig` |
 | GPT-2 small | 768 | {cite}`radford2019language` |
 | Llama 3 8B | 4,096 | {cite}`grattafiori2024llama` |
 | Llama 3 70B | 8,192 | {cite}`grattafiori2024llama` |

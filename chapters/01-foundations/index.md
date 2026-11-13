@@ -68,6 +68,8 @@ sat" with GPT-2's tokenizer (ids from tiktoken's `gpt2` encoding; Ġ is how GPT-
 vocabulary writes a leading space; $d = 768$ is the smallest GPT-2).
 ```
 
+**Normalization** rewrites the raw string into a canonical form before anything else, for example by making Unicode variants of one character identical or by lowercasing; GPT-2's tokenizer skips it and works on the bytes as given. **Pre-tokenization** cuts the string into chunks, here whole words with their leading space, and the subword model then splits each chunk on its own, so no token spans two chunks. {ref}`sec-tdd-unicode-normalization` and {ref}`sec-tdd-byte-level-bpe` treat both in depth.
+
 (sec-ch1-token-definition)=
 
 #### What Are Tokens?
@@ -138,7 +140,7 @@ Its vocabulary must hold every word form of the training text, which for real co
 
 #### Character-Level Tokenization
 
-Processes text character by character:
+Character-level tokenization processes text character by character:
 
 ```python
 def char_tokenize(text):
@@ -314,7 +316,8 @@ with tempfile.TemporaryDirectory() as tmp:
         character_coverage=0.9995,
         # characters outside the learned set become UTF-8 byte pieces, not <unk>
         byte_fallback=True,
-        normalization_rule_name="identity",
+        normalization_rule_name="identity",  # no Unicode rewriting
+        remove_extra_whitespaces=False,  # keep runs of spaces and edge spaces
         num_threads=1,
         minloglevel=2,
     )
@@ -323,11 +326,14 @@ with tempfile.TemporaryDirectory() as tmp:
 text = "Hello, world! 你好世界"
 pieces = sp.encode_as_pieces(text)
 ids = sp.encode_as_ids(text)
-# lossless, because unseen characters fall back to bytes
+# byte fallback: no <unk>; identity normalization and kept whitespace: exact text
 assert sp.decode_ids(ids) == text
 assert sp.unk_id() not in ids
+spaced = [" leading", "two  spaces", "trailing ", "tab\there", "line\nbreak"]
+assert all(sp.decode_ids(sp.encode_as_ids(t)) == t for t in spaced)
 print(textwrap.fill(f"Pieces: {pieces}", width=88, subsequent_indent="        "))
 print(f"{len(ids)} ids; decoded text equals the input: {sp.decode_ids(ids) == text}")
+print(f"{len(spaced)} strings with odd whitespace also round-trip exactly")
 ```
 
 % output
@@ -337,16 +343,17 @@ Pieces: ['▁He', 'llo', ',', '▁w', 'orld', '!', '▁', '<0xE4>', '<0xBD>', '<
         '<0xE5>', '<0xA5>', '<0xBD>', '<0xE4>', '<0xB8>', '<0x96>', '<0xE7>', '<0x95>',
         '<0x8C>']
 19 ids; decoded text equals the input: True
+5 strings with odd whitespace also round-trip exactly
 ```
 
-With byte fallback, the four Chinese characters, absent from the learned pieces, become twelve UTF-8 byte pieces instead of `<unk>`, and decoding returns the input. Without it, the same model would map them to the unknown id. SentencePiece refuses a vocabulary size larger than the corpus can fill. The toy corpus supports a few hundred pieces. For the common 32,000, the first 100,000 bytes of the raw WikiText-103 training split (English Wikipedia articles; Hugging Face dataset `Salesforce/wikitext`, configuration `wikitext-103-raw-v1`, rows of the first shard concatenated) are refused by both model types. With SentencePiece 0.2.3, `vocab_size=32000` and every other setting at its default, the error asks for at most 14,602 pieces with `bpe` and 2,743 with `unigram`. The first 1,000,000 bytes are enough for `bpe` and still refused for `unigram` (at most 10,599). These limits depend on the file variant, the cut and the trainer settings, so other choices give somewhat different values; the live test `test_sentencepiece_wikitext_vocabulary_limits` in `tests/test_ch01_snippets.py` repeats the four runs and asserts the numbers. Production tokenizers train on far more text, so that the pieces reflect real frequencies.
+With byte fallback, the four Chinese characters, absent from the learned pieces, become twelve UTF-8 byte pieces instead of `<unk>`. Byte fallback alone does not make the round trip exact; the listing also sets two options, and the exact round trip it asserts, including a leading space, a double space and a trailing space, holds for this configuration only. `normalization_rule_name="identity"` stops the default NFKC-based rewriting ({ref}`sec-tdd-normalization`), and `remove_extra_whitespaces=False` stops the trainer's default of collapsing runs of spaces and trimming the edges. With SentencePiece's defaults, decoding `"two  spaces"` would not return the double space. Without byte fallback, the same model would map the Chinese characters to the unknown id. SentencePiece refuses a vocabulary size larger than the corpus can fill. The toy corpus supports a few hundred pieces. For the common 32,000, the first 100,000 bytes of the raw WikiText-103 training split (English Wikipedia articles; Hugging Face dataset `Salesforce/wikitext`, configuration `wikitext-103-raw-v1`, rows of the first shard concatenated) are refused by both model types. With SentencePiece 0.2.3, `vocab_size=32000` and every other setting at its default, the error asks for at most 14,602 pieces with `bpe` and 2,743 with `unigram`. The first 1,000,000 bytes are enough for `bpe` and still refused for `unigram` (at most 10,599). These limits depend on the file variant, the cut and the trainer settings, so other choices give somewhat different values; the live test `test_sentencepiece_wikitext_vocabulary_limits` in `tests/test_ch01_snippets.py` repeats the four runs and asserts the numbers. Production tokenizers train on far more text, so that the pieces reflect real frequencies.
 
 **Key advantages**:
 
 - Language-agnostic (no pre-tokenization assumptions)
-- Handles any Unicode text, losslessly only with byte fallback or full character coverage
+- Handles any Unicode text without `<unk>` when byte fallback is on
 - Consistent treatment of whitespace, written as the visible symbol `▁`
-- Reversible tokenization under the same condition
+- Exactly reversible only with identity normalization and `remove_extra_whitespaces=False`, as in the listing
 
 For vocabulary construction, special tokens, cross-lingual issues and a full tokenizer implementation, see {doc}`tokenization-deep-dive`.
 
@@ -418,7 +425,7 @@ RMS of a sinusoidal encoding:    0.707
 
 #### Embedding Sharing and Tying
 
-Many architectures share the input embedding matrix with the output projection {cite}`press2017using`. GPT-2's released code computes the output scores with its token-embedding matrix `wte` {cite}`radford2019language`, and Gemma 2's architecture table lists "Tied embedding: yes" for all three sizes {cite}`gemma2024gemma2`. Mistral 7B keeps the two separate (its released configuration sets `tie_word_embeddings` to false) {cite}`mistral2023config`, and so does the original LLaMA, whose reference code builds them as separate modules {cite}`touvron2023llama`; by contrast, the Llama 3.2 model card marks "Shared Embeddings: Yes" for its 1B and 3B text models {cite}`meta2024llama32card`:
+Many architectures share the input embedding matrix with the output projection {cite}`press2017using`. GPT-2's released code computes the output scores with its token-embedding matrix `wte` {cite}`radford2019language`, and Gemma 2's architecture table lists "Tied embedding: yes" for all three sizes {cite}`gemma2024gemma2`. Mistral 7B keeps the two separate (its released configuration sets `tie_word_embeddings` to false) {cite}`mistral2023config`, and so does the original LLaMA, whose reference code builds them as separate modules, `tok_embeddings` and `output` {cite}`meta2024llamamodelpy`; by contrast, the Llama 3.2 model card marks "Shared Embeddings: Yes" for its 1B and 3B text models {cite}`meta2024llama32card`:
 
 ```python
 # pseudo-code: `TransformerStack` stands for the model body;
@@ -488,7 +495,7 @@ Attention by itself does not see the order of its inputs, so positional informat
 - "The cat sat on the mat"
 - "The mat sat on the cat"
 
-Without positional information and without a mask, self-attention treats each sentence as a multiset of tokens: permuting the inputs permutes the outputs in the same way and changes nothing else, so these two sentences, which hold the same tokens, get the same set of output vectors. A causal decoder is not completely order-blind even without positions, because its causal mask ({ref}`sec-ch1-causal-masking`) lets position $m$ attend to exactly $m + 1$ tokens, positions $0$ to $m$; but that is a weak signal, and every model below supplies positions explicitly.
+Without positional information and without a mask, self-attention treats each sentence as a multiset of tokens: permuting the inputs permutes the outputs in the same way and changes nothing else, so these two sentences, which hold the same tokens, get the same set of output vectors. A causal decoder is not completely order-blind even without positions, because its causal mask ({ref}`sec-ch1-causal-masking`) lets position $m$ attend to exactly $m + 1$ tokens, positions $0$ to $m$, and {cite:t}`haviv2022transformer` show that such models still learn positional information; but that is a weak signal, and every model below supplies positions explicitly.
 
 The sinusoidal and learned schemes below both add a position vector to each token vector, as in {numref}`fig-ch1-embedding-composition`.
 
@@ -523,7 +530,11 @@ where:
 - Deterministic (same encoding for same position)
 - Bounded values (between -1 and 1)
 - Different frequencies for different dimensions
-- A fixed offset is a linear map, the property the paper gives for choosing this encoding {cite}`vaswani2017attention`. With $\omega_i = 10000^{-2i/d}$, pair $i$ at position $m'$ is pair $i$ at position $m$ rotated by the angle $(m' - m)\,\omega_i$, a rotation that depends on the offset and not on $m$: $\bigl(\sin m'\omega_i,\ \cos m'\omega_i\bigr) = \bigl(\sin m\omega_i,\ \cos m\omega_i\bigr)\begin{pmatrix}\cos (m'-m)\omega_i & -\sin (m'-m)\omega_i \\ \sin (m'-m)\omega_i & \cos (m'-m)\omega_i\end{pmatrix}$, by the angle-addition formulas. RoPE ({ref}`sec-ch1-rope`) applies the same rotations to queries and keys instead of adding them to the input
+- A fixed offset is a linear map, the property the paper gives for choosing this encoding {cite}`vaswani2017attention`. With $\omega_i = 10000^{-2i/d}$, pair $i$ at position $m'$ is pair $i$ at position $m$ rotated by the angle $(m' - m)\,\omega_i$, a rotation that depends on the offset and not on $m$:
+
+  $$\bigl(\sin m'\omega_i,\ \cos m'\omega_i\bigr) = \bigl(\sin m\omega_i,\ \cos m\omega_i\bigr)\begin{pmatrix}\cos (m'-m)\omega_i & -\sin (m'-m)\omega_i \\ \sin (m'-m)\omega_i & \cos (m'-m)\omega_i\end{pmatrix}$$
+
+  This follows from the angle-addition formulas. RoPE ({ref}`sec-ch1-rope`) applies the same rotations to queries and keys instead of adding them to the input
 - Defined for any position, so a model *can* be run past its training length, although in practice quality degrades quickly there {cite}`press2022train`
 
 ```python
@@ -607,7 +618,9 @@ index.
 :alt: Four curves over positions 0 to 49: dimension 0 oscillates fast, dimension 8 more slowly, dimension 16 completes less than one cycle and dimension 32 rises almost linearly.
 
 The listing's second plot: dimensions 0, 8, 16 and 32 over the first 50 positions. Their
-angular frequencies are 1, 0.32, 0.1 and 0.01 radians per position.
+angular frequencies are 1, 0.32, 0.1 and 0.01 radians per position. Each curve joins
+values sampled once per integer position, so the fastest one, which turns a full cycle in
+about 6.3 positions, looks jagged.
 ```
 
 Position 0 is $(0, 1, 0, 1, \dots)$ because $\sin 0 = 0$ and $\cos 0 = 1$, and every entry stays within $[-1, 1]$.
@@ -672,13 +685,13 @@ a sequence of 1,025: IndexError
 
 #### Relative Position Bias (T5)
 
-The relative schemes of this subsection and the next two act on attention scores, which {ref}`sec-ch1-self-attention-fundamentals` defines in full. Three facts suffice here. Each token position $m$ has a query row $q_m$ and a key row $k_m$ of width $d_k$, and a value row $v_m$, all computed from that token's vector by learned linear maps. The attention score of query position $m$ for key position $m'$ is the dot product $q_m \cdot k_{m'}$, divided by $\sqrt{d_k}$ in the standard form, and a softmax over $m'$ turns the scores of one query into weights that sum to 1; the output is the weighted average of the value rows. A head is one such set of queries, keys, values and scores, and a layer runs $n_h$ heads side by side ({ref}`sec-ch1-multi-head-attention`), each with its own $n \times n$ score matrix for $n$ tokens.
+The relative schemes of this subsection and the next two act on attention scores, which {ref}`sec-ch1-self-attention-fundamentals` defines in full. Three facts suffice here. Each token position $m$ has a query row $q_m$ and a key row $k_m$ of width $d_k$, and a value row $v_m$, all computed from that token's vector by learned linear maps. The attention score of query position $m$ for key position $m'$ is the dot product $q_m \cdot k_{m'}$, divided by $\sqrt{d_k}$ in the standard form, and a softmax over $m'$, $\operatorname{softmax}(z)_i = e^{z_i} / \sum_j e^{z_j}$, turns the scores $z$ of one query into positive weights that sum to 1; the output is the weighted average of the value rows. A head is one such set of queries, keys, values and scores, and a layer runs $n_h$ heads side by side ({ref}`sec-ch1-multi-head-attention`), each with its own $n \times n$ score matrix for $n$ tokens.
 
 Instead of adding absolute positions to the input, a relative scheme makes attention depend on the offset $m - m'$ between the query position $m$ and the key position $m'$. {cite:t}`shaw2018self` add learned relative-position *vectors* to the keys and values. T5 {cite}`raffel2019exploring` simplifies this to one learned scalar per head, added to the attention score of every query-key pair:
 
 $$S_{mm'} = q_m \cdot k_{m'} + \operatorname{rb}(\operatorname{bucket}(m - m'))$$
 
-Here $\operatorname{rb}$ is a learned table of scalars and $\operatorname{bucket}$ maps an offset to a row of it; both are described below. T5 does not divide the dot product by $\sqrt{d_k}$; its reference implementation in the `transformers` library {cite}`wolf2020transformers` sets the score scale of `T5Attention` to 1.
+Here $\operatorname{rb}$ is a learned table of scalars and $\operatorname{bucket}$ maps an offset to a row of it; both are described below. T5 does not divide the dot product by $\sqrt{d_k}$; the implementation in the `transformers` library {cite}`wolf2020transformers` sets the score scale of `T5Attention` to 1.
 
 The function $\operatorname{bucket}$ maps an offset to one of 32 buckets. Small offsets get a bucket each; larger ones share buckets whose width grows logarithmically, up to an offset of 128, beyond which all offsets share the last bucket. In the encoder, which attends in both directions, half of the buckets are for keys before or at the query and half for keys after it. For keys at or before the query, offsets 0 to 7 have their own buckets, and an offset $8 \le m - m' < 128$ goes to bucket
 
@@ -858,7 +871,7 @@ the angle between them is the same, so the score is the same.
 
 #### Which Scheme Models Use
 
-Most open-weight models since 2022 use RoPE {cite}`su2021roformer`; a few use ALiBi {cite}`press2022train`. ALiBi adds no vector and learns nothing: each head adds to the score of query $m$ and key $m' \le m$ the penalty $-a_h (m - m')$, a fixed slope times the distance, so that attention fades with distance. With 8 heads the slopes are $1/2, 1/4, \dots, 1/2^8$, and the bias is not divided by $\sqrt{d_k}$; models trained on 512 tokens kept their perplexity on longer inputs, where sinusoidal, rotary and T5 positions degraded {cite}`press2022train`. Both encode relative position inside attention without per-position parameters; learned absolute embeddings are now mostly found in BERT- and GPT-2-era models. The parameters each scheme adds are plotted in {ref}`sec-tdd-position-encoding-trade-offs`.
+RoPE {cite}`su2021roformer` is the scheme of the LLaMA models {cite}`touvron2023llama` and, by its `rope_theta` setting, of Mistral 7B {cite}`mistral2023config`; BLOOM uses ALiBi {cite}`press2022train,scao2022bloom`. ALiBi adds no vector and learns nothing: each head adds to the score of query $m$ and key $m' \le m$ the penalty $-a_h (m - m')$, a fixed slope times the distance, so that attention fades with distance. With 8 heads the slopes are $1/2, 1/4, \dots, 1/2^8$, and the bias is not divided by $\sqrt{d_k}$; models trained on 512 tokens kept their perplexity on longer inputs, where sinusoidal, rotary and T5 positions degraded {cite}`press2022train`. Both encode relative position inside attention without per-position parameters; learned absolute embeddings are now mostly found in BERT- and GPT-2-era models. The parameters each scheme adds are plotted in {ref}`sec-tdd-position-encoding-trade-offs`.
 
 ```{admonition} Embeddings and Positional Encoding
 :class: note
@@ -1572,7 +1585,7 @@ The block above is the 2017 design. Later models change it in some of the follow
 - **RMSNorm instead of LayerNorm.** Dropping the mean subtraction and the bias, $\mathrm{RMSNorm}(x) = \gamma \odot x / \sqrt{\lVert x \rVert_2^2 / d + \epsilon}$, is cheaper and trains just as well {cite}`zhang2019root`. LLaMA {cite}`touvron2023llama`, Qwen2.5 {cite}`qwen2024qwen25` and Gemma 2 {cite}`gemma2024gemma2` use it, and Mistral 7B's released configuration sets its $\epsilon$ (`rms_norm_eps`) {cite}`mistral2023config`.
 - **Gated activations.** The feed-forward network becomes $\mathrm{FFN}(x) = (\mathrm{SiLU}(xW_{\text{gate}}) \odot xW_{\text{up}})W_{\text{down}}$ (SwiGLU), with the hidden width reduced to about $\tfrac{8}{3}d$ to keep the parameter count unchanged {cite}`shazeer2020glu`.
 - **Rotary position embeddings.** Positions enter through RoPE on the queries and keys ({ref}`sec-ch1-rope`), not through vectors added to the input {cite}`su2021roformer`.
-- **Grouped-query attention.** Several query heads share one key/value head, shrinking the KV cache that dominates inference memory at long context {cite}`ainslie2023gqa`.
+- **Grouped-query attention.** Several query heads share one key/value head, shrinking the KV cache that dominates inference memory at long context (defined in {ref}`sec-ch1-decoding`) {cite}`ainslie2023gqa`.
 - **No biases and larger vocabularies.** Linear layers usually drop their bias terms, which removes $4d$ attention and $5d$ feed-forward parameters per block ({ref}`sec-ch1-parameter-count`), and vocabularies grew from 32k to 128k-256k (see {ref}`sec-tdd-choosing-vocabulary-size`). Whether the unembedding is tied to $W_E$ or separate varies between models ({ref}`sec-ch1-embedding-sharing-tying`).
 
 {numref}`fig-ch1-transformer-block-norms` shows the first change for the attention sublayer; the feed-forward sublayer repeats the pattern.
@@ -1860,7 +1873,7 @@ top-p, p = 0.9  the=0.455 a=0.276 cat=0.167 dog=0.102 pizza=0.000
 
 Halving the temperature raises the top token from 0.445 to 0.643. Top-k with $k_{top} = 2$ keeps "the" and "a" and rescales them by $1/(0.445 + 0.270)$. Top-p with $p_{top} = 0.9$ needs four tokens, because the first three hold only $0.445 + 0.270 + 0.164 = 0.879$; on a more confident distribution the same $p_{top}$ would keep fewer. In practice temperature is combined with top-k or top-p, and the chosen token is then drawn from the result.
 
-**Beam search** keeps the best few prefixes instead of one. With beam width $b_{beam}$ it extends each of the $b_{beam}$ kept prefixes by every token, scores each extension by its summed log-probability, keeps the best $b_{beam}$ and repeats; greedy decoding is beam width 1. A sum of log-probabilities falls with every token added, so finished hypotheses of different lengths are compared with a **length penalty** that divides the sum by a term growing with the length. The original transformer translated with "beam search with a beam size of 4 and length penalty α = 0.6", using the penalty of {cite:t}`wu2016google` {cite}`vaswani2017attention`. The listing runs two steps of a toy model in which the most probable first token leads to a weak continuation:
+**Beam search** keeps the best few prefixes instead of one. With beam width $b_{beam}$ it extends each of the $b_{beam}$ kept prefixes by every token, scores each extension by its summed log-probability, keeps the best $b_{beam}$ and repeats; greedy decoding is beam width 1. A sum of log-probabilities falls with every token added, so finished hypotheses of different lengths are compared with a **length penalty** that divides the sum by a term growing with the length. {cite:t}`wu2016google` use $\operatorname{lp}(s) = \bigl((5 + |s|)/6\bigr)^{\nu}$ for a hypothesis $s$ of $|s|$ tokens and rank hypotheses by $\log p(s) / \operatorname{lp}(s)$, with the exponent $0 < \nu < 1$ (called alpha by Wu et al. and in the quotation below) tuned on held-out data and $\nu = 0$ giving plain beam search (their full score adds a coverage term, left out here). The original transformer translated with "beam search with a beam size of 4 and length penalty α = 0.6" {cite}`vaswani2017attention`; at that exponent the penalty is 1.10 for 2 tokens and 2.35 for 20, so the long hypothesis's log-probability, which a sum makes more negative with every token, is divided by a larger number (the listing below prints both). The listing runs two steps of a toy model in which the most probable first token leads to a weak continuation:
 
 ```python
 import math
@@ -1887,6 +1900,14 @@ def beam_search(width):
 for width in (1, 2):
     score, seq = beam_search(width)
     print(f"beam width {width}: {' '.join(seq)}  p = {math.exp(score):.2f}")
+
+
+def length_penalty(n_tokens, alpha=0.6):
+    return ((5 + n_tokens) / 6) ** alpha
+
+
+print(f"lp(2) = {length_penalty(2):.2f}, lp(20) = {length_penalty(20):.2f}")
+print(f"normalized score of 'a cat': {score / length_penalty(2):.3f}")
 ```
 
 % output
@@ -1894,6 +1915,8 @@ for width in (1, 2):
 ```text
 beam width 1: the pizza  p = 0.20
 beam width 2: a cat  p = 0.36
+lp(2) = 1.10, lp(20) = 2.35
+normalized score of 'a cat': -0.931
 ```
 
 Width 1 commits to "the" (0.5) and ends with $0.5 \times 0.4 = 0.20$; width 2 also keeps "a" (0.4), whose continuation "cat" gives $0.4 \times 0.9 = 0.36$. Beam search suits tasks with one correct output for an input, such as translation. For open-ended text {cite:t}`holtzman2020curious` find that "maximization-based decoding methods such as beam search lead to degeneration", output that is "bland, incoherent, or gets stuck in repetitive loops", which is why chat and story generation sample with temperature, top-k or top-p.
@@ -2160,7 +2183,7 @@ $\sin(-m) = -\sin m$, that is $\mathcal{R}_{-m}$.
 (b)
 
 $$\tilde{q}_m \tilde{k}_{m'}^\top = q\,\mathcal{R}_m^\top \mathcal{R}_{m'}\,k^\top
-= q\,\mathcal{R}_{-m} \mathcal{R}_{m'}\,k^\top = q\,\mathcal{R}_{m' - m}\,k^\top :$$
+= q\,\mathcal{R}_{-m} \mathcal{R}_{m'}\,k^\top = q\,\mathcal{R}_{m' - m}\,k^\top$$
 
 The first step is the second rule, the second step the first rule with $-m$ in place of
 $m$. Only $m' - m$ is left.
@@ -2186,10 +2209,10 @@ of positions.
 1. [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/) {cite}`alammar2018illustrated` - Visual explanations of transformer concepts
 1. [Attention? Attention!](https://lilianweng.github.io/posts/2018-06-24-attention/) {cite}`weng2018attention` - A survey of attention mechanisms up to and including the transformer
 1. [Andrej Karpathy's Neural Networks: Zero to Hero](https://karpathy.ai/zero-to-hero.html) {cite}`karpathy2022zerotohero` - Video series building transformers from scratch
+1. [Understanding Large Language Models](https://magazine.sebastianraschka.com/p/understanding-large-language-models) {cite}`raschka2023understanding` - A reading list of the papers behind LLMs
 
 **Mathematical Foundations:**
 
-1. [Understanding Large Language Models](https://magazine.sebastianraschka.com/p/understanding-large-language-models) {cite}`raschka2023understanding` - A reading list of the papers behind LLMs
 1. [Linear Algebra](https://www.deeplearningbook.org/contents/linear_algebra.html), chapter 2 of *Deep Learning* {cite}`goodfellow2016deep`
 
 (sec-ch1-further-reading-foundational-papers)=
