@@ -98,6 +98,8 @@ Each figure is committed as `.svg` (used by the HTML book) and `.pdf` (used by t
 
 Open an issue or a pull request against `main`. Please run `make test` first. The pre-commit hooks (`pre-commit install`) check whitespace, YAML and Python formatting; they deliberately do not reformat Markdown, because generic Markdown formatters corrupt MyST math.
 
+Lines of code and output are at most 88 characters, the width that fits the PDF's text block at its code font size without wrapping: every line inside a fence on a chapter's pages, and every code-cell source line and printed output line of its notebooks. `python tools/check_width.py <chapter directory>` lists the lines over the limit and `tests/test_line_width.py` runs the same check per chapter; a chapter directory holding a file named `.width-pending` is an expected failure until its lines are narrowed, and the test fails once they are, until the file is removed.
+
 ## Layout
 
 ```

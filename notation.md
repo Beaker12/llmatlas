@@ -2,8 +2,8 @@
 # Notation
 
 This page collects the symbols the book uses. The first table holds the symbols every chapter shares, with one
-meaning each. A few letters knowingly carry two meanings; the second table lists them and says why the two never
-meet in one formula. The chapter sections after that list the symbols that only one chapter uses, each with a link
+meaning each. A few letters carry two meanings; the second table lists them and says where each is used and how to
+tell them apart. The chapter sections after that list the symbols that only one chapter uses, each with a link
 to the section where it is introduced.
 
 Symbols are given in a normal form: a subscript that is only a running index ($i$, $j$, $t$, ...) is dropped, so
@@ -120,8 +120,8 @@ layer computes $xW$.
 | $\ell$ | YaRN wavelength ($\ell_i$ = $2\pi/\omega_i$) |
 | $\xi$ | YaRN ratio ($\xi_i$ = $n_{train}/\ell_i$) |
 | $\psi$ | YaRN ramp function |
-| $\beta_{fast}$ | YaRN ramp bound $beta_fast$ |
-| $\beta_{slow}$ | YaRN ramp bound $beta_slow$ |
+| $\beta_{fast}$ | YaRN upper ramp bound: a RoPE pair that turns more than this many times within the trained length keeps its frequency (configuration key `beta_fast`, 32 in the YaRN paper) |
+| $\beta_{slow}$ | YaRN lower ramp bound: a RoPE pair that turns fewer than this many times within the trained length is fully interpolated (configuration key `beta_slow`, 1 in the YaRN paper) |
 | $i$ | running index (range stated where used) |
 | $j$ | running index (range stated where used) |
 | $l$ | layer index |
@@ -145,19 +145,19 @@ layer computes $xW$.
 ```{tabularcolumns} \X{3}{20}\X{11}{20}\X{6}{20}
 ```
 
-| Symbol | Meanings | Why both are kept |
+| Symbol | Meanings | Where each is used |
 |---|---|---|
-| $m$ | position in a positional encoding or relative offset ($m'$ a second position); Adam's first moment ($m_t$) | The plan's index rule: Adam's $m_t$ is a named quantity, always subscripted with the step, and never meets a positional encoding in the same formula. |
-| $v$ | Adam's second moment ($v_t$); value vector ($v_i$ at position $i$) | Adam's $v_t$ is a named quantity (the plan's index rule); the value vector appears only in chapter 6's latent-attention paragraph, where no optimizer appears. |
-| $p$ | a distribution (generic pair $p$, $q$); sampling probability of source $s$ ($p_s$) | $p_s$ is always subscripted with the source and is a probability over sources, the standard symbol in data-mixing papers. |
-| $q$ | query vector ($q_m$ at position $m$); a distribution (generic pair $p$, $q$) | Both are standard; the query vector always carries a position subscript and the distribution an argument $q(x)$, and they never share a formula. |
-| $U$ | left singular vectors ($U \Sigma R^\top$); unique tokens of source $s$ ($U_s$) | The SVD lives in chapter 2's primer; $U_s$ always carries its source subscript and lives in chapters 3 and 5. |
-| $e$ | epochs of source $s$ ($e_s$); Euler's number | Euler's number is universal; $e_s$ always carries its source subscript. |
-| $x$ | token ($x_i$ at position $i$, $x_{<i}$ the prefix); input row vector of a layer ($xW$) | Both are universal; a token is indexed by position inside a probability, a layer input appears as a function argument or in xW. |
-| $b$ | RoPE base ($b'$ a rescaled base); number of LSH bands | Settled by the plan for chapter 4 (LSH bands $b$, rows $r$ are the standard symbols); chapter 4 has no RoPE. |
-| $r$ | router logit ($r_i$ for expert $i$); rows per LSH band | Settled by the plan for chapter 4; chapter 4 has no router. |
-| $h$ | hidden state ($h^{(l)}_i$ at layer $l$, position $i$); MinHash hash function ($h_i$ the $i$-th) | The MinHash literature writes $h$ for the hash function; chapter 4 has no hidden state in its math, and the hash function always takes an argument. |
-| $n$ | sequence or context length ($n'$ the target context length); order of an n-gram | "n-gram" is the universal name; chapter 4 has no sequence length in its math once its string length is written $T_{idx}$. |
+| $m$ | position in a positional encoding or relative offset ($m'$ a second position); Adam's first moment ($m_t$) | The position belongs to positional encodings and attention in chapters 1 and 6 ($q_m$, $m - n$); Adam's first moment belongs to chapter 2's optimizer sections and always carries its step ($m_t$). They never share a formula. |
+| $v$ | Adam's second moment ($v_t$); value vector ($v_i$ at position $i$) | Adam's second moment belongs to chapter 2's optimizer sections and always carries its step ($v_t$); the value vector $v_i$ appears only in chapter 6's latent-attention paragraph, where no optimizer appears. |
+| $p$ | a distribution (generic pair $p$, $q$); sampling probability of source $s$ ($p_s$) | The generic distribution $p$ appears in chapters 1 and 2; the sampling probability always carries its source ($p_s$), in chapters 2 and 5, as in the data-mixing literature. |
+| $q$ | query vector ($q_m$ at position $m$); a distribution (generic pair $p$, $q$) | The query vector always carries a position ($q_m$), in the attention sections of chapters 1 and 6; the distribution always takes an argument ($q(x)$), in chapter 2. They never share a formula. |
+| $U$ | left singular vectors ($U \Sigma R^\top$); unique tokens of source $s$ ($U_s$) | The singular vectors appear only in chapter 2's linear-algebra primer; the unique-token count always carries its source ($U_s$), in chapters 3 and 5. |
+| $e$ | epochs of source $s$ ($e_s$); Euler's number | Euler's number appears throughout ($e^x$, the softmax); the epoch count always carries its source ($e_s$), in chapter 3. |
+| $x$ | token ($x_i$ at position $i$, $x_{<i}$ the prefix); input row vector of a layer ($xW$) | A token is indexed by position inside a probability ($x_i$, $x_{<i}$), in chapters 1, 2 and 4; a layer input appears as a function argument or in $xW$, in chapters 1, 2 and 6. |
+| $b$ | RoPE base ($b'$ a rescaled base); number of LSH bands | The RoPE base appears in chapters 1 and 6; the band count appears only in chapter 4, which has no RoPE (bands $b$ and rows $r$ are the standard MinHash symbols). |
+| $r$ | router logit ($r_i$ for expert $i$); rows per LSH band | The router logit appears in chapter 6's mixture-of-experts sections; the rows per band appear only in chapter 4, which has no router (bands $b$ and rows $r$ are the standard MinHash symbols). |
+| $h$ | hidden state ($h^{(l)}_i$ at layer $l$, position $i$); MinHash hash function ($h_i$ the $i$-th) | The hidden state appears in chapter 2; the MinHash hash function appears only in chapter 4, always with an argument, as in the MinHash literature. |
+| $n$ | sequence or context length ($n'$ the target context length); order of an n-gram | The sequence length appears throughout ($n'$ a target length in chapter 6); in chapter 4, which writes its string length $T_{idx}$, $n$ is only the order of an n-gram, the universal name. |
 
 ## Symbols used in one chapter
 

@@ -19,3 +19,16 @@ def test_page_lists_every_row_of_the_sources():
     assert not missing
     table_rows = [line for line in lines if line.startswith("| $")]
     assert len(table_rows) == len(rows)
+
+
+def test_render_sets_identifiers_as_code_and_symbols_as_math():
+    from tools.build_notation_page import render
+
+    # A configuration key or code name (a word with an unbraced multi-letter part) is code, not math:
+    # $beta_fast$ would print the italic letters b, e, t, a with a subscript f.
+    assert render("configuration key beta_fast, default 32") == "configuration key `beta_fast`, default 32"
+    assert render("key `beta_slow`") == "key `beta_slow`"
+    # Symbols stay math.
+    assert render("token (x_i at position i, x_{<i} the prefix)") == "token ($x_i$ at position $i$, $x_{<i}$ the prefix)"
+    assert render("dimension d_k and n_{train}") == "dimension $d_k$ and $n_{train}$"
+    assert render("YaRN wavelength (\\ell_i = 2\\pi/\\omega_i)") == "YaRN wavelength ($\\ell_i$ = $2\\pi/\\omega_i$)"

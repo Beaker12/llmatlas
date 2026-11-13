@@ -27,14 +27,18 @@ LABEL = re.compile(r"^\(([A-Za-z0-9_-]+)\)=\s*$")
 HEADING = re.compile(r"^#{1,6} ")
 MATHLIKE = re.compile(r"[\\_^]|^sec-|^[A-Za-z]'+$")  # TeX, a section label, or a primed letter (n')
 SECTION = re.compile(r"sec-[A-Za-z0-9_-]+")
+# A code name such as a configuration key (beta_fast): a word joined by underscores with no TeX, where some part
+# after the first underscore has two or more characters. In math it would print as italic letters with a
+# one-letter subscript, so it is set as code. A symbol's subscript (d_k, x_i) has one character or braces.
+IDENTIFIER = re.compile(r"[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)*_[A-Za-z0-9]{2,}(?:_[A-Za-z0-9]+)*")
 
 INTRO = """\
 (sec-notation)=
 # Notation
 
 This page collects the symbols the book uses. The first table holds the symbols every chapter shares, with one
-meaning each. A few letters knowingly carry two meanings; the second table lists them and says why the two never
-meet in one formula. The chapter sections after that list the symbols that only one chapter uses, each with a link
+meaning each. A few letters carry two meanings; the second table lists them and says where each is used and how to
+tell them apart. The chapter sections after that list the symbols that only one chapter uses, each with a link
 to the section where it is introduced.
 
 Symbols are given in a normal form: a subscript that is only a running index ($i$, $j$, $t$, ...) is dropped, so
@@ -65,6 +69,8 @@ def _math_token(token: str) -> str:
         return token
     if SECTION.fullmatch(core):
         return f"{lead}{{ref}}`{core}`{tail}"
+    if IDENTIFIER.fullmatch(core):
+        return f"{lead}`{core}`{tail}"
     return f"{lead}${core}${tail}"
 
 
@@ -150,7 +156,7 @@ def build() -> str:
     # unbreakable `l` columns that run off the page); the HTML is unchanged.
     out = [INTRO, "## Symbols used throughout the book", "", COLUMNS_2, "", "| Symbol | Meaning |", "|---|---|"]
     out += [f"| ${s}$ | {render(m)} |" for s, m in global_rows()]
-    out += ["", "## Letters with two meanings", "", COLUMNS_3, "", "| Symbol | Meanings | Why both are kept |", "|---|---|---|"]
+    out += ["", "## Letters with two meanings", "", COLUMNS_3, "", "| Symbol | Meanings | Where each is used |", "|---|---|---|"]
     out += [f"| ${s}$ | {'; '.join(render(m) for m in ms)} | {render(r)} |" for s, ms, r in exception_rows()]
     out += ["", "## Symbols used in one chapter", ""]
     for chapter in chapters():
