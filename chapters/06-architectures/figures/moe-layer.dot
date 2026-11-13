@@ -5,7 +5,7 @@ digraph moe_layer {
   edge [arrowsize=0.7];
 
   x [label=<token's hidden state x<BR/>(after the norm)>, fillcolor="#ffffff", color="#2d3748", penwidth=1.3, fontsize=20];
-  router [label=<<TABLE BORDER="0" CELLSPACING="2"><TR><TD>router: logits r, probabilities ρ = softmax(r)</TD></TR><TR><TD>keep TopK(r), the n<SUB>act</SUB> largest logits</TD></TR><TR><TD>of E routed experts (DeepSeek-V2-Lite: E = 64, n<SUB>act</SUB> = 6)</TD></TR></TABLE>>, fillcolor="#fde8d7", color="#2d3748", penwidth=1.3, fontsize=20];
+  router [label=<<TABLE BORDER="0" CELLSPACING="2"><TR><TD>router: logits r, probabilities ρ = softmax(r)</TD></TR><TR><TD>keep TopK(r), the n<SUB>act</SUB> largest logits</TD></TR><TR><TD>of E routed experts</TD></TR></TABLE>>, fillcolor="#fde8d7", color="#2d3748", penwidth=1.3, fontsize=20];
 
   subgraph cluster_routed {
     style="rounded,filled"; fillcolor="#f7fafc"; color="#4a5568"; penwidth=1.3; label="";
@@ -15,7 +15,7 @@ digraph moe_layer {
     e4 [label="…", fillcolor="#ffffff", color="#a0aec0", fontcolor="#718096", penwidth=1.3, fontsize=20];
     eE [label=<FFN<SUB>E</SUB>>, fillcolor="#ffffff", color="#a0aec0", fontcolor="#718096", penwidth=1.3, fontsize=20];
   }
-  s1 [label=<<TABLE BORDER="0" CELLSPACING="2"><TR><TD><B>shared experts</B></TD></TR><TR><TD>always active</TD></TR><TR><TD>(2 in V2-Lite)</TD></TR></TABLE>>, fillcolor="#c6f6d5", color="#2d3748", penwidth=2.2, fontsize=20];
+  s1 [label=<<TABLE BORDER="0" CELLSPACING="2"><TR><TD><B>shared experts</B></TD></TR><TR><TD>always active</TD></TR></TABLE>>, fillcolor="#c6f6d5", color="#2d3748", penwidth=2.2, fontsize=20];
 
   y [label=<<TABLE BORDER="0" CELLSPACING="2"><TR><TD>y = (shared experts' output) + Σ ρ̃ᵢ FFNᵢ(x)</TD></TR><TR><TD>summed over i in TopK(r)</TD></TR></TABLE>>, fillcolor="#edf2f7", color="#2d3748", penwidth=1.3, fontsize=20];
 

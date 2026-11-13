@@ -457,4 +457,5 @@ def test_solution2_multi_head_base():
     """Solution 2: the multi-head model of Llama 3.1 70B's shape has 79.9B parameters; GQA removes 9.4B of them."""
     gqa = 70_553_706_496
     extra = 80 * 2 * 8192 * (64 - 8) * 128
-    assert round((gqa + extra) / 1e9, 1) == 79.9 and round(extra / 1e9, 1) == 9.4
+    assert round((gqa + extra) / 1e9, 2) == 79.95 and round(extra / 1e9, 2) == 9.40 and round(gqa / 1e9, 2) == 70.55
+    assert "removes 9.40 billion of the 79.95 billion parameters" in CHAPTER.read_text(encoding="utf-8")

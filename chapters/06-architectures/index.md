@@ -68,7 +68,7 @@ All twelve have the same outer structure: a token embedding, a stack of identica
 :alt: Two block diagrams side by side. Left, the original transformer's block (2017): multi-head attention, add, LayerNorm, ReLU feed-forward network, add, LayerNorm, with the residual skips entering each add. Right, the Llama 3.1 8B block (2024): RMSNorm, grouped-query attention with RoPE, add, RMSNorm, SwiGLU network, add, with the residual skips bypassing the norms.
 :width: 100%
 
-The original transformer's block (2017) and Llama 3.1 8B's block (2024), whose layout the 2025 models of this chapter keep. The outer structure is the same; what changed is the contents of each box (shaded blue) and where the normalization sits (orange). On the right, the residual path (orange arrows) runs from block to block without passing through a norm.
+The original transformer's block (2017) and Llama 3.1 8B's block (2024). The outer structure is the same; what changed is the contents of each box (shaded blue) and where the normalization sits (orange). On the right, the residual path (orange arrows) runs from block to block without passing through a norm.
 ```
 
 **Dense models.**
@@ -622,7 +622,7 @@ DeepSeekMoE makes two changes to the conventional layout of GShard-style top-$n_
 :alt: Diagram of a mixture-of-experts layer. The token's hidden state x goes to a router and to the shared experts. The router computes logits and probabilities and selects the top-scoring experts; two selected experts, FFN 1 and FFN 3, are drawn bold with their gate weights, the others faint. The output y is the shared experts' output plus the weighted sum of the selected experts.
 :width: 100%
 
-One token through a mixture-of-experts layer with shared experts, annotated with the sizes of DeepSeek-V2-Lite, whose router uses the softmax of {ref}`sec-ch6-moe-idea` and which has two shared experts. The router scores all $E$ routed experts but only the $n_{act}$ selected (bold) run, each weighted by its renormalized probability $\tilde{\rho}_i$; the shared experts run for every token. Compute per token follows the bold boxes, memory follows all of them.
+One token through a mixture-of-experts layer with shared experts, drawn in the renormalized form of {ref}`sec-ch6-moe-idea`. The router scores all $E$ routed experts but only the $n_{act}$ selected (bold) run, each weighted by its renormalized probability $\tilde{\rho}_i$ (models that set `norm_topk_prob: false`, such as OLMoE and DeepSeek-V2-Lite, weight by $\rho_i$ instead); the shared experts run for every token. Compute per token follows the bold boxes, memory follows all of them.
 ```
 
 DeepSeek-V3 adds three more refinements {cite}`deepseek2024v3`. Its router uses sigmoid scores rather than softmax, normalizes them over the selected experts and multiplies them by 2.5 (Eqs. 12 to 15 of the paper, with the factor from the configuration):
@@ -991,7 +991,7 @@ equal heads, scores unchanged: True
 independent heads, relative change of the scores: 0.93
 ```
 
-The conversion removes 9.4 billion of the 79.9 billion parameters of the multi-head model of the same shape, leaving Llama 3.1 70B's 70.6 billion, and divides the cache per token by 8, from the 2,621,440 bytes of multi-head attention to the 327,680 of the table in {ref}`sec-ch6-multi-query-grouped-query-attention`. The pooled layer reproduces the original exactly only when the heads of a group were equal. Heads trained independently are not, and with fully independent random heads the scores move by about as much as their own size. Mean-pooling is the starting point that keeps as much as an average can, and the paper's short uptraining, 5% of the original pretraining compute, lets the model adapt to the shared heads.
+The conversion removes 9.40 billion of the 79.95 billion parameters of the multi-head model of the same shape, leaving Llama 3.1 70B's 70.55 billion, and divides the cache per token by 8, from the 2,621,440 bytes of multi-head attention to the 327,680 of the table in {ref}`sec-ch6-multi-query-grouped-query-attention`. The pooled layer reproduces the original exactly only when the heads of a group were equal. Heads trained independently are not, and with fully independent random heads the scores move by about as much as their own size. Mean-pooling is the starting point that keeps as much as an average can, and the paper's short uptraining, 5% of the original pretraining compute, lets the model adapt to the shared heads.
 ````
 
 1. **A forgotten bias.** Suppose you count Qwen2.5 7B ($d = 3{,}584$, $L = 28$, $n_{kv} = 4$ key/value heads of $d_k = 128$) without the biases on its query, key and value projections ({ref}`sec-ch6-no-biases`). By how much is the count short, and which of the three checks of {ref}`sec-ch6-validation` notices?
