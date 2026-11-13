@@ -326,7 +326,7 @@ Two trends run through the table. Later corpora re-extract from WARC with a boil
 
 ```{admonition} A Slice of the Crawl
 :class: tip
-The notebook section {ref}`nb-acq-crawl` downloads the manifest of a current snapshot, range-fetches 256 KB from a WARC file and byte offset drawn with a fixed seed, parses the records, tabulates record types and declared payload types, and shows the HTTP response and HTML of one page, so that you can see exactly what a crawl contains before any cleaning.
+The notebook section {ref}`nb-acq-crawl` downloads the manifest of a current snapshot, range-fetches a slice of a WARC file at a file and byte offset drawn with a fixed seed, parses the records, tabulates record types and declared payload types, and shows the HTTP response and HTML of one page, so that you can see exactly what a crawl contains before any cleaning.
 ```
 
 (sec-ch3-crawling-web-yourself)=
@@ -583,7 +583,7 @@ print(status, size, "bytes")
 
 ```{admonition} Reading robots.txt
 :class: note
-The notebook section {ref}`nb-acq-robots` parses two robots.txt files with the standard library: Wikipedia's (28 KB, one of the most detailed on the web, which treats search and training crawlers alike) and a major news site's, which allows Googlebot and disallows every AI crawler by name. It counts the Disallow rules per agent in each.
+The notebook section {ref}`nb-acq-robots` parses with the standard library the robots.txt files of Wikipedia (one of the most detailed on the web, with 428 Disallow rules for every agent (`*`), which treats search and training crawlers alike) and of a major news site, which allows Googlebot and disallows every AI crawler by name. It counts the Disallow rules per agent in each.
 ```
 
 (sec-ch3-economics)=
@@ -1009,7 +1009,7 @@ The procedure says nothing about whether the preferred weights are good; it only
 
 ```{admonition} Planning a Mixture
 :class: note
-The notebook section {ref}`nb-acq-mixture` starts from a compute budget, derives the token count with the Chapter 2 relation, runs `plan_mixture` over a realistic table of sources, plots the planned epochs per source against the four-epoch line, and shows what happens to the plan when a quarter of the high-quality web slice is lost to opt-outs, the rate the consent study measured for the best-maintained domains.
+The notebook section {ref}`nb-acq-mixture` starts from a compute budget, derives the token count with the relation of {ref}`sec-ch2-flops`, runs `plan_mixture` over a realistic table of sources, plots the planned epochs per source against the epoch cap, and shows what happens to the plan when the high-quality web slice loses the share the consent study measured for the best-maintained domains.
 ```
 
 {numref}`fig-ch3-epochs-per-source` is the notebook's plot. Its run is larger than the 2T-token example above: a budget of $C = 10^{24}$ FLOPs for an 8B-parameter model gives $D = C / 6N \approx 20.8$T tokens, so four small sources reach the cap of $e_{\max} = 4$ and the opt-outs push more of the load onto the quality web slice.

@@ -26,11 +26,21 @@ SYNC_EXEMPT: dict[str, str] = {  # name -> reason it may differ between the chap
 # Comparator: eq, gt, lt or approx:<rel>, applied as `chapter_value <op> notebook_value`.
 RESULT_CLAIMS: list[tuple[str, str, str]] = [
     (r"\\approx (20\.8)\$T tokens", r"D = (\d+\.\d+)T tokens", "approx:0.01"),
+    (r"with (428) Disallow rules for every agent", r"Disallow lines: \{'\*': (\d+)\}", "eq"),
+    (r"median article \((206) words", r"(?m)^wikipedia\s+\d+\s+(\d+)", "eq"),
+    (r"median page \((188) words", r"(?m)^c4\s+\d+\s+(\d+)", "eq"),
 ]
 
 # regex over a sentence -> one-line reason; such a sentence links a notebook and mentions a number but states
 # no result, so the notebook-link check (rule c of test_notebook_prose.py) does not flag it
-NOT_A_RESULT: dict[str, str] = {}
+NOT_A_RESULT: dict[str, str] = {
+    r"samples five hosted corpora through the Hugging Face rows API": "the numbers of rows and pulls the notebook "
+        "requests from each corpus: sample sizes chosen in advance, not results",
+    r"measures domain concentration on 2,000 C4 host names": "the size of the host sample and the number of pulls "
+        "are settings of the notebook, not results",
+    r"serves only the first 2,207,027 rows": "a property of the hosting API (the row count the API reports), "
+        "stated to explain the offsets, not a result of the notebook",
+}
 
 MIN_FIGURES: int = 10
 # Units the notation check's banned phrases may match, declared on purpose: unit regex -> reason.
@@ -190,3 +200,18 @@ def test_make_figures_twice_gives_identical_files(tmp_path):
         outputs.append({p.name: p.read_bytes() for p in sorted(out.glob("*.svg"))})
     assert len(outputs[0]) == 5, sorted(outputs[0])
     assert outputs[0] == outputs[1]
+
+
+NOTEBOOK = FIGURE_SCRIPT.parents[1] / "examples" / "data_acquisition_demo.ipynb"
+
+
+def test_notebook_commits_its_plots():
+    """The committed notebook embeds its figures (executed without MPLBACKEND=Agg), one per plotting cell."""
+    import json
+
+    cells = [c for c in json.loads(NOTEBOOK.read_text())["cells"] if c["cell_type"] == "code"]
+    images = [c for c in cells if any("image/png" in o.get("data", {}) for o in c["outputs"])]
+    plotting = [c for c in cells if "plt." in "".join(c["source"])]
+    assert len(plotting) == 2 and images == plotting
+    tagged = [c for c in cells if any(t.startswith("figure:") for t in c["metadata"].get("tags", []))]
+    assert tagged and all(c in images for c in tagged)
