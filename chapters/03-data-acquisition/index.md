@@ -73,6 +73,10 @@ Everything runs on a CPU in about a minute. The network fetches total a few mega
 
 The training sets of the major models are reported, when they are reported at all, as a table of sources with a share of the training tokens. The table below collects the published mixtures. For GPT-3 and LLaMA the shares are of training tokens, which differ from shares of the raw data because sources are sampled at different rates; for The Pile they are shares of the training bytes after upsampling (the paper's "Weight" column: each component's raw size times its epochs, out of 1,254 GiB, not of the 825 GiB raw corpus, so Pile-CC's 227 GiB is 18% of the training bytes but 28% of the raw corpus), and for Dolma and FineWeb shares of the corpus by tokens (Dolma's Table 1, in Llama tokens out of 3,059B).
 
+```{raw} latex
+\begingroup\footnotesize\setlength{\tabcolsep}{2pt}
+```
+
 | Model or corpus                                  | Web crawl                    | Curated web (Wikipedia, forums, news) | Books          | Papers           | Code            | Total tokens |
 | ------------------------------------------------ | ---------------------------- | ------------------------------------- | -------------- | ---------------- | --------------- | ------------ |
 | GPT-3 {cite}`brown2020language`                  | 60% (filtered Common Crawl)  | 22% WebText2, 3% Wikipedia            | 16% (two book corpora) | included in web | not separate | 300B |
@@ -80,6 +84,11 @@ The training sets of the major models are reported, when they are reported at al
 | LLaMA 1 {cite}`touvron2023llama`                 | 67% CommonCrawl + 15% C4     | 4.5% Wikipedia, 2% StackExchange      | 4.5% (Gutenberg, Books3) | 2.5% arXiv | 4.5% GitHub | 1.4T |
 | Dolma {cite}`soldaini2024dolma`                  | 81% (Common Crawl)           | 3% (Reddit, Wikipedia, Wikibooks)     | 0.2% (Gutenberg) | 2.3% (peS2o)     | 13.4% (The Stack) | 3T |
 | FineWeb {cite}`penedo2024fineweb`                | 100%                         |                                       |                |                  |                 | 15T |
+
+```{raw} latex
+\endgroup
+```
+
 
 {numref}`fig-ch3-mixtures` draws the same shares as bars, which makes the contrast visible at a glance: The Pile is the only mixture in which the web crawl is not the largest part.
 

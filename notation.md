@@ -12,6 +12,9 @@ layer computes $xW$.
 
 ## Symbols used throughout the book
 
+```{tabularcolumns} \X{1}{5}\X{4}{5}
+```
+
 | Symbol | Meaning |
 |---|---|
 | $d$ | model (residual) width |
@@ -139,6 +142,9 @@ layer computes $xW$.
 
 ## Letters with two meanings
 
+```{tabularcolumns} \X{3}{20}\X{11}{20}\X{6}{20}
+```
+
 | Symbol | Meanings | Why both are kept |
 |---|---|---|
 | $m$ | position in a positional encoding or relative offset ($m'$ a second position); Adam's first moment ($m_t$) | The plan's index rule: Adam's $m_t$ is a named quantity, always subscripted with the step, and never meets a positional encoding in the same formula. |
@@ -156,6 +162,9 @@ layer computes $xW$.
 ## Symbols used in one chapter
 
 ### Chapter 1: LLM Foundations
+
+```{tabularcolumns} \X{3}{20}\X{11}{20}\X{6}{20}
+```
 
 | Symbol | Meaning | Introduced in |
 |---|---|---|
@@ -177,6 +186,9 @@ layer computes $xW$.
 | $\mathcal{R}_1$ | RoPE rotation for a position offset of 1 | {ref}`sec-ch1-exercise-9` |
 
 ### Chapter 2: Mathematical Foundations
+
+```{tabularcolumns} \X{3}{20}\X{11}{20}\X{6}{20}
+```
 
 | Symbol | Meaning | Introduced in |
 |---|---|---|
@@ -213,6 +225,9 @@ layer computes $xW$.
 
 ### Chapter 3: Data Acquisition and Sources
 
+```{tabularcolumns} \X{3}{20}\X{11}{20}\X{6}{20}
+```
+
 | Symbol | Meaning | Introduced in |
 |---|---|---|
 | $e_{\max}$ | largest number of epochs allowed for any source | {ref}`sec-ch3-chapter-overview` |
@@ -220,6 +235,9 @@ layer computes $xW$.
 | $n_{match}$ | number of documents an erasure request matches (`k` in the same fence) | {ref}`sec-ch3-personal-data-sensitive-sources` |
 
 ### Chapter 4: Data Preprocessing and Cleaning
+
+```{tabularcolumns} \X{3}{20}\X{11}{20}\X{6}{20}
+```
 
 | Symbol | Meaning | Introduced in |
 |---|---|---|
@@ -248,6 +266,9 @@ layer computes $xW$.
 
 ### Chapter 5: Dataset Management and Versioning
 
+```{tabularcolumns} \X{3}{20}\X{11}{20}\X{6}{20}
+```
+
 | Symbol | Meaning | Introduced in |
 |---|---|---|
 | $M$ | document mask ($M_{ij} = 1$ when position $i$ may attend to position $j$) | {ref}`sec-ch5-cross-document-attention` |
@@ -257,6 +278,9 @@ layer computes $xW$.
 | $n_{loader}$ | DataLoader worker processes per rank | {ref}`sec-ch5-loader-workers` |
 
 ### Chapter 6: Modern Transformer Architectures
+
+```{tabularcolumns} \X{3}{20}\X{11}{20}\X{6}{20}
+```
 
 | Symbol | Meaning | Introduced in |
 |---|---|---|

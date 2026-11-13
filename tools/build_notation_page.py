@@ -43,6 +43,10 @@ layer computes $xW$.
 """
 
 
+COLUMNS_2 = "```{tabularcolumns} \\X{1}{5}\\X{4}{5}\n```"
+COLUMNS_3 = "```{tabularcolumns} \\X{3}{20}\\X{11}{20}\\X{6}{20}\n```"
+
+
 def exception_rows(path=EXCEPTIONS):
     rows = []
     for line in Path(path).read_text(encoding="utf-8").splitlines():
@@ -142,9 +146,11 @@ def _link(chapter: Path, uses, label=None) -> str:
 
 
 def build() -> str:
-    out = [INTRO, "## Symbols used throughout the book", "", "| Symbol | Meaning |", "|---|---|"]
+    # tabularcolumns sets the column widths of the LaTeX output only (a long table otherwise gets
+    # unbreakable `l` columns that run off the page); the HTML is unchanged.
+    out = [INTRO, "## Symbols used throughout the book", "", COLUMNS_2, "", "| Symbol | Meaning |", "|---|---|"]
     out += [f"| ${s}$ | {render(m)} |" for s, m in global_rows()]
-    out += ["", "## Letters with two meanings", "", "| Symbol | Meanings | Why both are kept |", "|---|---|---|"]
+    out += ["", "## Letters with two meanings", "", COLUMNS_3, "", "| Symbol | Meanings | Why both are kept |", "|---|---|---|"]
     out += [f"| ${s}$ | {'; '.join(render(m) for m in ms)} | {render(r)} |" for s, ms, r in exception_rows()]
     out += ["", "## Symbols used in one chapter", ""]
     for chapter in chapters():
@@ -154,7 +160,7 @@ def build() -> str:
         uses = list_symbols.symbols(chapter)
         named = _first_used_labels(chapter)
         number = int(chapter.name.split("-")[0])
-        out += [f"### Chapter {number}: {_title(chapter)}", "", "| Symbol | Meaning | Introduced in |",
+        out += [f"### Chapter {number}: {_title(chapter)}", "", COLUMNS_3, "", "| Symbol | Meaning | Introduced in |",
                 "|---|---|---|"]
         for row in rows:
             meaning = render(row["meaning"])

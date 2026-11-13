@@ -75,6 +75,10 @@ The original transformer's block (2017) and Llama 3.1 8B's block (2024). The out
 
 **Dense models.**
 
+```{raw} latex
+\begingroup\scriptsize\setlength{\tabcolsep}{2pt}
+```
+
 | Model | Layers | $d$ | Query / KV heads × head dim | FFN width | Vocabulary | RoPE base | Context | Parameters | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Llama 3.1 8B | 32 | 4,096 | 32 / 8 × 128 | 14,336 | 128,256 | 500,000 | 128K | 8.03B | paper |
@@ -86,7 +90,16 @@ The original transformer's block (2017) and Llama 3.1 8B's block (2024). The out
 | Qwen3 8B (base) | 36 | 4,096 | 32 / 8 × 128 | 12,288 | 151,936 | 1,000,000 | 32,768 (config); 128K (paper) | 8.19B | config |
 | Gemma 3 12B, text decoder only | 48 | 3,840 | 16 / 8 × 256 | 15,360 | 262,144 | 10,000 local, 1,000,000 global | 128K | 11.77B | paper and reference code |
 
+```{raw} latex
+\endgroup
+```
+
+
 **Sparse (mixture-of-experts) models.**
+
+```{raw} latex
+\begingroup\scriptsize\setlength{\tabcolsep}{2pt}
+```
 
 | Model | Layers | $d$ | Attention | Experts per MoE layer | Dense layers | Total | Active | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -94,6 +107,11 @@ The original transformer's block (2017) and Llama 3.1 8B's block (2024). The out
 | OLMoE 1B-7B | 16 | 2,048 | MHA, 16 × 128 | 64 routed, top 8, width 1,024 | 0 | 6.92B | 1.28B (with embedding) | config |
 | DeepSeek-V2-Lite | 27 | 2,048 | MLA, 16 heads | 64 routed + 2 shared, top 6, width 1,408 | 1 | 15.71B | 2.45B (without embedding) | config |
 | DeepSeek-V3 | 61 | 7,168 | MLA, 128 heads | 256 routed + 1 shared, top 8, width 2,048 | 3 | 671.03B | 36.63B (without embedding) | config |
+
+```{raw} latex
+\endgroup
+```
+
 
 A few notes on reading the tables.
 
