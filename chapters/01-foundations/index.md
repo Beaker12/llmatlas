@@ -1450,7 +1450,7 @@ The block above is the 2017 design. Later models change it in some of the follow
 ```{figure} figures/transformer_block_norms.*
 :name: fig-ch1-transformer-block-norms
 :alt: Left, post-LN: x goes through multi-head attention, is added to the residual x, then normalized. Right, pre-LN: x is normalized, goes through attention and is added to the unnormalized x.
-:width: 83%
+:width: 86%
 
 Post-LN normalizes the sum, so the residual stream passes through a normalization in every block; pre-LN normalizes only the sublayer's input, so the residual path from input to output is the identity.
 ```
