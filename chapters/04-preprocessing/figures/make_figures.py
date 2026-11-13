@@ -60,14 +60,17 @@ def retention_funnel(out):
     ax.barh(y, [100] * len(stages), color="#edf2f7", height=0.72)
     for yi, s in zip(y, stages):
         ax.barh(yi, s["kept"], color=colors[s["group"]], height=0.72)
-        ax.text(s["kept"] + 1, yi, f"{s['kept']:.1f}% left  (stage removes {s['removed']:.1f}%)",
-                va="center", fontsize=9, color=INK)
+        label = f"{s['kept']:.1f}% left, stage removes {s['removed']:.1f}%"
+        inside = s["kept"] > 55  # long bars carry their label inside, short ones beside
+        ax.text(s["kept"] - 1 if inside else s["kept"] + 1, yi, label, va="center", ha="right" if inside else "left",
+                fontsize=11, color="#ffffff" if inside and s["group"] != "Document preparation" else INK)
     ax.set_yticks(y, [s["stage"] for s in stages])
+    ax.tick_params(axis="both", labelsize=11)
     ax.set_xlim(0, 100)
-    ax.set_xlabel("share of the original Common Crawl still present (%)")
+    ax.set_xlabel("share of the original Common Crawl still present (%)", fontsize=11)
     handles = [Rectangle((0, 0), 1, 1, color=c) for c in colors.values()]
-    ax.legend(handles, ["document preparation (documents)", "filtering (tokens)", "deduplication (tokens)"],
-              loc="upper center", bbox_to_anchor=(0.45, -0.17), ncol=3, fontsize=8.5, frameon=False)
+    ax.legend(handles, ["preparation (documents)", "filtering (tokens)", "deduplication (tokens)"],
+              loc="upper center", bbox_to_anchor=(0.4, -0.15), ncol=3, fontsize=11, frameon=False)
     ax.spines["left"].set_visible(False)
     ax.tick_params(axis="y", length=0)
     save(fig, out, "retention-funnel")
@@ -82,9 +85,9 @@ def page_blocks(out):
              "article paragraph 2", "share line", "<aside> links", "<footer>"]
     blocks = parser.blocks
     assert len(blocks) == len(names), [t for t, _ in blocks]
-    fig, ax = plt.subplots(figsize=(7.4, 3.8))
+    fig, ax = plt.subplots(figsize=(7.4, 3.6))
     ax.add_patch(Rectangle((15, -0.13), 21, 0.43, color="#c6f6d5", zorder=0))
-    ax.text(35.5, 0.27, "kept: at least 15 words,\nlink density at most 0.3", ha="right", va="top", fontsize=9,
+    ax.text(15.6, 0.27, "kept: at least 15 words,\nlink density at most 0.3", ha="left", va="top", fontsize=9,
             color=GREEN)
     ax.axvline(15, color=GREEN, lw=1, ls="--")
     ax.axhline(0.3, color=GREEN, lw=1, ls="--")
@@ -100,12 +103,14 @@ def page_blocks(out):
                     ha="center", va="bottom" if i not in below else "top", fontsize=9, fontweight="bold",
                     color=GREEN if kept else RED)
         key.append(f"{i + 1}  {name}: {words} words, {density:.2f}")
-    ax.text(1.03, 1.0, "\n".join(key), transform=ax.transAxes, va="top", ha="left", fontsize=8.5,
-            color=INK, linespacing=1.6)
+    for col, part in enumerate((key[:5], key[5:])):
+        ax.text(-0.08 + 0.58 * col, -0.2, "\n".join(part), transform=ax.transAxes, va="top", ha="left",
+                fontsize=9, color=INK, linespacing=1.5)
+    ax.tick_params(axis="both", labelsize=10)
     ax.set_xlim(0, 36)
     ax.set_ylim(-0.13, 1.08)
-    ax.set_xlabel("words in the block")
-    ax.set_ylabel("link density (link characters / characters)")
+    ax.set_xlabel("words in the block (stands in for text density)", fontsize=9)
+    ax.set_ylabel("link density\n(link characters / characters)", fontsize=9)
     save(fig, out, "page-blocks")
 
 
@@ -356,13 +361,8 @@ def suffix_array(out):
         bottom.text(2.0, y, " ".join(tokens[sa[k]:sa[k] + 6]), fontsize=8.5)
         bottom.text(10.6, y, str(common), fontsize=8.5, fontweight="bold" if hit else "normal",
                     color=RED if hit else INK)
-    bottom.text(0.0, 10.4 - len(window) - 0.1,
-                f"Rows {window.start} to {window.stop - 1} of the {n}-row suffix array. Only one adjacent pair "
-                f"shares at least {min_len} tokens (red), so the copy\nthat starts later, at token {start}, is "
-                f"removed. Fragments of the license also pair up (LCP 8, 6, 4), but they are\nshorter than "
-                f"{min_len} tokens and are not marked.", fontsize=8.5, va="top")
     bottom.set_xlim(-0.2, 12.6)
-    bottom.set_ylim(10.4 - len(window) - 1.4, 12)
+    bottom.set_ylim(10.4 - len(window) + 0.3, 12)
     fig.tight_layout()
     save(fig, out, "suffix-array")
 

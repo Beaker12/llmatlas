@@ -230,7 +230,7 @@ The WET-style text keeps the cookie banner, the menu, the share buttons, the sid
 :alt: Scatter plot of nine page blocks by word count and link density; only the two article paragraphs fall in the shaded keep region.
 :width: 100%
 
-The nine blocks of the listing's news page, placed by word count and link density as computed by the extraction listing above; the key beside the plot names each numbered block. The shaded corner is what `main_text` keeps. Navigation, sidebar and share buttons are excluded by link density; the headline and the title are excluded by length alone, and the cookie banner (10 words, 0.27) by length although its link density would pass. The footer misses on both counts, narrowly on link density (0.31).
+The nine blocks of the listing's news page, placed by word count and link density as computed by the extraction listing above; the key below the plot names each numbered block. Word count stands in for the text density defined above: the listing's parser keeps only each block's text and does not count tag characters, so the plot shows the two features the rule actually thresholds. The shaded corner is what `main_text` keeps. Navigation, sidebar and share buttons are excluded by link density; the headline and the title are excluded by length alone, and the cookie banner (10 words, 0.27) by length although its link density would pass. The footer misses on both counts, narrowly on link density (0.31).
 ```
 
 (sec-ch4-encoding-unicode-normalization)=
@@ -1573,7 +1573,7 @@ Because substring removal cuts through the middle of documents, it is applied af
 :alt: The 35 tokens of two documents in cells, with a 13-token license highlighted in both, above eleven rows of the sorted suffix array with their LCP values; one row has LCP 13.
 :width: 100%
 
-The example of the suffix-array listing above. Top: the 35 tokens; the 13-token license appears at tokens 3 to 15 in document a and 19 to 31 in document b. Bottom: rows 23 to 33 of the sorted suffix array, each with the length of its longest common prefix (LCP) with the row above. The two suffixes that begin with the whole license are adjacent (ranks 27 and 28) and share 13 tokens, the threshold, so the later copy is marked; the listing prints it as tokens 19 to 32, end exclusive. Suffixes that start inside the license also pair up, but with shorter LCPs, and are not marked.
+The example of the suffix-array listing above. Top: the 35 tokens; the 13-token license appears at tokens 3 to 15 in document a and 19 to 31 in document b. Bottom: rows 23 to 33 of the sorted suffix array, each with the length of its longest common prefix (LCP) with the row above. The two suffixes that begin with the whole license are adjacent (ranks 27 and 28) and share 13 tokens, the threshold, so the later copy is marked; the listing prints it as tokens 19 to 32, end exclusive. Suffixes that start inside the license also pair up, with LCPs of 8, 6, 4 and 3 in the rows shown, but they are shorter than 13 tokens and are not marked.
 ```
 
 (sec-ch4-semantic-deduplication)=
@@ -1918,7 +1918,7 @@ A corpus is thousands of shards, each a compressed JSONL file of documents with 
 ```{figure} figures/pipeline-map-shuffle.*
 :name: fig-ch4-pipeline-map-shuffle
 :alt: Shard 1 and the other shards pass through a first map of per-document stages, converge on a single global step that shuffles by band bucket and runs union-find, and fan out to a second per-document map.
-:width: 460px
+:width: 509px
 
 The shape of a distributed pipeline, a schematic of the stages in {ref}`sec-ch4-operation-order`. Every stage in the two maps reads one document and needs nothing else, so shards run anywhere in parallel. Deduplication is the one exception: each document's $b$ band hashes are shuffled so that equal buckets meet, candidate pairs are resolved into clusters with union-find, and the resulting list of documents to drop is applied in the second map.
 ```

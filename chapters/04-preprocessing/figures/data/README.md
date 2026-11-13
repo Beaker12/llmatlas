@@ -10,7 +10,9 @@ These files hold derived numbers only. No crawled page text and no Wikipedia tex
 - Derivation: the eight percentages printed in the figure, copied by hand: the share of the original
   Common Crawl left after each stage and the share each stage removes relative to the stage before it. The
   paper measures the first three stages in documents and the rest in tokens. Multiplying the removal rates
-  reproduces the kept column to within rounding.
+  reproduces the kept column to within rounding for every stage but the last: the product for exact
+  deduplication is 11.82%, against the 11.67% the figure prints. The inconsistency is in the
+  paper's own figure; the chart and the chapter use the printed values.
 - Terms: these are factual figures quoted from the paper, with attribution.
 - Used by: `retention-funnel`.
 

@@ -11,13 +11,13 @@ digraph pipeline_map_shuffle {
   }
 
   subgraph cluster_global {
-    label="Global step: sees every shard"; fontname="DejaVu Sans"; fontsize=12;
+    label=""; fontname="DejaVu Sans"; fontsize=12;
     style="rounded,filled"; fillcolor="#fffaf0"; color="#c05621";
-    g [label="shuffle by band bucket\n(b keys per document)\n↓\nunion-find over candidate pairs\n↓\nlist of documents to drop", fillcolor="#feebc8", color="#9c4221", penwidth=2.0];
+    g [label="Global step: sees every shard\n\nshuffle by band bucket\n(b keys per document)\n↓\nunion-find over candidate pairs\n↓\nlist of documents to drop", fillcolor="#feebc8", color="#9c4221", penwidth=2.0];
   }
 
   subgraph cluster_map2 {
-    label="Map 2: one document at a time again"; fontname="DejaVu Sans"; fontsize=12;
+    label="Map 2: one document at a time again"; labelloc="b"; fontname="DejaVu Sans"; fontsize=12;
     style="rounded,filled"; fillcolor="#f0fff4"; color="#2f855a";
     f2 [label="other shards\nsame stages", fillcolor="#ffffff", color="#2d3748", penwidth=1.6];
     f1 [label="shard 1\ndrop listed duplicates\n→ PII redaction → decontamination", fillcolor="#ffffff", color="#2d3748", penwidth=1.6];
