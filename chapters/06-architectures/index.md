@@ -33,8 +33,8 @@ By the end of this chapter, you will understand:
 - How sliding-window and interleaved local/global attention bound the cost of long sequences
 - How rotary embeddings are extended to longer contexts by interpolation, NTK-aware scaling and YaRN, and what a context-length figure does and does not promise
 - How mixture-of-experts layers route tokens, why they need a load-balancing mechanism, and the difference between total and active parameters
-- How to count the parameters of a model from its `config.json`, exactly, and why published parameter figures use different conventions
-- Where encoder and encoder-decoder models are still the right choice
+- How to count the parameters of a model from its `config.json`, exactly, why published parameter figures use different conventions, and how to turn the count into FLOPs per token and inference memory
+- Where encoder and encoder-decoder models are still the right choice, and how their parameter counts differ from a decoder's
 
 (sec-ch6-hands-on-learning)=
 
@@ -42,7 +42,7 @@ By the end of this chapter, you will understand:
 
 The accompanying notebook, [Modern Architectures Demo](examples/architecture_demo.ipynb), builds a small LLaMA-style model and checks it against independent references:
 
-- Reading seven real configurations, adding three transcribed from papers, and reproducing all ten parameter counts exactly ({ref}`nb-arch-configs`)
+- Reading the downloadable configurations and those transcribed from papers, and reproducing the stored element counts of all 8 downloadable checkpoints and the hub totals of the gated ones exactly ({ref}`nb-arch-configs`)
 - RMSNorm, grouped-query attention and a pre-norm block, each checked against a reference implementation ({ref}`nb-arch-block`)
 - A KV cache whose incremental decoding matches the full forward pass, and a simplified latent cache ({ref}`nb-arch-kvcache`)
 - RoPE, position interpolation and NTK-aware scaling, with the frequency identities asserted ({ref}`nb-arch-rope`)
@@ -884,6 +884,8 @@ T5-base: 222,903,552 (encoder 84,954,240, decoder 113,275,008, ratio to BERT-bas
 - Long context is a frequency change plus a short stage of training at the new length. A context-length number from a configuration is a statement about the code.
 - A mixture-of-experts layer buys parameters at constant compute; it needs a balancing mechanism, and "active parameters" depends on whether the input embedding is counted.
 - Parameter counts can be computed exactly from a configuration, and should be checked three ways: against the checkpoint, against the vendor's own total, and against the vendor's own convention.
+- Training costs about $6N$ FLOPs per token, with $N$ the parameters in matrix multiplications (the active ones for a sparse model, without the input embedding), plus an attention term that grows with the context and for Llama 3.1 8B overtakes the weights near 57K tokens. Serving memory is the total parameter count times the bytes per parameter, plus the KV cache.
+- Encoders and encoder-decoders remain the choice for representations and for tasks with a clear input and output; the same counting method, with their biases, learned positions and cross-attention added, gives BERT-base's 109,482,240 and T5-base's 222,903,552 parameters.
 
 (sec-ch6-exercises)=
 
@@ -1190,6 +1192,7 @@ The $6N$ rule counts parameters in matrix multiplications, so it takes the count
 - [Gemma 2](https://arxiv.org/abs/2408.00118) {cite}`gemma2024gemma2` - interleaved local/global attention, soft-capping and sandwich norms
 - [Qwen2.5 Technical Report](https://arxiv.org/abs/2412.15115) {cite}`qwen2024qwen25` - a dense family with YaRN and long-context extension
 - [2 OLMo 2 Furious](https://arxiv.org/abs/2501.00656) {cite}`olmo2024olmo2` - reordered norms, QK-norm and the stability changes behind them, with open data and code
+- [Qwen3 Technical Report](https://arxiv.org/abs/2505.09388) {cite}`qwen2025qwen3` and [Gemma 3 Technical Report](https://arxiv.org/abs/2503.19786) {cite}`gemma2025gemma3` - two 2025 families: QK-norm in place of QKV biases and soft-capping, and five local layers per global one
 - [DeepSeek-V2](https://arxiv.org/abs/2405.04434) {cite}`deepseek2024v2` and [DeepSeek-V3](https://arxiv.org/abs/2412.19437) {cite}`deepseek2024v3` - multi-head latent attention, fine-grained MoE, multi-token prediction and FP8 training
 
 (sec-ch6-further-reading-attention-positions)=
@@ -1216,14 +1219,15 @@ The $6N$ rule counts parameters in matrix multiplications, so it takes the count
 - [GShard](https://arxiv.org/abs/2006.16668) {cite}`lepikhin2021gshard`, [Switch Transformers](https://arxiv.org/abs/2101.03961) {cite}`fedus2022switch` and [ST-MoE](https://arxiv.org/abs/2202.08906) {cite}`zoph2022st` - routing, load-balancing loss, capacity and router z-loss
 - [Mixture-of-Experts with Expert Choice Routing](https://arxiv.org/abs/2202.09368) {cite}`zhou2022mixture` - experts choose tokens
 - [DeepSeekMoE](https://arxiv.org/abs/2401.06066) {cite}`dai2024deepseekmoe` and [Auxiliary-Loss-Free Load Balancing](https://arxiv.org/abs/2408.15664) {cite}`wang2024auxiliary` - fine-grained, shared and bias-balanced experts
+- [OLMoE](https://arxiv.org/abs/2409.02060) {cite}`muennighoff2025olmoe` - a fully open mixture-of-experts model with 64 experts per layer, its training data and ablations of the routing choices
 
 (sec-ch6-further-reading-other-designs)=
 
 ### Other designs
 
-- [Better & Faster Large Language Models via Multi-token Prediction](https://arxiv.org/abs/2404.19737) {cite}`gloeckle2024better`
-- [Smarter, Better, Faster, Longer (ModernBERT)](https://arxiv.org/abs/2412.13663) {cite}`warner2024smarter`
-- [Mamba](https://arxiv.org/abs/2312.00752) {cite}`gu2023mamba`
+- [Better & Faster Large Language Models via Multi-token Prediction](https://arxiv.org/abs/2404.19737) {cite}`gloeckle2024better` - extra heads that predict several tokens ahead, the idea behind DeepSeek-V3's multi-token module
+- [Smarter, Better, Faster, Longer (ModernBERT)](https://arxiv.org/abs/2412.13663) {cite}`warner2024smarter` - an encoder rebuilt with RoPE, GeGLU and alternating local and global attention
+- [Mamba](https://arxiv.org/abs/2312.00752) {cite}`gu2023mamba` - a selective state-space model whose recurrent state replaces the KV cache
 
 (sec-ch6-further-reading-tools)=
 
