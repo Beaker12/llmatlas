@@ -1,0 +1,13 @@
+# Accepted deviations for tools/verify_arxiv.py: differences between a bibliography entry and the
+# arXiv or Crossref record that are known, checked, and correct in the entry.
+# One per line, tab-separated: key, field, value, reason.
+#   key    the bibliography key
+#   field  the start of the tool's message: "author 5", "author count", "journal", "volume", "pages"
+#   value  the value the record gives, as it appears in the message
+#   reason why the entry is right and the record is not used
+# A mismatch is accepted only if its key, field and value all match a line. Checked 2026-11-13.
+penedo2023refinedweb	author 5	Alessandro Cappelli	The entry follows the author order of the paper; the arXiv metadata lists the authors in a different order.
+penedo2024fineweb	author 3	Loubna Allal	The arXiv metadata drops "Ben" from the surname Ben Allal; the entry gives the full surname.
+poznanski2025olmocr	author count	10	The arXiv metadata of the latest version lists ten authors; the entry follows the author list of the version cited.
+deepseek2024v2	author 8	Chengqi Dengr	The arXiv metadata misspells the surname Deng as "Dengr".
+akhtar2024croissant	author 5	Joan Giner-Miguelez	The entry follows the author order of the paper; the arXiv metadata lists the authors in a different order.
