@@ -41,7 +41,7 @@ NOT_A_RESULT: dict[str, str] = {
     r"simulates shard assignment for one, two,\s+four and eight ranks": "the simulated world sizes and shard count, experiment settings, not results",
 }
 
-MIN_FIGURES: int = 13
+MIN_FIGURES: int = 14
 # Units the notation check's banned phrases may match, declared on purpose: unit regex -> reason.
 NOTATION_OK: dict[str, str] = {}
 # Section labels other chapters link to: label -> the text of the heading it sits directly above.
@@ -60,13 +60,13 @@ ANSWERS = {
     2: [r"kept 850 at 0\.30 and 838 at 0\.27: 12 documents removed", r"count layout: 16 of 17 shards changed",
         r"hash  layout: 12 of 64 shards changed"],
     3: [r"(?m)^ *100 +2\.4% +0\.04% +0\.0%$", r"(?m)^ *1,000 +23\.2% +0\.03% +1\.6%$", r"(?m)^ *10,000 +84\.0% +0\.48% +66\.5%$"],
-    4: [r"removes 62\.0% of the causal pairs", r"changes the context of 75\.6% of the tokens",
-        r"seed 0, gap to document mask ", r"seed 1, gap to mask, EOD opens "],
+    4: [r"removes 62\.0% of the causal pairs", r"changes the context of 75\.6% of the tokens"],
     5: [r"agrees with iterating at 1000 random steps", r"step 5,000: \{'code': 750, 'web': 3500, 'wiki': 750\}",
         r"step 12,345: \{'code': 2586, 'web': 7173, 'wiki': 2586\}"],
     6: [r"global indexing : 0 samples seen twice, 0 never seen", r"shard assignment: 16,000 samples seen twice, 16,000"],
     7: [r"without the index, 2,900 documents", r"differs from v1\.2 in \['s1'\]",
         r"\['model-a', 'model-b', 'model-c'\]"],
+    8: [r"seed 0, gap to document mask ", r"seed 1, gap to mask, EOD opens "],
 }
 # Numbers the prose of each answer states, which must also appear in the listing's printed output
 STATED = {2: ["16 of the 17", "12 of the 64"], 3: ["2.4%", "23.2%", "1.6%", "0.03%", "84.0%", "66.5%"],
@@ -78,7 +78,7 @@ def solutions() -> dict:
 
 
 def test_every_exercise_has_its_answers_listed():
-    assert sorted(solutions()) == sorted(ANSWERS) == list(range(1, 8))
+    assert sorted(solutions()) == sorted(ANSWERS) == list(range(1, 9))
 
 
 @pytest.mark.parametrize("n", sorted(ANSWERS))
