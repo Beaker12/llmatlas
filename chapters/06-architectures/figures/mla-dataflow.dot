@@ -1,0 +1,35 @@
+digraph mla_dataflow {
+  ranksep=0.45; nodesep=0.3; newrank=true;
+  graph [fontname="DejaVu Sans"];
+  node [shape=box, style="filled", fontname="DejaVu Sans"];
+  edge [arrowsize=0.7];
+
+  h   [label=<hidden state h<SUB>i</SUB><BR/>width d = 7,168>, fillcolor="#ffffff", color="#2d3748", penwidth=1.3, fontsize=20];
+
+  c  [label=<<TABLE BORDER="0" CELLSPACING="2"><TR><TD><B>cached</B>: latent c<SUB>i</SUB> = h<SUB>i</SUB> W<SUP>DKV</SUP></TD></TR><TR><TD>d<SUB>c</SUB> = 512</TD></TR></TABLE>>, fillcolor="#fde8d7", color="#c05621", penwidth=2.6, fontsize=20];
+  kr [label=<<TABLE BORDER="0" CELLSPACING="2"><TR><TD><B>cached</B>: rotary key, RoPE applied</TD></TR><TR><TD>d<SUB>rope</SUB> = 64, one for all heads</TD></TR></TABLE>>, fillcolor="#fde8d7", color="#c05621", penwidth=2.6, fontsize=20];
+
+  q   [label=<queries, 128 heads<BR/>128 content + 64 rotary each>, fillcolor="#e6f0fa", color="#2d3748", penwidth=1.3, fontsize=20];
+  kc  [label=<content keys k<SUB>i</SUB> = c<SUB>i</SUB> W<SUP>UK</SUP><BR/>128 per head>, fillcolor="#edf2f7", color="#2d3748", penwidth=1.3, fontsize=20, style="filled,dashed"];
+  v   [label=<values v<SUB>i</SUB> = c<SUB>i</SUB> W<SUP>UV</SUP><BR/>128 per head>, fillcolor="#edf2f7", color="#2d3748", penwidth=1.3, fontsize=20, style="filled,dashed"];
+  att [label=<attention scores<BR/>content part + rotary part>, fillcolor="#e6f0fa", color="#2d3748", penwidth=1.3, fontsize=20];
+  out [label=<weighted values,<BR/>output projection W<SUP>O</SUP>>, fillcolor="#e6f0fa", color="#2d3748", penwidth=1.3, fontsize=20];
+
+  h -> q  [label=<  W<SUP>DQ</SUP>, rank 1,536, then W<SUP>UQ</SUP>  >, fontsize=18, fontcolor="#2d3748", color="#2d3748", penwidth=1.3];
+  h -> c  [color="#2d3748", penwidth=1.3];
+  h -> kr [color="#2d3748", penwidth=1.3];
+  c -> kc [color="#2d3748", penwidth=1.3, style=dashed];
+  c -> v  [color="#2d3748", penwidth=1.3, style=dashed];
+  q -> att [color="#2d3748", penwidth=1.3];
+  kc -> att [color="#2d3748", penwidth=1.3, style=dashed];
+  kr -> att [color="#2d3748", penwidth=1.3];
+  att -> out [color="#2d3748", penwidth=1.3];
+  v -> out [color="#2d3748", penwidth=1.3, style=dashed];
+
+  note [shape=note, fillcolor="#f7fafc", color="#4a5568", penwidth=1.3, fontsize=18,
+        label=<<TABLE BORDER="0" CELLSPACING="3"><TR><TD ALIGN="LEFT">Cache per token per layer: 512 + 64 = 576 elements.</TD></TR><TR><TD ALIGN="LEFT">Dashed: never materialized at inference;</TD></TR><TR><TD ALIGN="LEFT">W<SUP>UK</SUP> is absorbed into the query projection</TD></TR><TR><TD ALIGN="LEFT">and W<SUP>UV</SUP> into the output projection W<SUP>O</SUP>.</TD></TR></TABLE>>];
+  { rank=same; q; c; kr; }
+  { rank=same; kc; v; }
+  kc -> v [style=invis];
+  { rank=same; out; note; }
+}
