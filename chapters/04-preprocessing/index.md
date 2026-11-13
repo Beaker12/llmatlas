@@ -2,6 +2,28 @@
 
 A language model is a compressed description of its training data. Every property you want the model to have, from grammatical fluency to factual reliability to the absence of memorized phone numbers, is either present in the data that reaches the optimizer or absent from the model. This chapter covers the stage between acquiring raw text (Chapter 3) and managing a versioned dataset (Chapter 5): turning billions of crawled, scanned and scraped documents into a corpus that is worth spending compute on.
 
+(sec-ch4-chapter-overview)=
+
+## Chapter Overview
+
+Think of a raw web crawl as the contents of every recycling bin in a city. Somewhere in there is a library's worth of good writing, but it is mixed with navigation menus, advertising, machine-translated spam, the same press release copied onto two thousand sites, scanned invoices with people's addresses on them, and the answer keys to the exams you were planning to grade the model on. Preprocessing is the sorting plant.
+
+**Extraction and normalization** is unpacking. HTML tags, encoding errors and the hundred visually identical ways Unicode can spell a character are removed so that every later stage sees plain, consistent text.
+
+**Language identification** sorts the pile by language, because a filter tuned for English will throw away perfectly good Swahili, and a tokenizer trained on the mixture will be bad at both.
+
+**Quality filtering** is the inspector who glances at each item and discards what is obviously not a document: a page that is ninety percent bullet points, a wall of hashtags, a string of product codes. A few cheap rules remove most of the junk; a trained classifier catches what rules miss.
+
+**Deduplication** finds the two thousand copies of the press release and keeps one. Duplicates waste compute, make the model memorize rather than generalize, and are the main route by which test sets leak into training.
+
+**Privacy and safety filtering** removes what should never have been collected: email addresses, phone numbers, credit-card numbers and content that would make the model unsafe to deploy.
+
+**Decontamination** checks the corpus against the benchmarks the model will be evaluated on, so that a high score means the model learned something rather than that it has seen the answers.
+
+**Pipeline engineering** makes all of this run across thousands of machines, in a fixed order, with a count of what each stage dropped and why, so that the corpus can be rebuilt, audited and improved.
+
+The theme throughout is that none of these decisions is neutral. Every filter encodes a view of what "good text" is, and that view is inherited by the model. The chapter therefore pairs each technique with the way its effect is measured.
+
 (sec-ch4-learning-objectives)=
 
 ## Learning Objectives
@@ -30,28 +52,6 @@ The accompanying notebook, [Preprocessing Pipeline Demo](examples/preprocessing_
 - A complete multi-stage pipeline with per-stage drop accounting ({ref}`nb-prep-pipeline`)
 
 Everything runs on a CPU in well under a minute and uses only the standard library, NumPy and Matplotlib.
-
-(sec-ch4-chapter-overview)=
-
-## Chapter Overview
-
-Think of a raw web crawl as the contents of every recycling bin in a city. Somewhere in there is a library's worth of good writing, but it is mixed with navigation menus, advertising, machine-translated spam, the same press release copied onto two thousand sites, scanned invoices with people's addresses on them, and the answer keys to the exams you were planning to grade the model on. Preprocessing is the sorting plant.
-
-**Extraction and normalization** is unpacking. HTML tags, encoding errors and the hundred visually identical ways Unicode can spell a character are removed so that every later stage sees plain, consistent text.
-
-**Language identification** sorts the pile by language, because a filter tuned for English will throw away perfectly good Swahili, and a tokenizer trained on the mixture will be bad at both.
-
-**Quality filtering** is the inspector who glances at each item and discards what is obviously not a document: a page that is ninety percent bullet points, a wall of hashtags, a string of product codes. A few cheap rules remove most of the junk; a trained classifier catches what rules miss.
-
-**Deduplication** finds the two thousand copies of the press release and keeps one. Duplicates waste compute, make the model memorize rather than generalize, and are the main route by which test sets leak into training.
-
-**Privacy and safety filtering** removes what should never have been collected: email addresses, phone numbers, credit-card numbers and content that would make the model unsafe to deploy.
-
-**Decontamination** checks the corpus against the benchmarks the model will be evaluated on, so that a high score means the model learned something rather than that it has seen the answers.
-
-**Pipeline engineering** makes all of this run across thousands of machines, in a fixed order, with a count of what each stage dropped and why, so that the corpus can be rebuilt, audited and improved.
-
-The theme throughout is that none of these decisions is neutral. Every filter encodes a view of what "good text" is, and that view is inherited by the model. The chapter therefore pairs each technique with the way its effect is measured.
 
 (sec-ch4-preprocessing-decides-model-learns)=
 
@@ -1911,17 +1911,313 @@ The last step formats the corpus for the training loader, which Chapter 5 covers
 The notebook section {ref}`nb-prep-pipeline` assembles normalization, language identification, the quality and repetition filters, exact and MinHash deduplication, redaction and decontamination into one `Pipeline`, runs it over the synthetic corpus and prints the per-stage drop report.
 ```
 
+(sec-ch4-summary)=
+
+## Summary
+
+- **Most of a crawl is discarded, and the discarding is a modeling decision.** Each filter encodes a view of what good text is, and the model inherits it; every technique in this chapter is therefore paired with a way to measure its effect ({ref}`sec-ch4-preprocessing-decides-model-learns`).
+- **Extraction and normalization come first** because every later stage compares strings: boilerplate is separated from main text by block-level statistics such as word count and link density, and Unicode normalization (NFC by default, NFKC where compatibility characters should fold) makes equal text compare equal ({ref}`sec-ch4-text-extraction-normalization`).
+- **Language identification** assigns each document a language and a confidence, and the threshold on that confidence decides how much low-resource and mixed-language text survives ({ref}`sec-ch4-language-identification`).
+- **Quality filters run from cheap to expensive:** heuristic rules and repetition measures remove pages that are not prose, a reference language model's perplexity scores fluency, and a classifier trained against a curated positive set selects for resemblance to it; each is judged by training small models with and without it at the same token budget and reporting the retained fraction ({ref}`sec-ch4-quality-filtering`).
+- **Deduplication works at three granularities:** exact hashing removes identical documents, lines and paragraphs; MinHash with LSH banding finds near-duplicates, with the band count $b$ and rows per band $r$ setting the similarity threshold of the S-curve $1 - (1 - J^r)^b$; and suffix arrays find repeated substrings inside documents. Whether deduplication runs per snapshot or across the whole corpus changes what is kept ({ref}`sec-ch4-deduplication`).
+- **Privacy and safety filtering** replaces personal data with placeholders, drops documents dense with it, and removes toxic or unlicensed content; pattern matching is cheap but its precision has to be measured on text full of look-alike numbers ({ref}`sec-ch4-privacy-toxicity-safety-filtering`).
+- **Decontamination** removes training text that shares long $n$-grams with evaluation sets; it misses paraphrases and translations, so it is reported as a procedure with its parameters and combined with fresh test sets ({ref}`sec-ch4-benchmark-decontamination`).
+- **A pipeline is a fixed, sharded, idempotent sequence of stages** that records what each stage dropped and why, so that the corpus can be rebuilt and audited ({ref}`sec-ch4-assembling-pipeline`).
+
 (sec-ch4-exercises)=
 
 ## Exercises
 
-1. **Threshold sensitivity.** Take the Gopher quality filter and sweep the minimum word count from 10 to 200 on a sample of web text. Plot the fraction retained and inspect twenty rejected documents at each setting. At what threshold do you start rejecting documents you would want to keep?
-1. **Repetition definitions.** Change `repetition_stats` to count overlapping n-gram occurrences and compare its decisions with the non-overlapping (skip-ahead) version on a sample. How many documents change category? Which version matches your own judgment better?
-1. **LSH curve.** For 128 permutations, plot $1 - (1 - J^r)^b$ for $(b, r) \in \{(8, 16), (16, 8), (32, 4)\}$ and mark the similarity at which each crosses 0.5. Confirm the curve empirically with the notebook's MinHash implementation by generating pairs of documents with controlled overlap.
-1. **Which copy to keep.** Build a cluster of near-duplicate documents (an article with and without its comment thread, with and without a navigation menu, truncated). For each "keep the longest", "keep the shortest" and "keep the earliest" policy, say what the model would see. Which policy would you choose for news? For documentation?
-1. **Phone numbers of the world.** Extend the redaction patterns to handle UK, German and Indian phone formats. Measure precision on a sample of text containing version numbers, ISBNs and timestamps.
-1. **Decontamination by paraphrase.** Paraphrase ten benchmark questions by hand and check whether the 13-gram index catches them. Then try 8-grams. What is the false-positive rate on innocent text at each $n$?
-1. **A filter ablation.** Using a small model and a training budget you can afford (even a few million tokens on a CPU gives a signal on validation perplexity), compare training on a corpus with and without the repetition filter. Report retained fraction alongside the result.
+1. **What a length threshold costs.** Gopher drops documents with fewer than 50 words ({ref}`sec-ch4-heuristic-rules`). Suppose, for illustration, that the word counts of crawled documents follow a log-normal distribution with a median of 300 words and a log-scale standard deviation of 1.2. For minimum word counts of 10, 50, 100 and 200, what fraction of documents survives, and what fraction of words? What does the gap between the two tell you about how to choose the threshold?
+
+````{admonition} Solution 1
+:class: dropdown
+
+If the logarithm of the word count is normal with mean $\ln 300$ and standard deviation 1.2, a minimum word count keeps the documents whose logarithm lies more than (ln minimum − ln 300) / 1.2 standard deviations from the mean, and the fraction kept is one minus the standard normal distribution function at that point (`1 - normal_cdf(z)` in the listing). The fraction of *words* kept is the same expression evaluated 1.2 standard deviations lower, because weighting a log-normal density by the word count shifts its log-mean up by the variance, 1.2 squared, which is 1.2 standard deviations. The listing evaluates both and checks them against 200,000 simulated documents.
+
+```python
+import math
+
+import numpy as np
+
+MEDIAN, SPREAD = 300, 1.2  # median word count and log-scale standard deviation (illustrative)
+
+
+def normal_cdf(z: float) -> float:
+    return 0.5 * (1 + math.erf(z / math.sqrt(2)))
+
+
+lengths = np.random.default_rng(0).lognormal(math.log(MEDIAN), SPREAD, size=200_000)
+kept = {}
+print("min words  documents kept  words kept")
+for t in (10, 50, 100, 200):
+    z = (math.log(t) - math.log(MEDIAN)) / SPREAD
+    kept[t] = (1 - normal_cdf(z), 1 - normal_cdf(z - SPREAD))
+    assert abs((lengths >= t).mean() - kept[t][0]) < 0.005                      # simulation agrees
+    assert abs(lengths[lengths >= t].sum() / lengths.sum() - kept[t][1]) < 0.005
+    print(f"{t:9d}  {kept[t][0]:14.3f}  {kept[t][1]:10.4f}")
+```
+
+% output
+
+```text
+min words  documents kept  words kept
+       10           0.998      1.0000
+       50           0.932      0.9965
+      100           0.820      0.9828
+      200           0.632      0.9380
+```
+
+Gopher's threshold of 50 removes 6.8% of the documents but only 0.35% of the words; even a threshold of 200 removes over a third of the documents and only 6.2% of the words. Under any right-skewed length distribution a minimum length is nearly free in tokens, so the retained-fraction curve cannot tell you where to set it. The decision rests on what the rejected short pages are (error pages, captions, product stubs, or short poems and definitions you would want to keep), and only reading a sample of them at each setting answers that.
+````
+
+2. **Repetition definitions.** The duplicate $n$-gram measure in {ref}`sec-ch4-repetition-filters` skips ahead by $n$ words after a repeat. A variant counts every overlapping window that has been seen before. Compute both versions of the duplicate 5-gram fraction for the string `"a b c d e " * 4` and for a 99-word news paragraph in which one 12-word sentence appears twice. Which version keeps the paragraph under the 0.15 threshold, and why can the overlapping version exceed 1?
+
+````{admonition} Solution 2
+:class: dropdown
+
+```python
+def dup_ngram_char_frac(text: str, n: int, overlapping: bool) -> float:
+    """Characters in repeated word n-grams over len(text): skip ahead after a repeat, or count every window."""
+    words = text.split()
+    seen, dup_chars, i = set(), 0, 0
+    while i < len(words) - n + 1:
+        gram = "".join(words[i : i + n])
+        if gram in seen:
+            dup_chars += len(gram)
+            i += 1 if overlapping else n
+        else:
+            seen.add(gram)
+            i += 1
+    return dup_chars / len(text)
+
+
+loop = "a b c d e " * 4
+sentence = "The council will publish the full minutes of the meeting next week. "
+news = (
+    "Residents packed the hall on Thursday evening to hear the plan for the old rail yard. "
+    + sentence
+    + "Several speakers asked how the site would be cleaned, who would pay for it, and whether "
+    "the playing fields promised in the first draft had been dropped. The planning officer said "
+    "the fields remain, but on a smaller plot than before, and that a traffic survey is under way. "
+    + sentence
+    + "A vote is expected before the end of the year."
+)
+fracs = {}
+for name, text in (("loop", loop), ("news", news)):
+    fracs[name] = (dup_ngram_char_frac(text, 5, False), dup_ngram_char_frac(text, 5, True))
+    print(f"{name}: {len(text.split())} words, {len(text)} characters; "
+          f"skip-ahead {fracs[name][0]:.3f}, every window {fracs[name][1]:.3f}")
+assert fracs["news"][0] <= 0.15 < fracs["news"][1] and fracs["loop"][1] > 1
+```
+
+% output
+
+```text
+loop: 20 words, 40 characters; skip-ahead 0.375, every window 1.375
+news: 99 words, 541 characters; skip-ahead 0.087, every window 0.338
+```
+
+In the loop, the skip-ahead scan meets the passage "abcde" three more times and counts its 5 characters each time: 15 of 40 characters, 0.375. The overlapping scan counts all 11 windows from the sixth word on, each 5 characters long, so 55 characters are counted against a 40-character text: every character after the first passage is counted up to five times, and the fraction exceeds 1. In the news paragraph, the repeated 12-word sentence holds 8 overlapping 5-grams; the skip-ahead scan counts two of them (words 1 to 5 and 6 to 10 of the repeat) and the overlapping scan all eight, so the overlapping value is about four times larger. The skip-ahead version keeps the paragraph (0.087) and the overlapping version drops it (0.338), although one repeated sentence in a short news item is ordinary. The Gopher thresholds were set for the skip-ahead count; the overlapping count would need thresholds several times higher to make the same decisions.
+````
+
+3. **LSH curve.** With $n_{hash} = 128$, the probability that two documents of Jaccard similarity $J$ share at least one LSH bucket is $1 - (1 - J^r)^b$ ({ref}`sec-ch4-dedup-scope`). For $(b, r) \in \{(8, 16), (16, 8), (32, 4)\}$, find the similarity at which this probability is 0.5, and confirm it by simulation: build two sets with a controlled overlap whose Jaccard similarity is that value and count how often their MinHash signatures share a band.
+
+````{admonition} Solution 3
+:class: dropdown
+
+Setting $1 - (1 - J^r)^b = 0.5$ and solving gives $J = (1 - 0.5^{1/b})^{1/r}$. The simulation uses two 500-element sets that share `shared` elements, so their Jaccard similarity is `shared / (1000 - shared)`, and draws a fresh set of 128 random permutations of the 2,000 possible elements for each of 300 trials.
+
+```python
+import numpy as np
+
+N_HASH, UNIVERSE, SIZE, TRIALS = 128, 2000, 500, 300
+rng = np.random.default_rng(0)
+
+
+def crossing(b: int, r: int) -> float:
+    """Jaccard similarity at which 1 - (1 - J**r)**b equals 0.5."""
+    return (1 - 0.5 ** (1 / b)) ** (1 / r)
+
+
+def candidate_rate(shared: int, b: int, r: int) -> float:
+    """Fraction of trials in which two SIZE-element sets with `shared` common elements share a band."""
+    x = np.arange(SIZE)
+    y = np.concatenate([x[:shared], SIZE + np.arange(SIZE - shared)])
+    hits = 0
+    for _ in range(TRIALS):
+        ranks = rng.permuted(np.tile(np.arange(UNIVERSE), (N_HASH, 1)), axis=1)  # one permutation per row
+        sig_x, sig_y = ranks[:, x].min(axis=1), ranks[:, y].min(axis=1)        # MinHash signatures
+        hits += any((sig_x[k * r : (k + 1) * r] == sig_y[k * r : (k + 1) * r]).all() for k in range(b))
+    return hits / TRIALS
+
+
+results = {}
+for b, r in ((8, 16), (16, 8), (32, 4)):
+    shared = round(2 * SIZE * crossing(b, r) / (1 + crossing(b, r)))
+    j = shared / (2 * SIZE - shared)
+    results[(b, r)] = (crossing(b, r), j, 1 - (1 - j**r) ** b, candidate_rate(shared, b, r))
+    assert abs(results[(b, r)][3] - results[(b, r)][2]) < 0.1   # within about three standard errors
+    print(f"b={b:2d}, r={r:2d}: crosses 0.5 at J = {results[(b, r)][0]:.3f}; simulated at J = {j:.3f}: "
+          f"formula {results[(b, r)][2]:.3f}, observed {results[(b, r)][3]:.3f}")
+```
+
+% output
+
+```text
+b= 8, r=16: crosses 0.5 at J = 0.856; simulated at J = 0.855: formula 0.496, observed 0.490
+b=16, r= 8: crosses 0.5 at J = 0.674; simulated at J = 0.672: formula 0.494, observed 0.517
+b=32, r= 4: crosses 0.5 at J = 0.383; simulated at J = 0.383: formula 0.502, observed 0.490
+```
+
+The three settings spend the same 128 hash values on very different thresholds: few long bands (8 by 16) only pair documents that are near-identical, and many short bands (32 by 4) pair documents that share about a third of their shingles. Each observed rate is within the sampling error of the formula, which with 300 trials is about 0.03. The crossing point is a little below the often-quoted approximation $(1/b)^{1/r}$ (0.878, 0.707 and 0.420 for the three settings), which lies close to where the curve is steepest rather than where it reaches 0.5.
+````
+
+4. **Which copy to keep.** A cluster of near-duplicates holds four versions of one news article: (A) the 800-word article followed by a 1,200-word comment thread, crawled on 2 March; (B) the clean 800-word article, crawled on 3 March; (C) the article with a 150-word navigation menu, 950 words, crawled on 5 March; and (D) a 300-word syndicated teaser of its opening, crawled on 28 February. Which version does each of the policies "keep the longest", "keep the shortest" and "keep the earliest" keep, and what does the model then see? Which policy would you choose for news, and which for software documentation?
+
+```{admonition} Solution 4
+:class: dropdown
+
+"Keep the longest" keeps A: the model sees the article, but 1,200 of the 2,000 words (60%) are unedited comments. "Keep the shortest" and "keep the earliest" both keep D: the model sees only the first 300 of the article's 800 words. None of the three keeps B, the version a reader would choose.
+
+For news, the useful rule is to keep the longest version *after* boilerplate removal, or the version a quality classifier scores highest: extraction strips the menu from C and, with a comment-aware extractor, the thread from A, after which A, B and C are the same 800 words and any of them is a good choice, while D is ruled out as shorter. Crawl date says little about which copy is complete: a teaser or a syndicated copy can be crawled before the original, as D was here.
+
+For software documentation, the latest version is usually right, because older copies describe superseded APIs and teach the model calls that no longer exist; "keep the earliest" is the worst choice. Keep the most recent crawl, or the copy whose URL names the newest version when the site exposes one.
+```
+
+5. **Phone numbers of the world.** The `PHONE` pattern in {ref}`sec-ch4-personal-data` matches North American numbers. Extend it to UK, German and Indian formats. Test it on nine phone numbers (three UK, three German, two Indian, one North American) and nine distractors (version numbers, ISBNs, timestamps, an IP address, page ranges, an order number and a serial number), each placed in a short sentence, and report recall and precision for the original pattern and the extended one.
+
+````{admonition} Solution 5
+:class: dropdown
+
+The extended pattern adds one alternative per country and refuses a match that touches a word character, a dot, a colon, a slash or a hyphen on either side, which is what separates a phone number from a version string, a timestamp or a path.
+
+```python
+import re
+
+US_ONLY = re.compile(r"(?<!\w)(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}(?!\w)")
+PHONE = re.compile(
+    r"(?<![\w.:/-])(?:"
+    r"(?:\+44\s?|0)(?:\d{4}\s?\d{6}|\d{3}\s?\d{3}\s?\d{4}|\d{2}\s?\d{4}\s?\d{4})"  # UK
+    r"|(?:\+49\s?|0)\d{2,5}[\s/-]?\d{3,8}(?:-\d{1,4})?"                           # Germany
+    r"|(?:\+91[\s-]?|0)?[6-9]\d{4}[\s-]?\d{5}"                                    # India, mobile
+    r"|(?:\+1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]\d{4}"                        # North America
+    r")(?![\w.:/-])"
+)
+phones = ["+44 20 7946 0958", "020 7946 0958", "07700 900123", "+49 30 901820", "030 901820-12",
+          "089/12345678", "+91 98765 43210", "098765 43210", "(555) 123-4567"]
+distractors = ["version 10.2.4 build 2003", "ISBN 978-0-306-40615-7", "ISBN 0306406152",
+               "2024-03-15 14:22:05", "order 4402719911", "1999-2004", "192.168.1.20",
+               "pages 2203-2241", "serial 30901820"]
+
+scores = {}
+for name, pattern in (("original", US_ONLY), ("extended", PHONE)):
+    found = sum(bool(pattern.search(f"Call {p} today.")) for p in phones)
+    false = [d for d in distractors if pattern.search(f"See {d} for details.")]
+    scores[name] = (found / len(phones), found / (found + len(false)))
+    print(f"{name}: recall {found}/{len(phones)}, precision {found}/{found + len(false)}; false matches {false}")
+assert scores["extended"] == (1.0, 0.9) and scores["original"][0] < 0.2
+```
+
+% output
+
+```text
+original: recall 1/9, precision 1/3; false matches ['ISBN 0306406152', 'order 4402719911']
+extended: recall 9/9, precision 9/10; false matches ['ISBN 0306406152']
+```
+
+The original pattern finds only the North American number and fires on two bare ten-digit strings. The extended one finds all nine numbers, and its one false match is a ten-digit ISBN that begins with 0, which the German alternative (a leading 0 followed by 5 to 13 digits) cannot tell from a Berlin or Munich number. No pattern over digits alone can: the fix is context, such as skipping a number preceded by "ISBN" or validating the ISBN check digit. On real web text, where version strings and identifiers far outnumber phone numbers, the precision of the German alternative would be lower than this small sample shows, which is why production pipelines pair patterns with context rules or a named-entity model.
+````
+
+6. **Decontamination by paraphrase.** A benchmark contains the question "Which of the following is the best explanation for why the sky appears blue during the day?" Using `contamination_index` and `contaminated_fraction` from {ref}`sec-ch4-n-gram-overlap`, score four training documents at $n = 13$ and $n = 8$: a verbatim copy, a light paraphrase that keeps the first half of the question word for word, a full rewording, and an innocent sentence that happens to begin with the same nine words. Which does each $n$ flag?
+
+````{admonition} Solution 6
+:class: dropdown
+
+The three functions are those of {ref}`sec-ch4-n-gram-overlap`, repeated so that the listing runs on its own.
+
+```python
+import re
+
+
+def ngram_set(text: str, n: int) -> set:
+    words = re.findall(r"\w+", text.lower())
+    return {tuple(words[i : i + n]) for i in range(max(0, len(words) - n + 1))}
+
+
+def contamination_index(benchmark_examples, n: int = 13) -> dict:
+    """Map n -> set of n-grams. An example shorter than n words is indexed whole,
+    under its own length, so that it can still be matched."""
+    index: dict = {}
+    for example in benchmark_examples:
+        words = re.findall(r"\w+", example.lower())
+        size = min(n, len(words))
+        if size:
+            index.setdefault(size, set()).update(ngram_set(example, size))
+    return index
+
+
+def contaminated_fraction(doc: str, index: dict) -> float:
+    """Largest fraction, over the index's n-gram sizes, of the document's n-grams
+    that appear in the benchmark index."""
+    best = 0.0
+    for n, grams in index.items():
+        doc_grams = ngram_set(doc, n)
+        if doc_grams:
+            best = max(best, len(doc_grams & grams) / len(doc_grams))
+    return best
+
+
+question = "Which of the following is the best explanation for why the sky appears blue during the day?"
+docs = {
+    "verbatim": "Quiz: which of the following is the best explanation for why the sky appears blue during the day? Rayleigh.",
+    "paraphrase": "Quiz: which of the following is the best explanation for why the daytime sky looks blue to us? Rayleigh.",
+    "reworded": "Quiz: why does the sky look blue in daytime, and what is the best explanation? Rayleigh.",
+    "innocent": "Which of the following is the best explanation for the result is left to the reader.",
+}
+scores = {n: {name: contaminated_fraction(doc, contamination_index([question], n)) for name, doc in docs.items()}
+          for n in (13, 8)}
+for n, row in scores.items():
+    print(f"n={n:2d}: " + ", ".join(f"{name} {value:.3f}" for name, value in row.items()))
+assert [name for name, v in scores[13].items() if v > 0] == ["verbatim"]
+assert [name for name, v in scores[8].items() if v > 0] == ["verbatim", "paraphrase", "innocent"]
+```
+
+% output
+
+```text
+n=13: verbatim 0.714, paraphrase 0.000, reworded 0.000, innocent 0.000
+n= 8: verbatim 0.833, paraphrase 0.333, reworded 0.000, innocent 0.222
+```
+
+At $n = 13$ only the verbatim copy is flagged: the paraphrase keeps nine consecutive words of the question ("which of the following is the best explanation for why"), too few for a 13-gram. At $n = 8$ those nine words contain two 8-grams, so the paraphrase is caught, and so is the innocent sentence, which shares the same nine words and nothing else. Shortening $n$ trades missed paraphrases for false positives on stock phrases, and the full rewording is missed at both lengths. This is the trade-off every choice of $n$ makes, and the reason {ref}`sec-ch4-overlap-misses` recommends fresh test sets rather than a shorter $n$.
+````
+
+7. **Designing a filter ablation.** An unfiltered corpus holds 10 billion tokens and the repetition filter keeps 82% of them. You will train two small models, one on each version, as in {ref}`sec-ch4-measuring-whether-filter-helps`. How many epochs of its corpus does each model see at a budget of 2 billion training tokens, and at 20 billion? What third model separates the effect of the filter from the effect of having less data?
+
+````{admonition} Solution 7
+:class: dropdown
+
+Both models are trained on the same number of tokens, so that compute is equal and only the data differ; the number of epochs is the budget divided by the corpus size.
+
+```python
+corpus = {"unfiltered": 10e9, "filtered": 0.82 * 10e9}
+epochs = {}
+for budget in (2e9, 20e9):
+    epochs[budget] = {name: budget / size for name, size in corpus.items()}
+    print(f"budget {budget / 1e9:.0f}B tokens: " + ", ".join(f"{k} {v:.3g} epochs" for k, v in epochs[budget].items()))
+assert epochs[2e9]["filtered"] < 1 and 2 < epochs[20e9]["filtered"] < 4
+```
+
+% output
+
+```text
+budget 2B tokens: unfiltered 0.2 epochs, filtered 0.244 epochs
+budget 20B tokens: unfiltered 2 epochs, filtered 2.44 epochs
+```
+
+At 2 billion tokens neither model sees any document twice, and a difference in benchmark scores comes from the data. At 20 billion the filtered model repeats its corpus 2.44 times against 2 for the unfiltered one; by the result in {ref}`sec-ch3-epochs`, fewer than four epochs cost little, so the comparison is still fair, but at a much larger budget the filtered arm would start to pay for repetition and the ablation would understate the filter. The third model trains on a random 82% of the unfiltered corpus, at the same budget. If the filtered model beats it, the filter chose better documents; if the two tie, the gain over the full corpus (if any) came from the size change alone, which is the keep-rate accounting point of {ref}`sec-ch4-measuring-whether-filter-helps`. Report the retained fraction, 0.82, beside every score.
+````
 
 (sec-ch4-further-reading)=
 
