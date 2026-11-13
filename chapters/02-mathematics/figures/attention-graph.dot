@@ -11,8 +11,8 @@ digraph attention_graph {
   K  [label="K\nn × dₖ", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
   S  [label="S\n= QKᵀ/√dₖ\nn × n", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
   A  [label="A\n= softmax(S)\nn × n", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
-  V  [label="V\nn × dₖ", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
-  O  [label="O = AV\nn × dₖ", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
+  V  [label="V\nn × dᵥ", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
+  O  [label="O = AV\nn × dᵥ", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
 
   dQ [label="∂ℒ/∂Q\n= (∂ℒ/∂S) K\n÷ √dₖ", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#fdf1e6"];
   dK [label="∂ℒ/∂K\n= (∂ℒ/∂S)ᵀ Q\n÷ √dₖ", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#fdf1e6"];
