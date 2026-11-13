@@ -38,14 +38,17 @@ def function(path: Path, name: str) -> str:
 
 
 CELLS: list[tuple[str, str]] = []
+TAGS: dict[int, list[str]] = {}  # cell index -> metadata tags; `figure:<slug>` marks a plot the chapter shows
 
 
 def md(text: str) -> None:
     CELLS.append(("markdown", text.strip("\n")))
 
 
-def code(text: str) -> None:
+def code(text: str, tags: tuple[str, ...] = ()) -> None:
     CELLS.append(("code", text.strip("\n")))
+    if tags:
+        TAGS[len(CELLS) - 1] = list(tags)
 
 
 md(r"""
@@ -252,15 +255,30 @@ kv_bytes = {repo: kv for repo, *_, kv in rows}
 assert kv_bytes["meta-llama/Llama-3.1-8B"] == 131072 and kv_bytes["deepseek-ai/DeepSeek-V3"] == 70272
 assert kv_bytes["deepseek-ai/DeepSeek-V3"] == 61 * (512 + 64) * 2  # MLA: latent + rotary key per layer
 
+def attention_family(cfg):
+    if cfg["model_type"].startswith("deepseek"):
+        return "MLA"
+    n_heads = cfg["num_attention_heads"]
+    return "MHA" if (cfg.get("num_key_value_heads") or n_heads) == n_heads else "GQA"
+
+
+family_colors = {"MHA": "#c44e52", "GQA": "#4c72b0", "MLA": "#55a868"}
 order = sorted(kv_bytes, key=kv_bytes.get)
-fig, ax = plt.subplots(figsize=(7, 3.6))
-ax.barh([name.split("/")[1] for name in order], [kv_bytes[name] / 1024 for name in order], color="#4c72b0")
+kib = [kv_bytes[name] / 1024 for name in order]
+fig, ax = plt.subplots(figsize=(7, 4.2))
+ax.barh([name.split("/")[1] for name in order], kib,
+        color=[family_colors[attention_family(ALL_CONFIGS[name])] for name in order])
+for row, value in enumerate(kib):
+    ax.text(value * 1.06, row, f"{value:.4g}", va="center", fontsize=9)
 ax.set_xscale("log")
+ax.set_xlim(10, 2000)
 ax.set_xlabel("KV cache per token, all layers (KiB, bf16)")
 ax.set_title("What one token costs in the KV cache")
+ax.legend([plt.Rectangle((0, 0), 1, 1, color=c) for c in family_colors.values()], list(family_colors),
+          loc="lower right", fontsize=9)
 plt.tight_layout()
 plt.show()
-''')
+''', tags=("figure:kv-bytes",))
 
 md(r"""
 (nb-arch-block)=
@@ -860,8 +878,11 @@ def build() -> None:
         "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
         "language_info": {"name": "python"},
     }
-    for kind, text in CELLS:
-        nb.cells.append(nbf.v4.new_markdown_cell(text) if kind == "markdown" else nbf.v4.new_code_cell(text))
+    for index, (kind, text) in enumerate(CELLS):
+        cell = nbf.v4.new_markdown_cell(text) if kind == "markdown" else nbf.v4.new_code_cell(text)
+        if index in TAGS:
+            cell.metadata["tags"] = TAGS[index]
+        nb.cells.append(cell)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     nbf.write(nb, OUT)
     print(f"wrote {OUT.relative_to(ROOT)} with {len(nb.cells)} cells")
