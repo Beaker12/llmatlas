@@ -201,7 +201,7 @@ Two trends run through the table. Later corpora re-extract from WARC with a boil
 
 ```{admonition} A Slice of the Crawl
 :class: tip
-The notebook section {ref}`nb-acq-crawl` downloads the manifest of a current snapshot, range-fetches the first 256 KB of its first WARC file, parses the records, tabulates record types and declared payload types, and shows the HTTP response and HTML of one page, so that you can see exactly what a crawl contains before any cleaning.
+The notebook section {ref}`nb-acq-crawl` downloads the manifest of a current snapshot, range-fetches 256 KB from a WARC file and byte offset drawn with a fixed seed, parses the records, tabulates record types and declared payload types, and shows the HTTP response and HTML of one page, so that you can see exactly what a crawl contains before any cleaning.
 ```
 
 (sec-ch3-crawling-web-yourself)=
