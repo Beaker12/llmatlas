@@ -97,20 +97,22 @@ The caveat, which {ref}`sec-ch4-measuring-whether-filter-helps` returns to, is t
 
 Most published pipelines are a variation of the following sequence. The order matters because the cheap stages run first and shrink the input for the expensive ones, and because some stages assume the output of others (deduplication over normalized text finds more duplicates than deduplication over raw HTML).
 
-| Stage                   | Typical cost per document | Typical drop rate | Depends on                       |
-| ----------------------- | ------------------------- | ----------------- | -------------------------------- |
-| URL and domain blocking | Negligible                | 1 to 10%          | Nothing                          |
-| Text extraction         | Milliseconds              | Reduces size, not count | Raw HTML                   |
-| Normalization           | Microseconds              | None              | Extracted text                   |
-| Language identification | Microseconds              | 50 to 90%         | Normalized text                  |
-| Repetition and quality rules | Microseconds         | 10 to 40%         | Language (thresholds per language) |
-| Exact deduplication     | Microseconds              | 10 to 30%         | Normalized text                  |
-| Near deduplication      | Milliseconds plus a global join | 10 to 50%   | Everything above                 |
-| Classifier scoring      | Milliseconds (CPU) to GPU time | 50 to 90% if used as a hard filter | Everything above |
-| PII and toxicity        | Microseconds to milliseconds | Modifies rather than drops | Final text            |
-| Decontamination         | Microseconds              | Under 1%          | Benchmark set                    |
+| Stage                   | Relative cost (this chapter's ordering)        | Removed in RefinedWeb  | Depends on                       |
+| ----------------------- | ---------------------------------------------- | ---------------------- | -------------------------------- |
+| URL and domain blocking | Lowest: reads the URL only                     | 2.2% of documents      | Nothing                          |
+| Text extraction         | Moderate: parses the whole HTML page           | 1.5% of documents      | Raw HTML                         |
+| Normalization           | Low: one pass over the text                    | Not a separate stage   | Extracted text                   |
+| Language identification | Low: one small classifier call                 | 50.7% of documents     | Normalized text                  |
+| Repetition and quality rules | Low: counts over words and lines          | 24.3%, 16.2% and 22.6% of tokens (repetition, document rules, line corrections) | Language (thresholds per language) |
+| Exact deduplication     | Low per document, plus a global lookup         | 18.5% of tokens        | Normalized text                  |
+| Near deduplication      | Moderate per document, plus a global join      | 37.9% of tokens        | Everything above                 |
+| Classifier scoring      | Highest: a model run per document              | Not used               | Everything above                 |
+| PII and toxicity        | Low to moderate: patterns or a classifier      | Not a separate stage   | Final text                       |
+| Decontamination         | Low per document, plus a benchmark index       | Not a separate stage   | Benchmark set                    |
 
-The percentages compound. A document that survives language identification with probability 0.3, quality rules with 0.7 and deduplication with 0.6 has about a one in eight chance of being trained on. That factor of eight is not what turns petabytes of crawl into terabytes of corpus. Measured in bytes, most of that reduction happens before any filter runs, at text extraction: a WARC record stores the whole HTTP response (headers, markup, scripts and styles), and a Common Crawl snapshot of about 90 TB of compressed WARC files yields about 7 TB of compressed extracted text, under a tenth of the bytes ({ref}`sec-ch3-snapshots-segments-files`). The funnel below does not show that drop, because it counts documents for its first three stages, extraction included, and tokens after that, never bytes. {numref}`fig-ch4-retention-funnel` shows the same compounding in a published pipeline.
+The removal shares are RefinedWeb's, read from Figure 2 of {cite:t}`penedo2023refinedweb` (the data behind {numref}`fig-ch4-retention-funnel`): each is the share of the stage's own input that the stage removed, in documents for the first three stages and in tokens after them, and other pipelines remove different shares because their inputs and thresholds differ. Text extraction removes documents as well as bytes, the 1.5% of pages with no text left to extract. The cost column is not a measurement but this chapter's ranking of what each stage must read and compute.
+
+The percentages compound. In RefinedWeb a document that has reached language identification survives it with probability 0.49, the three rule stages together with 0.49 and the two deduplication stages together with 0.50 (each a ratio of the kept shares in Figure 2), so it has about a one in eight chance of being trained on. That factor of eight is not what turns petabytes of crawl into terabytes of corpus. Measured in bytes, most of that reduction happens before any filter runs, at text extraction: a WARC record stores the whole HTTP response (headers, markup, scripts and styles), and a Common Crawl snapshot of about 90 TB of compressed WARC files yields about 7 TB of compressed extracted text, under a tenth of the bytes ({ref}`sec-ch3-snapshots-segments-files`). The funnel below does not show that drop, because it counts documents for its first three stages, extraction included, and tokens after that, never bytes. {numref}`fig-ch4-retention-funnel` shows the same compounding in a published pipeline.
 
 ```{figure} figures/retention-funnel.*
 :name: fig-ch4-retention-funnel
@@ -258,7 +260,7 @@ The four Unicode normalization forms applied to four inputs, computed with Pytho
 
 Beyond normalization, pipelines commonly remove or replace the following:
 
-- Control characters other than newline and tab, including the null byte, which breaks several downstream tools
+- Control characters, including the null byte, which breaks several downstream tools. The other line breaks (carriage return, the next-line character U+0085 and the line and paragraph separators U+2028 and U+2029) are first turned into newlines, since U+0085 is itself in the control range and deleting it would join two lines. Tabs are not deleted but folded, with other runs of horizontal whitespace, into one space; a pipeline that must keep tab-separated tables or tab-indented code drops `\t` from that pattern
 - The zero-width space U+200B, the word joiner U+2060 and a byte-order mark U+FEFF that appears mid-text, all invisible but able to change tokenization
 - The zero-width non-joiner U+200C and zero-width joiner U+200D only in English-only corpora: the Unicode Standard notes that in Indic scripts they "may be of orthographic significance" and that the non-joiner is sometimes required in writing Persian {cite}`unicode2022standard`, so the function below keeps them unless asked to strip them
 - Private-use and unassigned code points
@@ -270,6 +272,7 @@ import unicodedata
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 _ZERO_WIDTH = re.compile(r"[\u200b\u2060\ufeff]")
+_LINE_BREAKS = re.compile(r"\r\n|[\r\x85\u2028\u2029]")  # CR, NEL, line and paragraph separators
 _JOINERS = re.compile(r"[\u200c\u200d]")  # ZWNJ and ZWJ: part of the spelling in Persian and Indic scripts
 _MULTI_SPACE = re.compile(r"[ \t\u00a0]+")
 _MULTI_NEWLINE = re.compile(r"\n{3,}")
@@ -284,11 +287,11 @@ def normalize_text(text: str, form: str = "NFC", strip_joiners: bool = False) ->
     is set, an option meant for English-only corpora.
     """
     text = unicodedata.normalize(form, text)
+    text = _LINE_BREAKS.sub("\n", text)  # before _CONTROL, which covers NEL
     text = _CONTROL.sub("", text)
     text = _ZERO_WIDTH.sub("", text)
     if strip_joiners:
         text = _JOINERS.sub("", text)
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = _MULTI_SPACE.sub(" ", text)
     lines = [line.strip() for line in text.split("\n")]
     text = "\n".join(lines)
@@ -310,6 +313,9 @@ assert normalize_text("\ufb01le \uff21", form="NFC") == "\ufb01le \uff21"
 persian = "\u0645\u06cc\u200c\u0634\u0648\u062f"
 assert normalize_text(persian) == persian
 assert "\u200c" not in normalize_text(persian, strip_joiners=True)
+# Every Unicode line break becomes a newline; tabs fold to one space like other blanks:
+assert normalize_text("one\x85two\u2028three\r\nfour") == "one\ntwo\nthree\nfour"
+assert normalize_text("tab\there") == "tab here"
 ligature, zwnj = "\ufb01le \uff21", "\u200c"
 print(f"NFKC: {normalize_text(ligature, form='NFKC')!r}")
 print(f"ZWNJ kept by default: {zwnj in normalize_text(persian)}; with strip_joiners=True: {zwnj in normalize_text(persian, strip_joiners=True)}")
@@ -344,7 +350,7 @@ Pipelines that split a document into chunks before filtering (for example, to sc
 
 ### 3.1 Classifiers and thresholds
 
-Language identification is a solved problem for long documents in well-resourced languages and an open one for short texts, closely related languages, and code-switched text. The standard tool is a fastText classifier {cite}`joulin2017bag` trained on character n-grams: the `lid.176` model distinguishes 176 languages at microsecond speed, and the later OpenLID {cite}`burchell2023open` and GlotLID {cite}`kargaran2023glotlid` models cover 193 and 1,880 languages respectively {cite}`penedo2025fineweb2`.
+Language identification is a solved problem for long documents in well-resourced languages and an open one for short texts, closely related languages, and code-switched text. The standard tool is a fastText classifier {cite}`joulin2017bag` trained on character n-grams: the `lid.176` model distinguishes 176 languages at microsecond speed, and the later OpenLID and GlotLID models cover far more. OpenLID covered 201 languages when it was published {cite}`burchell2023open`, and the release that FineWeb-2 compared covers 193; GlotLID "identifies 1665 languages" in its paper {cite}`kargaran2023glotlid`, and the version FineWeb-2 used covers 1,880 {cite}`penedo2025fineweb2`.
 
 The classifier returns a distribution over languages. Pipelines keep a document if the top language is the target and its score exceeds a threshold. The threshold trades recall for precision:
 
@@ -552,7 +558,7 @@ listing: (False, 'mean_word_length')
 catalog: (False, 'stop_words')
 ```
 
-Every threshold above was set for English. The mean-word-length bounds exclude most Chinese and Japanese text (no spaces, so one "word" per line) and much German (compounds), and the stop-word list is meaningless outside English. Multilingual pipelines replace the word splitter with a language-appropriate tokenizer and the stop-word list with a per-language one.
+Every threshold above was set for English. The word rules exclude most Chinese and Japanese text: with no spaces a paragraph is one "word", and split into characters its mean word length is 1 ({ref}`sec-ch4-multilingual-text` runs both) and much German (compounds), and the stop-word list is meaningless outside English. Multilingual pipelines replace the word splitter with a language-appropriate tokenizer and the stop-word list with a per-language one.
 
 (sec-ch4-repetition-filters)=
 
@@ -890,7 +896,7 @@ prose: score 0.885, Pareto(9) keep probability 0.3749
 junk: score 0.463, Pareto(9) keep probability 0.0209
 ```
 
-Neither test text was in the training data, and the prose shares only a few common words with the reference. The classifier generalizes because function words ("the", "was", "at") and their pairs are dense in prose and rare in navigation and listings. The same property is its weakness. The notebook section {ref}`nb-prep-classifier` trains this classifier on the notebook's sample, scoring each document with a model whose negatives exclude that document and its copies. It ranks the catalog, the contact list and the menu below every prose document, but it scores the boilerplate document, a repeated sentence built from common words, highest of all. A bag of hashed n-grams cannot see repetition, which is why the repetition filters of {ref}`sec-ch4-repetition-filters` run before the classifier.
+Neither test text was in the training data, and the prose shares only a few common words with the reference. The classifier generalizes because function words ("the", "was", "at") and their pairs are dense in prose and rare in navigation and listings. The same property is its weakness. The notebook section {ref}`nb-prep-classifier` trains this classifier on the notebook's sample, scoring each document with a model whose negatives exclude that document and its copies. It ranks the catalog, the contact list and the menu below every prose document, but it scores the boilerplate document, a repeated sentence built from common words, highest of all. A bag of hashed n-grams cannot see repetition, which is why the repetition filters of {ref}`sec-ch4-repetition-filters` run before the classifier. The notebook also prints the keep probability the Pareto rule would give each score, and the raw scores cannot be used with the rule as they stand: every good document scores far below the region where the curve of {numref}`fig-ch4-pareto-keep` rises, so the rule would keep almost none of them and would favor the boilerplate. GPT-3 fitted the rule to its own classifier, in the paper's words "$\alpha$ was chosen to match the distribution of scores from our classifier on WebText" {cite}`brown2020language`; a new classifier's scores have to be calibrated, or the shape refitted, before the rule is applied.
 
 (sec-ch4-spam-machine-generated-text)=
 
@@ -1495,7 +1501,7 @@ Whichever detector finds a cluster, which document to keep from it is not a deta
 
 ### 5.4 Per-snapshot versus global deduplication
 
-The scope of the search matters as much as the detector. FineWeb's authors found that deduplicating each Common Crawl snapshot independently produced *better* models than deduplicating globally across all snapshots, because global deduplication preferentially removed the oldest copy of good content while leaving the long tail of low-quality pages that were never duplicated. The content that survives many crawls is, on average, the content worth keeping. FineWeb-2 {cite}`penedo2025fineweb2` takes the other route: it deduplicates globally, as the first step before any filter, and records the size of each duplicate cluster in the kept document's metadata. It then "rehydrates" the corpus: each kept document is repeated with a weight between 1 and 10 that depends on its cluster size, chosen from how often the quality filters removed documents of that cluster size. Moderately duplicated pages get the highest weights; unique pages and the most-copied pages, which the filters remove more often than average, get the lowest. The authors reject weights that grow with the number of copies because, in their words, highly duplicated documents "are generally of lower quality, and therefore should be repeated less rather than more". {numref}`fig-ch4-snapshot-scope` shows the per-snapshot mechanism on six pages.
+The scope of the search matters as much as the detector. FineWeb's authors found that deduplicating each Common Crawl snapshot independently produced *better* models than deduplicating globally across all snapshots, because global deduplication, run from the newest snapshot back to the oldest, removed every copy of good content but the newest, as much as 90% of the oldest snapshots, while leaving the long tail of low-quality pages that were never duplicated. The content that survives many crawls is, on average, the content worth keeping. FineWeb-2 {cite}`penedo2025fineweb2` takes the other route: it deduplicates globally, as the first step before any filter, and records the size of each duplicate cluster in the kept document's metadata. It then "rehydrates" the corpus: each kept document is repeated with a weight between 1 and 10 that depends on its cluster size, chosen from how often the quality filters removed documents of that cluster size. Moderately duplicated pages get the highest weights; unique pages and the most-copied pages, which the filters remove more often than average, get the lowest. The authors reject weights that grow with the number of copies because, in their words, highly duplicated documents "are generally of lower quality, and therefore should be repeated less rather than more". {numref}`fig-ch4-snapshot-scope` shows the per-snapshot mechanism on six pages.
 
 ```{figure} figures/dedup-scope.*
 :name: fig-ch4-snapshot-scope
@@ -1729,7 +1735,7 @@ The random key carries 5.222 bits per character, above the limit; the placeholde
 Three mechanisms, in increasing order of cost and accuracy:
 
 - **URL and domain blocklists** remove whole sites known for adult content, gambling, malware and spam. FineWeb and RefinedWeb use lists of several million domains maintained for web filtering. This is the first stage of most pipelines because it costs nothing.
-- **Word lists** flag documents containing any of a few hundred terms. C4's "bad words" filter is the canonical example, and {cite:t}`dodge2021documenting` showed its canonical failure: the list removed a disproportionate amount of text written in African American English and text about LGBTQ identity, because the same words are slurs in one context and self-description in another.
+- **Word lists** flag documents containing any of a few hundred terms. C4's "bad words" filter is the canonical example, and {cite:t}`dodge2021documenting` showed its canonical failure: the list removed a disproportionate amount of text written in African American English and text about LGBTQ identity, because the same words are slurs in one context and self-description in another. Their Table 1 gives the size of the cut: the version of C4 without the blocklist has 395 million documents and 198 billion tokens, and C4 has 365 million and 156 billion. The list removed 30 million documents, 7.6% of them, but 42 billion tokens, 21%, so the removed pages are long: 1,400 tokens on average against 427 for the pages kept. By a dialect classifier, it removed 42% of the documents in African American English and 32% of those in Hispanic-aligned English, against 6.2% in White-aligned English.
 - **Classifiers** trained on labeled toxic and non-toxic text (the Jigsaw toxic-comment data {cite}`cjadams2017toxic`, for example) give a probability per document or per sentence. Dolma trained fastText classifiers for hate speech and NSFW content on the Jigsaw data and removes every sentence either classifier scores above 0.4 {cite}`soldaini2024dolma`.
 
 The lesson of the C4 analysis is that any filter aimed at toxic content will also remove text by and about the communities that toxic content targets, so the threshold is a trade-off between the two kinds of harm. A more recent practice is to filter less at the pretraining stage and rely on post-training ({ref}`roadmap-post-training-and-alignment`) to control behavior, on the grounds that a model which has never seen a slur cannot recognize one either.
@@ -1839,12 +1845,12 @@ The notebook section {ref}`nb-prep-decontam` builds a 13-gram index from a toy b
 
 ### 8.1 Source code
 
-Code corpora use the same stages with different rules. The Stack {cite}`kocetkov2022stack` and its successor StarCoder data pipelines:
+Code corpora use the same stages with different rules. The main ones, with the source of each:
 
-- **License filtering** by repository, keeping permissive licenses only.
+- **License filtering** by repository, keeping permissive licenses only, as The Stack {cite}`kocetkov2022stack` does.
 - **Near-deduplication** at the file level, since forks and vendored dependencies dominate GitHub. The Stack computes MinHash with 256 permutations over the files' alphanumeric tokens and treats two files as near-duplicates above Jaccard similarity 0.85, which removes 38.6% of the permissively licensed files; StarCoder {cite}`li2023starcoder` uses 5-gram shingles and a Jaccard threshold of 0.7.
-- **Quality heuristics** per file: drop files whose fraction of alphanumeric characters is below 0.25, whose maximum line length exceeds 1,000 characters, or whose mean line length exceeds 100 characters (minified or generated code), and files with "auto-generated" in the first few lines.
-- **Data file removal**: JSON, YAML and CSV files are kept only below a size cap, since they are data rather than code.
+- **Quality heuristics** per file. Codex {cite}`chen2021evaluating` removed files "which were likely auto-generated, had average line length greater than 100, had maximum line length greater than 1000, or contained a small percentage of alphanumeric characters". StarCoder's defaults are two of these with a number attached: "over 25% alpha-numeric symbols" and "lines to be less than 1,000 characters" {cite}`li2023starcoder`; it applies the mean-line-length bound of 100 only to YAML. Neither paper says how "likely auto-generated" was decided; the listing below looks for a marker such as "auto-generated" or "do not edit" in the first five lines, a test of this chapter's own.
+- **Data file removal**: StarCoder keeps JSON and YAML files only between 50 and 5,000 characters and with more than 50% alphabetic characters, since most of them are data rather than code; for JSON this "removes around 70% of the files and 98% of the volume" {cite}`li2023starcoder`.
 - **Secrets and PII** via regular expressions for keys and the StarPII model {cite}`bigcode2023starpii` for names and emails.
 
 ```python
@@ -1854,7 +1860,7 @@ _AUTOGEN = re.compile(r"(auto[- ]?generated|do not edit|generated by)", re.IGNOR
 
 
 def code_quality_filter(source: str):
-    """File-level rules in the style of The Stack / StarCoder; returns (keep, reason)."""
+    """File-level rules of Codex, with StarCoder's thresholds; returns (keep, reason)."""
     if not source.strip():
         return False, "empty"
     lines = source.split("\n")
@@ -1891,13 +1897,67 @@ generated: (False, 'autogenerated')
 
 ### 8.2 Mathematics and scientific text
 
-Mathematical text is destroyed by the default prose pipeline: HTML extractors drop MathML and MathJax, the mean-word-length and alphabetic-word rules of {ref}`sec-ch4-heuristic-rules` reject equations, NFKC normalization flattens superscripts, and line-based filters remove display equations because they do not end in a period. OpenWebMath {cite}`paster2023openwebmath` rebuilt extraction from the raw HTML to recover LaTeX from the rendered page, trained a classifier on mathematical content to replace the symbol rules, and kept its own line conventions. Scientific papers from arXiv are handled by converting the LaTeX source rather than the PDF, with macro expansion and bibliography removal. The general point holds for any domain: inspect what the default rules reject before adopting them.
+Mathematical text is destroyed by the default prose pipeline: HTML extractors drop MathML and MathJax, the mean-word-length and alphabetic-word rules of {ref}`sec-ch4-heuristic-rules` reject equations, NFKC normalization flattens superscripts, and line-based filters remove display equations because they do not end in a period. The listing at the end of {ref}`sec-ch4-multilingual-text` runs the Gopher word rules on a paragraph of LaTeX. OpenWebMath {cite}`paster2023openwebmath` rebuilt extraction from the raw HTML to recover LaTeX from the rendered page, trained a classifier on mathematical content to replace the symbol rules, and kept its own line conventions. Scientific papers from arXiv are handled by converting the LaTeX source rather than the PDF, with macro expansion and bibliography removal. The general point holds for any domain: inspect what the default rules reject before adopting them.
 
 (sec-ch4-multilingual-text)=
 
 ### 8.3 Multilingual text
 
 Every threshold in {ref}`sec-ch4-quality-filtering` is a function of language. The practical approach, used by ROOTS {cite}`laurenccon2022bigscience` and the Common Crawl-derived multilingual corpora, is a per-language parameter table covering the word-splitting rule (character-based for Chinese, Japanese and Thai), stop-word lists, the mean-word-length bounds, and the perplexity model, set with help from speakers of each language. Scripts need their own treatment: a document in Cyrillic with a Latin-script navigation menu should not fail the "words with an alphabetic character" rule, and right-to-left text should not be reordered by extraction. Languages with little web presence suffer twice, because the language identifier is less accurate on them and the quality filters, tuned on majority languages, reject more of what it finds.
+
+The listing below runs the word-based Gopher rules of {ref}`sec-ch4-heuristic-rules` on a paragraph of LaTeX and on a Chinese paragraph, and prints the first rule each fails.
+
+```python
+import re
+
+STOP_WORDS = {"the", "be", "to", "of", "and", "that", "have", "with"}
+_CJK = re.compile(r"[㐀-鿿豈-﫿]")
+
+
+def gopher_word_rules(words: list[str]) -> str:
+    """The word-based Gopher rules of section 4.1, in order; returns the first failure."""
+    if len(words) < 50:
+        return "too_few_words"
+    if not 3 <= sum(map(len, words)) / len(words) <= 10:
+        return "mean_word_length"
+    if sum(any(ch.isalpha() for ch in w) for w in words) / len(words) < 0.8:
+        return "non_alpha_words"
+    if len(STOP_WORDS & {w.lower().strip(".,;:") for w in words}) < 2:
+        return "stop_words"
+    return "ok"
+
+
+latex = (
+    r"Let $u(x, t)$ solve $\partial_t u = \kappa \, \partial_x^2 u$ on $0 < x < L$ "
+    r"with $u(0, t) = u(L, t) = 0$. Separation of variables gives "
+    r"$u = \sum_{n=1}^{\infty} b_n e^{-\kappa (n \pi / L)^2 t} \sin(n \pi x / L)$ "
+    r"where $b_n = \frac{2}{L} \int_0^L f(x) \sin(n \pi x / L) \, dx$ and "
+    r"$f(x) = u(x, 0)$. Each mode decays at rate $\kappa (n \pi / L)^2$, so "
+    r"for $t \gg L^2 / \kappa$ only the $n = 1$ term is left: "
+    r"$u \approx b_1 e^{-\kappa \pi^2 t / L^2} \sin(\pi x / L)$."
+)
+# 20 copies of a 15-character Chinese sentence: "Data preprocessing decides what the model learns."
+chinese = "\u6570\u636e\u9884\u5904\u7406\u51b3\u5b9a\u6a21\u578b\u5b66\u5230\u7684\u5185\u5bb9\u3002" * 20
+for name, text in (("LaTeX", latex), ("Chinese", chinese)):
+    words = text.split()
+    print(f"{name}: {len(words)} words, {gopher_word_rules(words)}")
+# Splitting CJK text into characters fixes the count; the English stop words still fail it.
+chars = [ch for ch in chinese if _CJK.match(ch)]
+print(f"Chinese, one word per character: {len(chars)} words, {gopher_word_rules(chars)}")
+assert gopher_word_rules(latex.split()) == "non_alpha_words"
+assert gopher_word_rules(chinese.split()) == "too_few_words"
+assert gopher_word_rules(chars) == "mean_word_length"
+```
+
+% output
+
+```text
+LaTeX: 99 words, non_alpha_words
+Chinese: 1 words, too_few_words
+Chinese, one word per character: 280 words, mean_word_length
+```
+
+The LaTeX paragraph has enough words of ordinary length, but a fifth or more of them (`$0`, `<`, `=`, `0$.`) contain no letter, so the alphabetic-word rule rejects it. The Chinese paragraph has no spaces and is therefore one word. Splitting it into characters, which is what a per-language word rule for Chinese does, gives enough words, but each is one character long and the English bound of 3 rejects them all; with that bound lifted, the English stop-word list would reject it next.
 
 (sec-ch4-assembling-pipeline)=
 
@@ -2043,7 +2103,7 @@ The notebook section {ref}`nb-prep-pipeline` assembles normalization, language i
 - **Language identification** assigns each document a language and a confidence, and the threshold on that confidence decides how much low-resource and mixed-language text survives ({ref}`sec-ch4-language-identification`).
 - **Quality filters run from cheap to expensive:** heuristic rules and repetition measures remove pages that are not prose, a reference language model's perplexity scores fluency, and a classifier trained against a curated positive set selects for resemblance to it; each is judged by training small models with and without it at the same token budget and reporting the retained fraction ({ref}`sec-ch4-quality-filtering`).
 - **Machine-generated text is hard to filter** because it is a small share of a crawl: at a 1% base rate even an accurate detector removes mostly human-written documents ({ref}`sec-ch4-spam-machine-generated-text`).
-- **Deduplication works at four granularities:** exact hashing removes identical documents, and a Bloom filter does so in fixed memory at a false-positive rate that rises as the filter fills; hashing three-sentence spans, lines and paragraphs removes repeated boilerplate inside otherwise distinct documents; MinHash with LSH banding finds near-duplicates, with the band count $b$ and rows per band $r$ setting the similarity threshold of the S-curve $1 - (1 - J^r)^b$, and SimHash does the same with one 64-bit fingerprint per document; suffix arrays find repeated substrings. Semantic deduplication (SemDeDup) removes documents that are close in embedding space even when they share few words. Whether deduplication runs per snapshot or across the whole corpus changes what is kept ({ref}`sec-ch4-deduplication`).
+- **Deduplication works on several units and by several methods:** exact hashing removes identical documents, and a Bloom filter does so in fixed memory at a false-positive rate that rises as the filter fills; hashing three-sentence spans, lines and paragraphs removes repeated boilerplate inside otherwise distinct documents; MinHash with LSH banding finds near-duplicates, with the band count $b$ and rows per band $r$ setting the similarity threshold of the S-curve $1 - (1 - J^r)^b$, and SimHash does the same with one 64-bit fingerprint per document; suffix arrays find repeated substrings. Semantic deduplication (SemDeDup) removes documents that are close in embedding space even when they share few words. Whether deduplication runs per snapshot or across the whole corpus changes what is kept ({ref}`sec-ch4-deduplication`).
 - **Privacy and safety filtering** replaces personal data with placeholders, drops documents dense with it, and removes toxic or unlicensed content; pattern matching is cheap but its precision has to be measured on text full of look-alike numbers ({ref}`sec-ch4-privacy-toxicity-safety-filtering`).
 - **Decontamination** removes training text that shares long $n$-grams with evaluation sets; it misses paraphrases and translations, so it is reported as a procedure with its parameters and combined with fresh test sets ({ref}`sec-ch4-benchmark-decontamination`).
 - **Code, mathematics and multilingual text need their own rules:** code is filtered by license, file properties and secrets rather than by prose statistics; mathematical text needs extraction that keeps formulas; and thresholds tuned for English remove good text in other languages and scripts ({ref}`sec-ch4-domain-specific-preprocessing`).
