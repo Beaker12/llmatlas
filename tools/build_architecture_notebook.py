@@ -37,6 +37,16 @@ def function(path: Path, name: str) -> str:
     return m.group(0).rstrip()
 
 
+def through(path: Path, marker: str, last: str) -> str:
+    """A fence from its start through the top-level definition `last`, leaving out what follows it
+    (chapter 1's listing goes on with a stand-in attention module and a printed demonstration)."""
+    text = fence(path, marker)
+    m = re.search(rf"^(?:class|def) {last}\b[\s\S]*?(?=\n\n\S|\Z)", text, re.M)
+    if m is None:
+        raise SystemExit(f"the fence in {path.name} containing {marker!r} defines no {last!r}")
+    return text[:m.end()].rstrip()
+
+
 CELLS: list[tuple[str, str]] = []
 TAGS: dict[int, list[str]] = {}  # cell index -> metadata tags; `figure:<slug>` marks a plot the chapter shows
 
@@ -297,7 +307,7 @@ md(r"""
 
 `RMSNorm`, `SwiGLU`, `PreLNBlock` and `apply_rope` below are copied from the foundations chapter ({ref}`sec-ch1-modern-block`, {ref}`sec-ch1-rope`). The new piece is the attention layer, which supports any number of key/value heads (`n_kv_heads = n_heads` is multi-head attention, `1` is multi-query) and exposes `project` and `attend` separately so the cache section can reuse them.
 """)
-code(fence(CH01, "class RMSNorm"))
+code(through(CH01, "class RMSNorm", "PreLNBlock"))
 code(function(CH01, "apply_rope"))
 code(r'''
 class GQAttention(nn.Module):
