@@ -37,8 +37,8 @@ INTRO = """\
 # Notation
 
 This page collects the symbols the book uses. The first table holds the symbols every chapter shares, with one
-meaning each. A few letters knowingly carry two meanings; the second table lists them and says why the two never
-meet in one formula. The chapter sections after that list the symbols that only one chapter uses, each with a link
+meaning each. A few letters carry two meanings; the second table lists them and says where each is used and how to
+tell them apart. The chapter sections after that list the symbols that only one chapter uses, each with a link
 to the section where it is introduced.
 
 Symbols are given in a normal form: a subscript that is only a running index ($i$, $j$, $t$, ...) is dropped, so
@@ -156,7 +156,7 @@ def build() -> str:
     # unbreakable `l` columns that run off the page); the HTML is unchanged.
     out = [INTRO, "## Symbols used throughout the book", "", COLUMNS_2, "", "| Symbol | Meaning |", "|---|---|"]
     out += [f"| ${s}$ | {render(m)} |" for s, m in global_rows()]
-    out += ["", "## Letters with two meanings", "", COLUMNS_3, "", "| Symbol | Meanings | Why both are kept |", "|---|---|---|"]
+    out += ["", "## Letters with two meanings", "", COLUMNS_3, "", "| Symbol | Meanings | Where each is used |", "|---|---|---|"]
     out += [f"| ${s}$ | {'; '.join(render(m) for m in ms)} | {render(r)} |" for s, ms, r in exception_rows()]
     out += ["", "## Symbols used in one chapter", ""]
     for chapter in chapters():
