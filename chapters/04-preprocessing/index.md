@@ -229,7 +229,7 @@ Multilingual corpora run the same classifier and route each document to a per-la
 
 ### 3.2 A character n-gram identifier from scratch
 
-The fastText model is a linear classifier over hashed character n-grams. The far older method of Cavnar and Trenkle, which ranks the most frequent n-grams of a text and compares the ranking against per-language profiles, still works well enough to illustrate why character n-grams are the right features: they capture orthography (`th`, `sch`, `ção`) without needing a dictionary, and they are robust to unknown words.
+The fastText model is a linear classifier over hashed character n-grams. The far older method of {cite:t}`cavnar1994ngram`, which ranks the most frequent n-grams of a text and compares the ranking against per-language profiles, still works well enough to illustrate why character n-grams are the right features: they capture orthography (`th`, `sch`, `ção`) without needing a dictionary, and they are robust to unknown words.
 
 ```python
 from collections import Counter
