@@ -72,9 +72,24 @@ def test_comprehensive_tokenizer_round_trips_mixed_case_text():
     ns = {"torch": torch, "np": np, "math": math}
     exec(ch01_fence("class ComprehensiveTokenizer"), ns)  # noqa: S102
     tok = ns["tokenizer"]
-    assert tok.vocab["<PAD>"] == 0 and tok.vocab["<UNK>"] == 1
-    text = "The quick brown fox"
-    assert tok.decode(tok.encode(text)) == text
+    # byte-level: ids 0..255 are the bytes, the five special tokens follow, then the learned merges (D6)
+    assert tok.special_tokens == {"<PAD>": 256, "<UNK>": 257, "<BOS>": 258, "<EOS>": 259, "<MASK>": 260}
+    assert all(tok.vocab[i] == bytes([i]) for i in range(256))
+    assert len(tok.merges) == 39
+    for text in ["The quick brown fox", "Hello, world!", "The quick brown fox.", "two  spaces", "a\nnewline",
+                 "你好世界", "tabs\tand  \n\n mixed   whitespace "]:
+        ids = tok.encode(text)
+        assert tok.special_tokens["<UNK>"] not in ids
+        assert tok.decode(ids) == text, (text, tok.decode(ids))
+    # C1-08: frequent words merge, an unseen word still splits
+    assert tok.pieces("The") == ["The"]
+    assert len(tok.pieces("unthinkable")) > 1
+
+
+def test_simple_bpe_splits_an_unseen_word():
+    ns = {}
+    exec(ch01_fence("class SimpleBPE"), ns)  # noqa: S102
+    assert ns["bpe"].encode("helper") == ["hel", "p", "e", "r", "</w>"]
 
 
 def test_apply_rope_preserves_norm_and_depends_only_on_relative_offset():
@@ -98,5 +113,6 @@ def test_evaluate_tokenization_quality_reports_only_measured_metrics():
     exec(ch01_fence("class ComprehensiveTokenizer"), ns)  # noqa: S102
     exec(ch01_fence("def evaluate_tokenization_quality"), ns)  # noqa: S102
     metrics = ns["evaluate_tokenization_quality"](ns["tokenizer"], ["The quick brown fox", "hello world"])
-    assert set(metrics) == {"compression_ratio", "oov_rate", "reversibility_errors"}
+    assert set(metrics) == {"chars_per_token", "bytes_per_token", "reversibility_errors"}
+    assert metrics["chars_per_token"] > 1.0
     assert metrics["reversibility_errors"] == 0.0

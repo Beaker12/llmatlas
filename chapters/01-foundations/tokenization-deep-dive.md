@@ -17,20 +17,51 @@ GPT models use a sophisticated tokenizer that:
 - Includes special tokens for different contexts
 
 ```python
-# Example with tiktoken (conceptual)
+# network
+import hashlib
+import os
+import tempfile
+import urllib.request
+
 import tiktoken
 
-# Load GPT-4 tokenizer
-enc = tiktoken.get_encoding("cl100k_base")
+# tiktoken downloads its encoding files without a User-Agent we can set, so fetch them ourselves into the
+# cache directory tiktoken reads (file name: SHA-1 of the URL) and send LLMATLAS_USER_AGENT.
+USER_AGENT = os.environ.get("LLMATLAS_USER_AGENT", "Mozilla/5.0 (compatible; reader)")
+BLOB = "https://openaipublic.blob.core.windows.net/"
+FILES = {
+    "gpt2": ["gpt-2/encodings/main/vocab.bpe", "gpt-2/encodings/main/encoder.json"],
+    "cl100k_base": ["encodings/cl100k_base.tiktoken"],
+    "o200k_base": ["encodings/o200k_base.tiktoken"],
+}
+CACHE = os.environ.setdefault("TIKTOKEN_CACHE_DIR", os.path.join(tempfile.gettempdir(), "tiktoken-cache"))
+
+
+def get_encoding(name):
+    os.makedirs(CACHE, exist_ok=True)
+    for path in FILES[name]:
+        target = os.path.join(CACHE, hashlib.sha1((BLOB + path).encode()).hexdigest())
+        if not os.path.exists(target):
+            request = urllib.request.Request(BLOB + path, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(request, timeout=60) as response, open(target, "wb") as f:
+                f.write(response.read())
+    return tiktoken.get_encoding(name)
+
+
+enc = get_encoding("cl100k_base")  # the GPT-4 encoding
 
 text = "Hello, world! Here's some code: `print('hi')`"
 tokens = enc.encode(text)
-decoded = enc.decode(tokens)
-
-print(f"Original: {text}")
-print(f"Tokens: {tokens}")
+assert enc.decode(tokens) == text  # byte-level BPE is lossless
 print(f"Token count: {len(tokens)}")
-print(f"Decoded: {decoded}")
+print(f"Pieces: {[enc.decode([i]) for i in tokens]}")
+```
+
+% output
+
+```text
+Token count: 15
+Pieces: ['Hello', ',', ' world', '!', ' Here', "'s", ' some', ' code', ':', ' `', 'print', "('", 'hi', "')", '`']
 ```
 
 (sec-tdd-multi-modal-tokenization)=
@@ -111,7 +142,7 @@ Different tokenization schemes produce different sequence lengths:
 # Example text
 text = "The transformer architecture revolutionized natural language processing."
 
-# Word-level (hypothetical)
+# Word-level: split on spaces
 word_tokens = text.lower().split()
 print(f"Word tokens ({len(word_tokens)}): {word_tokens}")
 
@@ -119,22 +150,21 @@ print(f"Word tokens ({len(word_tokens)}): {word_tokens}")
 char_tokens = list(text)
 print(f"Character tokens ({len(char_tokens)}): {char_tokens[:20]}...")
 
-# Subword (GPT-style, approximate)
-# This would typically be: ["The", " transform", "er", " architect", "ure", ...]
+# Subword: the output of tiktoken's gpt2, cl100k_base and o200k_base encodings, which all give the same
+# 9 tokens here (run the network fence under "Linguistic Bias" to reproduce it)
 subword_tokens = [
-    "The",
-    " transform",
-    "er",
-    " architect",
-    "ure",
-    " revolution",
-    "ized",
-    " natural",
-    " language",
-    " processing",
-    ".",
+    "The", " transformer", " architecture", " revolution", "ized", " natural", " language", " processing", ".",
 ]
+assert "".join(subword_tokens) == text
 print(f"Subword tokens ({len(subword_tokens)}): {subword_tokens}")
+```
+
+% output
+
+```text
+Word tokens (7): ['the', 'transformer', 'architecture', 'revolutionized', 'natural', 'language', 'processing.']
+Character tokens (72): ['T', 'h', 'e', ' ', 't', 'r', 'a', 'n', 's', 'f', 'o', 'r', 'm', 'e', 'r', ' ', 'a', 'r', 'c', 'h']...
+Subword tokens (9): ['The', ' transformer', ' architecture', ' revolution', 'ized', ' natural', ' language', ' processing', '.']
 ```
 
 **Computational implications**:
@@ -147,22 +177,64 @@ print(f"Subword tokens ({len(subword_tokens)}): {subword_tokens}")
 
 ### Linguistic Bias
 
-Tokenization can introduce linguistic biases:
+Tokenization can introduce linguistic biases. A tokenizer trained mostly on English text spends more tokens on other languages, so the same content costs more compute and fits less into the context window. Larger vocabularies trained on more languages narrow the gap; the Japanese greeting below takes 10 tokens in GPT-2's encoding, 4 in `cl100k_base` and 2 in `o200k_base`:
 
 ```python
-# Example showing tokenization bias
-texts = [
-    "Hello world",  # English
-    "Bonjour le monde",  # French
-    "Hola mundo",  # Spanish
-    "こんにちは世界",  # Japanese
-    "مرحبا بالعالم",  # Arabic
-]
+# network
+import hashlib
+import os
+import tempfile
+import urllib.request
 
-# English-centric tokenizer might produce:
-# English: ["Hello", " world"] (2 tokens)
-# Japanese: ["こ", "ん", "に", "ち", "は", "世", "界"] (7 tokens)
-# This creates unfair computational costs for non-English text
+import tiktoken
+
+# tiktoken downloads its encoding files without a User-Agent we can set, so fetch them ourselves into the
+# cache directory tiktoken reads (file name: SHA-1 of the URL) and send LLMATLAS_USER_AGENT.
+USER_AGENT = os.environ.get("LLMATLAS_USER_AGENT", "Mozilla/5.0 (compatible; reader)")
+BLOB = "https://openaipublic.blob.core.windows.net/"
+FILES = {
+    "gpt2": ["gpt-2/encodings/main/vocab.bpe", "gpt-2/encodings/main/encoder.json"],
+    "cl100k_base": ["encodings/cl100k_base.tiktoken"],
+    "o200k_base": ["encodings/o200k_base.tiktoken"],
+}
+CACHE = os.environ.setdefault("TIKTOKEN_CACHE_DIR", os.path.join(tempfile.gettempdir(), "tiktoken-cache"))
+
+
+def get_encoding(name):
+    os.makedirs(CACHE, exist_ok=True)
+    for path in FILES[name]:
+        target = os.path.join(CACHE, hashlib.sha1((BLOB + path).encode()).hexdigest())
+        if not os.path.exists(target):
+            request = urllib.request.Request(BLOB + path, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(request, timeout=60) as response, open(target, "wb") as f:
+                f.write(response.read())
+    return tiktoken.get_encoding(name)
+
+
+# The same greeting in five languages, counted by three OpenAI encodings (2019, 2023, 2024)
+texts = {
+    "English": "Hello world",
+    "French": "Bonjour le monde",
+    "Spanish": "Hola mundo",
+    "Japanese": "こんにちは世界",
+    "Arabic": "مرحبا بالعالم",
+}
+names = ["gpt2", "cl100k_base", "o200k_base"]
+encodings = {name: get_encoding(name) for name in names}
+print(f"{'Language':<10}" + "".join(f"{name:>13}" for name in names))
+for language, text in texts.items():
+    print(f"{language:<10}" + "".join(f"{len(encodings[n].encode(text)):>13}" for n in names))
+```
+
+% output
+
+```text
+Language           gpt2  cl100k_base   o200k_base
+English               2            2            2
+French                6            3            3
+Spanish               4            2            2
+Japanese             10            4            2
+Arabic               12           10            4
 ```
 
 (sec-tdd-out-of-vocabulary-handling)=
@@ -412,7 +484,7 @@ medical_text = (
     "Patient presents with myocardial infarction and diabetes mellitus type 2"
 )
 
-# Domain-specific vocabulary:
+# A domain vocabulary with every term as one token (hypothetical):
 medical_tokens = [
     "Patient",
     " presents",
@@ -426,25 +498,19 @@ medical_tokens = [
     " 2",
 ]
 
-# Generic tokenizer might split medical terms poorly:
+# GPT-2's encoding (tiktoken "gpt2") splits the medical terms; cl100k_base needs 15 tokens, o200k_base 12
 generic_tokens = [
-    "Patient",
-    " presents",
-    " with",
-    " my",
-    "ocard",
-    "ial",
-    " inf",
-    "arc",
-    "tion",
-    " and",
-    " diab",
-    "etes",
-    " mell",
-    "itus",
-    " type",
-    " 2",
+    "Pat", "ient", " presents", " with", " my", "ocard", "ial", " inf", "ar", "ction",
+    " and", " diabetes", " mell", "itus", " type", " 2",
 ]
+assert "".join(generic_tokens) == "".join(medical_tokens) == medical_text
+print(f"Domain vocabulary: {len(medical_tokens)} tokens; gpt2: {len(generic_tokens)} tokens")
+```
+
+% output
+
+```text
+Domain vocabulary: 10 tokens; gpt2: 16 tokens
 ```
 
 **Legal Text**:
@@ -462,36 +528,27 @@ legal_text = "The aforementioned clause notwithstanding the heretofore provision
 
 ```python
 def evaluate_tokenization_quality(tokenizer, corpus):
-    """Evaluate a ComprehensiveTokenizer-style tokenizer (encode/decode/special_tokens)."""
+    """Evaluate a tokenizer with encode/decode and special_tokens, such as ComprehensiveTokenizer below."""
 
-    # Only metrics this function actually measures are reported. Morphological consistency
-    # and cross-lingual equity need linguistic annotations or parallel corpora.
-    metrics = {"compression_ratio": 0, "oov_rate": 0, "reversibility_errors": 0}
-
-    total_chars = 0
-    total_tokens = 0
-    oov_count = 0
-    reversibility_errors = 0
+    # Only metrics this function actually measures are reported. A byte-level tokenizer has no
+    # out-of-vocabulary tokens, so there is no OOV rate. Morphological consistency and cross-lingual
+    # equity need linguistic annotations or parallel corpora.
+    special = set(tokenizer.special_tokens.values())
+    total_chars = total_bytes = total_tokens = reversibility_errors = 0
 
     for text in corpus:
-        # Compression ratio
         tokens = tokenizer.encode(text)
         total_chars += len(text)
-        total_tokens += len(tokens)
-
-        # OOV rate
-        oov_count += sum(1 for token in tokens if token == tokenizer.special_tokens["<UNK>"])
-
-        # Reversibility
-        reconstructed = tokenizer.decode(tokens)
-        if text != reconstructed:
+        total_bytes += len(text.encode("utf-8"))
+        total_tokens += sum(1 for token in tokens if token not in special)
+        if tokenizer.decode(tokens) != text:
             reversibility_errors += 1
 
-    metrics["compression_ratio"] = total_chars / total_tokens
-    metrics["oov_rate"] = oov_count / total_tokens
-    metrics["reversibility_errors"] = reversibility_errors / len(corpus)
-
-    return metrics
+    return {
+        "chars_per_token": total_chars / total_tokens,
+        "bytes_per_token": total_bytes / total_tokens,
+        "reversibility_errors": reversibility_errors / len(corpus),
+    }
 
 
 def compare_tokenizers(tokenizers, test_corpus):
@@ -645,230 +702,114 @@ def create_multi_domain_tokenizer(domain_corpora, vocab_size=32000):
 
 ## T.6 Practical Implementation
 
-This section provides hands-on implementation of tokenization and embedding concepts:
+This section implements a tokenizer end to end. It is byte-level BPE, the scheme GPT-2 introduced: the base vocabulary is the 256 byte values, so any UTF-8 text can be encoded without an unknown token; whitespace stays inside the tokens (a token can start with a space, and runs of spaces or newlines are tokens of their own), so decoding returns the input exactly; and every chunk of the training text counts, however rare. With only 39 merges on a five-sentence corpus, frequent words such as `The` become one token while an unseen word falls back to short pieces.
 
 (sec-tdd-complete-tokenization-pipeline)=
 
 ### Complete Tokenization Pipeline
 
 ```python
-import torch
-import torch.nn as nn
-import math
 import re
-from collections import Counter, defaultdict
-from typing import List, Dict, Tuple
+from collections import Counter
+from typing import Dict, List, Tuple
+
+# Pre-tokenization in the style of GPT-2: a chunk is an optional leading space followed by letters, digits or
+# punctuation, or a run of whitespace. Joining the chunks gives back the text exactly, so whitespace is kept
+# inside the tokens instead of being thrown away.
+CHUNK = re.compile(r" ?[^\W\d_]+| ?\d+| ?(?:[^\s\w]|_)+|\s+(?!\S)|\s+")
 
 
 class ComprehensiveTokenizer:
-    """A complete tokenizer implementation with multiple strategies."""
+    """Byte-level BPE: 256 byte tokens, five special tokens, then learned merges. Every text round-trips."""
 
-    def __init__(self, vocab_size=32000, min_frequency=2):
+    def __init__(self, vocab_size: int = 300):
+        assert vocab_size >= 256 + 5
         self.vocab_size = vocab_size
-        self.min_frequency = min_frequency
-        self.vocab = {}
-        self.merges = []
-        self.special_tokens = {
-            "<PAD>": 0,
-            "<UNK>": 1,
-            "<BOS>": 2,
-            "<EOS>": 3,
-            "<MASK>": 4,
-        }
+        self.vocab: Dict[int, bytes] = {i: bytes([i]) for i in range(256)}  # id -> the bytes it stands for
+        names = ["<PAD>", "<UNK>", "<BOS>", "<EOS>", "<MASK>"]
+        self.special_tokens = {name: 256 + i for i, name in enumerate(names)}  # ids 256..260
+        self.merges: Dict[Tuple[int, int], int] = {}  # (left id, right id) -> merged id, in training order
 
-    def preprocess_text(self, text: str) -> str:
-        """Preprocess text before tokenization."""
-        # Normalize whitespace
-        text = re.sub(r"\s+", " ", text)
-
-        # Add spaces around punctuation for better splitting
-        text = re.sub(r"([.!?,:;])", r" \1 ", text)
-        text = re.sub(r"\s+", " ", text)
-
-        return text.strip()
-
-    def get_word_frequencies(self, corpus: List[str]) -> Dict[str, int]:
-        """Count word frequencies in corpus (case is preserved so decoding is exact)."""
-        word_freq = Counter()
-
-        for text in corpus:
-            word_freq.update(self.preprocess_text(text).split())
-
-        return word_freq
-
-    def train_bpe(self, corpus: List[str]) -> None:
-        """Train Byte Pair Encoding tokenizer."""
-        print("Training BPE tokenizer...")
-
-        # Get word frequencies
-        word_freq = self.get_word_frequencies(corpus)
-
-        # Filter by frequency
-        word_freq = {
-            word: freq for word, freq in word_freq.items() if freq >= self.min_frequency
-        }
-
-        # Convert words to symbol sequences with an end-of-word marker
-        word_splits = {}
-        for word, freq in word_freq.items():
-            word_splits[tuple(word) + ("</w>",)] = freq
-
-        # Initial vocabulary: every symbol that can appear in a split, including the
-        # end-of-word marker itself (otherwise an unmerged '</w>' would decode as <UNK>).
-        # Special tokens are NOT added here; they get the fixed ids 0..4 below.
-        vocab = set()
-        for word in word_splits:
-            vocab.update(word)
-
-        # Iteratively merge most frequent pairs
-        target_vocab_size = self.vocab_size - len(self.special_tokens)
-
-        while len(vocab) < target_vocab_size:
-            # Count all adjacent pairs
-            pairs = defaultdict(int)
-            for word, freq in word_splits.items():
-                for i in range(len(word) - 1):
-                    pairs[(word[i], word[i + 1])] += freq
-
-            if not pairs:
-                break
-
-            # Find most frequent pair
-            best_pair = max(pairs, key=pairs.get)
-
-            # Merge the pair in all words
-            new_word_splits = {}
-            for word, freq in word_splits.items():
-                new_word = self._merge_pair(word, best_pair)
-                new_word_splits[new_word] = freq
-
-            word_splits = new_word_splits
-
-            # Add merged token to vocabulary
-            merged_token = "".join(best_pair)
-            vocab.add(merged_token)
-            self.merges.append(best_pair)
-
-            if len(vocab) % 1000 == 0:
-                print(f"Vocabulary size: {len(vocab)}")
-
-        # Final mapping: special tokens keep ids 0..4, then the learned symbols
-        vocab_list = list(self.special_tokens.keys()) + sorted(vocab)
-        self.vocab = {token: i for i, token in enumerate(vocab_list)}
-        assert all(self.vocab[t] == i for t, i in self.special_tokens.items())
-        self.reverse_vocab = {i: token for token, i in self.vocab.items()}
-
-        print(f"Training complete. Final vocabulary size: {len(self.vocab)}")
-
-    def _merge_pair(
-        self, word: Tuple[str, ...], pair: Tuple[str, str]
-    ) -> Tuple[str, ...]:
-        """Merge a specific pair in a word."""
-        new_word = []
-        i = 0
-        while i < len(word):
-            if i < len(word) - 1 and word[i] == pair[0] and word[i + 1] == pair[1]:
-                new_word.append("".join(pair))
+    @staticmethod
+    def _merge(ids: List[int], pair: Tuple[int, int], new_id: int) -> List[int]:
+        out, i = [], 0
+        while i < len(ids):
+            if i < len(ids) - 1 and (ids[i], ids[i + 1]) == pair:
+                out.append(new_id)
                 i += 2
             else:
-                new_word.append(word[i])
+                out.append(ids[i])
                 i += 1
-        return tuple(new_word)
+        return out
+
+    def train_bpe(self, corpus: List[str]) -> None:
+        """Learn vocab_size - 261 merges. Every chunk is counted; nothing is dropped for being rare."""
+        chunk_freq = Counter(c for text in corpus for c in CHUNK.findall(text))
+        words = {chunk: list(chunk.encode("utf-8")) for chunk in chunk_freq}
+        next_id = 256 + len(self.special_tokens)
+        while next_id < self.vocab_size:
+            pairs = Counter()
+            for chunk, ids in words.items():
+                for pair in zip(ids, ids[1:]):
+                    pairs[pair] += chunk_freq[chunk]
+            if not pairs:
+                break
+            best = max(pairs, key=lambda p: (pairs[p], -p[0], -p[1]))  # ties go to the smaller ids
+            self.merges[best] = next_id
+            self.vocab[next_id] = self.vocab[best[0]] + self.vocab[best[1]]
+            words = {chunk: self._merge(ids, best, next_id) for chunk, ids in words.items()}
+            next_id += 1
+        print(f"Training complete. {len(self.merges)} merges, vocabulary size {len(self.vocab) + 5}")
+
+    def encode_chunk(self, chunk: str) -> List[int]:
+        ids = list(chunk.encode("utf-8"))
+        while len(ids) > 1:
+            # apply the earliest-learned merge present, as the trainer did
+            pair = min(zip(ids, ids[1:]), key=lambda p: self.merges.get(p, float("inf")))
+            if pair not in self.merges:
+                break
+            ids = self._merge(ids, pair, self.merges[pair])
+        return ids
 
     def encode(self, text: str) -> List[int]:
-        """Encode text to token IDs."""
-        words = self.preprocess_text(text).split()
+        ids = [self.special_tokens["<BOS>"]]
+        for chunk in CHUNK.findall(text):
+            ids.extend(self.encode_chunk(chunk))
+        return ids + [self.special_tokens["<EOS>"]]
 
-        token_ids = [self.special_tokens["<BOS>"]]
+    def decode(self, ids: List[int]) -> str:
+        data = b"".join(self.vocab[i] for i in ids if i in self.vocab)  # special ids are not in vocab
+        return data.decode("utf-8", errors="replace")
 
-        for word in words:
-            # Convert word to character tuple
-            word_tokens = tuple(word) + ("</w>",)
-
-            # Apply BPE merges
-            for pair in self.merges:
-                word_tokens = self._merge_pair(word_tokens, pair)
-
-            # Convert to IDs
-            for token in word_tokens:
-                token_id = self.vocab.get(token, self.special_tokens["<UNK>"])
-                token_ids.append(token_id)
-
-        token_ids.append(self.special_tokens["<EOS>"])
-        return token_ids
-
-    def decode(self, token_ids: List[int]) -> str:
-        """Decode token IDs back to text."""
-        tokens = []
-        for token_id in token_ids:
-            if token_id in self.reverse_vocab:
-                token = self.reverse_vocab[token_id]
-                if token not in self.special_tokens:
-                    tokens.append(token)
-
-        # Join tokens and clean up
-        text = "".join(tokens)
-        text = text.replace("</w>", " ")
-        return text.strip()
-
-    def get_vocab_size(self) -> int:
-        return len(self.vocab)
-
-    def save(self, filepath: str):
-        """Save tokenizer to file."""
-        import pickle
-
-        with open(filepath, "wb") as f:
-            pickle.dump(
-                {
-                    "vocab": self.vocab,
-                    "merges": self.merges,
-                    "special_tokens": self.special_tokens,
-                    "vocab_size": self.vocab_size,
-                },
-                f,
-            )
-
-    @classmethod
-    def load(cls, filepath: str):
-        """Load tokenizer from file."""
-        import pickle
-
-        with open(filepath, "rb") as f:
-            data = pickle.load(f)
-
-        tokenizer = cls(data["vocab_size"])
-        tokenizer.vocab = data["vocab"]
-        tokenizer.merges = data["merges"]
-        tokenizer.special_tokens = data["special_tokens"]
-        tokenizer.reverse_vocab = {i: token for token, i in tokenizer.vocab.items()}
-
-        return tokenizer
+    def pieces(self, text: str) -> List[str]:
+        """The tokens of `text` as strings, for display (special tokens left out)."""
+        return [self.vocab[i].decode("utf-8", errors="replace") for i in self.encode(text)[1:-1]]
 
 
-# Example usage. Printed output: 'Training complete. Final vocabulary size: 153', then
-# Encoded: [2, 12, 110, 26, 49, 3] and an exact round trip of 'The quick brown fox'
 sample_corpus = [
     "The quick brown fox jumps over the lazy dog",
     "A journey of a thousand miles begins with a single step",
     "To be or not to be that is the question",
     "The only thing we have to fear is fear itself",
     "Ask not what your country can do for you",
-] * 100  # Repeat for better training
+] * 100
 
-# Train tokenizer
-tokenizer = ComprehensiveTokenizer(vocab_size=1000)
+tokenizer = ComprehensiveTokenizer(vocab_size=300)  # 39 merges: small enough that words still split
 tokenizer.train_bpe(sample_corpus)
 
-# Test encoding/decoding: the round trip must be exact, including case
-test_text = "The quick brown fox"
-encoded = tokenizer.encode(test_text)
-decoded = tokenizer.decode(encoded)
-assert decoded == test_text, (decoded, test_text)
+for text in ["The quick brown fox.", "Hello, world!", "two  spaces\nand a newline", "unthinkable", "你好"]:
+    assert tokenizer.decode(tokenizer.encode(text)) == text, text  # exact round trip, including whitespace
+for text in ["The quick brown fox.", "two  spaces\nand a newline", "unthinkable"]:  # the last is unseen
+    print(f"{text!r} -> {tokenizer.pieces(text)}")
+```
 
-print(f"Original: {test_text}")
-print(f"Encoded: {encoded}")      # [2, ..., 3]: <BOS> ... <EOS>
-print(f"Decoded: {decoded}")
+% output
+
+```text
+Training complete. 39 merges, vocabulary size 300
+'The quick brown fox.' -> ['The', ' qu', 'i', 'c', 'k', ' b', 'r', 'o', 'w', 'n', ' fo', 'x', '.']
+'two  spaces\nand a newline' -> ['t', 'w', 'o', ' ', ' s', 'p', 'a', 'c', 'es', '\n', 'an', 'd', ' a', ' n', 'e', 'w', 'l', 'in', 'e']
+'unthinkable' -> ['u', 'n', 't', 'h', 'in', 'k', 'a', 'b', 'l', 'e']
 ```
 
 (sec-tdd-tokenization-analysis-tools)=
@@ -891,7 +832,7 @@ def analyze_tokenization_efficiency(tokenizer, corpus):
     for text in corpus:
         # Encode text
         token_ids = tokenizer.encode(text)
-        tokens = [tokenizer.reverse_vocab.get(tid, "<UNK>") for tid in token_ids]
+        tokens = [tokenizer.vocab.get(tid, b"").decode("utf-8", "replace") for tid in token_ids]
 
         # Calculate compression ratio
         char_count = len(text)

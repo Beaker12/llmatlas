@@ -74,7 +74,7 @@ The choice of tokenization granularity creates fundamental trade-offs:
 | ----------- | ------------------ | --------------- | ------------ | ------------------ |
 | Word-level  | Very Large (>100k) | Short           | Poor         | High               |
 | Subword     | 32k-256k           | Medium          | Good         | Medium             |
-| Character   | Small (\<100)      | Very Long       | Perfect      | Low                |
+| Character   | ~10²–10⁴ (script dependent) | Very Long | Good (unseen characters are still OOV) | Low |
 | Byte-level  | Fixed (256)        | Longest         | Perfect      | Lowest             |
 
 (sec-ch1-vocabulary-size-dilemma)=
@@ -236,9 +236,16 @@ class SimpleBPE:
 # Example usage
 corpus = ["hello", "world", "hello", "help", "held"]
 bpe = SimpleBPE()
-bpe.train(corpus, num_merges=10)
-tokens = bpe.encode("hello world")
-print(f"Tokens: {tokens}")
+bpe.train(corpus, num_merges=4)
+print(f"Merges: {bpe.merges}")
+print(f"Tokens: {bpe.encode('helper')}")  # an unseen word splits into learned subwords and characters
+```
+
+% output
+
+```text
+Merges: [('h', 'e'), ('he', 'l'), ('hel', 'l'), ('hell', 'o')]
+Tokens: ['hel', 'p', 'e', 'r', '</w>']
 ```
 
 **BPE Evolution**:
@@ -255,37 +262,60 @@ print(f"Tokens: {tokens}")
 SentencePiece {cite}`kudo2018sentencepiece` treats text as raw Unicode sequences without pre-tokenization:
 
 ```python
-# SentencePiece example (requires sentencepiece library)
+import os
+import tempfile
+
 import sentencepiece as spm
 
-# Train SentencePiece model
-spm.SentencePieceTrainer.train(
-    input="corpus.txt",
-    model_prefix="tokenizer",
-    vocab_size=32000,
-    model_type="bpe",  # or 'unigram'
-    character_coverage=0.9995,
-    normalization_rule_name="identity",
-)
+# A small corpus: a few English sentences repeated, plus one line of Chinese the model will rarely see.
+sentences = [
+    "Hello, world! Tokenizers turn text into integers.",
+    "The quick brown fox jumps over the lazy dog.",
+    "Language models predict the next token from the previous ones.",
+    "Byte fallback lets a tokenizer encode characters it never learned.",
+]
+with tempfile.TemporaryDirectory() as tmp:
+    corpus_path = os.path.join(tmp, "corpus.txt")
+    with open(corpus_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(sentences * 200 + ["你好"]))
 
-# Load and use
-sp = spm.SentencePieceProcessor()
-sp.load("tokenizer.model")
+    spm.SentencePieceTrainer.train(
+        input=corpus_path,
+        model_prefix=os.path.join(tmp, "tokenizer"),
+        vocab_size=400,  # includes the 256 byte pieces that byte_fallback reserves
+        model_type="bpe",  # or "unigram"
+        character_coverage=0.9995,
+        byte_fallback=True,  # characters outside the learned set become UTF-8 byte pieces, not <unk>
+        normalization_rule_name="identity",
+        num_threads=1,
+        minloglevel=2,
+    )
+    sp = spm.SentencePieceProcessor(model_file=os.path.join(tmp, "tokenizer.model"))
 
 text = "Hello, world! 你好世界"
-tokens = sp.encode_as_pieces(text)
+pieces = sp.encode_as_pieces(text)
 ids = sp.encode_as_ids(text)
-
-print(f"Tokens: {tokens}")
-print(f"IDs: {ids}")
+assert sp.decode_ids(ids) == text  # lossless, because unseen characters fall back to bytes
+assert sp.unk_id() not in ids
+print(f"Pieces: {pieces}")
+print(f"{len(ids)} ids; decoded text equals the input: {sp.decode_ids(ids) == text}")
 ```
+
+% output
+
+```text
+Pieces: ['▁He', 'llo', ',', '▁w', 'orld', '!', '▁', '<0xE4>', '<0xBD>', '<0xA0>', '<0xE5>', '<0xA5>', '<0xBD>', '<0xE4>', '<0xB8>', '<0x96>', '<0xE7>', '<0x95>', '<0x8C>']
+19 ids; decoded text equals the input: True
+```
+
+With byte fallback, the four Chinese characters, absent from the learned pieces, become twelve UTF-8 byte pieces instead of `<unk>`, and decoding returns the input. Without it, the same model would map them to the unknown id. The toy corpus supports a vocabulary of a few hundred pieces; asking for the common 32,000 needs a training corpus of tens of megabytes, and SentencePiece refuses a vocabulary size larger than the corpus can fill.
 
 **Key advantages**:
 
 - Language-agnostic (no pre-tokenization assumptions)
-- Handles any Unicode text
-- Consistent treatment of whitespace
-- Reversible tokenization
+- Handles any Unicode text, losslessly only with byte fallback or full character coverage
+- Consistent treatment of whitespace, written as the visible symbol `▁`
+- Reversible tokenization under the same condition
 
 ```{admonition} Tokenization Implementation
 :class: tip
@@ -411,14 +441,13 @@ For subword tokens, embeddings must compose meaningfully:
 # pseudo-code: `embedding_matrix` and `token_to_id` come from a trained model
 # Example: How "unhappiness" might be tokenized and embedded
 text = "unhappiness"
-tokens = ["un", "happiness"]  # Example BPE tokenization
+tokens = ["un", "h", "appiness"]  # tiktoken's gpt2, cl100k_base and o200k_base all give this split
 
 # Each token gets its own embedding
-un_embedding = embedding_matrix[token_to_id["un"]]  # [d_model]
-happiness_embedding = embedding_matrix[token_to_id["happiness"]]  # [d_model]
+token_embeddings = [embedding_matrix[token_to_id[t]] for t in tokens]  # 3 vectors of size [d_model]
 
 # The model sees these as separate tokens in sequence
-# It must learn that "un" is a negation prefix
+# The split does not follow the morphemes un + happi + ness; the model must still learn that "un" negates
 # This happens through attention and context
 ```
 
