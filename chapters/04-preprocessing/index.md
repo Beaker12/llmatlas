@@ -1091,7 +1091,147 @@ assert ("orig", "unrelated") not in index.candidate_pairs()
 
 Production systems differ from this toy in three ways. They compute signatures in a distributed map over shards and do the bucket join as a global shuffle; they then build the connected components of the candidate graph (union-find) and keep one document per component, usually the longest or the earliest; and they skip the exact Jaccard check on candidates because at the chosen threshold the false-positive rate is low enough to ignore.
 
+Union-find turns candidate pairs into clusters in nearly linear time: every document starts as its own root, each candidate pair joins the two roots, and a document's cluster is the root it reaches. The listing measures what a banding setting costs. It builds 40 random 200-word documents with three edited copies each (6 of the 200 words replaced), so the true clusters are known, and reports the pair precision (the fraction of pairs put in one cluster that are true copies) and the pair recall (the fraction of true pairs put in one cluster) for three ways of banding the same 128-value signature.
+
+```python
+import itertools
+import zlib
+
+import numpy as np
+
+P31 = (1 << 31) - 1  # a Mersenne prime; a * x < 2**62 fits in int64
+
+
+def minhash_signatures(docs: list, n_hash: int, seed: int = 0) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    a = rng.integers(1, P31, size=n_hash, dtype=np.int64)
+    c = rng.integers(0, P31, size=n_hash, dtype=np.int64)
+    sigs = []
+    for words in docs:
+        x = np.array(sorted({zlib.crc32(" ".join(words[i : i + 5]).encode()) % P31
+                             for i in range(len(words) - 4)}), dtype=np.int64)
+        sigs.append(((x[:, None] * a + c) % P31).min(axis=0))
+    return np.array(sigs)
+
+
+def lsh_pairs(sigs: np.ndarray, b: int, r: int) -> set:
+    pairs = set()
+    for band in range(b):
+        buckets = {}
+        for doc, sig in enumerate(sigs):
+            buckets.setdefault(sig[band * r : (band + 1) * r].tobytes(), []).append(doc)
+        for ids in buckets.values():
+            pairs.update(itertools.combinations(ids, 2))
+    return pairs
+
+
+def union_find_clusters(n: int, pairs: set) -> list:
+    """Connected components of the candidate graph; returns the cluster root of each document."""
+    parent = list(range(n))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]  # path halving
+            i = parent[i]
+        return i
+
+    for i, j in pairs:
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[max(ri, rj)] = min(ri, rj)  # the earliest document becomes the root
+    return [find(i) for i in range(n)]
+
+
+# 40 source documents, each with 3 edited copies (3% of words replaced), 160 documents in all.
+rng = np.random.default_rng(0)
+vocab = [f"w{i}" for i in range(2000)]
+docs, family = [], []
+for f in range(40):
+    src = list(rng.choice(vocab, size=200))
+    for copy in range(4):
+        words = list(src)
+        if copy:
+            for i in rng.choice(200, size=6, replace=False):
+                words[i] = str(rng.choice(vocab))
+        docs.append(words)
+        family.append(f)
+true_pairs = {(i, j) for i, j in itertools.combinations(range(len(docs)), 2) if family[i] == family[j]}
+
+sigs = minhash_signatures(docs, n_hash=128)
+results = {}
+for b, r in ((32, 4), (16, 8), (8, 16)):
+    roots = union_find_clusters(len(docs), lsh_pairs(sigs, b, r))
+    found = {(i, j) for i, j in itertools.combinations(range(len(docs)), 2) if roots[i] == roots[j]}
+    precision = len(found & true_pairs) / max(1, len(found))
+    recall = len(found & true_pairs) / len(true_pairs)
+    results[(b, r)] = (precision, recall)
+    print(f"b={b:>2} r={r:>2}: {len(set(roots)):>3} clusters, precision {precision:.3f}, recall {recall:.3f}")
+assert all(p == 1.0 for p, _ in results.values())  # unrelated random documents share no shingles
+assert results[(32, 4)][1] == 1.0 > results[(16, 8)][1] > results[(8, 16)][1]
+```
+
+% output
+
+```text
+b=32 r= 4:  40 clusters, precision 1.000, recall 1.000
+b=16 r= 8:  64 clusters, precision 1.000, recall 0.721
+b= 8 r=16: 152 clusters, precision 1.000, recall 0.033
+```
+
+With $b = 32$ bands of $r = 4$ rows the curve's midpoint is $(1/32)^{1/4} \approx 0.42$, well below the copies' similarity, and every family is recovered. At $r = 8$ the midpoint rises to about 0.71, near the similarity of two edited copies, and recall falls to 0.721; at $r = 16$ it is about 0.88 and almost nothing is found. Union-find adds recall that banding alone does not have: two copies that never share a bucket still land in one cluster when each shares one with the source. Precision is 1 at every setting here because random documents share no shingles; on a real crawl precision is limited by pages that share a template but not content, which is why the threshold is set by measuring both numbers on a labeled sample.
+
 Which document to keep from a cluster is not a detail. Keeping the shortest copy drops the version with the comment thread; keeping the longest keeps the version with the navigation menu. FineWeb's authors found that deduplicating each Common Crawl snapshot independently produced *better* models than deduplicating globally across all snapshots, because global deduplication preferentially removed the oldest copy of good content while leaving the long tail of low-quality pages that were never duplicated. The content that survives many crawls is, on average, the content worth keeping. FineWeb-2 {cite}`penedo2025fineweb2` takes the other route: it deduplicates globally, as the first step before any filter, and records the size of each duplicate cluster in the kept document's metadata, so that copies can later be added back in proportion to how often a page was duplicated.
+
+SimHash {cite}`charikar2002similarity` is the other common near-duplicate fingerprint. Each feature of a document (here a word pair, weighted by its count) hashes to $n_{bits}$ bits and votes $+1$ or $-1$ times its weight on every bit; the fingerprint keeps the sign of each bit's total. Similar documents get fingerprints at a small Hamming distance $d_{Ham}$, the number of bit positions in which they differ. {cite:t}`manku2007detecting` used it at Google for web crawling and found that "for a repository of 8B web-pages, 64-bit simhash fingerprints and k = 3 are reasonable", where $k$ is the largest $d_{Ham}$ counted as a near-duplicate.
+
+```python
+import hashlib
+import re
+from collections import Counter
+
+
+def simhash(text: str, n_bits: int = 64) -> int:
+    """Charikar's fingerprint: each feature votes +w or -w on every bit by its own hash; keep the signs."""
+    words = re.findall(r"\w+", text.lower())
+    features = Counter(" ".join(words[i : i + 2]) for i in range(len(words) - 1))  # weight = count
+    votes = [0] * n_bits
+    for feature, weight in features.items():
+        h = int.from_bytes(hashlib.sha1(feature.encode("utf-8")).digest()[: n_bits // 8], "little")
+        for bit in range(n_bits):
+            votes[bit] += weight if h >> bit & 1 else -weight
+    return sum(1 << bit for bit in range(n_bits) if votes[bit] > 0)
+
+
+def d_ham(x: int, y: int) -> int:
+    return bin(x ^ y).count("1")
+
+
+base = (
+    "The town council voted on Monday to approve the new library building after months of public "
+    "consultation about its design, location and projected cost. Supporters argued that the existing "
+    "branch had long been too small for the number of residents who use it, while opponents asked "
+    "whether the money would be better spent on road repairs. The vote passed by seven to four."
+)
+edited = base.replace("Monday", "Tuesday").replace("seven to four", "eight to three")
+other = (
+    "Quarterly earnings exceeded analyst expectations on strong demand for cloud services, sending "
+    "shares higher in after-hours trading, while the company raised its forecast for the full year "
+    "and announced a new buyback program worth several billion dollars over the next two years."
+)
+fp = {k: simhash(v) for k, v in (("base", base), ("edited", edited), ("other", other))}
+print(f"d_Ham(base, edited) = {d_ham(fp['base'], fp['edited'])}")
+print(f"d_Ham(base, other)  = {d_ham(fp['base'], fp['other'])}")
+assert d_ham(fp["base"], fp["edited"]) < 12 < d_ham(fp["base"], fp["other"])
+```
+
+% output
+
+```text
+d_Ham(base, edited) = 6
+d_Ham(base, other)  = 30
+```
+
+Changing a day and a vote count moves the fingerprint by 6 bits; an unrelated text is 30 bits away, near the 32 expected of two random 64-bit strings. A whole document fits in 8 bytes, against 512 bytes for a 128-value MinHash signature of 32-bit integers, but a short text with few features, as here, moves more bits per edit than a long page does, so the threshold depends on document length.
 
 (sec-ch4-substring-deduplication-suffix-arrays)=
 
