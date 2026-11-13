@@ -1,6 +1,6 @@
 # Modern Transformer Architectures
 
-Chapter 1 built the transformer as it was drawn in 2017, and listed in one section what changed. This chapter takes that list apart. A decoder-only model released in 2024 or 2025 is still recognizably the 2017 block, but nearly every part of it has been replaced for a reason: to keep a 70-billion-parameter run from diverging, to shrink the cache that dominates serving memory, to stretch the context window, or to buy more parameters per unit of compute. We go through those replacements one at a time, put numbers on each from the published configuration files of real models, and finish with the accounting that turns a configuration into parameters, FLOPs and bytes.
+Chapter 1 built the transformer as it was drawn in 2017, and listed in one section what changed ({ref}`sec-ch1-modern-block`). This chapter takes that list apart. A decoder-only model released in 2024 or 2025 is still recognizably the 2017 block, but nearly every part of it has been replaced for a reason: to keep a 70-billion-parameter run from diverging, to shrink the cache that dominates serving memory, to stretch the context window, or to buy more parameters per unit of compute. We go through those replacements one at a time, put numbers on each from the published configuration files of real models, and finish with the accounting that turns a configuration into parameters, FLOPs and bytes.
 
 (sec-ch6-chapter-overview)=
 
@@ -688,7 +688,7 @@ Standard training predicts one next token per position. {cite:t}`gloeckle2024bet
 
 The embedding table and the output projection each hold $|\mathcal{V}| \cdot d$ parameters. Tying them, using one matrix for both, halves that cost; Gemma 2 does so, and many small models do. At large scale the embedding is a small part of the total and untying gives the output projection freedom, so Llama, Qwen, Mistral, OLMo and DeepSeek do not tie. The share is large for small models with large vocabularies: Gemma 2 9B's tied table has 917M parameters, 9.9% of the model, while DeepSeek-V3's two tables hold 1.9B of 671B, 0.3%.
 
-Larger vocabularies shorten sequences (Chapter 1 and its tokenization companion measure this) at the cost of a larger table and a softmax over more classes. The progression from 32,000 entries in the original Llama and Mistral to 128,256 in Llama 3 and 256,000 in Gemma 2 follows from multilingual coverage and from the fact that the table became a smaller part of larger models.
+Larger vocabularies shorten sequences (chapter 1's tokenization companion measures this in {ref}`sec-tdd-choosing-vocabulary-size`) at the cost of a larger table and a softmax over more classes. The progression from 32,000 entries in the original Llama and Mistral to 128,256 in Llama 3 and 256,000 in Gemma 2 follows from multilingual coverage and from the fact that the table became a smaller part of larger models.
 
 (sec-ch6-accounting)=
 

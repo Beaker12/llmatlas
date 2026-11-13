@@ -12,15 +12,15 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $n_{src}$ | source sequence length in an encoder-decoder model | C1-13, `sec-ch1-encoder-decoder` |  |  |
 | $\mathcal{R}$ | RoPE rotation matrix ($\mathcal{R}_m$ at position $m$, block diagonal) | D2, `sec-ch1-rope` |  |  |
 | $\varphi$ | rotation angle of one RoPE pair ($\varphi = m\omega_i$) in the derivation | D2, `sec-ch1-rope` |  |  |
-| $\mathcal{N}$ | normal distribution | C1-03 |  |  |
+| $\mathcal{N}$ | normal distribution | C1-03, `sec-ch1-embedding-initialization-strategies` |  |  |
 | $\tilde{q}$ | RoPE-rotated query ($\tilde{q}_m = q_m \mathcal{R}_m^\top$) | D2, `sec-ch1-rope` |  |  |
 | $\tilde{k}$ | RoPE-rotated key ($\tilde{k}_{m'} = k_{m'} \mathcal{R}_{m'}^\top$) | D2, `sec-ch1-rope` |  |  |
 | $Y$ | decoder states that supply the queries of cross-attention | C1-13, `sec-ch1-encoder-decoder` |  |  |
 | $\mathcal{L}_{MLM}$ | masked-language-model loss, mean over the masked positions | C1-13, `sec-ch1-masked-lm` |  |  |
 | $\tilde{x}$ | corrupted input sequence of the masked-language-model objective | C1-13, `sec-ch1-masked-lm` |  |  |
 | $n_{ctx}$ | context length (number of learned position embeddings) | C1-13, `sec-ch1-parameter-count` |  |  |
-| $a_h$ | ALiBi slope of head $h$ | fix round 1, `sec-ch1-positional-encodings` |  |  |
-| $\omega_0$ | highest RoPE frequency | index.md:L743, `sec-ch1-rope` |  |  |
-| $\omega_{d_k/2-1}$ | lowest RoPE frequency | index.md:L746, `sec-ch1-rope` |  |  |
-| $\mathcal{R}_1$ | RoPE rotation for a position offset of 1 | index.md:L1912, `sec-ch1-exercise-9` |  |  |
+| $a_h$ | ALiBi slope of head $h$ | fix round 1, `sec-ch1-position-scheme-choice` |  |  |
+| $\omega_0$ | highest RoPE frequency | index.md:L745, `sec-ch1-rope` |  |  |
+| $\omega_{d_k/2-1}$ | lowest RoPE frequency | index.md:L748, `sec-ch1-rope` |  |  |
+| $\mathcal{R}_1$ | RoPE rotation for a position offset of 1 | index.md:L1914, `sec-ch1-exercise-9` |  |  |
 

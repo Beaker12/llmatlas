@@ -953,7 +953,7 @@ Self-attention computes a weighted representation of the input sequence, where w
 
    $$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right)V$$
 
-The scaling factor $\sqrt{d_k}$, where $d_k$ is the per-head key dimension, keeps the dot products at unit variance so the softmax does not saturate, assuming the components of $q$ and $k$ are independent with mean 0 and variance 1 (their dot product then has variance $d_k$) {cite}`vaswani2017attention`.
+The scaling factor $\sqrt{d_k}$, where $d_k$ is the per-head key dimension, keeps the dot products at unit variance so the softmax does not saturate, assuming the components of $q$ and $k$ are independent with mean 0 and variance 1 (their dot product then has variance $d_k$; {ref}`sec-ch2-sqrt-dk` derives this) {cite}`vaswani2017attention`.
 
 {numref}`fig-ch1-scaled-dot-product-attention` follows the shapes through the formula.
 

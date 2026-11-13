@@ -171,7 +171,7 @@ layer computes $xW$.
 | $\mathcal{L}_{MLM}$ | masked-language-model loss, mean over the masked positions | {ref}`sec-ch1-masked-lm` |
 | $\tilde{x}$ | corrupted input sequence of the masked-language-model objective | {ref}`sec-ch1-masked-lm` |
 | $n_{ctx}$ | context length (number of learned position embeddings) | {ref}`sec-ch1-parameter-count` |
-| $a_h$ | ALiBi slope of head $h$ | {ref}`sec-ch1-positional-encodings` |
+| $a_h$ | ALiBi slope of head $h$ | {ref}`sec-ch1-position-scheme-choice` |
 | $\omega_0$ | highest RoPE frequency | {ref}`sec-ch1-rope` |
 | $\omega_{d_k/2-1}$ | lowest RoPE frequency | {ref}`sec-ch1-rope` |
 | $\mathcal{R}_1$ | RoPE rotation for a position offset of 1 | {ref}`sec-ch1-exercise-9` |
