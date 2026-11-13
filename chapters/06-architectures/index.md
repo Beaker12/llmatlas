@@ -93,6 +93,9 @@ from block to block without passing through a norm.
 | Qwen3 8B (base) | 36 | 4,096 | 32 / 8 × 128 | 12,288 |
 | Gemma 3 12B, text decoder only | 48 | 3,840 | 16 / 8 × 256 | 15,360 |
 
+```{tabularcolumns} \Y{0.17}\Y{0.14}\Y{0.20}\Y{0.20}\Y{0.12}\Y{0.17}
+```
+
 | Model | Vocabulary | RoPE base | Context | Parameters | Source |
 | --- | --- | --- | --- | --- | --- |
 | Llama 3.1 8B | 128,256 | 500,000 | 128K | 8.03B | paper |
@@ -138,6 +141,9 @@ A few notes on reading the tables.
 - **DeepSeek-V3's total.** The 671.03B counts the main model. The released checkpoint also contains a 13.46B-element multi-token-prediction layer ({ref}`sec-ch6-multi-token-prediction`), about 1.85B of which are copies of the embedding and output head that the paper shares with the main model, and 41.5M FP8 scale factors; the [model card](https://huggingface.co/deepseek-ai/DeepSeek-V3)'s "685B, which includes 671B of the Main Model weights and 14B of the Multi-Token Prediction (MTP) Module weights" is the sum of those two rounded parts. The stored elements come to 684.49B, or 684.53B with the scale factors.
 
 Beyond shapes, the models make different design choices, summarized here and developed in the sections that follow.
+
+```{tabularcolumns} \Y{0.22}\Y{0.17}\Y{0.15}\Y{0.12}\Y{0.15}\Y{0.19}
+```
 
 | Model | Norm placement | QK-norm | Attention biases | Tied embeddings | Attention pattern |
 | --- | --- | --- | --- | --- | --- |
@@ -1009,7 +1015,7 @@ A parameter counter is only useful if it is right, and "right" has three differe
 2. **Against the hub's totals for gated models.** The paper-derived configurations of Llama 3.1 8B and 70B and of Gemma 2 9B (with Gemma 2's vocabulary of 256,000 taken from the hub, not the paper's 256,128) are not downloadable, but the hub's public metadata reports each checkpoint's parameter total. The function applied to the transcribed configurations gives 8,030,261,248, 70,553,706,496 and 9,241,705,984, matching the metadata exactly. That checks the architecture description of each paper, including Gemma 2's four norms and tied embeddings. Gemma 3 12B's hub total of 12,187,325,040 also includes the vision encoder, so its check has three parts {cite}`gemma2025gemma3`. The text decoder's 10,759,155,456 non-embedding parameters are the paper's 10,759M (Table 1). With the checkpoint's 262,208 embedding rows the text decoder holds $10{,}759{,}155{,}456 + 262{,}208 \times 3{,}840 = 11{,}766{,}034{,}176$. A SigLIP vision encoder at 896 pixels without its pooling head (27 layers of width 1,152 with a feed-forward width of 4,304, 14-pixel patches and 4,096 learned positions) holds 416,866,032, the paper's 417M, and the projection into the text model's width with its norm holds $1{,}152 \times 3{,}840 + 1{,}152 = 4{,}424{,}832$. The three sum to the hub's total exactly. With the reference implementation's 262,144 rows the sum would fall 245,760 short. The paper's embedding count for the 12B model, 1,012M, is reproduced by neither row count ($1{,}006.6$M or $1{,}006.9$M), and the check does not use it.
 3. **Against the published figures.** Each vendor's quoted total, and active count in its convention, is compared with a tolerance of half a unit in the last published digit, except where noted. In the table, "Total" and "Active" are computed; the last column gives the convention the vendor's active count matches.
 
-```{tabularcolumns} \Y{0.17}\Y{0.19}\Y{0.09}\Y{0.18}\Y{0.17}\Y{0.20}
+```{tabularcolumns} \Y{0.21}\Y{0.17}\Y{0.09}\Y{0.18}\Y{0.16}\Y{0.19}
 ```
 
 | Model | Total | Quoted | Active | Quoted active | Input embedding in active |

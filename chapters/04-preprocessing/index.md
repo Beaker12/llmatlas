@@ -97,6 +97,9 @@ The caveat, which {ref}`sec-ch4-measuring-whether-filter-helps` returns to, is t
 
 Most published pipelines are a variation of the following sequence. The order matters because the cheap stages run first and shrink the input for the expensive ones, and because some stages assume the output of others (deduplication over normalized text finds more duplicates than deduplication over raw HTML).
 
+```{tabularcolumns} \Y{0.26}\Y{0.29}\Y{0.25}\Y{0.20}
+```
+
 | Stage                   | Relative cost (this chapter's ordering)        | Removed in RefinedWeb  | Depends on                       |
 | ----------------------- | ---------------------------------------------- | ---------------------- | -------------------------------- |
 | URL and domain blocking | Lowest: reads the URL only                     | 2.2% of documents      | Nothing                          |

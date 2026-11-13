@@ -156,9 +156,12 @@ def build() -> str:
     # unbreakable `l` columns that run off the page); the HTML is unchanged.
     out = [INTRO, "## Symbols used throughout the book", "", COLUMNS_2, "", "| Symbol | Meaning |", "|---|---|"]
     out += [f"| ${s}$ | {render(m)} |" for s, m in global_rows()]
-    out += ["", "## Letters with two meanings", "", COLUMNS_3, "", "| Symbol | Meanings | Where each is used |", "|---|---|---|"]
+    # The rows of this table are several lines tall; the longtable class lets the LaTeX output break it
+    # across pages (a plain table is one unbreakable box and ran past the page foot).
+    out += ["", "## Letters with two meanings", "", COLUMNS_3, "", "```{table}", ":class: longtable", "",
+            "| Symbol | Meanings | Where each is used |", "|---|---|---|"]
     out += [f"| ${s}$ | {'; '.join(render(m) for m in ms)} | {render(r)} |" for s, ms, r in exception_rows()]
-    out += ["", "## Symbols used in one chapter", ""]
+    out += ["```", "", "## Symbols used in one chapter", ""]
     for chapter in chapters():
         rows = local_table(chapter)
         if not rows:

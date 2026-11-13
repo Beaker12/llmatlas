@@ -85,6 +85,9 @@ A **token** is the fundamental unit of text that a language model processes. Tok
 
 The choice of tokenization granularity creates fundamental trade-offs:
 
+```{tabularcolumns} \Y{0.20}\Y{0.23}\Y{0.18}\Y{0.21}\Y{0.18}
+```
+
 | Granularity | Vocabulary Size    | Sequence Length | OOV Handling | Semantic Coherence |
 | ----------- | ------------------ | --------------- | ------------ | ------------------ |
 | Word-level  | Very Large (>100k) | Short           | Poor         | High               |

@@ -95,6 +95,23 @@ sphinx:
         \renewcommand{\topfraction}{0.85}\renewcommand{\bottomfraction}{0.7}\renewcommand{\textfraction}{0.1}
         \renewcommand{\floatpagefraction}{0.75}\setcounter{topnumber}{3}\setcounter{bottomnumber}{2}
         \setcounter{totalnumber}{4}
+        % Table cells are ragged-right and never hyphenated: words move whole to the next line, so headers,
+        % model, tool and citation names are not split. A column too narrow for its longest word is fixed in the
+        % table itself (tabularcolumns). Sphinx's column type T is tabulary's justified J; make it L (left).
+        \newcolumntype{T}{L}
+        \usepackage{etoolbox}
+        \AtBeginEnvironment{tabulary}{\hyphenpenalty=10000 \exhyphenpenalty=10000 }
+        \AtBeginEnvironment{longtable}{\hyphenpenalty=10000 \exhyphenpenalty=10000 }
+        % The same for the fixed-width columns of a tabularcolumns directive (Sphinx's \X and \Y are p columns).
+        \makeatletter
+        \newcolumntype{\X}[2]{>{\raggedright\arraybackslash}p{\dimexpr
+          (\linewidth-\spx@arrayrulewidth)*#1/#2-\tw@\tabcolsep-\spx@arrayrulewidth\relax}}
+        \newcolumntype{\Y}[1]{>{\raggedright\arraybackslash}p{\dimexpr
+          #1\dimexpr\linewidth-\spx@arrayrulewidth\relax-\tw@\tabcolsep-\spx@arrayrulewidth\relax}}
+        \makeatother
+        % Rows of the long tables (the notation page) are several lines tall: a chunk of 20 rows is taller than a
+        % page and ran past the footer, so break after every 3 rows.
+        \LTchunksize=3\relax
     linkcheck_ignore:
       - "https://doi.org/10.1145/.*"      # dl.acm.org returns 403 to non-browser clients
       - "https://doi.org/10.1162/.*"      # direct.mit.edu returns 403 to non-browser clients

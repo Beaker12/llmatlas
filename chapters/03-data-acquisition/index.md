@@ -82,6 +82,9 @@ The training sets of the major models are reported, when they are reported at al
 \begingroup\footnotesize\setlength{\tabcolsep}{2pt}
 ```
 
+```{tabularcolumns} \Y{0.13}\Y{0.16}\Y{0.21}\Y{0.16}\Y{0.12}\Y{0.09}\Y{0.13}
+```
+
 | Model or corpus                                  | Web crawl                    | Curated web (Wikipedia, forums, news) | Books          | Papers           | Code            | Total tokens |
 | ------------------------------------------------ | ---------------------------- | ------------------------------------- | -------------- | ---------------- | --------------- | ------------ |
 | GPT-3 {cite}`brown2020language`                  | 60% (filtered Common Crawl)  | 22% WebText2, 3% Wikipedia            | 16% (two book corpora) | included in web | not separate | 300B |
@@ -173,6 +176,9 @@ Common Crawl is a non-profit foundation that has crawled the web since 2008, on 
 ### 2.2 Snapshots, segments and files
 
 A snapshot is identified by a crawl id such as `CC-MAIN-2026-39` (the id carries a year and a week number). Under `crawl-data/<crawl-id>/` it is divided into a hundred segments, and each segment into files of three kinds:
+
+```{tabularcolumns} \Y{0.13}\Y{0.40}\Y{0.15}\Y{0.32}
+```
 
 | File type | Contents                                                                     | Size per snapshot | Use                                           |
 | --------- | ---------------------------------------------------------------------------- | ----------------- | --------------------------------------------- |
@@ -1037,6 +1043,9 @@ Roughly 45% of Common Crawl's pages are English, which is already a large over-r
 (sec-ch3-multilingual-corpora)=
 
 ### 6.2 The multilingual corpora
+
+```{tabularcolumns} \Y{0.23}\Y{0.16}\Y{0.19}\Y{0.42}
+```
 
 | Corpus                                         | Languages | Source               | Approach                                                                                 |
 | ---------------------------------------------- | --------- | -------------------- | ---------------------------------------------------------------------------------------- |

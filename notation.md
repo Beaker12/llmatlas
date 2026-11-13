@@ -145,6 +145,9 @@ layer computes $xW$.
 ```{tabularcolumns} \X{3}{20}\X{11}{20}\X{6}{20}
 ```
 
+```{table}
+:class: longtable
+
 | Symbol | Meanings | Where each is used |
 |---|---|---|
 | $m$ | position in a positional encoding or relative offset ($m'$ a second position); Adam's first moment ($m_t$) | The position belongs to positional encodings and attention in chapters 1 and 6 ($q_m$, $m - n$); Adam's first moment belongs to chapter 2's optimizer sections and always carries its step ($m_t$). They never share a formula. |
@@ -158,6 +161,7 @@ layer computes $xW$.
 | $r$ | router logit ($r_i$ for expert $i$); rows per LSH band | The router logit appears in chapter 6's mixture-of-experts sections; the rows per band appear only in chapter 4, which has no router (bands $b$ and rows $r$ are the standard MinHash symbols). |
 | $h$ | hidden state ($h^{(l)}_i$ at layer $l$, position $i$); MinHash hash function ($h_i$ the $i$-th) | The hidden state appears in chapter 2; the MinHash hash function appears only in chapter 4, always with an argument, as in the MinHash literature. |
 | $n$ | sequence or context length ($n'$ the target context length); order of an n-gram | The sequence length appears throughout ($n'$ a target length in chapter 6); in chapter 4, which writes its string length $T_{idx}$, $n$ is only the order of an n-gram, the universal name. |
+```
 
 ## Symbols used in one chapter
 
