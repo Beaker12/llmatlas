@@ -150,8 +150,8 @@ import re
 import unicodedata
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
-_ZERO_WIDTH = re.compile(r"[​‌‍⁠﻿]")
-_MULTI_SPACE = re.compile(r"[ \t ]+")
+_ZERO_WIDTH = re.compile(r"[\u200b\u200c\u200d\u2060\ufeff]")
+_MULTI_SPACE = re.compile(r"[ \t\u00a0]+")
 _MULTI_NEWLINE = re.compile(r"\n{3,}")
 
 
@@ -173,8 +173,8 @@ def normalize_text(text: str, form: str = "NFC") -> str:
 
 
 # The decomposed and composed spellings of "café" become identical:
-decomposed = "café"
-composed = "café"
+decomposed = "cafe\u0301"
+composed = "caf\u00e9"
 assert decomposed != composed
 assert normalize_text(decomposed) == normalize_text(composed) == "café"
 
@@ -666,7 +666,7 @@ $$\Pr[\text{candidate}] = 1 - (1 - J^r)^b$$
 
 which is a steep S-curve with its midpoint near $(1/b)^{1/r}$. Choosing $b$ and $r$ sets the similarity threshold.
 
-Gopher {cite}`rae2021scaling` used 13-word shingles and removed one document of any pair with Jaccard similarity above 0.8; it does not report the number of hash functions. Lee et al. {cite}`lee2022deduplicating` used 5-word shingles with a 9,000-value signature in $b = 20$ bands of $r = 450$ rows, then confirmed candidate pairs with edit similarity above 0.8. RefinedWeb {cite}`penedo2023refinedweb` copied those MinHash settings (9,000 hashes in 20 buckets of 450) without a separate verification step; at those settings the midpoint of the banding curve is $(1/20)^{1/450} \approx 0.993$, so banding alone catches only near-identical pairs. FineWeb used 5-word shingles with 112 hash functions in 14 bands of 8 rows, which puts its threshold near 0.75. Dolma relied on exact matching of URLs, documents and paragraphs through a Bloom filter rather than MinHash. The implementation below uses a universal hash family $h_i(\chi) = (a_{i,1} \chi + a_{i,0}) \bmod P$ over the 32-bit integer id $\chi$ of a shingle, with $P$ a large prime, which is what most production implementations do.
+Gopher {cite}`rae2021scaling` used 13-word shingles and removed one document of any pair with Jaccard similarity above 0.8; it does not report the number of hash functions. {cite:t}`lee2022deduplicating` used 5-word shingles with a 9,000-value signature in $b = 20$ bands of $r = 450$ rows, then confirmed candidate pairs with edit similarity above 0.8. RefinedWeb {cite}`penedo2023refinedweb` copied those MinHash settings (9,000 hashes in 20 buckets of 450) without a separate verification step; at those settings the midpoint of the banding curve is $(1/20)^{1/450} \approx 0.993$, so banding alone catches only near-identical pairs. FineWeb used 5-word shingles with 112 hash functions in 14 bands of 8 rows, which puts its threshold near 0.75. Dolma relied on exact matching of URLs, documents and paragraphs through a Bloom filter rather than MinHash. The implementation below uses a universal hash family $h_i(\chi) = (a_{i,1} \chi + a_{i,0}) \bmod P$ over the 32-bit integer id $\chi$ of a shingle, with $P$ a large prime, which is what most production implementations do.
 
 ```python
 import hashlib
