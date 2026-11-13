@@ -17,11 +17,11 @@ digraph moe_layer {
   }
   s1 [label=<<TABLE BORDER="0" CELLSPACING="2"><TR><TD><B>shared experts</B></TD></TR><TR><TD>always active</TD></TR></TABLE>>, fillcolor="#c6f6d5", color="#2d3748", penwidth=2.2, fontsize=20];
 
-  y [label=<<TABLE BORDER="0" CELLSPACING="2"><TR><TD>y = (shared experts' output) + Σ ρ̃ᵢ FFNᵢ(x)</TD></TR><TR><TD>summed over i in TopK(r)</TD></TR></TABLE>>, fillcolor="#edf2f7", color="#2d3748", penwidth=1.3, fontsize=20];
+  y [label=<<TABLE BORDER="0" CELLSPACING="2"><TR><TD>y = (shared experts' output) + Σ ρ̃<SUB>i</SUB> FFN<SUB>i</SUB>(x)</TD></TR><TR><TD>summed over i in TopK(r)</TD></TR></TABLE>>, fillcolor="#edf2f7", color="#2d3748", penwidth=1.3, fontsize=20];
 
   x -> router [color="#2d3748", penwidth=1.3];
-  router -> e1 [label=" ρ̃₁", fontsize=20, fontcolor="#2d3748", color="#2d3748", penwidth=2.2];
-  router -> e3 [label=" ρ̃₃", fontsize=20, fontcolor="#2d3748", color="#2d3748", penwidth=2.2];
+  router -> e1 [label=< ρ̃<SUB>1</SUB>>, fontsize=20, fontcolor="#2d3748", color="#2d3748", penwidth=2.2];
+  router -> e3 [label=< ρ̃<SUB>3</SUB>>, fontsize=20, fontcolor="#2d3748", color="#2d3748", penwidth=2.2];
   router -> e2 [color="#cbd5e0", style=dotted];
   router -> e4 [color="#cbd5e0", style=dotted];
   router -> eE [color="#cbd5e0", style=dotted];

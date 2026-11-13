@@ -581,7 +581,7 @@ for n_kv in (4, 2, 1):
 ''')
 
 md(r"""
-A simplified multi-head latent attention layer. Only a small latent $c_i$ and a shared rotary key are cached. The reference expands the latent into full keys and values and runs ordinary attention; the decoding path never builds them, because the key up-projection is absorbed into the query and the value up-projection is applied after the weighted sum. This is a simplified layer (no query compression, one rotary key), not DeepSeek's implementation.
+A simplified multi-head latent attention layer. Only a small latent $c_m$ and a shared rotary key are cached. The reference expands the latent into full keys and values and runs ordinary attention; the decoding path never builds them, because the key up-projection is absorbed into the query and the value up-projection is applied after the weighted sum. This is a simplified layer (no query compression, one rotary key), not DeepSeek's implementation.
 """)
 code(r'''
 class MiniMLA(nn.Module):
@@ -1050,6 +1050,66 @@ ax.legend(fontsize=8)
 plt.tight_layout()
 plt.show()
 ''')
+
+md(r"""
+### What the model shows at initialization
+
+Xiong et al. (2020, "On Layer Normalization in the Transformer Architecture") analyze a different model from this one: an encoder-decoder transformer with layer normalization, ReLU feed-forward networks, Xavier initialization and (in the proof) zero query and key matrices. They prove bounds on the gradient of the last feed-forward layer and measure the gradient norms of 6-6 and larger models. Whether the same holds in this notebook's six-layer model (RMSNorm, SwiGLU, rotary attention, PyTorch's default initialization, tied embeddings) is a measurement, so the next cell makes it: at initialization, on the first batch of each of the five seeds, the norm of the gradient of each block's attention output projection $W_O$, and the root mean square of the residual stream after each block, for both arrangements. It then repeats the pre-norm measurement of the stream with the two matrices that write into it multiplied by $1/\sqrt{2L}$, the rule of {ref}`sec-ch6-initialization-residual-branches`.
+""")
+code(r'''
+def init_profile(style, seed, residual_scale=1.0):
+    """At initialization, on the training cell's first batch for this seed: the norm
+    of the gradient of each block's attention output projection W_O, and the RMS of
+    the residual stream after each block. `residual_scale` multiplies the weights
+    that write into the stream (W_O and the feed-forward down-projection)."""
+    torch.manual_seed(seed)
+    model = TinyLM(n_layers=6, n_kv_heads=4, style=style)
+    for block in model.blocks:
+        block.attention.wo.weight.data *= residual_scale
+        block.ffn.w2.weight.data *= residual_scale
+    g = torch.Generator().manual_seed(1000 + seed)
+    start = torch.randint(0, len(TEXT) - SEQ - 1, (BATCH,), generator=g)
+    batch = TEXT[start[:, None] + torch.arange(SEQ + 1)]
+    rms = []
+    hooks = [block.register_forward_hook(
+        lambda module, inputs, out: rms.append(out.pow(2).mean().sqrt().item()))
+        for block in model.blocks]
+    logits = model(batch[:, :-1]).reshape(-1, 256)
+    F.cross_entropy(logits, batch[:, 1:].reshape(-1)).backward()
+    for hook in hooks:
+        hook.remove()
+    grads = [block.attention.wo.weight.grad.norm().item() for block in model.blocks]
+    return np.array(grads), np.array(rms)
+
+
+profile = {style: [init_profile(style, seed) for seed in range(5)]
+           for style in ("pre", "post")}
+grad = {style: np.array([p[0] for p in runs]) for style, runs in profile.items()}
+rms = {style: np.array([p[1] for p in runs]) for style, runs in profile.items()}
+print("mean over 5 seeds; blocks 1 to 6")
+for style in ("pre", "post"):
+    print(f"{style:>4}: norm of dL/dW_O  {np.round(grad[style].mean(0), 3)}")
+    print(f"      residual-stream RMS {np.round(rms[style].mean(0), 3)}")
+last_over_first = {s: grad[s][:, -1] / grad[s][:, 0] for s in grad}
+print("gradient norm, last block over first, per seed:")
+for style in ("pre", "post"):
+    print(f"{style:>4}: {np.round(last_over_first[style], 2)}")
+
+scaled = np.array([init_profile("pre", seed, 12 ** -0.5)[1] for seed in range(5)])
+print(f"pre, W_O and W_2 times 1/sqrt(2L): RMS {np.round(scaled.mean(0), 3)}")
+
+assert (last_over_first["pre"] < 0.6).all()
+assert ((last_over_first["post"] > 0.8) & (last_over_first["post"] < 1.2)).all()
+assert (grad["post"].mean(0) < grad["pre"].mean(0)).all()
+assert np.allclose(rms["post"], 1.0, atol=1e-3)
+assert (np.diff(rms["pre"], axis=1) > 0).all()
+assert (rms["pre"][:, -1] > 3 * rms["pre"][:, 0]).all()
+assert scaled[:, -1].mean() < 0.6 * rms["pre"][:, -1].mean()
+''')
+
+md(r"""
+The assertions state what the cell found. In this model the post-norm gradient norm is flat across the blocks and smaller than the pre-norm gradient norm at every block; the pre-norm gradient norm falls toward the output; the post-norm stream has a root mean square of exactly one after every block, while the pre-norm stream grows from block to block, and the $1/\sqrt{2L}$ scaling reduces that growth. The last point is the accumulation of variance that the chapter describes for pre-norm. The first two points are the opposite of what the paper's analysis gives for the original architecture under its assumptions, namely large gradients near the output for post-norm and smaller ones for pre-norm. So the failure of post-norm at $3 \times 10^{-3}$ in the sweep above is not explained by large output-side gradients at initialization; this notebook records it as an observation and does not trace its cause.
+""")
 
 md(r"""
 ## Summary

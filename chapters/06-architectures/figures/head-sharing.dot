@@ -5,7 +5,7 @@ digraph head_sharing {
   edge [arrowsize=0.6];
 
   subgraph cluster_mha {
-    label=<<B>multi-head (MHA)</B>: 8 K/V heads, cache 2 × 8 × dₖ per token per layer>;
+    label=<<B>multi-head (MHA)</B>: 8 K/V heads, cache 2 × 8 × d<SUB>k</SUB> per token per layer>;
     style="rounded,filled"; fillcolor="#f7fafc"; color="#4a5568"; penwidth=1.3; fontsize=22;
     m_lab [label="K/V", shape=plaintext, style="", fixedsize=false, color="#2d3748", fontsize=20];
     m_k0 [label="kv1", fillcolor="#fde8d7", color="#2d3748", fontsize=20]; m_k1 [label="kv2", fillcolor="#fde8d7", color="#2d3748", fontsize=20];
@@ -21,7 +21,7 @@ digraph head_sharing {
     m_k0 -> m_q0; m_k1 -> m_q1; m_k2 -> m_q2; m_k3 -> m_q3; m_k4 -> m_q4; m_k5 -> m_q5; m_k6 -> m_q6; m_k7 -> m_q7;
   }
   subgraph cluster_gqa {
-    label=<<B>grouped-query (GQA)</B>: 2 K/V heads, cache 2 × 2 × dₖ>;
+    label=<<B>grouped-query (GQA)</B>: 2 K/V heads, cache 2 × 2 × d<SUB>k</SUB>>;
     style="rounded,filled"; fillcolor="#f7fafc"; color="#4a5568"; penwidth=1.3; fontsize=22;
     g_lab [label="K/V", shape=plaintext, style="", fixedsize=false, color="#2d3748", fontsize=20];
     g_k0 [label="kv1", width=3.3, fillcolor="#fde8d7", color="#2d3748", fontsize=20];
@@ -35,7 +35,7 @@ digraph head_sharing {
     g_k0 -> {g_q0 g_q1 g_q2 g_q3}; g_k1 -> {g_q4 g_q5 g_q6 g_q7};
   }
   subgraph cluster_mqa {
-    label=<<B>multi-query (MQA)</B>: 1 K/V head, cache 2 × dₖ>;
+    label=<<B>multi-query (MQA)</B>: 1 K/V head, cache 2 × d<SUB>k</SUB>>;
     style="rounded,filled"; fillcolor="#f7fafc"; color="#4a5568"; penwidth=1.3; fontsize=22;
     q_lab [label="K/V", shape=plaintext, style="", fixedsize=false, color="#2d3748", fontsize=20];
     q_k0 [label="kv1", width=6.9, fillcolor="#fde8d7", color="#2d3748", fontsize=20];
