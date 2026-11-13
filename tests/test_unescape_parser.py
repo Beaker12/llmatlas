@@ -24,3 +24,9 @@ def test_math_regions_skips_fenced_code_and_finds_display_and_inline():
     assert "$c$" in texts
     assert not any("1,250" in t for t in texts), "fenced code must be skipped"
     assert len(texts) == 3
+
+
+def test_a_math_directive_body_is_display_math():
+    text = "Prose $a$.\n\n```{math}\n:label: eq-x\n\\chi = \\sum_i x_i\n```\n\n:::{math}\ny = 1\n:::\n\n```python\nz = '$b$'\n```\n"
+    texts = [text[s:e] for s, e in math_regions(text)]
+    assert texts == ["$a$", "\\chi = \\sum_i x_i\n", "y = 1\n"]
