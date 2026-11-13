@@ -27,11 +27,11 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\mathcal{N}$ | normal distribution | index.md:L529 |  |
 | $g_{clipped}$ | clipped gradient | index.md:L223 |  |
 | $n_{acc}$ | number of micro-batches accumulated per optimizer step | index.md, sec-ch2-gradient-accumulation |  |
-| $z_{\max}$ | largest logit, the shift in log-sum-exp | reserved: C2-12 |  |
-| $\hat{g}$ | mini-batch gradient estimate | reserved: C2-12 |  |
-| $\sigma_g$ | standard deviation of a per-example gradient (mini-batch noise) | reserved: C2-12 |  |
-| $n_{rank}$ | rank kept by a low-rank approximation | reserved: C2-12 |  |
-| $z_{ff}$ | pre-activation of the feed-forward hidden layer | reserved: C2-12 |  |
+| $z_{\max}$ | largest logit, the shift in log-sum-exp | index.md, sec-ch2-log-sum-exp |  |
+| $\hat{g}$ | mini-batch gradient estimate | index.md, sec-ch2-minibatch-noise |  |
+| $\sigma_g$ | standard deviation of a per-example gradient (mini-batch noise) | index.md, sec-ch2-minibatch-noise |  |
+| $n_{rank}$ | rank kept by a low-rank approximation | index.md, sec-ch2-svd-low-rank |  |
+| $z_{ff}$ | pre-activation of the feed-forward hidden layer | index.md, sec-ch2-ffn-embedding-head-gradients |  |
 | $\mathrm{X}$ | a random variable | index.md:L118 | $X$ at L118 (and at L96, where $H(X)$ becomes $H(p)$) |
 | $\mathrm{Y}$ | a second random variable | index.md:L118 | $Y$ at L118 |
 
