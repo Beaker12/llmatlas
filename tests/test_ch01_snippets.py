@@ -229,3 +229,22 @@ def test_subword_algorithms_listing_matches_the_deep_dive_prose():
     assert len(set(byte_char.values())) == 256 and byte_char[32] == "Ġ"
     assert all(not ch.isspace() and ch.isprintable() for ch in byte_char.values())
     assert "".join(byte_char[b] for b in "é".encode("utf-8")) == "Ã©"
+
+
+def test_committed_notebook_embeds_every_plot():
+    """Each plt.show() in the committed notebook has an image/png output, so the published page shows the plots.
+
+    Executing with MPLBACKEND=Agg strips them; the notebook is committed after a run with the inline backend.
+    """
+    import json
+
+    nb = json.loads((CH01_DIR / "examples" / "attention_mechanisms_demo.ipynb").read_text())
+    shows = images = 0
+    for cell in nb["cells"]:
+        if cell["cell_type"] != "code":
+            continue
+        cell_shows = "".join(cell["source"]).count("plt.show()")
+        cell_images = sum("image/png" in out.get("data", {}) for out in cell.get("outputs", []))
+        assert cell_images >= cell_shows, f"cell with {cell_shows} plots has {cell_images} images"
+        shows, images = shows + cell_shows, images + cell_images
+    assert images >= shows >= 10
