@@ -6,19 +6,17 @@ A language model is a probability distribution over text, trained by gradient de
 
 ## Chapter Overview
 
-The mathematics underlying Large Language Models can be understood through several interconnected concepts that build upon each other. A short linear-algebra primer ({ref}`sec-ch2-linear-algebra-you-need`) fixes notation first.
+The chapter has six parts, each needed to read the rest of the book. A short linear-algebra primer ({ref}`sec-ch2-linear-algebra-you-need`) fixes notation and derives the softmax Jacobian and vector-Jacobian products, which every later gradient uses.
 
-**Probability and Information Theory** form the foundation of how LLMs understand and generate text. Think of it like predicting the next word in a sentence - the model assigns probabilities to different possibilities based on what it has learned. Information theory measures how "surprising" or "informative" each word choice is, helping the model learn which predictions are better.
+**Probability and information theory.** A language model assigns a probability to each possible next token, and it is trained to minimize the cross-entropy between the data and those probabilities. This part defines entropy, cross-entropy, KL divergence, perplexity and bits per byte, the quantities in which every loss and evaluation in this book is reported.
 
-**Optimization** is the process by which LLMs learn from data. Imagine adjusting thousands of knobs to minimize errors - that's essentially what gradient descent does. The model makes predictions, measures how wrong they are, and gradually adjusts its internal parameters to improve. Advanced optimizers like Adam are like smart assistants that remember which knobs to turn faster and which to adjust more carefully.
+**Optimization.** Training changes the parameters step by step against the gradient of the loss. This part derives SGD, momentum and Adam, the learning-rate limit beyond which a step diverges, and the schedules, clipping and accumulation used in every large training run.
 
-**Backpropagation** is the mechanism that tells the model how to improve. When the model makes a mistake, backpropagation traces the error backwards through all the layers, determining exactly how much each parameter contributed to the error. It's like analyzing a recipe gone wrong by working backwards from the taste to identify which ingredient amounts need adjustment.
+**Backpropagation.** The gradient of the loss with respect to billions of parameters is computed in one backward pass. This part works through the backward pass of attention, layer normalization, the feed-forward layer, the embedding and the output head, and shows how residual connections and pre-LN keep gradients from vanishing with depth.
 
-**Scaling Laws** reveal predictable relationships between model size, training data, and performance. These mathematical patterns help researchers determine whether building a bigger model or gathering more data will be more effective. They're like economic laws that govern the "returns on investment" for computational resources.
+**Scaling laws and compute.** Loss falls as a power law in parameters, data and compute. This part derives the $6N$ FLOPs-per-token rule, uses the Kaplan and Chinchilla laws to split a compute budget between model size and data, and counts the memory a training run needs.
 
-**Numerical Stability** addresses practical challenges in training massive models with billions of parameters. Just as engineers must account for physical limitations when building bridges, ML practitioners must handle the computer's finite precision when performing trillions of calculations. Techniques like mixed precision training and gradient clipping prevent the mathematical equivalent of structural failure.
-
-These mathematical principles work together to enable LLMs to learn patterns from vast amounts of text and generate coherent, contextually appropriate responses.
+**Numerical stability.** Training runs in 16-bit formats with a limited range and few significant digits. This part shows where values overflow or underflow, and how log-sum-exp, loss scaling, bf16 and initialization scaled to width and depth keep them finite.
 
 (sec-ch2-learning-objectives)=
 
@@ -127,9 +125,9 @@ parameters of a rank-8 factorization of 4096 x 4096: 65,536 of 16,777,216
 
 ### 0.5 Vector-Jacobian products
 
-For a layer that maps $x \in \mathbb{R}^{d_{\text{in}}}$ to $y \in \mathbb{R}^{d_{\text{out}}}$, the Jacobian $\partial y / \partial x$ is a $d_{\text{out}} \times d_{\text{in}}$ matrix. Backpropagation never builds it. It needs only the vector-Jacobian product (VJP): given the gradient $g = \partial \mathcal{L} / \partial y$ of a scalar loss, the chain rule gives
+For a layer that maps a row vector $x \in \mathbb{R}^{d_{\text{in}}}$ to a row vector $y \in \mathbb{R}^{d_{\text{out}}}$, the Jacobian $\partial y / \partial x$ is a $d_{\text{out}} \times d_{\text{in}}$ matrix. Backpropagation never builds it. It needs only the vector-Jacobian product (VJP): given the gradient $g = \partial \mathcal{L} / \partial y$ of a scalar loss, the chain rule gives
 
-$$\frac{\partial \mathcal{L}}{\partial x} = g^\top \frac{\partial y}{\partial x},$$
+$$\frac{\partial \mathcal{L}}{\partial x} = g \, \frac{\partial y}{\partial x},$$
 
 and for the operations a transformer uses this product has a closed form far cheaper than the matrix. For a linear map $y = xW$ the VJP is $g W^\top$ (and the weight gradient is $x^\top g$); for an element-wise activation $y = \operatorname{act}(x)$ it is $g \odot \operatorname{act}'(x)$; for the softmax it is the formula of {ref}`sec-ch2-softmax-jacobian`, whose cost grows linearly with the number of logits while the Jacobian has the square of that number of entries. The softmax over a 50,257-token vocabulary has a Jacobian of about 2.5 billion entries, while its VJP touches 50,257 numbers twice.
 
@@ -212,7 +210,7 @@ $$H(p) = -\sum_{x} p(x) \log p(x)$$
 
 Using $\log_2$ gives entropy in bits; the natural logarithm gives nats. The entropy and KL functions below use $\log_2$ and return bits; the cross-entropy loss uses the natural logarithm, as PyTorch does, so it and the perplexity built on it are in nats.
 
-For language, entropy measures the average information content per symbol. Shannon's experiments bound the entropy of printed English, for a reader who knows the preceding 100 letters, between 0.6 and 1.3 bits per letter, far below the 4.7 bits of a uniform choice over the 26 letters, which is what makes language predictable {cite}`shannon1951prediction`.
+For language, entropy measures the average information content per symbol. Shannon's experiments bound the entropy of printed English, for a reader who knows the preceding 100 letters, between 0.6 and 1.3 bits per letter, far below the $\log_2 27 = 4.75$ bits of a uniform choice over the 27 symbols of his alphabet, the 26 letters and the space, which is what makes language predictable {cite}`shannon1951prediction`.
 
 (sec-ch2-cross-entropy-kl-divergence)=
 
@@ -231,6 +229,8 @@ Training by maximum likelihood is the same as minimizing this divergence from th
 $$\mathcal{L}(\theta) = -\mathbb{E}_{x \sim p_{\text{data}}}[\log p_\theta(x)] = H(p_{\text{data}}) + D_{KL}(p_{\text{data}} \,\|\, p_\theta).$$
 
 The entropy of the data does not depend on $\theta$, so any change of $\theta$ that lowers the loss lowers the KL divergence by exactly the same amount, and the loss can never fall below $H(p_{\text{data}})$, which is reached only when $p_\theta = p_{\text{data}}$. For a worked case take $p = (0.5, 0.25, 0.25)$ and $q = (0.25, 0.5, 0.25)$. In bits, $H(p) = 0.5 \cdot 1 + 0.25 \cdot 2 + 0.25 \cdot 2 = 1.5$, $H(p, q) = 0.5 \cdot 2 + 0.25 \cdot 1 + 0.25 \cdot 2 = 1.75$, and $D_{KL}(p \,\|\, q) = 0.5 \log_2 2 + 0.25 \log_2 0.5 + 0 = 0.25 = 1.75 - 1.5$.
+
+This pair happens to give the same value both ways, $D_{KL}(q \,\|\, p) = 0.25$ too, but KL divergence is not symmetric in general. For $p = (0.9, 0.1)$ and the uniform $q = (0.5, 0.5)$, $D_{KL}(p \,\|\, q) = 0.9 \log_2 1.8 + 0.1 \log_2 0.2 = 0.531$ bits while $D_{KL}(q \,\|\, p) = 0.5 \log_2 (5/9) + 0.5 \log_2 5 = 0.737$ bits. The direction matters for training: the loss is $D_{KL}(p_{\text{data}} \,\|\, p_\theta)$, which weights each outcome by how often the data produces it, and it is infinite if the model gives probability zero to an outcome that occurs.
 
 {numref}`fig-ch2-cross-entropy-decomposition` draws the worked example, with two more choices of $q$ for comparison.
 
@@ -762,31 +762,31 @@ Understanding how gradients flow through transformer architectures reveals why c
 
 Backpropagation is reverse-mode automatic differentiation {cite}`baydin2018automatic`. The forward pass evaluates the network operation by operation and stores every intermediate value it will need later. The backward pass starts from $\partial \mathcal{L} / \partial \mathcal{L} = 1$ and visits the operations in reverse order; each one turns the gradient of its output into gradients of its inputs with its vector-Jacobian product ({ref}`sec-ch2-vjp`), and an input used by several operations adds up the gradients it receives. One backward pass yields the gradient with respect to every parameter, and, in Baydin et al.'s words, "the amount of arithmetic goes up by no more than a small constant factor" over the forward pass. Forward-mode differentiation would instead need one pass per input, which for a model with billions of parameters is out of the question. The price of reverse mode is memory: the stored intermediates are the activations counted in {ref}`sec-ch2-memory-requirements`.
 
-The listing below differentiates $\mathcal{L} = (\tanh(wx) - 0.5)^2$ at $x = 2$, $w = 0.3$ by hand, one stored intermediate at a time, and compares the result with PyTorch.
+The listing below differentiates $\mathcal{L} = (\tanh(\theta x) - 0.5)^2$ with respect to a single parameter $\theta$ at $x = 2$, $\theta = 0.3$ by hand, one stored intermediate at a time, and compares the result with PyTorch.
 
 ```python
 import math
 
 import torch
 
-x, w_value, target = 2.0, 0.3, 0.5
+x, theta_value, target = 2.0, 0.3, 0.5
 # forward pass: store every intermediate
-a = w_value * x                # 0.6
+a = theta_value * x            # 0.6
 h = math.tanh(a)               # 0.5370
 loss = (h - target) ** 2
 # backward pass: one VJP per operation, in reverse order
 dL_dh = 2 * (h - target)
 dL_da = dL_dh * (1 - h ** 2)   # tanh'(a) = 1 - tanh(a)^2
-dL_dw = dL_da * x
-w = torch.tensor(w_value, requires_grad=True)
-((torch.tanh(w * x) - target) ** 2).backward()
-print(f"loss {loss:.4g}; dL/dw by hand {dL_dw:.4g}, by autograd {w.grad.item():.4g}")
+dL_dtheta = dL_da * x
+theta = torch.tensor(theta_value, requires_grad=True)
+((torch.tanh(theta * x) - target) ** 2).backward()
+print(f"loss {loss:.4g}; dL/dtheta by hand {dL_dtheta:.4g}, by autograd {theta.grad.item():.4g}")
 ```
 
 % output
 
 ```text
-loss 0.001373; dL/dw by hand 0.1055, by autograd 0.1055
+loss 0.001373; dL/dtheta by hand 0.1055, by autograd 0.1055
 ```
 
 (sec-ch2-vanishing-gradient-problem)=
@@ -795,9 +795,9 @@ loss 0.001373; dL/dw by hand 0.1055, by autograd 0.1055
 
 In deep networks, gradients can become exponentially small:
 
-$$\frac{\partial \mathcal{L}}{\partial \theta^{(1)}} = \frac{\partial \mathcal{L}}{\partial h^{(L)}} \prod_{l=2}^{L} \frac{\partial h^{(l)}}{\partial h^{(l-1)}} \frac{\partial h^{(1)}}{\partial \theta^{(1)}}$$
+$$\frac{\partial \mathcal{L}}{\partial \theta^{(1)}} = \frac{\partial \mathcal{L}}{\partial h^{(L)}} \frac{\partial h^{(L)}}{\partial h^{(L-1)}} \cdots \frac{\partial h^{(2)}}{\partial h^{(1)}} \frac{\partial h^{(1)}}{\partial \theta^{(1)}}$$
 
-If $\left\|\frac{\partial h^{(l)}}{\partial h^{(l-1)}}\right\| < 1$, gradients vanish as depth increases.
+The factors are applied in that order, the last layer's Jacobian first. If every factor's norm is at most some $c < 1$, the norm of the product is at most $c^{L-1}$, so the gradient reaching the first layer shrinks exponentially with depth. A norm below 1 in every layer is not enough on its own: norms of $1 - 1/(l+1)^2$, for example, keep the product of the norms above one half at any depth, so this bound no longer forces the gradient to vanish.
 
 (sec-ch2-residual-connections)=
 
@@ -845,7 +845,7 @@ One block in each arrangement, drawn forward; the gradient runs back along the s
 
 ### 3.2 Layer Normalization Mathematics
 
-Layer normalization is defined in {ref}`sec-ch1-layernorm`: $y = \gamma \odot \frac{x - \mu}{\sigma} + \beta$, with $\mu$ the mean of the $d$ features and $\sigma = \sqrt{\frac{1}{d}\sum_i (x_i-\mu)^2 + \epsilon}$. What matters here is its gradient with respect to the inputs:
+Layer normalization is defined in {ref}`sec-ch1-layernorm`: $y = \gamma \odot \frac{x - \mu}{\sigma} + \beta$, with $\mu$ the mean of the $d$ features of the input row vector $x$ and $\sigma = \sqrt{\frac{1}{d}\sum_i (x_i-\mu)^2 + \epsilon}$. In this section and in {ref}`sec-ch2-epsilon-placement`, $x_i$ is feature $i$ of that vector, not the token at position $i$ as elsewhere in the book. What matters here is its gradient with respect to the inputs:
 
 $$\frac{\partial \mathcal{L}}{\partial x_i} = \frac{1}{\sigma}\left(\tilde{g}_i - \frac{1}{d}\sum_j \tilde{g}_j - \hat{x}_i \frac{1}{d}\sum_j \tilde{g}_j \hat{x}_j\right)$$
 
@@ -855,7 +855,11 @@ The formula follows from the Jacobian of $\hat{x}$. Since $\mu = \frac{1}{d}\sum
 
 $$\frac{\partial \hat{x}_i}{\partial x_j} = \frac{\delta_{ij} - 1/d}{\sigma} - \frac{x_i - \mu}{\sigma^2}\cdot\frac{\hat{x}_j}{d} = \frac{1}{\sigma}\left(\delta_{ij} - \frac{1}{d} - \frac{\hat{x}_i \hat{x}_j}{d}\right).$$
 
-Contracting with $\tilde{g}$, $\frac{\partial \mathcal{L}}{\partial x_j} = \sum_i \tilde{g}_i \frac{\partial \hat{x}_i}{\partial x_j}$, gives the gradient above term by term. Each row of the Jacobian sums to zero, since $\sum_j (\delta_{ij} - 1/d) = 0$ and $\sum_j \hat{x}_j = 0$: adding the same constant to every feature does not change the output, so it receives no gradient. The listing checks the formula against PyTorch.
+Contracting with $\tilde{g}$, $\frac{\partial \mathcal{L}}{\partial x_j} = \sum_i \tilde{g}_i \frac{\partial \hat{x}_i}{\partial x_j}$, gives the gradient above term by term. Each row of the Jacobian sums to zero, since $\sum_j (\delta_{ij} - 1/d) = 0$ and $\sum_j \hat{x}_j = 0$: adding the same constant to every feature does not change the output, so it receives no gradient.
+
+Most recent models replace LayerNorm with RMSNorm ({ref}`sec-ch1-modern-block`), which drops the mean subtraction and the bias and divides by $\sqrt{\frac{1}{d}\sum_j x_j^2 + \epsilon}$. With $\hat{x}_i$ now $x_i$ divided by that root, the same quotient rule without the $\partial \mu / \partial x_j$ term gives $\partial \hat{x}_i / \partial x_j = \left(\delta_{ij} - \hat{x}_i \hat{x}_j / d\right) / \sqrt{\frac{1}{d}\sum_j x_j^2 + \epsilon}$: the $-1/d$ term is gone, so the rows no longer sum to zero and a constant added to every feature does receive a gradient. The test suite checks this Jacobian against autograd as well.
+
+The listing checks the LayerNorm formula against PyTorch.
 
 ```python
 import torch
@@ -982,7 +986,7 @@ For a sequence the same products are taken with one row per position, and the we
 
 **Embedding.** The embedding of token $x_i$ is row $x_i$ of $W_E$, so the gradient of $W_E$ is zero except in the rows of tokens that occur, and the row of a token that occurs at several positions is the sum of $\partial \mathcal{L} / \partial h^{(0)}_i$ over those positions. This is the sparse gradient of {ref}`sec-ch2-adam-optimizer`.
 
-**Output head.** The logits at position $i$ are $z = h_i W_{out}$, and the loss is the mean cross-entropy over $T$ positions. By {ref}`sec-ch2-softmax-jacobian`, $\partial \mathcal{L}/\partial z_j = (p_j - \delta_{j x_i})/T$, where $x_i$ here stands for the target, the token to be predicted at position $i$, and $\partial \mathcal{L}/\partial W_{out} = \sum_i h_i^\top \partial \mathcal{L}/\partial z$, a sum of outer products over positions. With $T = 3$ and a model that gives the target probability 0.2, that logit's gradient is $(0.2 - 1)/3 = -0.2667$.
+**Output head.** The logits at position $i$ are $z_i = h_i W_{out}$ (a row vector of $|\mathcal{V}|$ entries), and the loss is the mean cross-entropy over $T$ positions. By {ref}`sec-ch2-softmax-jacobian`, $\partial \mathcal{L}/\partial z_{ij} = (p_{ij} - \delta_{j x_i})/T$ for entry $j$ of $z_i$, where $x_i$ here stands for the target, the token to be predicted at position $i$, and $\partial \mathcal{L}/\partial W_{out} = \sum_i h_i^\top \partial \mathcal{L}/\partial z_i$, a sum of outer products over positions. With $T = 3$ and a model that gives the target probability 0.2, that logit's gradient is $(0.2 - 1)/3 = -0.2667$.
 
 The listing builds a three-token sequence through an embedding, a feed-forward layer with $\operatorname{act} = \tanh$ and an output head, applies these rules by hand and compares them with autograd.
 
@@ -1168,7 +1172,7 @@ For long sequences, attention dominates; for large models, linear layers dominat
 
 $$12nd^2 = 2n^2 d \quad\Longleftrightarrow\quad n = 6d.$$
 
-At $d = 4096$ attention costs as much as the linear layers only at $n = 24{,}576$ tokens; for GPT-3's $d = 12{,}288$ at its context of 2048 tokens, attention costs $n/(6d) = 2.78\%$ as much as the linear layers, 2.7% of the layer's work. In FLOPs per token the $2n^2d$ multiply-adds above are $4nd$ per layer, $4Lnd$ over $L$ layers; Kaplan et al. count the context term as $2 L n d$ FLOPs per token, half of that, so in their accounting the terms meet at $n = 12d$, which is their condition $d > n/12$ ({ref}`sec-ch2-flops`).
+At $d = 4096$ attention costs as much as the linear layers only at $n = 24{,}576$ tokens; for GPT-3's $d = 12{,}288$ at its context of 2048 tokens, attention costs $n/(6d) = 2.78\%$ as much as the linear layers, 2.7% of the layer's work. In FLOPs per token the $2n^2d$ multiply-adds above are $4nd$ per layer, $4 L n d$ over $L$ layers; Kaplan et al. count the context term as $2 L n d$ FLOPs per token, half of that, so in their accounting the terms meet at $n = 12d$, which is their condition $d > n/12$ ({ref}`sec-ch2-flops`).
 
 ```python
 def attention_share(n, d):
@@ -1202,12 +1206,15 @@ Attention's share of the per-layer multiply-adds, $2n^2d/(12nd^2 + 2n^2d)$, agai
 
 #### Memory Requirements
 
-Memory usage includes:
+Training memory has three parts:
 
-- **Parameters**: $\approx 12 L d^2 + |\mathcal{V}| d$ where $L$ is the number of layers (each layer holds $4d^2$ attention and $8d^2$ feed-forward weights) and $|\mathcal{V}| d$ is the embedding table
-- **Activations**: $\mathcal{O}(B \cdot n \cdot d \cdot L)$ for the residual stream, plus the $\mathcal{O}(B \cdot n_h \cdot n^2 \cdot L)$ attention scores and the $4d$-wide feed-forward intermediates, where $B$ is batch size and $n_h$ the number of heads; without recomputation each layer stores about $B\,n\,d\,(34 + 5\,n_h\,n/d)$ bytes {cite}`korthikanti2022reducing`
+- **Parameters**: $\approx 12 L d^2 + |\mathcal{V}| d$ where $L$ is the number of layers (each layer holds $4d^2$ attention and $8d^2$ feed-forward weights) and $|\mathcal{V}| d$ is the embedding table. The $8d^2$ assumes the dense $4d$-wide feed-forward layer; a gated layer such as SwiGLU ({ref}`sec-ch1-modern-block`) has three $d \times d_{ff}$ matrices, so it keeps the same $8d^2$ parameters with $d_{ff} = 8d/3$, 10,923 at $d = 4096$
+- **Activations**: $\mathcal{O}(B \cdot n \cdot d \cdot L)$ for the residual stream, plus the $\mathcal{O}(B \cdot n_h \cdot n^2 \cdot L)$ attention scores and the $4d$-wide feed-forward intermediates, where $B$ is batch size and $n_h$ the number of heads; without activation recomputation (below) each layer stores about $B\,n\,d\,(34 + 5\,n_h\,n/d)$ bytes {cite}`korthikanti2022reducing`
 - **Optimizer and gradient state**: with mixed precision and Adam, each parameter costs about 16 bytes in total: a 2-byte weight, a 2-byte gradient, a 4-byte fp32 master copy and two 4-byte Adam moments {cite}`rajbhandari2020zero`
-- **Compute**: about $6N$ FLOPs per training token (2 per parameter for the forward pass, 4 for the backward), so $C \approx 6ND$ for $D$ tokens {cite}`kaplan2020scaling`, as derived in {ref}`sec-ch2-flops`. Kaplan et al. count only non-embedding parameters; the function below uses the total, which for GPT-3 is 0.36% more
+
+**Activation recomputation** (also called activation checkpointing) trades time for memory. Instead of storing every intermediate of the forward pass for the backward pass ({ref}`sec-ch2-reverse-mode`), it stores only the input of each layer and, during the backward pass, runs that layer's forward pass again to rebuild the rest. {cite:t}`korthikanti2022reducing` show that this "full activation recomputation" cuts the activation memory to $2\,B\,n\,d\,L$ bytes, the fp16 layer inputs alone, at the price of one extra forward pass, about $2N$ more FLOPs per token on top of $6N$; they "observe 30 − 40% execution time overhead" in their runs. For the GPT-3 configuration below at batch 8 that is $2 \times 8 \times 2048 \times 12{,}288 \times 96$ bytes $= 38.7$ GB instead of 2,203 GB.
+
+The function below also counts compute: about $6N$ FLOPs per training token (2 per parameter for the forward pass, 4 for the backward), so $C \approx 6ND$ for $D$ tokens {cite}`kaplan2020scaling`, as derived in {ref}`sec-ch2-flops`. Kaplan et al. count only non-embedding parameters; the function uses the total, which for GPT-3 is 0.36% more.
 
 ```python
 def estimate_memory_usage(num_layers, d_model, seq_length, batch_size, vocab_size, num_heads=None):

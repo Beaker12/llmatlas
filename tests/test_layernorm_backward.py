@@ -79,3 +79,18 @@ def test_layernorm_backward_equation_matches_autograd_with_per_feature_gamma():
     (auto,) = torch.autograd.grad(ln(x), x, grad_outputs=dy)
     ours = _layernorm_backward_from_equation(x.detach(), ln.weight.detach(), dy, eps)
     assert torch.allclose(auto, ours, atol=1e-8)
+
+
+def test_rmsnorm_jacobian_has_no_mean_term_and_rows_do_not_sum_to_zero():
+    """Chapter 2, sec 3.2: the RMSNorm Jacobian is (delta_ij - x_hat_i x_hat_j / d) / sqrt(mean(x^2) + eps)."""
+    torch.manual_seed(0)
+    d, eps = 6, 1e-5
+    x = torch.randn(d, dtype=torch.float64)
+
+    def rmsnorm(t):
+        return t / torch.sqrt((t ** 2).mean() + eps)
+
+    x_hat = rmsnorm(x)
+    formula = (torch.eye(d, dtype=torch.float64) - torch.outer(x_hat, x_hat) / d) / torch.sqrt((x ** 2).mean() + eps)
+    assert torch.allclose(formula, torch.autograd.functional.jacobian(rmsnorm, x))
+    assert not torch.allclose(formula.sum(dim=1), torch.zeros(d, dtype=torch.float64))

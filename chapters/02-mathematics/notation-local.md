@@ -34,6 +34,7 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\theta_x$ | first of the two parameters of the Rosenbrock function (exercise 2) | index.md, sec-ch2-exercises |  |
 | $\theta_y$ | second of the two parameters of the Rosenbrock function (exercise 2) | index.md, sec-ch2-exercises |  |
 | $z_{ff}$ | pre-activation of the feed-forward hidden layer | index.md, sec-ch2-ffn-embedding-head-gradients |  |
+| $x_i$ | feature $i$ of a layer's input row vector $x$ (LayerNorm and RMSNorm, sec-ch2-layer-normalization-mathematics and sec-ch2-epsilon-placement; the book-wide $x_i$ is the token at position $i$, and the page says which is meant) | index.md, sec-ch2-layer-normalization-mathematics |  |
 | $\mathrm{X}$ | a random variable | index.md:L118 | $X$ at L118 (and at L96, where $H(X)$ becomes $H(p)$) |
 | $\mathrm{Y}$ | a second random variable | index.md:L118 | $Y$ at L118 |
 

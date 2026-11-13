@@ -250,3 +250,22 @@ def test_exercise_5_fp16_underflow_loss_scaling_and_lost_updates():
     assert round((torch.tensor(1.0) + torch.tensor(1e-4)).item(), 4) == 1.0001
     s = exercise_text(5)
     assert "2^{14} = 16{,}384" in s and "6.552 \\times 10^{-4}" in s and "$1.0001$" in s
+
+
+def test_fix_round_numbers_in_prose_and_solutions():
+    """Numbers added in the chapter 2 fix round: KL asymmetry, Shannon's alphabet, Adam's uncorrected step,
+    the Chinchilla exponent rounding range, the fp16 scale bound, SwiGLU width and full recomputation memory."""
+    import math
+
+    kl = lambda a, b: sum(x * math.log2(x / y) for x, y in zip(a, b))
+    assert round(kl((0.9, 0.1), (0.5, 0.5)), 3) == 0.531 and round(kl((0.5, 0.5), (0.9, 0.1)), 3) == 0.737
+    assert round(kl((0.25, 0.5, 0.25), (0.5, 0.25, 0.25)), 3) == 0.25
+    assert round(math.log2(27), 2) == 4.75
+    ratio = [(1 - 0.9 ** t) / math.sqrt(1 - 0.999 ** t) for t in range(1, 5001)]
+    assert max(range(5000), key=ratio.__getitem__) + 1 == 12 and round(max(ratio), 2) == 6.57
+    assert [round(ratio[t - 1], 2) for t in (1, 200, 1000)] == [3.16, 2.35, 1.26]
+    assert round(0.28 / 0.62, 4) == 0.4516 and round(0.275 / 0.62, 3) == 0.444 and round(0.285 / 0.62, 3) == 0.46
+    assert round(65504 / 3, 2) == 21834.67 and 3 * 2 ** 14 <= 65504 < 3 * 2 ** 15
+    assert round(8 * 4096 / 3) == 10923
+    assert round(2 * 8 * 2048 * 12288 * 96 / 1e9, 1) == 38.7
+    assert round(1e-10 / (1e-10 + 1e-8), 4) == 0.0099
