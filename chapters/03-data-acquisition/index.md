@@ -1125,33 +1125,39 @@ A `HEAD` request returns a file's headers without its body, and `Content-Length`
 Common Crawl's announcement of the crawl gives the WARC files as 82.79 TiB {cite}`commoncrawl2026september`. The estimate is 1.4% high, about two standard errors, which a sample of ten can produce; a hundred files would cut the standard error to about 0.2%. Note the units: the announcement's 82.79 TiB is 91.0 TB, the "about 90 TB" of the table in {ref}`sec-ch3-snapshots-segments-files`.
 ```
 
-2. **Who is blocked.** Fetch robots.txt from the fifty most-linked news sites you can list and tabulate which of `CCBot`, `GPTBot`, `ClaudeBot`, `Google-Extended` and `*` each disallows. How many block Common Crawl, and did they likely intend to leave the open corpora?
+2. **Who is blocked.** The notebook commits the two robots.txt files it reads, Wikipedia's and a news site's, under `examples/data/`. Parse both and tabulate which of `*`, `CCBot`, `GPTBot`, `ClaudeBot` and `Google-Extended` may fetch an article. Which site blocks Common Crawl, and did it likely intend to leave the open corpora? How would you extend the table to fifty news sites?
 
 ```{admonition} Solution 2
 :class: dropdown
-For each site, fetch `https://<host>/robots.txt` with a named user agent, as in the listing of {ref}`sec-ch3-robots-txt-politeness-conventions`, and record the status code first: a 4xx answer means no restrictions and a 5xx answer means everything is disallowed, so neither is parsed. For a 2xx answer, ask whether each agent may fetch the home page and one article URL. An agent the file does not name falls back to the `*` group, so record for each cell whether the answer came from a named group or from `*`; only the named answers show intent. Use an RFC 9309 parser such as `protego` if any file uses wildcards, since the standard-library parser ignores them.
+Parse each file with `urllib.robotparser`, as in the listing of {ref}`sec-ch3-robots-txt-politeness-conventions`, and ask `can_fetch(agent, url)` for the article URL the notebook uses on each site (`/wiki/Language_model` on Wikipedia, a dated article path on the news site):
 
-The table has one row per site and five columns. The count asked for is the number of rows in which `CCBot` may not fetch the article. The count depends on the list and the date, so report both with the result.
+| Agent | Wikipedia | News site |
+| --- | --- | --- |
+| `*` | allowed | allowed |
+| `CCBot` | allowed | disallowed |
+| `GPTBot` | allowed | disallowed |
+| `ClaudeBot` | allowed | disallowed |
+| `Google-Extended` | allowed | disallowed |
 
-Intent can be read from how the block is written. A site that disallows `CCBot` in the same group as `GPTBot`, `ClaudeBot` and other AI crawlers has usually copied a list of AI crawlers, and it is unlikely to have weighed the fact that the same line removes it from every open research corpus derived from Common Crawl. A site that disallows only `CCBot`, or that disallows `*` and admits search engines by name, made a broader choice. The news site in the notebook ({ref}`nb-acq-robots`) is of the first kind: one `Disallow` line for each AI crawler, including `CCBot`, and a long separate group for Googlebot. Terms of service often state restrictions that the robots file does not express ({ref}`sec-ch3-robots-txt-opt-outs-commons`), so the robots table is a lower bound on what the sites forbid.
+The news site blocks Common Crawl; Wikipedia does not. How the block is written suggests the intent. The news file has 69 `User-agent` lines, and 55 groups that consist of `Disallow: /` alone, each naming one crawler or a few related ones. `CCBot` is one of them, with the same single line as `GPTBot`, `ClaudeBot` and `Google-Extended`. That is the form of a list of AI crawlers copied into the file, not a decision about research corpora, although the effect is the same: the site is absent from every future Common Crawl snapshot and from every corpus derived from one.
+
+To extend the table to fifty sites, fetch each `https://<host>/robots.txt` with a named user agent and record the status first, since a 4xx answer means no restrictions and a 5xx answer means everything is disallowed. Mark whether each answer came from a group that names the agent or from the `*` fallback, because only named answers show intent, and use an RFC 9309 parser such as `protego` for files with wildcards. Report the list and the date with the count, because both change it. Terms of service often state restrictions the robots file does not express ({ref}`sec-ch3-robots-txt-opt-outs-commons`), so the table is a lower bound on what the sites forbid.
 ```
 
-3. **Source comparison.** Extend the notebook's source comparison to a sixth source of your choosing from the Hugging Face hub. Which of the statistics in the notebook separates it from the others most clearly?
+3. **Source comparison.** Before adding a sixth source to the notebook's comparison, find out how well its statistics separate the five it has. Using the committed samples under `examples/data/`, compute the median word count of each source and the ratio of medians for every pair. Which pair is closest and which farthest apart, and what kind of sixth source would median length separate clearly?
 
 ```{admonition} Solution 3
 :class: dropdown
-Add one line to the `SOURCES` table of the notebook section {ref}`nb-acq-sources`, giving the dataset id, the configuration and the number of rows to fetch, and map the dataset's text column to the field the statistics read. Then rerun the length table and, if the rows carry a URL, the host count.
+The committed samples store each document's full word count as `full_words`, and give these medians: C4 188.5 words, Wikipedia 206.5, FineWeb-2 French 266, FineWeb 354.5 and FineWeb-Edu 387. Of the ten pairs, the closest is FineWeb and FineWeb-Edu, with a ratio of 1.09, followed by C4 and Wikipedia at 1.10. The farthest is FineWeb-Edu and C4, at 2.05.
 
-Choose a source that differs from the five in a way you can predict, and check the prediction. For a source of long documents, such as public-domain books, the median and 90th-percentile word counts separate it at once: a book runs to tens of thousands of words, against a few hundred for the median web page in the notebook's table. For a source of short documents, such as forum posts or question-and-answer pairs, the lengths separate it in the other direction. Language scores and educational scores exist only for datasets that ship them as columns (the FineWeb family), so they do not apply to most new sources. The host count applies only when the rows carry URLs. Length is the one statistic every source supports, and for most choices it is the clearest.
-
-Report the sample size beside every number: with fifty or a hundred rows a median is a rough figure, and the chapter's caution about Wikipedia and C4 applies.
+So among the five, median length separates at most by a factor of about two, and two pairs differ by less than 10%, which samples of fifty or a hundred documents cannot resolve. FineWeb-Edu is told apart from FineWeb by its educational score, not by length. A sixth source is separated clearly by length only if its documents are of a different kind: books, which run to tens of thousands of words, or forum posts and question-answer pairs, which are much shorter than a web page. For a sixth web corpus, use a statistic tied to how it was built (a quality or language score the dataset ships, or the host count if the rows carry URLs).
 ```
 
-4. **License tracing.** Pick three popular datasets on the hub, read their stated license, then trace each to its original sources and read those terms. Record every discrepancy, in the style of the Data Provenance Initiative audit.
+4. **License tracing.** For three kinds of hosted dataset, a filtered web corpus (FineWeb), a copy of the Stack Exchange dump, and an instruction dataset generated by a model, trace the license on the hub card to the terms of the original sources, and record every discrepancy in the style of the Data Provenance Initiative audit.
 
 ```{admonition} Solution 4
 :class: dropdown
-For each dataset, record four things in a table: the license on the hub card, the sources the card or paper names, the terms of each source, and whether the two agree. A worked case from the chapter shows the shape of an entry.
+For each dataset, record four things in a table: the license on the hub card, the sources the card or paper names, the terms of each source, and whether the two agree.
 
 - **FineWeb.** The card states ODC-BY. ODC-BY covers the compilation, and the card itself says that Common Crawl's terms of use apply to the pages. The pages keep their authors' copyright. The entry records ODC-BY for the compilation and the pages' own rights for the content, which is not a contradiction but is often misread as one ({ref}`sec-ch3-dataset-licenses-not-content-licenses`).
 - **A Stack Exchange dataset.** A hub copy of the Stack Exchange dump typically carries CC BY-SA, the license of the posts. Since July 2024 the official download requires a login and an agreement that the file is for projects that do not train a large language model ({ref}`sec-ch3-forums-dialogue-question-answering`). A copy made from a later dump therefore carries a restriction the card does not show. Record which dump the copy was made from.
@@ -1183,17 +1189,17 @@ At 20T the plan is:
 The three small sources are pinned at four epochs and together supply 3.7% of the tokens instead of the preferred 10%; the web absorbs almost all of the difference. A larger budget makes the mixture more web-heavy, not more diverse, unless more unique data is acquired.
 ```
 
-6. **Low-resource audit.** Take fifty documents labeled as a language you read from mC4 or OSCAR and classify each by hand as genuine text, boilerplate, mislabeled or machine-translated. Compare your rate with the MADLAD-400 audit for that language.
+6. **Low-resource audit.** You plan to take fifty documents labeled as a language you read from mC4 or OSCAR and classify each by hand as genuine text, boilerplate, mislabeled or machine-translated. Write the classification rules you would fix before reading. If 12 of the 50 turn out not to be genuine, what is the 95% interval for the rate, and how many documents would you need to read for an interval of about plus or minus five percentage points? When does a comparison with the MADLAD-400 audit for that language mean something?
 
 ```{admonition} Solution 6
 :class: dropdown
-Draw the fifty documents at random offsets, not from the start of the split, for the reason the notebook gives for Wikipedia. Decide the rules before reading: a document is genuine if most of its sentences are fluent text in the labeled language; boilerplate if it is mostly navigation, lists or templates; mislabeled if most of it is another language; machine-translated if it shows the signs of translation (calques, untranslated named entities, sentences that read as a word-by-word rendering of English).
+Draw the documents at random offsets, not from the start of the split, for the reason the notebook gives for Wikipedia. Fix the rules before reading: a document is genuine if most of its sentences are fluent text in the labeled language; boilerplate if it is mostly navigation, lists or templates; mislabeled if most of it is another language; machine-translated if it shows the signs of translation (calques, untranslated named entities, sentences that read as a word-by-word rendering of English).
 
-The result is a proportion with a wide interval at this sample size. Suppose 12 of the 50 are not genuine. The rate is 24%, and the 95% Wilson interval is
+The result is a proportion with a wide interval at this sample size. With 12 of 50 not genuine, the rate is 24%, and the 95% Wilson interval is
 
 $$\frac{\hat p + \frac{z^2}{2n} \pm z\sqrt{\frac{\hat p(1-\hat p)}{n} + \frac{z^2}{4n^2}}}{1 + \frac{z^2}{n}}, \qquad \hat p = 0.24,\ n = 50,\ z = 1.96,$$
 
-which is 14.3% to 37.4%. A comparison with the audit of {cite:t}`kudugunta2023madlad` is meaningful only if its figure for the language lies outside such an interval. The audits of {cite:t}`kreutzer2022quality` and MADLAD-400 found the problem concentrated in the smaller languages, so expect a high-resource language to come out mostly genuine and a low-resource one to show far more mislabeled text and boilerplate.
+which is 14.3% to 37.4%, an interval 23 points wide. For a half-width of five points at a rate near 24%, the sample size is $n \approx z^2 \hat p (1 - \hat p) / 0.05^2 = 3.8416 \times 0.24 \times 0.76 / 0.0025 \approx 280.3$, so 281 documents. A comparison with the audit of {cite:t}`kudugunta2023madlad` is meaningful only if its figure for the language lies outside such an interval. The audits of {cite:t}`kreutzer2022quality` and MADLAD-400 found the problem concentrated in the smaller languages, so expect a high-resource language to come out mostly genuine and a low-resource one to show far more mislabeled text and boilerplate.
 ```
 
 7. **A datasheet.** Write the collection-process section of a datasheet for the samples the notebook fetched, answering every question in the Datasheets template that applies.

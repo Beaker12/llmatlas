@@ -127,6 +127,56 @@ def test_exercise_6_wilson_interval():
     half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / (1 + z * z / n)
     assert round(p * 100) == 24
     assert (round((center - half) * 100, 1), round((center + half) * 100, 1)) == (14.3, 37.4)
+    assert round((2 * half) * 100) == 23
+    needed = z * z * p * (1 - p) / 0.05**2
+    assert round(needed, 1) == 280.3 and math.ceil(needed) == 281
+
+
+DATA = FIGURE_SCRIPT.parents[1] / "examples" / "data"
+
+
+def test_exercise_2_robots_table():
+    import re
+    from urllib.robotparser import RobotFileParser
+
+    host = (DATA / "news_robots_host.txt").read_text().strip()
+    sites = {"wikipedia_robots.txt": "https://en.wikipedia.org/wiki/Language_model",
+             "news_robots.txt": f"https://{host}/2026/01/01/world/example.html"}
+    answers = {}
+    for name, url in sites.items():
+        rp = RobotFileParser()
+        rp.parse((DATA / name).read_text().splitlines())
+        answers[name] = {a: rp.can_fetch(a, url) for a in ("*", "CCBot", "GPTBot", "ClaudeBot", "Google-Extended")}
+    assert all(answers["wikipedia_robots.txt"].values())
+    assert answers["news_robots.txt"] == {"*": True, "CCBot": False, "GPTBot": False, "ClaudeBot": False,
+                                          "Google-Extended": False}
+    text = (DATA / "news_robots.txt").read_text()
+    groups = [g for g in re.split(r"\n\s*\n", text) if g.strip()]
+    agent_lines = re.findall(r"(?im)^user-agent:", text)
+    whole_site = [g for g in groups
+                  if [ln.strip().lower() for ln in g.strip().splitlines() if not ln.lower().startswith("user-agent")]
+                  == ["disallow: /"]]
+    assert len(agent_lines) == 69 and len(whole_site) == 55
+    blocked = {ln.split(":", 1)[1].strip() for g in whole_site for ln in g.splitlines() if ln.lower().startswith("user-agent")}
+    assert {"CCBot", "GPTBot", "ClaudeBot", "Google-Extended"} <= blocked
+
+
+def test_exercise_3_median_ratios():
+    import itertools
+    import json
+    import statistics
+
+    medians = {n: statistics.median(r["full_words"] for r in json.loads((DATA / f"hf_{n}.json").read_text())["rows"])
+               for n in ("c4", "wikipedia", "fineweb2_fra", "fineweb", "fineweb_edu")}
+    assert medians == {"c4": 188.5, "wikipedia": 206.5, "fineweb2_fra": 266, "fineweb": 354.5, "fineweb_edu": 387}
+    ratios = {(a, b): max(medians[a], medians[b]) / min(medians[a], medians[b])
+              for a, b in itertools.combinations(medians, 2)}
+    ordered = sorted(ratios, key=ratios.get)
+    assert len(ratios) == 10
+    assert set(ordered[0]) == {"fineweb", "fineweb_edu"} and round(ratios[ordered[0]], 2) == 1.09
+    assert set(ordered[1]) == {"c4", "wikipedia"} and round(ratios[ordered[1]], 2) == 1.10
+    assert set(ordered[-1]) == {"c4", "fineweb_edu"} and round(ratios[ordered[-1]], 2) == 2.05
+    assert sum(r < 1.10 for r in ratios.values()) == 2
 
 
 @pytest.mark.slow
