@@ -218,6 +218,36 @@ def test_a_plot_drawn_fresh_but_missing_from_the_committed_notebook_is_reported(
     assert check_notebook(path, executed) == []
 
 
+@pytest.mark.parametrize("outer_backend", [None, "Agg"])
+def test_the_fresh_run_gives_a_plotting_cell_an_image_and_a_printing_cell_none(tmp_path, monkeypatch, outer_backend):
+    """The execution helper the plot check uses really produces inline images, whatever MPLBACKEND the test
+    process has: the plotting cell's fresh output has image/png, the printing cell's has not, and a committed
+    copy with the image removed is reported."""
+    import nbformat
+    if outer_backend is None:
+        monkeypatch.delenv("MPLBACKEND", raising=False)
+    else:
+        monkeypatch.setenv("MPLBACKEND", outer_backend)
+    nb = nbformat.v4.new_notebook()
+    nb.cells = [nbformat.v4.new_code_cell(PLOT), nbformat.v4.new_code_cell("print('only text')")]
+    nb.metadata["language_info"] = {"name": "python", "version": "3.12.1"}
+    path = tmp_path / "t.ipynb"
+    nbformat.write(nb, str(path))
+    executed = execute(path)
+    assert aborted(executed) is None
+    plot, text = executed.cells
+    assert any("image/png" in out.get("data", {}) for out in plot.outputs), plot.outputs
+    assert not any("image/png" in out.get("data", {}) for out in text.outputs), text.outputs
+    assert [out.get("text") for out in text.outputs] == ["only text\n"]
+    nbformat.write(executed, str(path))
+    assert check_notebook(path, executed) == []
+    committed = read(path)
+    committed.cells[0].outputs = [o for o in committed.cells[0].outputs if "image/png" not in o.get("data", {})]
+    nbformat.write(committed, str(path))
+    assert check_notebook(path, executed) == [
+        "t.ipynb: cell 0: the fresh run draws a figure; the committed cell has no image/png"]
+
+
 def test_a_cell_tagged_as_a_figure_without_an_image_is_reported(tmp_path):
     path = tiny_notebook(tmp_path, "print('no plot')")
     nb = read(path)
