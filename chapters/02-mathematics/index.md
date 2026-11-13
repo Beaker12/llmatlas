@@ -186,7 +186,7 @@ Cross-entropy is convex in the predicted probabilities, because $-\log q$ is a c
 
 $$\text{bits per byte} = \frac{T\,\mathcal{L}}{n_{bytes} \ln 2}.$$
 
-The Pile reports its language-model results in bits per byte for this reason {cite}`gao2020pile`. With $\mathcal{L} = 2.0$ nats per token and 4 bytes per token on average, perplexity is $e^{2} = 7.389$ and the model spends $2.0/(4 \ln 2) = 0.7213$ bits per byte; a tokenizer that averaged 3 bytes per token at the same bits per byte would show a loss of 1.5 nats and a perplexity of 4.482, so perplexities are comparable only across models with the same tokenizer.
+The Pile's authors prefer bits per byte to perplexity "due to its invariance to different tokenization schemes" {cite}`gao2020pile`. With $\mathcal{L} = 2.0$ nats per token and 4 bytes per token on average, perplexity is $e^{2} = 7.389$ and the model spends $2.0/(4 \ln 2) = 0.7213$ bits per byte; a tokenizer that averaged 3 bytes per token at the same bits per byte would show a loss of 1.5 nats and a perplexity of 4.482, so perplexities are comparable only across models with the same tokenizer.
 
 (sec-ch2-information-theory-fundamentals)=
 
@@ -338,12 +338,20 @@ def perplexity(loss: torch.Tensor) -> torch.Tensor:
         Perplexity value
     """
     return torch.exp(loss)
+
+
+p = torch.tensor([[0.5, 0.25, 0.25]])
+q = torch.tensor([[0.25, 0.5, 0.25]])
+print(f"H(p) = {entropy(p).item():.4g} bits, D_KL(p || q) = {kl_divergence(p, q).item():.4g} bits")
+loss = cross_entropy_loss(torch.zeros(1, 50257), torch.tensor([0]))  # a model with uniform output
+print(f"uniform over 50,257 tokens: loss {loss.item():.4g} nats, perplexity {perplexity(loss).item():,.0f}")
 ```
 
 % output
 
 ```text
-
+H(p) = 1.5 bits, D_KL(p || q) = 0.25 bits
+uniform over 50,257 tokens: loss 10.82 nats, perplexity 50,257
 ```
 
 ```{admonition} Hands-On Practice
@@ -598,12 +606,21 @@ class AdamWWithWarmup:
             # Decoupled weight decay: shrink the weights directly, not through the gradient
             p.mul_(1 - lr * self.weight_decay)
             p.addcdiv_(m_hat, v_hat.sqrt() + self.eps, value=-lr)
+
+
+# The schedule of the warm-up example: peak 3e-4, 2,000 warm-up steps, 100,000 steps in all
+opt = AdamWWithWarmup([torch.zeros(1, requires_grad=True)], lr=3e-4, warmup_steps=2000, max_steps=100_000)
+for step in (0, 1999, 51_000, 100_000):
+    print(f"step {step:6d}: lr {opt.get_lr(step):.4g}")
 ```
 
 % output
 
 ```text
-
+step      0: lr 1.5e-07
+step   1999: lr 0.0003
+step  51000: lr 0.00015
+step 100000: lr 0
 ```
 
 ```{admonition} Interactive Exploration
@@ -776,12 +793,21 @@ def attention_gradients(Q, K, V, grad_output):
     grad_K = torch.matmul(grad_scores.transpose(-2, -1), Q) / math.sqrt(d_k)
 
     return grad_Q, grad_K, grad_V
+
+
+torch.manual_seed(0)
+Q, K, V = (torch.randn(5, 4, dtype=torch.float64, requires_grad=True) for _ in range(3))
+grad_output = torch.randn(5, 4, dtype=torch.float64)
+O = F.softmax(Q @ K.T / math.sqrt(4), dim=-1) @ V
+reference = torch.autograd.grad(O, (Q, K, V), grad_outputs=grad_output)
+ours = attention_gradients(Q.detach(), K.detach(), V.detach(), grad_output)
+print("dQ, dK, dV match autograd:", all(torch.allclose(a, b) for a, b in zip(ours, reference)))
 ```
 
 % output
 
 ```text
-
+dQ, dK, dV match autograd: True
 ```
 
 ```{admonition} Gradient Flow Analysis
