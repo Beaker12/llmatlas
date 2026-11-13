@@ -124,11 +124,12 @@ live_ok = not OFFLINE
 
 
 def load_config(repo):
-    """The model's config.json: from the hub at the pinned commit if reachable, else committed."""
+    """The model's config.json: from the hub at the pinned commit if reachable, else
+    the committed copy."""
     global live_ok
     name = f"configs/{repo.replace('/', '__')}.json"
     committed = (DATA / name).read_bytes()
-    assert sha256(committed) == CHECKSUMS[name], f"committed {name} does not match its checksum"
+    assert sha256(committed) == CHECKSUMS[name], f"committed {name} fails its checksum"
     if live_ok:
         url = f"https://huggingface.co/{repo}/resolve/{PINS[repo]}/config.json"
         try:
@@ -138,15 +139,18 @@ def load_config(repo):
             if sha256(live) == CHECKSUMS[name]:
                 return json.loads(live), "hub, pinned commit"
             return json.loads(committed), "committed copy (hub bytes differ)"
-        except (urllib.error.URLError, TimeoutError, OSError) as error:  # incl. HTTP 401/403/404/429
+        # URLError includes HTTP 401/403/404/429
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
             live_ok = False  # do not wait for a timeout on every remaining model
     return json.loads(committed), "committed copy"
 
 
-CONFIGS, SOURCES = {}, {}  # SOURCES records where each file came from; the printed label does not depend on it
+# SOURCES records where each file came from; the printed label does not depend on it
+CONFIGS, SOURCES = {}, {}
 for repo in PINS:
     CONFIGS[repo], SOURCES[repo] = load_config(repo)
-assert set(SOURCES.values()) <= {"hub, pinned commit", "committed copy", "committed copy (hub bytes differ)"}
+assert set(SOURCES.values()) <= {
+    "hub, pinned commit", "committed copy", "committed copy (hub bytes differ)"}
 for repo in PINS:
     print(f"{repo:32} {CONFIGS[repo]['model_type']:12} checksum verified")
 ''')
@@ -167,14 +171,17 @@ PAPER_CONFIGS = {
     "google/gemma-2-9b": {
         "model_type": "gemma2", "hidden_size": 3584, "num_hidden_layers": 42,
         "num_attention_heads": 16, "num_key_value_heads": 8, "head_dim": 256,
-        "intermediate_size": 14336, "vocab_size": 256000, "tie_word_embeddings": True},  # vocabulary: hub, not paper
-    # Gemma 3 12B, text decoder only: shapes from Google's reference code; vocabulary 262,208, the checkpoint's rows
+        # vocabulary: the hub's, not the paper's
+        "intermediate_size": 14336, "vocab_size": 256000, "tie_word_embeddings": True},
+    # Gemma 3 12B, text decoder only: shapes from Google's reference code;
+    # vocabulary 262,208, the checkpoint's rows
     "google/gemma-3-12b-pt": {
         "model_type": "gemma3_text", "hidden_size": 3840, "num_hidden_layers": 48,
         "num_attention_heads": 16, "num_key_value_heads": 8, "head_dim": 256,
         "intermediate_size": 15360, "vocab_size": 262208, "tie_word_embeddings": True},
 }
-TEXT_ONLY = {"google/gemma-3-12b-pt"}  # multimodal checkpoint: the hub total includes the vision encoder
+# multimodal checkpoint: the hub total includes the vision encoder
+TEXT_ONLY = {"google/gemma-3-12b-pt"}
 ALL_CONFIGS = {**CONFIGS, **PAPER_CONFIGS}
 ''')
 
@@ -196,36 +203,46 @@ for repo in PINS:
     assert COUNTS[repo]["total"] == counted, (repo, COUNTS[repo]["total"], counted)
 print("checkpoint element counts reproduced exactly for", len(PINS), "models")
 v3 = CHECKPOINT["deepseek-ai/DeepSeek-V3"]
-print(f"  DeepSeek-V3 also stores {v3['elements_mtp_layer']:,} multi-token-prediction and "
-      f"{v3['elements_fp8_scales']:,} FP8-scale elements, counted separately")
+print(f"  DeepSeek-V3 also stores {v3['elements_mtp_layer']:,} multi-token-prediction")
+print(f"  and {v3['elements_fp8_scales']:,} FP8-scale elements, counted separately")
 
 # 2. Gated models: the hub's public metadata reports the exact total
 exact = [repo for repo in PAPER_CONFIGS if repo not in TEXT_ONLY]
 for repo in exact:
     assert COUNTS[repo]["total"] == HUB_TOTALS[repo]["elements_total"], repo
-print("hub totals reproduced exactly for", ", ".join(exact))
-# Gemma 3: the paper's Table 1 gives 10,759M non-embedding parameters and a 417M vision encoder
+print("hub totals reproduced exactly for:")
+for repo in exact:
+    print(f"  {repo}")
+# Gemma 3: the paper's Table 1 gives 10,759M non-embedding parameters and a 417M
+# vision encoder
 gemma3 = PAPER_CONFIGS["google/gemma-3-12b-pt"]
-non_embedding = COUNTS["google/gemma-3-12b-pt"]["total"] - gemma3["vocab_size"] * gemma3["hidden_size"]
+gemma3_text = COUNTS["google/gemma-3-12b-pt"]["total"]
+non_embedding = gemma3_text - gemma3["vocab_size"] * gemma3["hidden_size"]
 assert round(non_embedding / 1e6) == 10759, non_embedding
-# ... and the hub total is exactly the text decoder, a SigLIP encoder at 896 pixels without its pooling head
-# (27 layers of width 1,152, MLP 4,304, 14-pixel patches, 4,096 positions, final norm) and the projection
-SIGLIP = 27 * (4 * (1152 ** 2 + 1152) + 2 * 1152 * 4304 + 4304 + 1152 + 4 * 1152) + 3 * 14 ** 2 * 1152 + 1152 \
-    + (896 // 14) ** 2 * 1152 + 2 * 1152
+# ... and the hub total is exactly the text decoder, a SigLIP encoder at 896 pixels
+# without its pooling head (27 layers of width 1,152, MLP 4,304, 14-pixel patches,
+# 4,096 positions, final norm) and the projection
+SIGLIP = (27 * (4 * (1152 ** 2 + 1152) + 2 * 1152 * 4304 + 4304 + 1152 + 4 * 1152)
+          + 3 * 14 ** 2 * 1152 + 1152 + (896 // 14) ** 2 * 1152 + 2 * 1152)
 PROJECTION = 1152 * 3840 + 1152
 assert round(SIGLIP / 1e6) == 417  # the paper's vision encoder
-assert COUNTS["google/gemma-3-12b-pt"]["total"] + SIGLIP + PROJECTION == HUB_TOTALS["google/gemma-3-12b-pt"]["elements_total"]
-print(f"Gemma 3 12B text decoder: {non_embedding / 1e6:,.0f}M non-embedding, as in the paper; hub total = "
-      f"{COUNTS['google/gemma-3-12b-pt']['total']:,} text + {SIGLIP:,} vision + {PROJECTION:,} projection")
+hub_total = HUB_TOTALS["google/gemma-3-12b-pt"]["elements_total"]
+assert gemma3_text + SIGLIP + PROJECTION == hub_total
+print(f"Gemma 3 12B text decoder: {non_embedding / 1e6:,.0f}M non-embedding, "
+      "as in the paper")
+print(f"  hub total = {gemma3_text:,} text + {SIGLIP:,} vision "
+      f"+ {PROJECTION:,} projection")
 
 # 3. Published figures (billions): (total, tolerance, active, convention, tolerance)
-# Tolerances are half a unit in the last published digit, widened where the figure is consistent
-# with truncation (Qwen 7.6156 -> 7.61, DeepSeek-V2-Lite 2.451 -> 2.4) or with rounding up
-# (Mistral 7.2417 -> 7.3). OLMo 2 7B has no published total more precise than its name.
+# Tolerances are half a unit in the last published digit, widened where the figure is
+# consistent with truncation (Qwen 7.6156 -> 7.61, DeepSeek-V2-Lite 2.451 -> 2.4) or
+# with rounding up (Mistral 7.2417 -> 7.3). OLMo 2 7B has no published total more
+# precise than its name.
 PUBLISHED = {
     "Qwen/Qwen2.5-7B": (7.61, 0.01, None, None, None),
     "Qwen/Qwen3-8B-Base": (8.2, 0.05, None, None, None),
-    "allenai/OLMoE-1B-7B-0924": (7, 0.5, 1.3, "with", 0.05),  # paper: "7 billion (B) parameters"
+    # OLMoE paper: "7 billion (B) parameters"
+    "allenai/OLMoE-1B-7B-0924": (7, 0.5, 1.3, "with", 0.05),
     "deepseek-ai/DeepSeek-V2-Lite": (15.7, 0.05, 2.4, "without", 0.1),
     "deepseek-ai/DeepSeek-V3": (671, 0.5, 37, "without", 0.5),
     "mistralai/Mistral-7B-v0.1": (7.3, 0.1, None, None, None),
@@ -239,9 +256,11 @@ for repo, (total, tol, active, convention, tol_active) in PUBLISHED.items():
         right = got[f"active_{convention}_embedding"] / 1e9
         wrong = got[f"active_{other}_embedding"] / 1e9
         assert abs(right - active) <= tol_active, (repo, convention, right, active)
-        assert abs(wrong - active) > tol_active, (repo, other, wrong, active)  # other convention misses
-        print(f"{repo:32} active {right:7.3f}B ({convention} embedding) vs published {active}B; "
-              f"{other}: {wrong:.3f}B misses")
+        # the other convention misses
+        assert abs(wrong - active) > tol_active, (repo, other, wrong, active)
+        print(f"{repo}: active {right:.3f}B ({convention} embedding) "
+              f"vs published {active}B;")
+        print(f"  {other}: {wrong:.3f}B misses")
 
 # Coverage: the set contains a dense, a sparse and a latent-attention model
 kinds = {cfg["model_type"] for cfg in CONFIGS.values()}
@@ -254,10 +273,12 @@ The derived columns used in the chapter: embedding share, feed-forward share (de
 code(r'''
 rows = []
 for repo, cfg in ALL_CONFIGS.items():
-    n, hidden, layers, vocab = COUNTS[repo]["total"], cfg["hidden_size"], cfg["num_hidden_layers"], cfg["vocab_size"]
+    n, hidden = COUNTS[repo]["total"], cfg["hidden_size"]
+    layers, vocab = cfg["num_hidden_layers"], cfg["vocab_size"]
     tied = bool(cfg.get("tie_word_embeddings"))
     embedding_share = vocab * hidden * (1 if tied else 2) / n
-    dense = "intermediate_size" in cfg and not any(k in cfg for k in ("num_experts", "num_local_experts", "n_routed_experts"))
+    expert_keys = ("num_experts", "num_local_experts", "n_routed_experts")
+    dense = "intermediate_size" in cfg and not any(k in cfg for k in expert_keys)
     ffn_share = 3 * hidden * cfg["intermediate_size"] * layers / n if dense else None
     kv_bytes = 2 * kv_cache_elements_per_token(cfg)
     rows.append((repo, n, embedding_share, ffn_share, kv_bytes))
@@ -268,10 +289,13 @@ for repo, n, emb, ffn, kv in rows:
     print(f"{repo:32} {n / 1e9:9.2f}B {100 * emb:8.1f} {ffn_text} {kv:11,}")
 
 shares = [ffn for *_, ffn, _ in rows if ffn is not None]
-assert 0.59 < min(shares) < 0.60 and 0.79 < max(shares) < 0.81  # OLMo 2 7B ... Llama 3.1 70B
+# OLMo 2 7B ... Llama 3.1 70B
+assert 0.59 < min(shares) < 0.60 and 0.79 < max(shares) < 0.81
 kv_bytes = {repo: kv for repo, *_, kv in rows}
-assert kv_bytes["meta-llama/Llama-3.1-8B"] == 131072 and kv_bytes["deepseek-ai/DeepSeek-V3"] == 70272
-assert kv_bytes["deepseek-ai/DeepSeek-V3"] == 61 * (512 + 64) * 2  # MLA: latent + rotary key per layer
+assert kv_bytes["meta-llama/Llama-3.1-8B"] == 131072
+assert kv_bytes["deepseek-ai/DeepSeek-V3"] == 70272
+# MLA: one latent and one rotary key per layer
+assert kv_bytes["deepseek-ai/DeepSeek-V3"] == 61 * (512 + 64) * 2
 
 def attention_family(cfg):
     if cfg["model_type"].startswith("deepseek"):
@@ -282,11 +306,17 @@ def attention_family(cfg):
 
 family_colors = {"MHA": "#c44e52", "GQA": "#4c72b0", "MLA": "#55a868"}
 DISPLAY = {  # the names the chapter's tables use
-    "meta-llama/Llama-3.1-8B": "Llama 3.1 8B", "meta-llama/Llama-3.1-70B": "Llama 3.1 70B",
-    "mistralai/Mistral-7B-v0.1": "Mistral 7B v0.1", "Qwen/Qwen2.5-7B": "Qwen2.5 7B",
-    "google/gemma-2-9b": "Gemma 2 9B", "allenai/OLMo-2-1124-7B": "OLMo 2 7B", "Qwen/Qwen3-8B-Base": "Qwen3 8B",
-    "google/gemma-3-12b-pt": "Gemma 3 12B", "mistralai/Mixtral-8x7B-v0.1": "Mixtral 8x7B v0.1",
-    "allenai/OLMoE-1B-7B-0924": "OLMoE 1B-7B", "deepseek-ai/DeepSeek-V2-Lite": "DeepSeek-V2-Lite",
+    "meta-llama/Llama-3.1-8B": "Llama 3.1 8B",
+    "meta-llama/Llama-3.1-70B": "Llama 3.1 70B",
+    "mistralai/Mistral-7B-v0.1": "Mistral 7B v0.1",
+    "Qwen/Qwen2.5-7B": "Qwen2.5 7B",
+    "google/gemma-2-9b": "Gemma 2 9B",
+    "allenai/OLMo-2-1124-7B": "OLMo 2 7B",
+    "Qwen/Qwen3-8B-Base": "Qwen3 8B",
+    "google/gemma-3-12b-pt": "Gemma 3 12B",
+    "mistralai/Mixtral-8x7B-v0.1": "Mixtral 8x7B v0.1",
+    "allenai/OLMoE-1B-7B-0924": "OLMoE 1B-7B",
+    "deepseek-ai/DeepSeek-V2-Lite": "DeepSeek-V2-Lite",
     "deepseek-ai/DeepSeek-V3": "DeepSeek-V3",
 }
 assert set(DISPLAY) == set(kv_bytes)
@@ -301,7 +331,8 @@ ax.set_xscale("log")
 ax.set_xlim(10, 2000)
 ax.set_xlabel("KV cache per token, all layers (KiB, bf16)")
 ax.set_title("What one token costs in the KV cache")
-ax.legend([plt.Rectangle((0, 0), 1, 1, color=c) for c in family_colors.values()], list(family_colors),
+swatches = [plt.Rectangle((0, 0), 1, 1, color=c) for c in family_colors.values()]
+ax.legend(swatches, list(family_colors),
           loc="lower right", fontsize=9)
 plt.tight_layout()
 plt.show()
@@ -333,7 +364,8 @@ class GQAttention(nn.Module):
         q = self.wq(x).view(b, t, self.n_heads, self.d_head).transpose(1, 2)
         k = self.wk(x).view(b, t, self.n_kv, self.d_head).transpose(1, 2)
         v = self.wv(x).view(b, t, self.n_kv, self.d_head).transpose(1, 2)
-        return apply_rope(q, positions, self.rope_base), apply_rope(k, positions, self.rope_base), v
+        q = apply_rope(q, positions, self.rope_base)
+        return q, apply_rope(k, positions, self.rope_base), v
 
     def attend(self, q, k, v, causal=True):
         group = self.n_heads // self.n_kv
@@ -347,7 +379,8 @@ class GQAttention(nn.Module):
 
 
 class PostLNBlock(nn.Module):
-    """The 2017 arrangement with RMSNorm and SwiGLU: normalize after each residual addition."""
+    """The 2017 arrangement with RMSNorm and SwiGLU: normalize after each residual
+    addition."""
 
     def __init__(self, d_model, attention):
         super().__init__()
@@ -363,13 +396,15 @@ class PostLNBlock(nn.Module):
 class TinyLM(nn.Module):
     """A byte-level decoder with tied embeddings; `style` is "pre" or "post"."""
 
-    def __init__(self, vocab=256, d_model=64, n_layers=4, n_heads=4, n_kv_heads=2, style="pre"):
+    def __init__(self, vocab=256, d_model=64, n_layers=4, n_heads=4, n_kv_heads=2,
+                 style="pre"):
         super().__init__()
         self.embed = nn.Embedding(vocab, d_model)
         nn.init.normal_(self.embed.weight, std=0.02)
         block = PreLNBlock if style == "pre" else PostLNBlock
-        self.blocks = nn.ModuleList(
-            [block(d_model, GQAttention(d_model, n_heads, n_kv_heads)) for _ in range(n_layers)])
+        self.blocks = nn.ModuleList([
+            block(d_model, GQAttention(d_model, n_heads, n_kv_heads))
+            for _ in range(n_layers)])
         self.final_norm = RMSNorm(d_model) if style == "pre" else nn.Identity()
 
     def forward(self, tokens):
@@ -392,7 +427,8 @@ assert torch.allclose(ours(x), ref(x), atol=1e-12)
 
 
 def reference_attention(att, x):
-    """Explicit softmax attention with one key/value head per query head (weights repeated)."""
+    """Explicit softmax attention with one key/value head per query head (weights
+    repeated)."""
     b, t, _ = x.shape
     h, g = att.n_heads, att.n_heads // att.n_kv
     def expand(weight):  # [n_kv * d_head, d_model] -> [n_heads * d_head, d_model]
@@ -404,7 +440,8 @@ def reference_attention(att, x):
     pos = torch.arange(t)
     q, k = apply_rope(q, pos), apply_rope(k, pos)
     scores = q @ k.transpose(-1, -2) / math.sqrt(att.d_head)
-    scores = scores.masked_fill(torch.triu(torch.ones(t, t, dtype=torch.bool), 1), float("-inf"))
+    future = torch.triu(torch.ones(t, t, dtype=torch.bool), 1)
+    scores = scores.masked_fill(future, float("-inf"))
     out = (scores.softmax(-1) @ v).transpose(1, 2).reshape(b, t, -1)
     return out @ att.wo.weight.T
 
@@ -415,7 +452,8 @@ for n_kv in (4, 2, 1):  # multi-head, grouped-query (2 groups), multi-query
     assert torch.allclose(att(x), reference_attention(att, x), atol=1e-10), n_kv
 print("RMSNorm and attention match their references for 4, 2 and 1 key/value heads")
 
-# The chapter's grouped_query_attention function is the same computation as the module's attend
+# The chapter's grouped_query_attention function is the same computation as the
+# module's attend
 ''')
 code(fence(CH06, "def grouped_query_attention"))
 code(r'''
@@ -430,12 +468,13 @@ changed = tokens.clone()
 changed[:, 10:] = torch.randint(0, 256, (2, 6))
 with torch.no_grad():
     a, b = model(tokens), model(changed)
-assert torch.allclose(a[:, :10], b[:, :10], atol=1e-12) and not torch.allclose(a[:, 10:], b[:, 10:])
+assert torch.allclose(a[:, :10], b[:, :10], atol=1e-12)
+assert not torch.allclose(a[:, 10:], b[:, 10:])
 
 # The module has exactly the parameters count_params predicts for its configuration
-TINY = {"model_type": "llama", "hidden_size": 64, "num_hidden_layers": 4, "num_attention_heads": 4,
-        "num_key_value_heads": 2, "intermediate_size": 170, "vocab_size": 256,
-        "tie_word_embeddings": True}
+TINY = {"model_type": "llama", "hidden_size": 64, "num_hidden_layers": 4,
+        "num_attention_heads": 4, "num_key_value_heads": 2, "intermediate_size": 170,
+        "vocab_size": 256, "tie_word_embeddings": True}
 measured = sum(p.numel() for p in TinyLM().parameters())
 assert measured == count_params(TINY)["total"], (measured, count_params(TINY)["total"])
 print(f"TinyLM has {measured:,} parameters, as count_params predicts")
@@ -460,7 +499,8 @@ def decode_with_cache(model, tokens):
             cache["k"].append(k)
             cache["v"].append(v)
             keys, values = torch.cat(cache["k"], dim=2), torch.cat(cache["v"], dim=2)
-            out = att.attend(q, keys, values, causal=False).transpose(1, 2).reshape(x.shape[0], 1, -1)
+            out = att.attend(q, keys, values, causal=False)
+            out = out.transpose(1, 2).reshape(x.shape[0], 1, -1)
             x = x + att.wo(out)
             x = x + block.ffn(block.norm2(x))
         logits.append(model.final_norm(x) @ model.embed.weight.T)
@@ -475,11 +515,14 @@ for n_kv in (4, 2, 1):
     cached, caches = decode_with_cache(model, tokens)
     assert torch.allclose(full, cached, atol=1e-10), n_kv
     # Measured cache size per token equals the chapter's formula
-    stored = sum(t.numel() for c in caches for t in c["k"] + c["v"]) / (tokens.shape[0] * tokens.shape[1])
+    elements = sum(t.numel() for c in caches for t in c["k"] + c["v"])
+    stored = elements / (tokens.shape[0] * tokens.shape[1])
     cfg = {**TINY, "num_key_value_heads": n_kv}
-    assert stored == kv_cache_elements_per_token(cfg), (stored, kv_cache_elements_per_token(cfg))
-    print(f"n_kv={n_kv}: cached decoding equals the full pass; cache {int(stored)} elements/token "
-          f"(multi-head would be {kv_cache_elements_per_token({**TINY, 'num_key_value_heads': 4})})")
+    expected = kv_cache_elements_per_token(cfg)
+    assert stored == expected, (stored, expected)
+    multi_head = kv_cache_elements_per_token({**TINY, "num_key_value_heads": 4})
+    print(f"n_kv={n_kv}: cached decoding equals the full pass;")
+    print(f"  cache {int(stored)} elements/token (multi-head would be {multi_head})")
 ''')
 
 md(r"""
@@ -487,12 +530,14 @@ A simplified multi-head latent attention layer. Only a small latent $c_i$ and a 
 """)
 code(r'''
 class MiniMLA(nn.Module):
-    def __init__(self, d_model=64, n_heads=4, d_nope=16, d_rope=8, d_v=16, d_c=16, base=10000.0):
+    def __init__(self, d_model=64, n_heads=4, d_nope=16, d_rope=8, d_v=16, d_c=16,
+                 base=10000.0):
         super().__init__()
-        self.h, self.dn, self.dr, self.dv, self.dc, self.base = n_heads, d_nope, d_rope, d_v, d_c, base
+        self.h, self.dn, self.dr, self.dv = n_heads, d_nope, d_rope, d_v
+        self.dc, self.base = d_c, base
         self.wq = nn.Linear(d_model, n_heads * (d_nope + d_rope), bias=False)
-        self.w_dkv = nn.Linear(d_model, d_c, bias=False)       # down-projection: what is cached
-        self.w_kr = nn.Linear(d_model, d_rope, bias=False)     # rotary key, shared by all heads
+        self.w_dkv = nn.Linear(d_model, d_c, bias=False)  # down-projection: cached
+        self.w_kr = nn.Linear(d_model, d_rope, bias=False)  # rotary key, one for all
         self.w_uk = nn.Linear(d_c, n_heads * d_nope, bias=False)
         self.w_uv = nn.Linear(d_c, n_heads * d_v, bias=False)
         self.wo = nn.Linear(n_heads * d_v, d_model, bias=False)
@@ -503,10 +548,12 @@ class MiniMLA(nn.Module):
         return q[..., :self.dn], apply_rope(q[..., self.dn:], positions, self.base)
 
     def rotary_key(self, x, positions):
-        return apply_rope(self.w_kr(x)[:, None], positions, self.base)[:, 0]  # [batch, seq, d_rope]
+        # [batch, seq, d_rope]
+        return apply_rope(self.w_kr(x)[:, None], positions, self.base)[:, 0]
 
     def forward_expanded(self, x):
-        """Reference: expand the latent to full keys and values, then ordinary causal attention."""
+        """Reference: expand the latent to full keys and values, then ordinary causal
+        attention."""
         b, t, _ = x.shape
         pos = torch.arange(t)
         q_nope, q_rope = self.queries(x, pos)
@@ -514,8 +561,8 @@ class MiniMLA(nn.Module):
         k_nope = self.w_uk(c).view(b, t, self.h, self.dn).transpose(1, 2)
         v = self.w_uv(c).view(b, t, self.h, self.dv).transpose(1, 2)
         k_rope = self.rotary_key(x, pos)[:, None].expand(-1, self.h, -1, -1)
-        out = F.scaled_dot_product_attention(
-            torch.cat([q_nope, q_rope], -1), torch.cat([k_nope, k_rope], -1), v, is_causal=True)
+        q, k = torch.cat([q_nope, q_rope], -1), torch.cat([k_nope, k_rope], -1)
+        out = F.scaled_dot_product_attention(q, k, v, is_causal=True)
         return self.wo(out.transpose(1, 2).reshape(b, t, -1))
 
     def decode_step(self, x_t, cache, position):
@@ -527,11 +574,13 @@ class MiniMLA(nn.Module):
         c, kr = torch.cat(cache["c"], 1), torch.cat(cache["kr"], 1)
         w_uk = self.w_uk.weight.view(self.h, self.dn, self.dc)
         w_uv = self.w_uv.weight.view(self.h, self.dv, self.dc)
-        q_latent = torch.einsum("bhtn,hnc->bhtc", q_nope, w_uk)            # absorb W_UK into the query
-        scores = torch.einsum("bhtc,bsc->bhts", q_latent, c) + torch.einsum("bhtr,bsr->bhts", q_rope, kr)
+        # absorb W_UK into the query
+        q_latent = torch.einsum("bhtn,hnc->bhtc", q_nope, w_uk)
+        scores = (torch.einsum("bhtc,bsc->bhts", q_latent, c)
+                  + torch.einsum("bhtr,bsr->bhts", q_rope, kr))
         weights = (scores / math.sqrt(self.dn + self.dr)).softmax(-1)
-        latent = torch.einsum("bhts,bsc->bhtc", weights, c)                  # weighted sum of latents
-        out = torch.einsum("bhtc,hvc->bhtv", latent, w_uv)                   # value up-projection after
+        latent = torch.einsum("bhts,bsc->bhtc", weights, c)  # weighted sum of latents
+        out = torch.einsum("bhtc,hvc->bhtv", latent, w_uv)  # value up-projection after
         return self.wo(out.transpose(1, 2).reshape(x_t.shape[0], 1, -1))
 
 
@@ -540,14 +589,17 @@ x = torch.randn(2, 12, 64, dtype=torch.float64)
 with torch.no_grad():
     expanded = mla.forward_expanded(x)
     cache = {"c": [], "kr": []}
-    stepped = torch.cat([mla.decode_step(x[:, i:i + 1], cache, i) for i in range(12)], dim=1)
+    steps = [mla.decode_step(x[:, i:i + 1], cache, i) for i in range(12)]
+    stepped = torch.cat(steps, dim=1)
 assert torch.allclose(expanded, stepped, atol=1e-10)
 
 per_token = mla.dc + mla.dr
-full = mla.h * (mla.dn + mla.dr + mla.dv)  # per token: every head's key (nope + rope) and value
+# per token: every head's key (nope + rope) and value
+full = mla.h * (mla.dn + mla.dr + mla.dv)
 assert sum(t.numel() for t in cache["c"] + cache["kr"]) / (2 * 12) == per_token
-print(f"latent decoding equals the expanded attention; cache {per_token} elements/token "
-      f"versus {full} for full per-head keys and values ({full / per_token:.1f}x)")
+print("latent decoding equals the expanded attention")
+print(f"cache {per_token} elements/token versus {full} for full per-head keys and "
+      f"values ({full / per_token:.1f}x)")
 ''')
 
 md(r"""
@@ -560,15 +612,18 @@ code(r'''
 torch.manual_seed(2)
 q, k = torch.randn(1, 64), torch.randn(1, 64)
 rotated = apply_rope(q.expand(10, 64), torch.arange(10))
-assert torch.allclose(rotated.norm(dim=-1), q.norm().expand(10), rtol=1e-5)  # norms preserved
+# norms preserved
+assert torch.allclose(rotated.norm(dim=-1), q.norm().expand(10), rtol=1e-5)
 
 
 def score(m, n):
-    return (apply_rope(q, torch.tensor([m])) @ apply_rope(k, torch.tensor([n])).T).item()
+    q_m, k_n = apply_rope(q, torch.tensor([m])), apply_rope(k, torch.tensor([n]))
+    return (q_m @ k_n.T).item()
 
 
 for shift in (1, 7, 100):
-    assert abs(score(20, 13) - score(20 + shift, 13 + shift)) < 1e-3  # depends on m - n only
+    # depends on m - n only
+    assert abs(score(20, 13) - score(20 + shift, 13 + shift)) < 1e-3
 print("RoPE preserves norms and depends only on the offset")
 ''')
 code(fence(CH06, "def rope_frequencies"))
@@ -579,29 +634,39 @@ last = D // 2 - 1
 
 for s in (2.0, 4.0, 8.0, 40.0):
     scaled = rope_frequencies(D, ntk_aware_base(BASE, s, D))
-    assert abs(scaled[0] - theta[0]) < 1e-12                       # highest frequency unchanged
-    assert abs(theta[last] / scaled[last] - s) < 1e-9 * s          # lowest divided by exactly s
+    assert abs(scaled[0] - theta[0]) < 1e-12               # highest frequency unchanged
+    assert abs(theta[last] / scaled[last] - s) < 1e-9 * s  # lowest divided by exactly s
 
-# Position interpolation, s = 4: trained on positions 0 .. TRAINED-1, extended to 0 .. TRAINED*s-1.
+# Position interpolation, s = 4: trained on positions 0 .. TRAINED-1,
+# extended to 0 .. TRAINED*s-1.
 s = 4.0
-low = [i for i in range(D // 2) if TRAINED * theta[i] < 2 * math.pi]   # turn less than once in training
+# pairs that turn less than once in training, and the others
+low = [i for i in range(D // 2) if TRAINED * theta[i] < 2 * math.pi]
 high = [i for i in range(D // 2) if TRAINED * theta[i] >= 2 * math.pi]
-seen = (TRAINED - 1) * theta[low]                                      # largest angle seen in training
-interpolated = (TRAINED - 1 / s) * theta[low]                          # largest angle after dividing positions by s
-extrapolated = (TRAINED * s - 1) * theta[low]                          # largest angle when positions are not rescaled
+# largest angle: seen in training, after dividing positions by s, and without rescaling
+seen = (TRAINED - 1) * theta[low]
+interpolated = (TRAINED - 1 / s) * theta[low]
+extrapolated = (TRAINED * s - 1) * theta[low]
 assert len(low) > 0 and last in low
-assert torch.all(interpolated > seen)                  # the last rescaled position, 4095.75, is past 4095 ...
-assert torch.all(interpolated < seen + theta[low])     # ... but within one position's rotation of it
-assert torch.all(extrapolated > seen + theta[low])     # without rescaling, angles run far past it
-assert high[0] == 0 and all(TRAINED * theta[i] > 2 * math.pi for i in high)  # these wrap many times already
-print(f"{len(low)} of {D // 2} frequency pairs turn less than once in {TRAINED} positions; "
-      f"interpolation keeps them within one position's rotation of the trained range, extrapolation does not")
+# the last rescaled position, 4095.75, is past 4095 ...
+assert torch.all(interpolated > seen)
+# ... but within one position's rotation of it
+assert torch.all(interpolated < seen + theta[low])
+# without rescaling, angles run far past it
+assert torch.all(extrapolated > seen + theta[low])
+# these wrap many times already
+assert high[0] == 0 and all(TRAINED * theta[i] > 2 * math.pi for i in high)
+print(f"{len(low)} of {D // 2} frequency pairs turn less than once "
+      f"in {TRAINED} positions;")
+print("interpolation keeps them within one position's rotation of the trained range,")
+print("extrapolation does not")
 
 fig, ax = plt.subplots(figsize=(6.5, 3.4))
 index = np.arange(D // 2)
 ax.semilogy(index, theta.numpy(), label="original (base 10,000)")
 ax.semilogy(index, (theta / s).numpy(), "--", label="position interpolation (all / 4)")
-ax.semilogy(index, rope_frequencies(D, ntk_aware_base(BASE, s, D)).numpy(), label="NTK-aware (base x 4^(d/(d-2)))")
+ntk = rope_frequencies(D, ntk_aware_base(BASE, s, D))
+ax.semilogy(index, ntk.numpy(), label="NTK-aware (base x 4^(d/(d-2)))")
 ax.set_xlabel("frequency pair index i")
 ax.set_ylabel("angle per position (rad)")
 ax.legend(fontsize=8)
@@ -634,7 +699,8 @@ for seed in range(20):
     f = torch.bincount(ids.flatten(), minlength=E).float() / (T * K)
     deviations.append((f - 1 / E).abs().max().item())
 TOL = 0.03
-print(f"largest deviation of any expert's share from 1/{E} over 20 seeds: {max(deviations):.4f} (tolerance {TOL})")
+print(f"largest deviation of any expert's share from 1/{E} over 20 seeds: "
+      f"{max(deviations):.4f} (tolerance {TOL})")
 assert max(deviations) < TOL
 
 w, x = make_router(0)
@@ -643,17 +709,19 @@ assert torch.allclose(gates.sum(-1), torch.ones(T)) and ids.shape == (T, K)
 
 # A router that favors expert 0: shift every token towards its weight row
 ids_b, _, aux_biased = route_top_k(x + 3 * w[0], w, K)
-print(f"load-balancing loss: balanced {aux_balanced:.3f}, biased {aux_biased:.3f} (uniform routing gives 1)")
+print(f"load-balancing loss: balanced {aux_balanced:.3f}, biased {aux_biased:.3f} "
+      "(uniform routing gives 1)")
 assert 0.95 < aux_balanced < 1.1 and aux_biased > 2
 
-# Capacity factor 1.0: each expert takes at most ceil(c * k * T / E) slots, in token order
+# Capacity factor 1.0: each expert takes at most ceil(c * k * T / E) slots, in order
 CAPACITY = math.ceil(1.0 * K * T / E)
 
 
 def dropped_vectorised(ids):
-    flat = ids.flatten()                                            # slot order: token-major
+    flat = ids.flatten()  # slot order: token-major
     onehot = F.one_hot(flat, E)
-    position = (onehot.cumsum(0) - 1).gather(1, flat[:, None])[:, 0]   # rank within its expert
+    # rank of each slot within its expert
+    position = (onehot.cumsum(0) - 1).gather(1, flat[:, None])[:, 0]
     return int((position >= CAPACITY).sum())
 
 
@@ -669,11 +737,13 @@ def dropped_loop(ids):
 
 for name, routed in (("balanced", ids), ("biased", ids_b)):
     assert dropped_vectorised(routed) == dropped_loop(routed)
-    print(f"{name:9} router drops {dropped_loop(routed):5d} of {T * K} slots at capacity factor 1.0")
+    dropped = dropped_loop(routed)
+    print(f"{name:9} router drops {dropped:5d} of {T * K} slots at capacity factor 1.0")
 assert dropped_loop(ids_b) > 5 * max(dropped_loop(ids), 1)
 
 fig, axes = plt.subplots(1, 2, figsize=(7, 2.8), sharey=True)
-for ax, (name, routed) in zip(axes, (("balanced", ids), ("biased toward expert 0", ids_b))):
+panels = (("balanced", ids), ("biased toward expert 0", ids_b))
+for ax, (name, routed) in zip(axes, panels):
     ax.bar(range(E), torch.bincount(routed.flatten(), minlength=E).numpy() / (T * K))
     ax.axhline(1 / E, color="k", lw=0.8, ls="--")
     ax.set_title(name, fontsize=9)
@@ -692,7 +762,8 @@ class MoELayer(nn.Module):
         super().__init__()
         self.top_k = top_k
         self.router = nn.Linear(d_model, n_experts, bias=False)
-        self.experts = nn.ModuleList([SwiGLU(d_model, hidden) for _ in range(n_experts)])
+        self.experts = nn.ModuleList(
+            [SwiGLU(d_model, hidden) for _ in range(n_experts)])
 
     def forward(self, x):
         flat = x.reshape(-1, x.shape[-1])
@@ -702,7 +773,8 @@ class MoELayer(nn.Module):
         for e, expert in enumerate(self.experts):
             token, slot = (top_i == e).nonzero(as_tuple=True)
             if token.numel():
-                out.index_add_(0, token, gates[token, slot].unsqueeze(-1) * expert(flat[token]))
+                weighted = gates[token, slot].unsqueeze(-1) * expert(flat[token])
+                out.index_add_(0, token, weighted)
         return out.view(x.shape)
 
 
@@ -710,8 +782,9 @@ def moe_reference(layer, x):
     flat, rows = x.reshape(-1, x.shape[-1]), []
     for t in range(flat.shape[0]):
         logits, chosen = layer.router(flat[t]).topk(layer.top_k)
-        g = logits.softmax(-1)                                       # softmax over the selected logits
-        rows.append(sum(g[j] * layer.experts[int(chosen[j])](flat[t]) for j in range(layer.top_k)))
+        g = logits.softmax(-1)  # softmax over the selected logits
+        rows.append(sum(g[j] * layer.experts[int(chosen[j])](flat[t])
+                        for j in range(layer.top_k)))
     return torch.stack(rows).view(x.shape)
 
 
@@ -729,34 +802,42 @@ with torch.no_grad():
 moe_model = TinyLM(n_kv_heads=2)
 for block in moe_model.blocks:
     block.ffn = MoELayer(64, 8, 2, 96)
-cfg = {"model_type": "mixtral", "hidden_size": 64, "num_hidden_layers": 4, "num_attention_heads": 4,
-       "num_key_value_heads": 2, "intermediate_size": 96, "num_local_experts": 8,
-       "num_experts_per_tok": 2, "vocab_size": 256, "tie_word_embeddings": True}
+cfg = {"model_type": "mixtral", "hidden_size": 64, "num_hidden_layers": 4,
+       "num_attention_heads": 4, "num_key_value_heads": 2, "intermediate_size": 96,
+       "num_local_experts": 8, "num_experts_per_tok": 2, "vocab_size": 256,
+       "tie_word_embeddings": True}
 counts = count_params(cfg)
 total = sum(p.numel() for p in moe_model.parameters())
-idle = 4 * (8 - 2) * sum(p.numel() for p in moe_model.blocks[0].ffn.experts[0].parameters())
+per_expert = sum(p.numel() for p in moe_model.blocks[0].ffn.experts[0].parameters())
+idle = 4 * (8 - 2) * per_expert
 assert total == counts["total"] and total - idle == counts["active_with_embedding"]
-print(f"sparse toy model: {total:,} total parameters, {total - idle:,} active per token "
+print(f"sparse toy model: {total:,} total parameters, "
+      f"{total - idle:,} active per token "
       f"({100 * (total - idle) / total:.0f}%)")
 ''')
 
 CLAIMS_CELL = r"""
 import numpy as np
 
-STUCK, TRAINS = 3.0, 2.5  # nats: a byte-frequency model sits at 3.11; below 2.5 a model is using context
+# nats: a byte-frequency model sits at 3.11; below 2.5 a model is using context
+STUCK, TRAINS = 3.0, 2.5
 
 
 def norm_claims(arms):
-    # each statement this section makes about the sweep, as a boolean, from its arms (lr, warmup, pre, post)
-    by = {(a["lr"], a["warmup"]): {k: np.array(a[k]) for k in ("pre", "post")} for a in arms}
+    # each statement this section makes about the sweep, as a boolean, from its arms
+    # (lr, warmup, pre, post)
+    by = {(a["lr"], a["warmup"]): {k: np.array(a[k]) for k in ("pre", "post")}
+          for a in arms}
     top, warm = by[(3e-3, 0)], by[(3e-3, 100)]["post"]
     lower = [key for key in by if key[0] < 3e-3]
     return {
-        "at 3e-3 without warm-up, post-norm stays at the byte-frequency loss and pre-norm trains, in every seed":
+        "at 3e-3 without warm-up, post-norm stays at the byte-frequency loss "
+        "and pre-norm trains, in every seed":
             bool((top["post"] > STUCK).all() and (top["pre"] < TRAINS).all()),
         "at 3e-3 with warm-up, post-norm trains in some seeds but not in all":
             bool((warm < TRAINS).any() and (warm > STUCK).any()),
-        "at 1e-3 and 3e-4, with and without warm-up, post-norm's loss after 400 steps is below pre-norm's in every seed":
+        "at 1e-3 and 3e-4, with and without warm-up, post-norm's loss after 400 steps "
+        "is below pre-norm's in every seed":
             bool(all((by[key]["post"] < by[key]["pre"]).all() for key in lower)),
     }
 """.strip("\n")
@@ -773,11 +854,13 @@ The comparison is a sweep over three learning rates ($3 \times 10^{-3}$, $10^{-3
 code(r'''
 import numpy as np
 
-_counts = np.bincount(np.frombuffer((DATA / "pride_and_prejudice_150k.txt").read_bytes(), dtype=np.uint8), minlength=256)
+_bytes = (DATA / "pride_and_prejudice_150k.txt").read_bytes()
+_counts = np.bincount(np.frombuffer(_bytes, dtype=np.uint8), minlength=256)
 _freq = _counts[_counts > 0] / _counts.sum()
 BYTE_FREQ_LOSS = float(-(_freq * np.log(_freq)).sum())
 n_params = sum(p.numel() for p in TinyLM(n_layers=6, n_kv_heads=4).parameters())
-print(f"model: {n_params:,} parameters; byte-frequency loss of the text: {BYTE_FREQ_LOSS:.2f} nats")
+print(f"model: {n_params:,} parameters; "
+      f"byte-frequency loss of the text: {BYTE_FREQ_LOSS:.2f} nats")
 assert n_params == 311_360 and round(BYTE_FREQ_LOSS, 2) == 3.11
 ''')
 TRAIN_CELL = r'''
@@ -788,19 +871,22 @@ BATCH, SEQ, STEPS, LR = 8, 64, 400, 3e-3
 
 
 def train(style, seed, lr=LR, warmup=0):
-    """Training losses of one run; `warmup` > 0 raises the rate linearly over that many steps."""
+    """Training losses of one run; `warmup` > 0 raises the rate linearly over that
+    many steps."""
     torch.manual_seed(seed)
     model = TinyLM(n_layers=6, n_kv_heads=4, style=style)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
     if warmup:
-        schedule = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda t: min(1.0, (t + 1) / warmup))
-    g = torch.Generator().manual_seed(1000 + seed)           # the same batches for both variants
+        schedule = torch.optim.lr_scheduler.LambdaLR(
+            optimizer, lambda t: min(1.0, (t + 1) / warmup))
+    g = torch.Generator().manual_seed(1000 + seed)  # same batches for both variants
     losses = []
     for _ in range(STEPS):
         start = torch.randint(0, len(TEXT) - SEQ - 1, (BATCH,), generator=g)
         index = start[:, None] + torch.arange(SEQ + 1)
         batch = TEXT[index]
-        loss = F.cross_entropy(model(batch[:, :-1]).reshape(-1, 256), batch[:, 1:].reshape(-1))
+        logits = model(batch[:, :-1]).reshape(-1, 256)
+        loss = F.cross_entropy(logits, batch[:, 1:].reshape(-1))
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -815,8 +901,9 @@ def score(losses):
     return float(np.mean(losses[-20:]))
 
 
-print(f"{sum(p.numel() for p in TinyLM(n_layers=6, n_kv_heads=4).parameters()):,} parameters; "
-      f"{BATCH * SEQ:,} tokens per step; uniform-distribution loss is ln 256 = {math.log(256):.3f}")
+model_size = sum(p.numel() for p in TinyLM(n_layers=6, n_kv_heads=4).parameters())
+print(f"{model_size:,} parameters; {BATCH * SEQ:,} tokens per step;")
+print(f"uniform-distribution loss is ln 256 = {math.log(256):.3f}")
 RESULTS = {"pre": [], "post": []}
 '''
 code(TRAIN_CELL)
@@ -826,15 +913,18 @@ for _style in ("pre", "post"):
         code(f'''
 with timed("{_style}-norm, seed {_seed}"):
     RESULTS["{_style}"].append(train("{_style}", {_seed}))
-print("loss after 400 steps (mean of steps 381-400):", round(float(np.mean(RESULTS["{_style}"][-1][-20:])), 3))
+print("loss after 400 steps (mean of steps 381-400):",
+      round(float(np.mean(RESULTS["{_style}"][-1][-20:])), 3))
 ''')
 code(r'''
-final = {style: np.array([np.mean(r[-20:]) for r in runs]) for style, runs in RESULTS.items()}
+final = {style: np.array([np.mean(r[-20:]) for r in runs])
+         for style, runs in RESULTS.items()}
 gap = final["post"] - final["pre"]
 spread = max(final["pre"].std(), final["post"].std())
 print(f"pre  {final['pre'].mean():.3f} +- {final['pre'].std():.3f}")
 print(f"post {final['post'].mean():.3f} +- {final['post'].std():.3f}")
-print(f"gap per seed {np.round(gap, 3)}; mean gap {gap.mean():.3f} = {gap.mean() / spread:.1f}x the larger spread")
+print(f"gap per seed {np.round(gap, 3)}; mean gap {gap.mean():.3f} "
+      f"= {gap.mean() / spread:.1f}x the larger spread")
 
 assert all(np.isfinite(v).all() for v in final.values())
 
@@ -844,7 +934,8 @@ assert train("pre", 0) == RESULTS["pre"][0]
 fig, ax = plt.subplots(figsize=(6.5, 3.4))
 for style, color in (("pre", "#4c72b0"), ("post", "#c44e52")):
     curves = np.array(RESULTS[style])
-    ax.plot(curves.mean(0), color=color, label=f"{style}-norm (mean of {len(curves)} seeds)")
+    label = f"{style}-norm (mean of {len(curves)} seeds)"
+    ax.plot(curves.mean(0), color=color, label=label)
     ax.fill_between(range(STEPS), curves.min(0), curves.max(0), color=color, alpha=0.2)
 ax.set_xlabel("step")
 ax.set_ylabel("training loss (nats per byte)")
@@ -860,22 +951,29 @@ The row marked *live* is the runs above; the other rows are *loaded* from `data/
 """)
 code(CLAIMS_CELL)
 code(r'''
+import textwrap
+
 SWEEP = json.loads((DATA / "norm_sweep.json").read_text())
 recorded = next(a for a in SWEEP["arms"] if (a["lr"], a["warmup"]) == (LR, 0))
-difference = max(float(np.abs(final[k] - np.array(recorded[k])).max()) for k in ("pre", "post"))
-if SWEEP["torch"] == torch.__version__:  # same version: the live arm reproduces the recorded one exactly
+difference = max(float(np.abs(final[k] - np.array(recorded[k])).max())
+                 for k in ("pre", "post"))
+# same version: the live arm reproduces the recorded one exactly
+if SWEEP["torch"] == torch.__version__:
     assert difference == 0.0
-print(f"sweep recorded with torch {SWEEP['torch']}, this kernel {torch.__version__}; "
-      f"largest live-recorded difference {difference:.1g}")
-ARMS = [{**a, **{k: [float(v) for v in final[k]] for k in ("pre", "post")}} if (a["lr"], a["warmup"]) == (LR, 0)
-        else a for a in SWEEP["arms"]]
+print(f"sweep recorded with torch {SWEEP['torch']}, this kernel {torch.__version__};")
+print(f"largest live-recorded difference {difference:.1g}")
+live = {k: [float(v) for v in final[k]] for k in ("pre", "post")}
+ARMS = [{**a, **live} if (a["lr"], a["warmup"]) == (LR, 0) else a
+        for a in SWEEP["arms"]]
 
-print(f"{'rate':>6} {'warm-up':>8} {'source':>7} {'pre-norm':>9} {'post-norm':>10}  (mean over 5 seeds)")
+print("mean over 5 seeds")
+print(f"{'rate':>6} {'warm-up':>8} {'source':>7} {'pre-norm':>9} {'post-norm':>10}")
 for a in ARMS:
     source = "live" if (a["lr"], a["warmup"]) == (LR, 0) else "loaded"
-    print(f"{a['lr']:6.0e} {a['warmup']:8d} {source:>7} {np.mean(a['pre']):9.3f} {np.mean(a['post']):10.3f}")
+    pre, post = np.mean(a["pre"]), np.mean(a["post"])
+    print(f"{a['lr']:6.0e} {a['warmup']:8d} {source:>7} {pre:9.3f} {post:10.3f}")
 for claim, holds in norm_claims(ARMS).items():
-    print(f"{claim}: {holds}")
+    print(textwrap.fill(f"{claim}: {holds}", 88, subsequent_indent="  "))
     assert holds, claim
 
 fig, ax = plt.subplots(figsize=(6.5, 3.4))
@@ -886,8 +984,9 @@ for style, color in (("pre", "#4c72b0"), ("post", "#c44e52")):
         mean = np.array([np.mean(a[style]) for a in rows])
         low = mean - np.array([np.min(a[style]) for a in rows])
         high = np.array([np.max(a[style]) for a in rows]) - mean
-        ax.errorbar(rates, mean, yerr=[low, high], fmt="o" + line, color=color, capsize=3,
-                    label=f"{style}-norm, {'no warm-up' if warmup == 0 else f'{warmup}-step warm-up'}")
+        schedule = "no warm-up" if warmup == 0 else f"{warmup}-step warm-up"
+        ax.errorbar(rates, mean, yerr=[low, high], fmt="o" + line, color=color,
+                    capsize=3, label=f"{style}-norm, {schedule}")
 ax.axhline(BYTE_FREQ_LOSS, color="gray", lw=0.8, ls=":")
 ax.set_xscale("log")
 ax.set_xlabel("peak learning rate")
@@ -903,22 +1002,28 @@ md(r"""
 The summary below is printed from the results computed above; each line is asserted.
 """)
 code(r'''
-assert all(COUNTS[repo]["total"] == CHECKPOINT[repo]["elements_counted"] for repo in PINS)
-assert all(COUNTS[repo]["total"] == HUB_TOTALS[repo]["elements_total"] for repo in exact)
-print(f"checkpoint element counts reproduced exactly for {len(PINS)} models, hub totals for {len(exact)} gated models;")
-print(f"  Gemma 3 12B text decoder: {non_embedding / 1e6:,.0f}M non-embedding parameters, as in the paper")
+assert all(COUNTS[r]["total"] == CHECKPOINT[r]["elements_counted"] for r in PINS)
+assert all(COUNTS[r]["total"] == HUB_TOTALS[r]["elements_total"] for r in exact)
+print(f"checkpoint element counts reproduced exactly for {len(PINS)} models,")
+print(f"  hub totals for {len(exact)} gated models;")
+print(f"  Gemma 3 12B text decoder: {non_embedding / 1e6:,.0f}M non-embedding "
+      "parameters, as in the paper")
 smallest, largest = min(kv_bytes, key=kv_bytes.get), max(kv_bytes, key=kv_bytes.get)
 ratio = kv_bytes["allenai/OLMo-2-1124-7B"] / kv_bytes["meta-llama/Llama-3.1-8B"]
-assert ratio == 4 and kv_bytes[smallest] < kv_bytes["deepseek-ai/DeepSeek-V3"] < kv_bytes[largest]
-print(f"KV cache per token in bf16: {kv_bytes[smallest]:,} bytes ({smallest}) to {kv_bytes[largest]:,} ({largest});"
-      f" OLMo 2 7B's multi-head cache is {ratio:.0f} times Llama 3.1 8B's")
+assert ratio == 4
+assert kv_bytes[smallest] < kv_bytes["deepseek-ai/DeepSeek-V3"] < kv_bytes[largest]
+print(f"KV cache per token in bf16: {kv_bytes[smallest]:,} bytes ({smallest})")
+print(f"  to {kv_bytes[largest]:,} ({largest});")
+print(f"  OLMo 2 7B's multi-head cache is {ratio:.0f} times Llama 3.1 8B's")
 assert per_token < full
-print(f"latent cache: {per_token} numbers per token per layer against {full} for the expanded heads")
+print(f"latent cache: {per_token} numbers per token per layer against {full} "
+      "for the expanded heads")
 assert 0.95 < aux_balanced < 1.1 < 2 < aux_biased
-print(f"router: load-balancing loss {aux_balanced:.3f} balanced, {aux_biased:.3f} biased toward one expert")
+print(f"router: load-balancing loss {aux_balanced:.3f} balanced, "
+      f"{aux_biased:.3f} biased toward one expert")
 for claim, holds in norm_claims(ARMS).items():
     assert holds, claim
-    print(f"norm placement: {claim}")
+    print(textwrap.fill(f"norm placement: {claim}", 88, subsequent_indent="  "))
 ''')
 
 
