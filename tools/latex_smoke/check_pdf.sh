@@ -85,6 +85,10 @@ for line in open(sys.argv[2], encoding="utf-8"):
     if kind == "ar":
         chars = {c for c in chars if arabic_letter(c)}
     missing = sorted(chars - text)
+    if kind == "ar" and "ٮ" in text:
+        # Noto Naskh Arabic draws beh, teh and theh as the dotless base (U+066E) plus separate
+        # dot marks, and its ToUnicode map reports the base, so pdftotext gives U+066E for them.
+        missing = [c for c in missing if c not in "بتث"]
     if not missing:
         print(f"ok: {kind}: {sample.strip()}")
     elif allow_pua and has_pua:

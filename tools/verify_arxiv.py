@@ -16,7 +16,11 @@ An entry with a ``doi`` field is also compared with its Crossref record on autho
 are not compared on journal. Exits non-zero on any mismatch. Standard library only; requests are
 batched and spaced to respect the services' limits.
 
-Usage: python tools/verify_arxiv.py [file.bib ...] [--keys key1,key2,...]
+Known differences that are correct in the entry are listed in ``tools/verify_arxiv_deviations.tsv``
+(key, field, the value the record gives, reason); a mismatch matching a line there is printed as
+accepted and does not count.
+
+Usage: python tools/verify_arxiv.py [file.bib ...] [--keys key1,key2,...] [--deviations file.tsv]
 With no file the tool reads references.bib and every bib/*.bib.
 """
 from __future__ import annotations
@@ -43,6 +47,7 @@ FIELD = (r"(\w+)\s*=\s*(\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}"
 BATCH = 20
 DELAY = 3.0
 CROSSREF_DELAY = 1.0
+DEVIATIONS = Path(__file__).resolve().with_name("verify_arxiv_deviations.tsv")
 USER_AGENT = os.environ.get("LLMATLAS_USER_AGENT", "Mozilla/5.0 (compatible; bib-checker)")
 
 
@@ -352,6 +357,48 @@ def compare_crossref(fields, record):
     return problems
 
 
+# --- accepted deviations ------------------------------------------------------------------------
+
+
+def load_deviations(path):
+    """``{key: [(field, value, reason), ...]}`` from a tab-separated file; ``#`` lines and blank
+    lines are skipped. A line without all four columns is an error."""
+    deviations = {}
+    with open(path, encoding="utf-8") as handle:
+        for number, line in enumerate(handle, 1):
+            if not line.strip() or line.startswith("#"):
+                continue
+            columns = [c.strip() for c in line.rstrip("\n").split("\t")]
+            if len(columns) != 4 or not all(columns):
+                raise ValueError(f"{path}:{number}: expected key, field, value and reason")
+            key, field, value, reason = columns
+            deviations.setdefault(key, []).append((field, value, reason))
+    return deviations
+
+
+def is_accepted(problem, field, value):
+    """Does the problem concern this field and give this value for the record? The field must
+    start the message (``author 1`` does not match ``author 10``) and the value must appear, as a
+    whole word, after the entry's side of it."""
+    if not re.match(re.escape(field) + r"[ :]", problem):
+        return False
+    record_side = problem.split(" in the entry, ", 1)[-1]
+    return re.search(r"(?<!\w)" + re.escape(value) + r"(?!\w)", record_side) is not None
+
+
+def split_accepted(problems, accepted):
+    """``(remaining problems, [(problem, reason), ...] accepted, unused deviations)``."""
+    remaining, matched, used = [], [], set()
+    for problem in problems:
+        hit = next((d for d in accepted if is_accepted(problem, d[0], d[1])), None)
+        if hit:
+            matched.append((problem, hit[2]))
+            used.add(hit)
+        else:
+            remaining.append(problem)
+    return remaining, matched, [d for d in accepted if d not in used]
+
+
 # --- network ------------------------------------------------------------------------------------
 
 
@@ -438,6 +485,12 @@ def main(argv):
         i = args.index("--keys")
         only = set(args[i + 1].split(","))
         del args[i:i + 2]
+    deviations_path = DEVIATIONS
+    if "--deviations" in args:
+        i = args.index("--deviations")
+        deviations_path = Path(args[i + 1])
+        del args[i:i + 2]
+    deviations = load_deviations(deviations_path) if deviations_path.exists() else {}
     paths = args or [str(p) for p in bib_files(".")]
     items = select_entries(paths, only)
     if not items:
@@ -464,11 +517,16 @@ def main(argv):
         return 2
     for key, fields in items:
         problems = check_entry(fields, records.get(fields.get("eprint", "").strip()))
+        problems, matched, unused = split_accepted(problems, deviations.get(key, []))
         bad += bool(problems)
         ident = fields.get("eprint", fields.get("doi", ""))
         print(("OK  " if not problems else "BAD ") + f"{key:28} {ident}")
         for problem in problems:
             print("      " + problem)
+        for problem, reason in matched:
+            print(f"      accepted: {problem} ({reason})")
+        for field, value, _ in unused:
+            print(f"      note: accepted deviation {field} = {value!r} no longer occurs")
     print(f"{len(items)} entries checked, {bad} mismatched")
     return 1 if bad else 0
 

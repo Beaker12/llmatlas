@@ -1,0 +1,15 @@
+# Accepted deviations for tools/verify_arxiv.py: differences between a bibliography entry and the
+# arXiv or Crossref record that are known, checked, and correct in the entry.
+# One per line, tab-separated: key, field, value, reason.
+#   key    the bibliography key
+#   field  the start of the tool's message: "author 5", "author count", "journal", "volume", "pages"
+#   value  the value the record gives, as it appears in the message
+#   reason why the entry is right and the record is not used
+# A mismatch is accepted only if its key, field and value all match a line. Checked 2026-11-13.
+penedo2023refinedweb	author 5	Alessandro Cappelli	The entry follows the published NeurIPS version, whose Crossref record (DOI 10.52202/075280-3464) agrees with it; the arXiv preprint lists Cappelli fifth and Alobeidli sixth.
+penedo2024fineweb	author 3	Loubna Allal	The arXiv metadata drops "Ben" from the surname Ben Allal; the entry gives the full surname.
+poznanski2025olmocr	author count	10	The arXiv metadata of the latest version lists Aman Rangapur twice (second and seventh); the entry gives the nine distinct authors in that order.
+deepseek2024v2	author 8	Chengqi Dengr	The arXiv metadata misspells the surname Deng as "Dengr".
+akhtar2024croissant	author 5	Joan Giner-Miguelez	The entry follows the author order on the paper's first page (arXiv v3: Gijsbers fifth, Giner-Miguelez sixth); the arXiv metadata swaps them.
+charikar2002similarity	journal	Proceedings of the thiry-fourth annual ACM symposium on Theory of computing	Crossref misspells "thirty-fourth" as "thiry-fourth" in the proceedings title (STOC 2002 was the 34th symposium).
+collet2021zstd	author count	1	RFC 8878 names two authors, Y. Collet and M. Kucherawy (editor); Crossref lists only one.

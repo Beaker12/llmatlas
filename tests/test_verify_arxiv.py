@@ -1,5 +1,8 @@
 """Offline tests of the comparison logic in tools/verify_arxiv.py, with canned API responses."""
 import json
+from pathlib import Path
+
+import pytest
 
 from tools import verify_arxiv as va
 
@@ -405,3 +408,61 @@ def test_journal_reference_cut_down_to_boilerplate_is_not_compared():
              "Computational Linguistics")
     journal, volume, pages = va.split_journal_ref(title)
     assert va.compare_publication({"booktitle": title}, journal, volume, pages, "arXiv") == []
+
+
+# --- accepted deviations ---------------------------------------------------------------------
+
+
+def test_accepted_deviation_matches_field_and_record_value_only():
+    problem = "author 5 is 'alobeidli' in the entry, 'Alessandro Cappelli' in the record"
+    assert va.is_accepted(problem, "author 5", "Alessandro Cappelli")
+    assert not va.is_accepted(problem, "author 5", "alobeidli")          # the entry's side
+    assert not va.is_accepted(problem, "author 4", "Alessandro Cappelli")
+    assert not va.is_accepted("author 50 is 'x' in the entry, 'Y' in the record", "author 5", "Y")
+    count = "author count 9 in the entry, 10 in the record"
+    assert va.is_accepted(count, "author count", "10")
+    assert not va.is_accepted("author count 9 in the entry, 100 in the record", "author count", "10")
+    assert va.is_accepted("journal: 'A' in the entry, 'B' in Crossref", "journal", "B")
+
+
+def test_split_accepted_reports_remaining_matched_and_unused():
+    accepted = [("author 2", "Bob", "r1"), ("volume", "7", "r2")]
+    problems = ["author 2 is 'rob' in the entry, 'Bob' in the record",
+                "pages: 1-2 in the entry, 3-4 in Crossref"]
+    remaining, matched, unused = va.split_accepted(problems, accepted)
+    assert remaining == ["pages: 1-2 in the entry, 3-4 in Crossref"]
+    assert matched == [(problems[0], "r1")]
+    assert unused == [("volume", "7", "r2")]
+
+
+def test_load_deviations_skips_comments_and_rejects_short_lines(tmp_path):
+    path = tmp_path / "d.tsv"
+    path.write_text("# comment\n\nk\tauthor 1\tAnn Lee\tbecause\n")
+    assert va.load_deviations(path) == {"k": [("author 1", "Ann Lee", "because")]}
+    path.write_text("k\tauthor 1\tAnn Lee\n")
+    with pytest.raises(ValueError):
+        va.load_deviations(path)
+
+
+def test_main_passes_when_every_mismatch_is_accepted(monkeypatch, tmp_path, capsys):
+    bib = tmp_path / "a.bib"
+    bib.write_text("@article{k,\n  author={Smith, Ann and Jones, Bo},\n"
+                   "  title={A Title Long Enough To Compare Here},\n  eprint={1712.00409}\n}\n")
+    record = {"authors": ["Ann Smith", "Bo Jonas"], "title": "A Title Long Enough To Compare Here"}
+    monkeypatch.setattr(va, "fetch_arxiv", lambda ids: {"1712.00409": record})
+    monkeypatch.setattr(va.time, "sleep", lambda s: None)
+    deviations = tmp_path / "d.tsv"
+    deviations.write_text("other\tauthor 2\tBo Jonas\tnot this entry\n")
+    assert va.main([str(bib), "--deviations", str(deviations)]) == 1
+    assert "BAD k" in capsys.readouterr().out
+    deviations.write_text("k\tauthor 2\tBo Jonas\tmetadata typo\n")
+    assert va.main([str(bib), "--deviations", str(deviations)]) == 0
+    out = capsys.readouterr().out
+    assert "OK  k" in out and "accepted:" in out and "metadata typo" in out
+
+
+def test_committed_deviations_name_existing_entries():
+    deviations = va.load_deviations(va.DEVIATIONS)
+    assert len(deviations) >= 5
+    keys = {k for path in va.bib_files(".") for k, _ in va.parse_entries(Path(path).read_text(encoding="utf-8"))}
+    assert set(deviations) <= keys, set(deviations) - keys

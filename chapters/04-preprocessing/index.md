@@ -2383,7 +2383,7 @@ At 2 billion tokens neither model sees any document twice, and a difference in b
 
 - [datatrove](https://github.com/huggingface/datatrove) - Hugging Face's pipeline library, used for FineWeb
 - [Dolma toolkit](https://github.com/allenai/dolma) - the Allen Institute's taggers, deduplication and mixing tools
-- [NeMo Curator](https://github.com/NVIDIA/NeMo-Curator) - GPU-accelerated curation including fuzzy and semantic deduplication
+- [NeMo Curator](https://github.com/NVIDIA-NeMo/Curator) - GPU-accelerated curation including fuzzy and semantic deduplication
 - [text-dedup](https://github.com/ChenghaoMou/text-dedup) - reference implementations of MinHash, SimHash and suffix-array deduplication
 - [trafilatura](https://trafilatura.readthedocs.io/) - boilerplate-aware text extraction from HTML
 - [fastText language identification](https://fasttext.cc/docs/en/language-identification.html) - the `lid.176` models

@@ -70,13 +70,16 @@ sphinx:
       preamble: |
         \providecommand{\cjkfontname}{Noto Sans CJK SC}
         \providecommand{\arabicfontname}{Noto Naskh Arabic}
-        \usepackage[Latin,Greek]{ucharclasses}  % same options as sphinx-jupyterbook-latex, which loads it again
+        \usepackage[Latin,Greek,Arabic]{ucharclasses}  % superset of sphinx-jupyterbook-latex's options (it loads it again); Arabic makes \setTransitionsFor{Arabic} fire
         \usepackage{xeCJK}
+        \xeCJKDeclareCharClass{Default}{"00B7, "2026}  % middle dot and ellipsis stay in the Latin font
         \setCJKmainfont{\cjkfontname}
         \setCJKmonofont{\cjkfontname}
         \usepackage{bidi}
         \newfontfamily\arabicfont[Script=Arabic]{\arabicfontname}
         \setTransitionsFor{Arabic}{\begingroup\arabicfont\beginR}{\endR\endgroup}
+        % A {cite:t} in a figure caption otherwise stops XeLaTeX ("Argument of \Hy@tempa has an extra }").
+        \usepackage{etoolbox}\robustify{\DUrole}\robustify{\hyperlink}\robustify{\sphinxstyleemphasis}
     linkcheck_ignore:
       - "https://doi.org/10.1145/.*"      # dl.acm.org returns 403 to non-browser clients
       - "https://doi.org/10.1162/.*"      # direct.mit.edu returns 403 to non-browser clients
