@@ -157,7 +157,8 @@ def test_make_figures_is_deterministic(tmp_path):
 def exercise_text(n: int) -> str:
     text = CH02.read_text(encoding="utf-8")
     start = text.index(f"{{admonition}} Solution {n}")
-    return text[start:text.index("```", start + 20)]
+    # Solutions are wrapped to the page width; compare them with line breaks as spaces.
+    return " ".join(text[start:text.index("```", start + 20)].split())
 
 
 def test_exercise_1_entropy_cross_entropy_and_kl():
