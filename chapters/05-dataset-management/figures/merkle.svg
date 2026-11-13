@@ -8,7 +8,7 @@
  viewBox="14.00 14.00 975.00 923.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
 <g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(43.2 894.2)">
 <title>merkle</title>
-<polygon fill="#111111" stroke="none" points="-28.8,28.8 -28.8,-879.8 931.37,-879.8 931.37,28.8 -28.8,28.8"/>
+<polygon fill="#ffffff" stroke="none" points="-28.8,28.8 -28.8,-879.8 931.37,-879.8 931.37,28.8 -28.8,28.8"/>
 <polygon fill="#fde7cf" stroke="none" points="242.57,-36.4 242.57,-68.8 660,-68.8 660,-36.4 242.57,-36.4"/>
 <polygon fill="none" stroke="#4a5568" points="242.57,-36.4 242.57,-68.8 660,-68.8 660,-36.4 242.57,-36.4"/>
 <text xml:space="preserve" text-anchor="start" x="248.57" y="-45.8" font-family="Helvetica,sans-Serif" font-size="17.00">changed when one byte of shard 6 changes (v1 → v2)</text>
