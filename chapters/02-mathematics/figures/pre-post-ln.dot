@@ -29,7 +29,7 @@ digraph pre_post_ln {
     b_in -> b_ln [color="#4a5568"];
     b_ln -> b_f [color="#4a5568"];
     b_f -> b_add [color="#4a5568"];
-    b_in -> b_add [label="identity, Jacobian I", fontsize=16, color="#2ca02c", fontcolor="#1f6f1f", penwidth=2.4];
+    b_in -> b_add [xlabel="identity, Jacobian I", fontsize=16, color="#2ca02c", fontcolor="#1f6f1f", penwidth=2.4];
     b_add -> b_out [color="#2ca02c", penwidth=2.4];
   }
 }

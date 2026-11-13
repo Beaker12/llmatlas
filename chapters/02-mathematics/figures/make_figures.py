@@ -90,7 +90,7 @@ def softmax_saturation(out):
         ax.annotate(f"$p_1 = {p8:.4f}$, derivative {p8 * (1 - p8):.2g}", (8, p8 * (1 - p8)), xytext=offset,
                     textcoords="offset points", ha=align[0], va=align[1], color=color)
     ax.axvline(8, color=GREY, ls="--", lw=1)
-    ax.text(7.85, 1.3e-6, "gap 8: one standard deviation\nof unscaled scores at $d_k = 64$", ha="right",
+    ax.text(7.85, 1.3e-6, "gap 8: the standard deviation of one\nunscaled score at $d_k = 64$\n(of a gap between two scores: $8\\sqrt{2} = 11.3$)", ha="right",
             va="bottom", color=GREY)
     ax.set_yscale("log")
     ax.set_ylim(1e-6, 0.6)
@@ -162,18 +162,19 @@ def allocation_lines(out):
     fig, axes = plt.subplots(1, 2, figsize=(7.4, 3.4), sharex=True)
     for ax, base, exps, ylabel, column in ((axes[0], n0, (0.73, 0.50), "optimal parameters $N^*$", 0),
                                            (axes[1], d0, (0.27, 0.50), "optimal tokens $D^*$", 1)):
-        ax.plot(compute, base * (compute / c0) ** exps[0], color=BLUE, lw=2, label=f"Kaplan, exponent {exps[0]:.2f}")
+        ax.plot(compute, base * (compute / c0) ** exps[0], color=BLUE, lw=2, label=f"Kaplan, exponent {exps[0]:.2f}", zorder=2)
         ax.plot(compute, base * (compute / c0) ** exps[1], color=ORANGE, lw=2,
-                label=f"Chinchilla, exponent {exps[1]:.2f}")
+                label=f"Chinchilla, exponent {exps[1]:.2f}", zorder=2)
+        # The hollow star leaves the 67 B Table 3 dot, which sits almost on Chinchilla's own size, visible.
+        ax.plot(c0, base, "*", mfc="none", mec="black", mew=1.2, ms=16, zorder=3, label="Chinchilla (70 B, 1.4 T tokens)")
         ax.plot([6 * n * d for n, d in table3], [row[column] for row in table3], "o", color=ORANGE, mec="black",
-                ms=5, label="Hoffmann et al., Table 3")
-        ax.plot(c0, base, "*", color="black", ms=11, label="Chinchilla, 70 B on 1.4 T tokens")
+                ms=5, zorder=4, label="Table 3, 4 rows")
+        ax.legend(loc="upper left", fontsize=8, frameon=False)
         ax.set_xscale("log")
         ax.set_yscale("log")
         ax.set_xlabel("training compute $C = 6ND$ (FLOPs)")
         ax.set_ylabel(ylabel)
-    fig.tight_layout(w_pad=1.5, rect=(0, 0.13, 1, 1))
-    fig.legend(*axes[0].get_legend_handles_labels(), loc="lower center", ncols=2, frameon=False)
+    fig.tight_layout(w_pad=1.5)
     save(fig, out, "allocation-lines")
 
 
@@ -181,11 +182,11 @@ def allocation_lines(out):
 def memory_stack(out):
     gpt3 = run_fence("def estimate_memory_usage")["gpt3"]
     params = gpt3["parameters_B"] * 1e9
-    parts = [("fp16 weights, 2 B per parameter", 2 * params / 1e9, "#9fb7d6"),
-             ("fp16 gradients, 2 B per parameter", 2 * params / 1e9, "#6f93c4"),
-             ("fp32 master weights, 4 B per parameter", 4 * params / 1e9, "#3d6aa8"),
-             ("Adam moments $m$ and $v$, 8 B per parameter", 8 * params / 1e9, "#1f3f73"),
-             ("activations, $B = 8$, $n = 2{,}048$, no recomputation", gpt3["activation_GB"], ORANGE)]
+    parts = [("fp16 weights, 2 bytes per parameter", 2 * params / 1e9, "#9fb7d6"),
+             ("fp16 gradients, 2 bytes per parameter", 2 * params / 1e9, "#6f93c4"),
+             ("fp32 master weights, 4 bytes per parameter", 4 * params / 1e9, "#3d6aa8"),
+             ("Adam moments $m$ and $v$, 8 bytes per parameter", 8 * params / 1e9, "#1f3f73"),
+             ("activations, batch $B = 8$, $n = 2{,}048$, no recomputation", gpt3["activation_GB"], ORANGE)]
     fig, ax = plt.subplots(figsize=(7, 4.2))
     bottom = 0.0
     for label, size, color in parts:

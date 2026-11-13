@@ -80,7 +80,7 @@ This is the identity behind the attention gradient in {ref}`sec-ch2-attention-gr
 :name: fig-ch2-softmax-saturation
 :alt: Log-scale plot of the softmax derivative p1 times one minus p1 against the logit gap, for 2 and 64 logits; at gap 8 it is 0.00034 for 2 logits and 0.02 for 64.
 
-The diagonal softmax derivative $\partial p_i/\partial z_i = p_i(1 - p_i)$ when logit $z_i$ leads all the others by the same gap. It peaks at 0.25 where $p_i = 0.5$ and then falls by about a factor $e$ per unit of gap. At a gap of 8, the standard deviation of unscaled scores at $d_k = 64$, it is 0.00034 with 2 logits and 0.02 with 64. Computed from the formula above by `figures/make_figures.py`.
+The diagonal softmax derivative $\partial p_i/\partial z_i = p_i(1 - p_i)$ when logit $z_i$ leads all the others by the same gap. It peaks at 0.25 where $p_i = 0.5$ and then falls by about a factor $e$ per unit of gap. At a gap of 8, the standard deviation of a single unscaled score at $d_k = 64$ (the gap between two such scores has standard deviation $8\sqrt{2} = 11.3$, Solution 4), it is 0.00034 with 2 logits and 0.02 with 64. Computed from the formula above by `figures/make_figures.py`.
 ```
 
 (sec-ch2-norms-conditioning-scale-matters)=
@@ -480,9 +480,9 @@ eta=0.039, beta_mom=0.9: |theta| after 200 steps = 2.58e+24
 
 ```{figure} figures/optimizer-trajectories.*
 :name: fig-ch2-optimizer-trajectories
-:alt: Left: paths of SGD, SGD with momentum and Adam on Rosenbrock contours from (-1, -1) to the minimum at (1, 1); momentum overshoots to about (2, 3.7). Right: loss against iteration on a log scale.
+:alt: Left: paths of SGD, SGD with momentum and Adam on Rosenbrock contours from (-1, -1) to the minimum at (1, 1); momentum runs past the minimum along the valley to about (1.96, 3.69). Right: loss against iteration on a log scale.
 
-SGD ($\eta = 10^{-3}$), SGD with momentum ($\eta = 5 \times 10^{-4}$, $\beta_{\text{mom}} = 0.9$) and Adam ($\eta = 10^{-2}$) on the Rosenbrock function, 10,000 steps from $(-1, -1)$. Momentum overshoots far up the valley wall before it settles; plain SGD creeps along the valley floor and still has a loss of about $3 \times 10^{-5}$ at the end. From the notebook section {ref}`nb-math-rosenbrock`, by executing its cell tagged `figure:optimizer-trajectories`.
+SGD ($\eta = 10^{-3}$), SGD with momentum ($\eta = 5 \times 10^{-4}$, $\beta_{\text{mom}} = 0.9$) and Adam ($\eta = 10^{-2}$) on the Rosenbrock function, 10,000 steps from $(-1, -1)$. Momentum runs along the valley past the minimum to about (1.96, 3.69), just below the valley floor $\theta_y = \theta_x^2$, then turns back and settles at (1, 1); its loss levels off near $2 \times 10^{-11}$ because the run is in float32, whose spacing near 1 is about $10^{-7}$, and the same run in float64 reaches $10^{-16}$; plain SGD creeps along the valley floor and still has a loss of about $3 \times 10^{-5}$ at the end. From the notebook section {ref}`nb-math-rosenbrock`, by executing its cell tagged `figure:optimizer-trajectories`.
 ```
 
 (sec-ch2-adam-optimizer)=
@@ -1149,9 +1149,9 @@ Because $a_N \approx a_D \approx 0.5$, the compute-optimal ratio $D^*/N^*$ is ro
 
 ```{figure} figures/allocation-lines.*
 :name: fig-ch2-allocation-lines
-:alt: Two log-log plots against compute: optimal parameters and optimal tokens for Kaplan's exponents 0.73 and 0.27 and Chinchilla's 0.50 and 0.50, crossing at Chinchilla's size, with four Table 3 points on the Chinchilla lines.
+:alt: Two log-log plots against compute: optimal parameters and optimal tokens for Kaplan's exponents 0.73 and 0.27 and Chinchilla's 0.50 and 0.50, crossing at Chinchilla's size, with the four Table 3 points on the Chinchilla lines; the 67 billion point sits inside the hollow star.
 
-Compute-optimal parameters $N^*$ (left) and tokens $D^*$ (right) under Kaplan's exponents and Chinchilla's. Both lines are drawn through Chinchilla's own size (70 billion parameters, 1.4 trillion tokens, $C = 6ND$); the dots are the four rows of Table 3 quoted above. Exponents and points from {cite:t}`kaplan2020scaling` and {cite:t}`hoffmann2022training`; the common anchor is this figure's choice.
+Compute-optimal parameters $N^*$ (left) and tokens $D^*$ (right) under Kaplan's exponents and Chinchilla's. Both lines are drawn through Chinchilla's own size (70 billion parameters, 1.4 trillion tokens, $C = 6ND$); the dots are the four rows of Table 3 quoted above, the 67 billion row inside the hollow star that marks Chinchilla. Each panel's legend gives that panel's exponents. Exponents and points from {cite:t}`kaplan2020scaling` and {cite:t}`hoffmann2022training`; the common anchor is this figure's choice.
 ```
 
 (sec-ch2-computational-complexity)=
