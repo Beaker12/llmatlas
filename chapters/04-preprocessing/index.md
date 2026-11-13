@@ -2142,7 +2142,7 @@ The listing below runs the word-based Gopher rules of {ref}`sec-ch4-heuristic-ru
 import re
 
 STOP_WORDS = {"the", "be", "to", "of", "and", "that", "have", "with"}
-_CJK = re.compile(r"[㐀-鿿豈-﫿]")
+_CJK = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
 
 
 def gopher_word_rules(words: list[str]) -> str:

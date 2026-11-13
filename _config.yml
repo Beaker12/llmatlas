@@ -83,6 +83,8 @@ sphinx:
         \setTransitionsFor{Arabic}{\begingroup\arabicfont\beginR}{\endR\endgroup}
         % A {cite:t} in a figure caption otherwise stops XeLaTeX ("Argument of \Hy@tempa has an extra }").
         \usepackage{etoolbox}\robustify{\DUrole}\robustify{\hyperlink}\robustify{\sphinxstyleemphasis}
+        % Let long URLs in the bibliography break at any character instead of overflowing the margin.
+        \usepackage{xurl}
         % The pages number their own section headings ("1.1 The published mixtures"): LaTeX numbers chapters only.
         \setcounter{secnumdepth}{0}
         % Number figures, tables, listings and equations across the book, as the HTML does (see numfig_secnum_depth).
