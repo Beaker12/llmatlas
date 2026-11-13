@@ -62,7 +62,7 @@ The training sets of the major models are reported, when they are reported at al
 | Model or corpus                                  | Web crawl                    | Curated web (Wikipedia, forums, news) | Books          | Papers           | Code            | Total tokens |
 | ------------------------------------------------ | ---------------------------- | ------------------------------------- | -------------- | ---------------- | --------------- | ------------ |
 | GPT-3 {cite}`brown2020language`                  | 60% (filtered Common Crawl)  | 22% WebText2, 3% Wikipedia            | 16% (two book corpora) | included in web | not separate | 300B |
-| The Pile {cite}`gao2020pile`                     | 18% Pile-CC                  | 17% (OpenWebText2, StackExchange, Wikipedia, HN) | 15% (Books3, Gutenberg, BookCorpus2) | 37% (PubMed Central, arXiv, FreeLaw, USPTO, PubMed abstracts, …) | 8% GitHub | 825 GB (~300B tokens) |
+| The Pile {cite}`gao2020pile`                     | 18% Pile-CC                  | 17% (OpenWebText2, StackExchange, Wikipedia, HN) | 15% (Books3, Gutenberg, BookCorpus2) | 37% (PubMed Central, arXiv, FreeLaw, USPTO, PubMed abstracts, …) | 8% GitHub | 825 GiB (bytes; no token count reported) |
 | LLaMA 1 {cite}`touvron2023llama`                 | 67% CommonCrawl + 15% C4     | 4.5% Wikipedia, 2% StackExchange      | 4.5% (Gutenberg, Books3) | 2.5% arXiv | 4.5% GitHub | 1.4T |
 | Dolma {cite}`soldaini2024dolma`                  | 80% (Common Crawl)           | 3% (Reddit, Wikipedia, Wikibooks)     | 0.2% (Gutenberg) | 2.3% (peS2o)     | 13% (The Stack) | 3T |
 | FineWeb {cite}`penedo2024fineweb`                | 100%                         |                                       |                |                  |                 | 15T |
@@ -79,7 +79,7 @@ Corpus sizes are quoted in three units and the conversions are rough:
 - **Documents** are the unit of acquisition and deduplication. A snapshot holds two to three billion pages.
 - **Tokens** are what training cost and the scaling laws count. English prose runs about four characters per token with a GPT-style tokenizer, so one terabyte of UTF-8 text is roughly 250 billion tokens; code and non-Latin scripts tokenize less efficiently.
 
-The retention figures in Chapter 4 apply on top of this: of a snapshot's two billion pages, a cleaned English corpus keeps perhaps a tenth. Fifteen trillion tokens is therefore not one snapshot but ninety-six of them (FineWeb), each deduplicated on its own; FineWeb found that deduplicating across snapshots removed the good pages that recur in every crawl and kept the junk that appears once.
+The retention figures in Chapter 4 apply on top of this: of a snapshot's two billion pages, a cleaned English corpus keeps perhaps a tenth. Fifteen trillion tokens is therefore not one snapshot but ninety-six of them (FineWeb), each deduplicated on its own for the reason given in {ref}`sec-ch3-corpora-derived-common-crawl`.
 
 (sec-ch3-epochs)=
 
@@ -90,7 +90,7 @@ Chapter 2 derived the compute-optimal token count: for a budget of $C$ FLOPs and
 Two results set the limits of stretching a fixed corpus:
 
 - **Repetition is cheap up to a point.** Training for up to about four epochs on the same data costs almost nothing in final loss relative to fresh data; beyond that the returns fall off steeply {cite}`muennighoff2023scaling`. A corpus of 1T unique tokens can support a 4T-token training run, not a 40T one.
-- **The stock of public text is finite.** Villalobos et al. {cite}`villalobos2024run` estimate the stock of human-written public text at about 300 trillion tokens (a 90% interval of 100T to 1,000T) and project that training runs will use all of it at some point between 2026 and 2032.
+- **The stock of public text is finite.** {cite:t}`villalobos2024run` estimate the stock of human-written public text at about 300 trillion tokens (a 90% interval of 100T to 1,000T) and project that training runs will use all of it at some point between 2026 and 2032.
 
 Both results bear directly on acquisition. If repeated tokens are nearly free, then a small, high-quality source is worth collecting even though it will be seen many times. If the stock is finite, then every source lost to opt-outs or licensing is a permanent reduction, and synthetic data (Section 7) stops being optional.
 
@@ -197,7 +197,7 @@ Most open web corpora are a choice of snapshots plus a choice of pipeline:
 | FineWeb-2 {cite}`penedo2025fineweb2`                | 96             | WARC + trafilatura | 1,000+ languages | Per-language filter thresholds derived automatically from reference-corpus statistics; duplicates "rehydrated" with cluster-size-dependent weights (1–10) derived from filter rates |
 | Dolma web {cite}`soldaini2024dolma`                 | 25             | WET (CCNet)     | English    | Part of a documented multi-source corpus with released tooling                    |
 
-Two trends run through the table. Later corpora re-extract from WARC with a boilerplate-aware extractor rather than trusting the WET text, and later corpora use far more snapshots, because one snapshot cleans down to a few hundred billion tokens and trillion-token corpora need dozens. FineWeb's ablations add a caution: deduplicating each snapshot separately gave better models than deduplicating across all of them, since global deduplication preferentially removed the good pages that every crawl re-captures.
+Two trends run through the table. Later corpora re-extract from WARC with a boilerplate-aware extractor rather than trusting the WET text, and later corpora use far more snapshots, because one snapshot cleans down to about 150 billion tokens (FineWeb: 15T from 96 snapshots) and trillion-token corpora need dozens. FineWeb's ablations add a caution: deduplicating each snapshot separately gave better models than deduplicating across all of them, since global deduplication preferentially removed the good pages that every crawl re-captures and kept the junk that appears once. Chapter 4 covers where deduplication sits in the pipeline ({ref}`sec-ch4-dedup-scope`).
 
 ```{admonition} A Slice of the Crawl
 :class: tip
@@ -273,7 +273,7 @@ The notebook section {ref}`nb-acq-robots` parses two robots.txt files with the s
 
 ### 3.4 The economics
 
-Order-of-magnitude arithmetic for a billion-page crawl: pages average about 100 KB of HTML, so the raw fetch is 100 TB of transfer, which is free as cloud ingress but costs a few thousand dollars in NAT-gateway or bandwidth charges, and far more if the crawl is then moved between regions or clouds. Compressed, the WARC output is about a third of that. Fetching at an aggregate 5,000 pages per second takes two to three days of wall-clock time on a few hundred small machines; politeness, not hardware, sets that rate. Extraction and filtering, by comparison, are a few CPU-milliseconds per page and run in hours. The dominant cost of a serious crawl is not any of these but the engineering of the frontier and the handling of the long tail of malformed responses, redirect loops, tar pits and hosts that respond slowly enough to tie up a fetcher without timing out.
+Order-of-magnitude arithmetic for a billion-page crawl: pages average about 100 KB of HTML, so the raw fetch is 100 TB of transfer, which is free as cloud ingress but costs a few thousand dollars in NAT-gateway or bandwidth charges, and far more if the crawl is then moved between regions or clouds. Compressed, the WARC output is about a quarter of that. Fetching at an aggregate 5,000 pages per second takes two to three days of wall-clock time on a few hundred small machines; politeness, not hardware, sets that rate. Extraction and filtering, by comparison, are a few CPU-milliseconds per page and run in hours. The dominant cost of a serious crawl is not any of these but the engineering of the frontier and the handling of the long tail of malformed responses, redirect loops, tar pits and hosts that respond slowly enough to tie up a fetcher without timing out.
 
 (sec-ch3-curated-sources)=
 
@@ -294,7 +294,7 @@ Wikipedia is in every corpus. The Wikimedia Foundation publishes complete databa
 Books are the best source of long-range structure (a plot, an argument, a chapter that refers to an earlier one), and the most legally fraught. The sources that have been used:
 
 - **Project Gutenberg**: more than 75,000 public-domain books, mostly English works published before 1931 (the US public-domain cutoff as of 2026), downloadable in bulk. Legally clean and stylistically dated; it is the books portion of Dolma and part of LLaMA's.
-- **BookCorpus**: 11,000 self-published novels scraped from Smashwords for the original BERT and GPT; a retrospective datasheet {cite}`bandy2021addressing` found duplicates, skewed genres and books whose licences did not permit the use.
+- **BookCorpus**: 11,000 self-published novels scraped from Smashwords for a 2015 study that aligned books with their film adaptations, and later used to train BERT and the original GPT; a retrospective datasheet {cite}`bandy2021addressing` found duplicates, skewed genres and books whose licences did not permit the use.
 - **Books3**: about 196,000 pirated books from a shadow library, included in The Pile and used by several models, withdrawn after takedown notices in 2023 and the subject of ongoing lawsuits. Its presence in a training set is now a legal liability.
 - **Licensed collections**: publishers and aggregators now sell training licences, and the large labs increasingly buy them, or buy and scan print books, rather than rely on shadow libraries. In *Bartz v. Anthropic* (N.D. Cal., June 2025) training on lawfully acquired books was held fair use, while building a permanent central library from pirated copies was not and was sent to trial {cite}`bartz2025order`. In *Kadrey v. Meta* (N.D. Cal., June 2025) Meta won summary judgment on fair use although it had downloaded books from shadow libraries, because the plaintiffs offered no evidence that the models' outputs would dilute the market for their books; the judge wrote that the ruling "does not stand for the proposition that Meta's use of copyrighted materials to train its language models is lawful" and limited it to those thirteen authors and that record {cite}`kadrey2025order`. In *Thomson Reuters v. Ross Intelligence* (D. Del., February 2025) the court rejected fair use for a non-generative legal-research tool trained on Westlaw headnotes to compete with Westlaw {cite}`thomsonreuters2025ross`.
 
@@ -328,7 +328,7 @@ Licence filtering is the acquisition-time decision that matters most for code: a
 
 ### 4.5 Forums, dialogue and question answering
 
-Conversation teaches turn-taking, register and the question-answer form that instruction tuning (Chapter 10) later refines. The sources have become harder to obtain:
+Conversation teaches turn-taking, register and the question-answer form that instruction tuning ({ref}`roadmap-post-training-and-alignment`) later refines. The sources have become harder to obtain:
 
 - **Reddit** was the backbone of WebText (GPT-2 {cite}`radford2019language` used links with at least three upvotes as a quality signal) and of the Pushshift archive used by many corpora, until Reddit restricted bulk access through its API.
 - **Stack Exchange** published a quarterly dump of every question and answer on its sites under CC BY-SA, which is in The Pile and LLaMA, and is the single best source of paired technical questions and answers; in July 2024 the download moved behind a login, with an agreement that the file is for "projects that do not include training a large language model".
@@ -343,7 +343,7 @@ News archives are mostly licensed commercially now; the open sources are the CC-
 
 ```{admonition} Comparing Sources
 :class: tip
-The notebook section {ref}`nb-acq-sources` pulls a hundred documents each from FineWeb, FineWeb-Edu and C4, and fifty each from Wikipedia and the French portion of FineWeb-2, through the Hugging Face rows API, and compares document lengths, language scores, domain concentration and the FineWeb-Edu educational score, so that the differences described in this section are visible in real data rather than asserted.
+The notebook section {ref}`nb-acq-sources` samples five hosted corpora through the Hugging Face rows API: the first hundred rows each of FineWeb, FineWeb-Edu and C4, the first fifty of the French portion of FineWeb-2, and fifty Wikipedia articles in five pulls of ten at offsets drawn with a fixed seed (the first rows in page-id order are the oldest and longest articles, so they would mislead). It compares document lengths, language scores and the FineWeb-Edu educational score, and measures domain concentration on 2,000 C4 host names from twenty pulls at seeded random offsets. The rows API serves only the first 2,207,027 rows of C4's English split, so those offsets are random within that range only. The samples are small: Wikipedia's median article (206 words in 50) is only slightly longer than C4's median page (188 words in 100), a gap too narrow to read as a general result.
 ```
 
 (sec-ch3-rights-licenses-consent)=
@@ -413,7 +413,7 @@ Three developments in 2025 are turning the informal conventions above into machi
 - **Regulatory codes.** The EU's General-Purpose AI Code of Practice (published 10 July 2025) is a voluntary code whose copyright chapter shows providers how to meet the AI Act's copyright obligations, which include honouring machine-readable opt-outs. The training-content summary is not a Code commitment but a legal obligation under Article 53(1)(d), with a template the Commission adopted in July 2025. Together they make the opt-out handling of {ref}`sec-ch3-robots-txt-opt-outs-commons` a compliance requirement rather than a courtesy.
 - **Openly licensed corpora.** The Common Pile {cite}`kandpal2025common` (8 TB of public-domain and openly licensed text, with a model trained on it to show the approach is viable), Common Corpus and institutional collections of digitised public-domain books show what a corpus looks like when Section 5's advice is followed to the letter: smaller, older on average, and free of the exposure that the web corpora carry.
 
-One acquisition-time risk is specific to how corpora are distributed. Many web datasets are published as URL lists rather than text, and Carlini et al. {cite}`carlini2024poisoning` showed that buying expired domains on those lists is enough to insert chosen content into anyone who later re-downloads the dataset; content hashes recorded at collection time (Section 9) are the defence.
+One acquisition-time risk is specific to how corpora are distributed. Many image-text datasets are published as URL lists rather than content, and {cite:t}`carlini2024poisoning` showed that buying expired domains on those lists is enough to insert chosen content into the copy of anyone who later re-downloads the dataset; the same work showed that timing edits to land just before a Wikipedia snapshot is taken poisons the snapshot; content hashes recorded at collection time (Section 9) are the defence.
 
 (sec-ch3-multilingual-low-resource-sources)=
 
@@ -438,7 +438,7 @@ Roughly 45% of Common Crawl's pages are English, which is already a large over-r
 | MADLAD-400 {cite}`kudugunta2023madlad`         | 419       | Common Crawl         | Manual audit of every language by inspection; drops the labels that were not real languages |
 | FineWeb-2 {cite}`penedo2025fineweb2`           | 1,000+    | 96 Common Crawl snapshots | Per-language thresholds derived from reference-corpus statistics; duplicates "rehydrated" with cluster-size-dependent weights (1–10) derived from filter rates |
 
-The recurring finding, first established by the audit of Kreutzer et al. {cite}`kreutzer2022quality` across mC4, OSCAR and other crawled corpora and repeated in the MADLAD-400 audit, is that automatic language identification produces hundreds of "languages" that on inspection are noise, boilerplate, mislabelled majority-language text or machine translation. Below the top hundred or so languages, a human who reads the language has to look at the data. FineWeb-2's rehydration step adds a nuance: after global per-language deduplication it records each kept document's cluster size and up-samples by a weight between 1 and 10 chosen from how often the quality filters removed documents of that cluster size. Moderately duplicated pages get the highest weights; unique pages and the most-copied pages (often boilerplate) get the lowest.
+The recurring finding, first established by the audit by {cite:t}`kreutzer2022quality` across mC4, OSCAR and other crawled corpora and repeated in the MADLAD-400 audit, is that automatic language identification produces hundreds of "languages" that on inspection are noise, boilerplate, mislabelled majority-language text or machine translation. Below the top hundred or so languages, a human who reads the language has to look at the data. FineWeb-2's rehydration step adds a nuance: after global per-language deduplication it records each kept document's cluster size and up-samples by a weight between 1 and 10 chosen from how often the quality filters removed documents of that cluster size. Moderately duplicated pages get the highest weights; unique pages and the most-copied pages (often boilerplate) get the lowest.
 
 (sec-ch3-beyond-crawl)=
 
@@ -456,7 +456,7 @@ For languages the web under-serves, acquisition reaches for sources that the web
 
 If the stock of human-written text is the binding constraint, text generated by a model is the obvious supplement, and it is now a standard component rather than an experiment:
 
-- **Instruction data**: Self-Instruct {cite}`wang2023selfinstruct` showed that a model can generate the instruction-response pairs used to fine-tune it, bootstrapping from a few hundred human-written seeds; this is the basis of most instruction datasets (Chapter 10).
+- **Instruction data**: Self-Instruct {cite}`wang2023selfinstruct` showed that a model can generate the instruction-response pairs used to fine-tune it, bootstrapping from 175 human-written seed tasks; this is the basis of most instruction datasets ({ref}`roadmap-post-training-and-alignment`).
 - **Textbook-style pretraining data**: phi-1 {cite}`gunasekar2023textbooks`, a 1.3B-parameter code model, trained on under a billion tokens of synthetic textbook-style text plus about six billion tokens of classifier-filtered code and matched much larger models on the HumanEval and MBPP coding benchmarks. Cosmopedia {cite}`benallal2024cosmopedia` reproduced the idea openly, generating 25 billion tokens of textbooks, blog posts and stories from seed topics with an open model.
 - **Rephrased web**: rewriting crawled pages in a cleaner style with a model, then training on the rewritten version alongside the original, gives a cleaner corpus of the same size; WRAP {cite}`maini2024rephrasing` paraphrased C4 into Wikipedia-like and question-answer styles and reached the same perplexity about three times faster.
 - **Translation and augmentation** for low-resource languages, where a model translates high-resource text into a target language.
@@ -465,7 +465,7 @@ If the stock of human-written text is the binding constraint, text generated by 
 
 ### 7.2 What can go wrong
 
-Synthetic data inherits the generating model's errors, style and gaps, and feeding it back repeatedly compounds them. Shumailov et al. {cite}`shumailov2024curse` showed that models trained on the outputs of earlier models lose the tails of the distribution first, so that after a few generations rare content disappears and the model's outputs converge on a narrow, repetitive mode. The practical mitigations are to keep synthetic data a minority of the mixture, to keep human-written data in every generation, to anchor generation in real documents (rephrasing, grounded question writing) rather than free generation, and to mark synthetic data as such in provenance records. The last matters beyond your own pipeline: model-generated text is now a growing fraction of the open web, so future crawls contain it whether or not it was labelled.
+Synthetic data inherits the generating model's errors, style and gaps, and feeding it back repeatedly compounds them. {cite:t}`shumailov2024curse` showed that models trained on the outputs of earlier models lose the tails of the distribution first, so that after a few generations rare content disappears and the model's outputs converge on a narrow, repetitive mode. The practical mitigations are to keep synthetic data a minority of the mixture, to keep human-written data in every generation, to anchor generation in real documents (rephrasing, grounded question writing) rather than free generation, and to mark synthetic data as such in provenance records. The last matters beyond your own pipeline: model-generated text is now a growing fraction of the open web, so future crawls contain it whether or not it was labelled.
 
 (sec-ch3-mixture-design-token-budgeting)=
 
@@ -481,7 +481,7 @@ Chapter 2's relation $C \approx 6ND$ fixes the token count once the budget and t
 
 ### 8.2 Epochs and unique tokens
 
-Each source $s$ has $U_s$ unique tokens after cleaning. If the mixture assigns it a weight $w_s$ (its share of training tokens) and the run sees $D$ tokens in total, the source is repeated $e_s = w_s D / U_s$ times. The data-constrained scaling result {cite}`muennighoff2023scaling` says $e_s$ up to about 4 is nearly free and the value of further repeats decays quickly, so the design constraint is
+Each source $s$ has $U_s$ unique tokens after cleaning. If the mixture assigns it a weight $w_s$ (its share of training tokens) and the run sees $D$ tokens in total, the source is repeated $e_s = w_s D / U_s$ times. By the data-constrained scaling result of {ref}`sec-ch3-epochs`, $e_s$ up to about 4 is nearly free, so the design constraint is
 
 $$e_s = \frac{w_s D}{U_s} \le e_{\max} \approx 4 \quad \text{for every source } s, \qquad \sum_s w_s = 1$$
 
