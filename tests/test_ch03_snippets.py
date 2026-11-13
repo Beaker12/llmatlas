@@ -30,8 +30,7 @@ RESULT_CLAIMS: list[tuple[str, str, str]] = [
     (r"with (428)\s+Disallow\s+rules\s+for\s+every\s+agent", r"Disallow lines: \{'\*': (\d+)\}", "eq"),
     (r"median article \((206\.5) words", r"(?m)^wikipedia\s+\d+\s+(\d+\.\d)", "eq"),
     (r"median page \((188\.5) words", r"(?m)^c4\s+\d+\s+(\d+\.\d)", "eq"),
-    (r"from\s+the\s+first\s+three\s+files\s+of\s+the\s+manifest,\s+is\s+about\s+(95)\s+TB",
-     r"GB -> ~(\d+) TB of WARC", "eq"),
+    (r"rounds\s+it\s+to\s+about\s+(92)\s+TB", r"-> ~(\d+) TB of WARC", "eq"),
 ]
 
 # regex over a sentence -> one-line reason; such a sentence links a notebook and mentions a number but states
@@ -203,7 +202,7 @@ def test_make_figures_twice_gives_identical_files(tmp_path):
         out = tmp_path / run
         subprocess.run([sys.executable, str(FIGURE_SCRIPT), str(out)], check=True, capture_output=True, env=env)
         outputs.append({p.name: p.read_bytes() for p in sorted(out.glob("*.svg"))})
-    assert len(outputs[0]) == 5, sorted(outputs[0])
+    assert len(outputs[0]) == 6, sorted(outputs[0])
     assert outputs[0] == outputs[1]
 
 
@@ -356,3 +355,77 @@ def test_effective_data_law_listing_prints_what_the_page_shows():
     ns = {}
     exec(_page_block("def effective"), ns)  # noqa: S102 - the page's own listing
     assert [round(ns["effective"](e), 2) for e in (1, 4, 10, 40)] == [1.0, 3.73, 7.81, 15.17]
+
+
+def test_no_runnable_listing_queries_the_cdx_server():
+    """The CDX request is taught as a documented format; nothing the live test runs
+    may depend on the unreachable index server."""
+    import re
+    text = PAGE.read_text(encoding="utf-8")
+    for block in re.findall(r"```python\n(.*?)\n```", text, flags=re.S):
+        assert "index.commoncrawl.org" not in block
+    network = re.findall(r"```python\n# network\b", text)
+    assert len(network) == 5  # robots, range fetch, columnar index, crawler, manifest
+
+
+def test_cdx_reply_example_agrees_with_the_index_line():
+    import json
+    import re
+    text = PAGE.read_text(encoding="utf-8")
+    lines = _page_block("INDEX_LINES = [")
+    ns = {}
+    exec(lines, ns)  # noqa: S102 - the page's own listing
+    _, timestamp, fields = ns["INDEX_LINES"][0].split(" ", 2)
+    hit = json.loads(fields)
+    reply = re.search(r"```text\n(\{\"urlkey\".*?\})\n```", text, flags=re.S).group(1)
+    sketch = json.loads("".join(l.strip() for l in reply.splitlines()))
+    assert sketch["timestamp"] == timestamp
+    for key in ("url", "digest", "length", "offset", "filename"):
+        assert sketch[key] == hit[key]
+    assert (hit["filename"], int(hit["offset"]), int(hit["length"])) == (
+        "crawl-data/CC-MAIN-2026-39/segments/1788492699801.50/warc/"
+        "CC-MAIN-20260908083825-20260908113825-00403.warc.gz", 48374322, 9882)
+
+
+def test_phi4_listing_prints_what_the_page_shows(capsys):
+    ns = {}
+    exec(_page_block("PHI4 = {"), ns)  # noqa: S102 - the page's own listing
+    out = capsys.readouterr().out.splitlines()
+    assert out[2].split(":")[1].split(",")[0].strip() == "13.8 epochs"
+    assert round(ns["effective"](13.8), 2) == 9.69
+
+
+def test_exercise_8_bloom_sizing_and_range_header():
+    import math
+    bits = -math.log(0.01) / math.log(2) ** 2
+    assert round(bits, 3) == 9.585
+    assert round(bits * 1e9 / 8 / 1e9, 3) == 1.198  # gigabytes
+    assert round(bits * math.log(2), 2) == 6.64
+    start, length = 48_374_322, 9_882
+    assert f"bytes={start}-{start + length - 1}" == "bytes=48374322-48384203"
+
+
+def test_decay_law_figure_values_match_the_page():
+    import math
+    r_star = 15.387756
+    marginal = {e: math.exp(-(e - 1) / r_star) for e in (4, 10, 40)}
+    assert [f"{v:.0%}" for v in marginal.values()] == ["82%", "56%", "8%"]
+    ns = {}
+    exec(_page_block("def effective"), ns)  # noqa: S102 - the page's own listing
+    h = 1e-6
+    slope = (ns["effective"](10 + h) - ns["effective"](10 - h)) / (2 * h)
+    assert abs(slope - marginal[10]) < 1e-6
+
+
+def test_manifest_sample_sizes_are_the_exercise_sizes():
+    import json
+    manifest = json.loads((PAGE.parent / "examples" / "data" / "cc_manifest.json").read_text())
+    assert manifest["sample_bytes"] == WARC_SIZES
+
+
+def test_refresh_listing_prints_what_the_page_shows(capsys):
+    ns = {}
+    exec(_page_block("def freshness"), ns)  # noqa: S102 - the page's own listing
+    out = capsys.readouterr().out
+    assert "average freshness 0.372" in out and "average freshness 0.199" in out
+    assert "average freshness 0.395" in out

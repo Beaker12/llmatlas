@@ -206,9 +206,36 @@ def run_notebook(out):
         os.chdir(cwd)
 
 
+def decay_law(out):
+    """Section 1.3: the value of the e-th pass over a source, against the step at four epochs."""
+    import math
+    r_star = 15.387756  # fitted decay constant of the data-constrained scaling law
+    epochs = [1 + 0.1 * i for i in range(0, 391)]
+    value = [math.exp(-(e - 1) / r_star) for e in epochs]  # derivative of effective(e)
+    fig, ax = plt.subplots(figsize=(7.0, 3.4))
+    ax.plot(epochs, value, color="#2b5d8a", linewidth=1.8,
+            label=r"decay law: $\exp(-(e - 1)/15.4)$")
+    ax.plot([1, 4, 4, 40], [1, 1, 0, 0], color="#c0392b", linestyle="--", linewidth=1.6,
+            label=r"hard cap $e_{\max} = 4$")
+    for e in (4, 10, 40):
+        v = math.exp(-(e - 1) / r_star)
+        ax.plot([e], [v], "o", color="#2b5d8a", markersize=5)
+        ax.text(e + 0.8, v + 0.04, f"{v:.0%}", fontsize=10, color="#2b5d8a")
+    ax.set_xlim(0, 41)
+    ax.set_ylim(0, 1.12)
+    ax.set_xlabel(r"epoch $e$ (the $e$-th pass over the same tokens)")
+    ax.set_ylabel("value of that pass,\nfraction of a fresh pass")
+    ax.legend(fontsize=9.5, loc="upper right", frameon=False)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    fig.tight_layout()
+    save(fig, out / "decay-law.svg")
+
+
 def main():
     out = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else HERE
     out.mkdir(parents=True, exist_ok=True)
+    decay_law(out)
     mixtures(out)
     corpus_sizes(out)
     consent(out)

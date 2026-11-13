@@ -2,7 +2,7 @@
   "generated": "2026-11-13",
   "sha256": {
     "c4_hosts_sample.txt": "0ae22db1ba80919675bf474c3cb99ade366efce53593b56aad60eda9e8d116a6",
-    "cc_manifest.json": "95d0e43c9f6cea228a16867485eb4105b50aafadb458219c38c6324b261e274a",
+    "cc_manifest.json": "3badd9db7be4dec16b73bfca632d0758f9e1e7906aebda876b69c0b291461fcb",
     "cc_warc_slice.json": "68afc6883c11537ff9893fd50abd17895fd43fa3e8ad2a12eca13085afe37120",
     "hf_c4.json": "3b6ec1c2a5895d17ce38597df0ea814da35acfa893c5169abc51753ab2878f7f",
     "hf_fineweb.json": "794846cf3ba10b3c987bbbf7c0bf639b06972c835499f4e698d706444ca911f1",
@@ -15,7 +15,7 @@
   },
   "collected": {
     "c4_hosts_sample.txt": "2026-11-13",
-    "cc_manifest.json": "2026-10-20",
+    "cc_manifest.json": "2026-11-12",
     "cc_warc_slice.json": "2026-11-13",
     "hf_c4.json": "2026-10-20",
     "hf_fineweb.json": "2026-10-20",
