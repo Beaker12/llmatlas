@@ -50,7 +50,7 @@ The accompanying notebook, [Dataset Management Demo](examples/dataset_management
 - Sharding across ranks and showing that the global batch is independent of the world size ({ref}`nb-dm-distributed`)
 - Dataset statistics, a data contract, a canary, a drift check and a data card generated from the manifest ({ref}`nb-dm-governance`)
 
-Everything runs on a CPU in seconds and uses only the standard library, NumPy, PyArrow for the Parquet and Arrow files and, for the plots, Matplotlib.
+Everything runs on a CPU in seconds and uses only the standard library, NumPy, PyArrow for the Parquet file and, for the plots, Matplotlib.
 
 (sec-ch5-dataset-build-artifact)=
 
@@ -124,7 +124,7 @@ can therefore seek to any sample. `index.json` lists every shard with its sample
 columns and hashes, following the writer in the `mosaicml/streaming` repository.
 ```
 
-The listing writes 20,000 samples in both layouts with the standard library: a tar whose members `000000.txt`, `000000.json`, and so on are grouped by key on read, and an MDS-style shard with the header of the figure (a `uint32` count, then $n + 1$ `uint32` byte offsets, then the length and the bytes of a JSON config). Sample $j$ of the second layout is the slice between offsets $j$ and $j+1$, found by reading two integers; in the tar the only way to the last sample is through every member before it. The tar is larger here because each member is padded to 512-byte blocks, an overhead that grows with the number of small members.
+The listing writes 20,000 samples in both layouts with the standard library: a tar whose members `000000.txt`, `000000.json`, and so on are grouped by key on read, and an MDS-style shard with the header of the figure (a `uint32` count, then $n + 1$ `uint32` byte offsets, then the bytes of a JSON config, which the first offset ends). Sample $j$ of the second layout is the slice between offsets $j$ and $j+1$, found by reading two integers; in the tar the only way to the last sample is through every member before it. The tar is larger here because each member is padded to 512-byte blocks, an overhead that grows with the number of small members.
 
 ```python
 import io
@@ -165,13 +165,12 @@ def read_wds(data: bytes):
 # MDS-style layout: uint32 count, count + 1 uint32 offsets, JSON config, samples
 blobs = [json.dumps(s).encode() for s in samples]
 config = json.dumps({"columns": {"text": "str", "n": "int"}}).encode()
-header = 4 + 4 * (len(blobs) + 1) + 4 + len(config)  # 4 bytes hold len(config)
+header = 4 + 4 * (len(blobs) + 1) + len(config)  # the first offset ends the config
 offsets = [header]
 for b in blobs:
     offsets.append(offsets[-1] + len(b))
 shard = (
     struct.pack(f"<I{len(offsets)}I", len(blobs), *offsets)
-    + struct.pack("<I", len(config))
     + config
     + b"".join(blobs)
 )
@@ -252,9 +251,9 @@ with tempfile.TemporaryDirectory() as tmp:
     )
     print("num_tokens min and max per row group:", bounds)
 
-    # Predicate push-down by hand: only row groups whose range can hold num_tokens >=
-    # 900 are read,
-    # and only two of the four columns (column projection)
+    # Predicate push-down by hand: only row groups whose range can hold
+    # num_tokens >= 900 are read, and only two of the four columns (column
+    # projection)
     wanted = [g for g, (lo, hi) in enumerate(bounds) if hi >= 900]
     long_docs = pf.read_row_groups(wanted, columns=["id", "num_tokens"])
     long_docs = long_docs.filter(pa.compute.greater_equal(long_docs["num_tokens"], 900))
@@ -354,9 +353,8 @@ def write_jsonl_shards(docs, out_dir: Path, docs_per_shard: int, prefix: str = "
                 "records": len(batch),
                 "bytes_uncompressed": len(raw),
                 "bytes_compressed": path.stat().st_size,
-                "sha256": hashlib.sha256(
-                    raw
-                ).hexdigest(),  # content identity: the uncompressed bytes
+                # content identity: the uncompressed bytes
+                "sha256": hashlib.sha256(raw).hexdigest(),
             }
         )
         batch, shard_idx = [], shard_idx + 1
@@ -441,6 +439,10 @@ import numpy as np
 EOD = 0  # end-of-document token id; real tokenizers reserve one
 
 
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 class TokenShard:
     """Flat token array plus document offsets, memory-mapped on read."""
 
@@ -452,6 +454,7 @@ class TokenShard:
                 f"{path.name} was built with tokenizer {meta['tokenizer_hash']}, not "
                 f"{tokenizer_hash}"
             )
+        self.meta = meta
         self.dtype = np.dtype(meta["dtype"])
         self.tokenizer_hash = meta["tokenizer_hash"]
         self.offsets = np.load(path.with_suffix(".idx.npy"))
@@ -470,9 +473,20 @@ class TokenShard:
         np.save(path.with_suffix(".idx.npy"), np.asarray(offsets, dtype=np.int64))
         path.with_suffix(".json").write_text(
             json.dumps({"dtype": np.dtype(dtype).name,
-                        "tokenizer_hash": tokenizer_hash, "num_docs": len(chunks)})
+                        "tokenizer_hash": tokenizer_hash, "num_docs": len(chunks),
+                        "sha256": {p.name: sha256_file(p) for p in cls.files(path)}})
         )
         return cls(path, tokenizer_hash)
+
+    @staticmethod
+    def files(path: Path):
+        return [path, path.with_suffix(".idx.npy")]
+
+    def verify(self):
+        """Hash the binary and the offsets and compare with the sidecar."""
+        for p in self.files(self.path):
+            if sha256_file(p) != self.meta["sha256"][p.name]:
+                raise ValueError(f"{p.name} does not match the hash in its sidecar")
 
     def __len__(self):
         return len(self.offsets) - 1
@@ -511,6 +525,16 @@ with tempfile.TemporaryDirectory() as tmp:
         raise AssertionError("a binary was opened with the wrong tokenizer")
     except ValueError:
         pass
+    shard.verify()
+    with open(Path(tmp) / "demo.bin", "r+b") as f:  # change one byte
+        first = f.read(1)[0]
+        f.seek(0)
+        f.write(bytes([first ^ 1]))
+    try:
+        shard.verify()
+        raise AssertionError("a changed byte was not caught")
+    except ValueError as e:
+        print("detected:", e)
     print(
         f"{len(shard)} documents, offsets {shard.offsets.tolist()}, dtype "
         f"{shard.tokens.dtype}"
@@ -521,6 +545,7 @@ with tempfile.TemporaryDirectory() as tmp:
 % output
 
 ```text
+detected: demo.bin does not match the hash in its sidecar
 3 documents, offsets [0, 4, 10, 12], dtype uint16
 document 1: [7552, 5001, 8441, 9177, 8494, 0]
 ```
@@ -581,9 +606,8 @@ stream = with_special_tokens(docs, "bos+eod")
 starts = np.flatnonzero(stream == BOS)
 # every BOS follows an EOD
 assert starts.size == len(docs) and np.all(stream[starts[1:] - 1] == EOD)
-assert not loss_mask(stream)[
-    starts[1:] - 1
-].any()  # and is never trained on as a target
+# and is never trained on as a target
+assert not loss_mask(stream)[starts[1:] - 1].any()
 ```
 
 % output
@@ -596,7 +620,7 @@ bos+eod  125,439 tokens, 3.19% special, 123,439 trained targets
 ```{admonition} Formats on Disk
 :class: tip
 The notebook section {ref}`nb-dm-formats` writes a corpus as JSON Lines shards and as a
-tokenized binary with offsets, verifies both against their manifests, and compares the
+tokenized binary with offsets, verifies the shards against their manifests and the binary against the hashes in its sidecar, and compares the
 bytes per token of each layout.
 ```
 
@@ -1388,9 +1412,8 @@ docs = np.array([600, 120, 200])  # documents per source, as in the notebook
 # mean tokens per document, assumed for the example
 mean_len = np.array([500, 2000, 800])
 w = np.array([0.6, 0.25, 0.15])  # target weights
-doc_prob = (w / mean_len) / (
-    w / mean_len
-).sum()  # document probabilities that make w the token shares
+# document probabilities that make w the token shares
+doc_prob = (w / mean_len) / (w / mean_len).sum()
 
 for label, p in (
     ("weights as document probabilities", w),
@@ -1552,10 +1575,22 @@ restored with the generator state as well: 0 differ
 
 The `seek` method replays draws, which is fine for millions of steps and a few sources. Constant work per step needs two further constructions, and it is worth seeing why seeding alone does not give it. Seeding each permutation by `(seed, source, epoch)`, as `_permutation` does, makes an epoch's order reproducible without replay, but `permutation` still builds the whole array, $\mathcal{O}(n_{ex})$ work and memory for a source of $n_{ex}$ documents, to read one element of it. And the cursor, $\operatorname{drawn}_s(t)$, the number of documents of source $s$ drawn before step $t$, is a sum over $t$ independent source draws: hashing each slot fixes every term, but it does not give the sum without adding up the terms.
 
-- **Within-epoch order: a keyed bijection.** Replace the stored array by a function $\Pi$ on $\{0, \dots, n_{ex} - 1\}$ that can be evaluated at one point. A Feistel network does this {cite}`luby1988pseudorandom`. It splits an integer of an even number of bits into a left and a right half and, in each round, replaces (left, right) by (right, left XOR F(right)) with a keyed hash F. A round is undone from its output whatever F is, so the network is a bijection on its domain for any key. Taking the smallest even bit width that covers $n_{ex}$ gives a domain of fewer than $4 n_{ex}$ integers when $n_{ex} > 1$ (and of 4 for a single document); a value that lands outside the range is encrypted again until it falls back in (cycle-walking, {cite:t}`black2002ciphers`). This is still a bijection, because each cycle of the network visits the in-range values in a fixed order and the walk moves each one to the next. Summed over all $n_{ex}$ starting points the walks touch each point of the domain at most once, so the mean cost is at most the domain size over $n_{ex}$: below four encryptions per index for $n_{ex} > 1$, and 1.024 for $n_{ex} = 1{,}000$ with its 1,024-point domain.
-- **Cursors: a stride schedule.** Fix the mixture in advance as a repeating pattern of $n_{slots}$ slots, here $n_{slots} = 20$. Source $s$ gets $\lfloor w_s n_{slots} \rfloor$ slots, and the slots still free go to the sources with the largest remainders $w_s n_{slots} - \lfloor w_s n_{slots} \rfloor$, so each count is within one slot of $w_s n_{slots}$ and each realized share within $1/n_{slots}$ of its weight. The shares equal the weights exactly when every $w_s n_{slots}$ is a whole number, that is, when every weight is a multiple of $1/n_{slots}$: 0.7, 0.15 and 0.15 are exact at $n_{slots} = 20$, thirds need $n_{slots}$ a multiple of 3, and a weight given to 0.1% needs $n_{slots} = 1{,}000$. The slots are spread out by the smooth weighted round-robin of nginx's load balancer ([`ngx_http_upstream_round_robin.c`](https://github.com/nginx/nginx/blob/797c039a9884f69aae96286dcdf1ba633e5ebf81/src/http/ngx_http_upstream_round_robin.c)), which keeps each source's slots evenly spaced. Then $\operatorname{drawn}_s(t)$ is the number of whole periods before $t$ times the source's slots per period, plus the source's count among the first $t \bmod 20$ slots, read from a table of 21 prefix counts. The document at step $t$ is $\Pi(\operatorname{drawn}_s(t) \bmod n_{ex})$, with $\Pi$ keyed by the seed, the source and the epoch $\lfloor \operatorname{drawn}_s(t) / n_{ex} \rfloor$.
+#### 5.2.1 Within-epoch order: a keyed bijection
 
-Each step is then a table lookup, a division and a few hash evaluations, whatever $t$ is. The price is that the mixture is fixed when the schedule is computed: epoch caps and changes of weight between phases are applied there, and a change of weights mid-run starts a new schedule at a recorded step. A sampler that draws sources at random, like the one above, cannot seek in constant work, but it need not replay from step 0 either. A checkpoint that stores its step, its cursors and the state of its random generator lets it resume exactly at the checkpoint, so reaching a step between two checkpoints replays at most one checkpoint interval. The cursors alone are not enough: the next source draw comes from `self.rng`, whose state depends on every draw before it, which is why the end of the `MixtureSampler` listing restores the generator state as well and shows that a restore from the cursors alone continues with a different stream.
+Replace the stored array by a function $\Pi$ on $\{0, \dots, n_{ex} - 1\}$ that can be evaluated at one point. A Feistel network does this {cite}`luby1988pseudorandom`. It splits an integer of an even number of bits into a left and a right half and, in each round, replaces (left, right) by (right, left XOR F(right)) with a keyed hash F. A round is undone from its output whatever F is, so the network is a bijection on its domain for any key. Taking the smallest even bit width that covers $n_{ex}$ gives a domain of fewer than $4 n_{ex}$ integers when $n_{ex} > 1$ (and of 4 for a single document); a value that lands outside the range is encrypted again until it falls back in (cycle-walking, {cite:t}`black2002ciphers`). This is still a bijection, because each cycle of the network visits the in-range values in a fixed order and the walk moves each one to the next.
+
+Summed over all $n_{ex}$ starting points the walks touch each point of the domain at most once, so the mean cost is at most the domain size over $n_{ex}$: below four encryptions per index for $n_{ex} > 1$, and 1.024 for $n_{ex} = 1{,}000$ with its 1,024-point domain.
+#### 5.2.2 Cursors: a stride schedule
+
+Fix the mixture in advance as a repeating pattern of $n_{slots}$ slots, here $n_{slots} = 20$. Source $s$ gets $\lfloor w_s n_{slots} \rfloor$ slots, and the slots still free go to the sources with the largest remainders $w_s n_{slots} - \lfloor w_s n_{slots} \rfloor$, so each count is within one slot of $w_s n_{slots}$ and each realized share within $1/n_{slots}$ of its weight.
+
+The shares equal the weights exactly when every $w_s n_{slots}$ is a whole number, that is, when every weight is a multiple of $1/n_{slots}$: 0.7, 0.15 and 0.15 are exact at $n_{slots} = 20$, thirds need $n_{slots}$ a multiple of 3, and a weight given to 0.1% needs $n_{slots} = 1{,}000$. The slots are spread out by the smooth weighted round-robin of nginx's load balancer ([`ngx_http_upstream_round_robin.c`](https://github.com/nginx/nginx/blob/797c039a9884f69aae96286dcdf1ba633e5ebf81/src/http/ngx_http_upstream_round_robin.c)), which keeps each source's slots evenly spaced. Then $\operatorname{drawn}_s(t)$ is the number of whole periods before $t$ times the source's slots per period $c_s$, plus the source's count among the first $t \bmod n_{slots}$ slots, read from a table of $n_{slots} + 1$ prefix counts:
+
+$$\operatorname{drawn}_s(t) = \left\lfloor \frac{t}{n_{slots}} \right\rfloor c_s + \operatorname{prefix}_s[t \bmod n_{slots}].$$
+
+The document at step $t$ is $\Pi(\operatorname{drawn}_s(t) \bmod n_{ex})$, with $\Pi$ keyed by the seed, the source and the epoch $\lfloor \operatorname{drawn}_s(t) / n_{ex} \rfloor$.
+
+Each step is then a table lookup, a division and a few hash evaluations, whatever $t$ is. The price is that the mixture is fixed when the schedule is computed, so a change of weights mid-run starts a new schedule at a recorded step (Exercise 5). An epoch cap is such a change. Source $s$ reaches its cap of `max_epochs` $\times\, n_{ex}$ draws at the smallest step $t$ with $\operatorname{drawn}_s(t) = \texttt{max\_epochs} \cdot n_{ex}$, which the prefix table gives in closed form (whole periods, then one lookup, `step_of` in the listing). From that step on a new schedule starts in which the capped source has weight 0 and the others' weights are renormalized, with each cursor continuing from its value at the boundary; `CappedStride` chains these phases and stops when every source has used its budget. In the listing, wiki (50 documents) stops at its 200 draws, a cap of four epochs as in `MixtureSampler`, and the other two sources share its slots in the ratio of their weights, rounded to whole slots (16 and 4 of 20 for web and code). A sampler that draws sources at random, like the one above, cannot seek in constant work, but it need not replay from step 0 either. A checkpoint that stores its step, its cursors and the state of its random generator lets it resume exactly at the checkpoint, so reaching a step between two checkpoints replays at most one checkpoint interval. The cursors alone are not enough: the next source draw comes from `self.rng`, whose state depends on every draw before it, which is why the end of the `MixtureSampler` listing restores the generator state as well and shows that a restore from the cursors alone continues with a different stream.
 
 ```python
 import hashlib
@@ -1630,21 +1665,28 @@ def stride_schedule(weights: dict, period: int, exact: bool = False):
     return pattern, prefix
 
 
-
-
 class StrideSampler:
     """Random access to the stream: sample t is computed from (seed, t) alone, with
     no replay."""
 
-    def __init__(self, sizes: dict, weights: dict, seed: int, period: int = 20):
-        self.sizes, self.seed = sizes, seed
+    def __init__(
+        self, sizes: dict, weights: dict, seed: int, period: int = 20,
+        start: int = 0, base: dict | None = None,
+    ):
+        self.sizes, self.seed, self.start = sizes, seed, start
+        self.base = base or dict.fromkeys(sizes, 0)  # documents drawn before `start`
         self.pattern, self.prefix = stride_schedule(weights, period)
 
     def drawn(self, s: str, t: int) -> int:
         """Documents of source s drawn before step t: whole periods plus a
         prefix count."""
-        periods, r = divmod(t, len(self.pattern))
-        return periods * self.prefix[s][-1] + self.prefix[s][r]
+        periods, r = divmod(t - self.start, len(self.pattern))
+        return self.base[s] + periods * self.prefix[s][-1] + self.prefix[s][r]
+
+    def step_of(self, s: str, n: int) -> int:
+        """The first step at which n documents of s have been drawn (n > base)."""
+        periods, k = divmod(n - self.base[s] - 1, self.prefix[s][-1])
+        return self.start + periods * len(self.pattern) + self.prefix[s].index(k + 1)
 
     def permutation(self, s: str, epoch: int) -> FeistelPermutation:
         key = hashlib.blake2b(
@@ -1653,9 +1695,42 @@ class StrideSampler:
         return FeistelPermutation(self.sizes[s], key)
 
     def __getitem__(self, t: int):
-        s = self.pattern[t % len(self.pattern)]
+        s = self.pattern[(t - self.start) % len(self.pattern)]
         epoch, within = divmod(self.drawn(s, t), self.sizes[s])
         return s, self.permutation(s, epoch)(within)
+
+
+class CappedStride:
+    """Epoch caps as phases: when a source has drawn max_epochs * n_ex documents, a
+    new schedule without it starts at that step."""
+
+    def __init__(self, sizes, weights, seed, max_epochs=4.0, period=20):
+        self.phases, live, start = [], dict(weights), 0
+        base = dict.fromkeys(sizes, 0)
+        while live:
+            total = sum(live.values())
+            share = {s: live.get(s, 0) / total for s in sizes}
+            self.phases.append(StrideSampler(sizes, share, seed, period, start, base))
+            ends = {
+                s: self.phases[-1].step_of(s, int(max_epochs * sizes[s]))
+                for s in live
+                if self.phases[-1].prefix[s][-1] > 0
+            }
+            start = min(ends.values())
+            base = {s: self.phases[-1].drawn(s, start) for s in sizes}
+            live = {s: w for s, w in live.items() if ends.get(s) != start}
+        self.length = start  # the step at which every source has used its budget
+
+    def phase(self, t: int) -> StrideSampler:
+        if not 0 <= t < self.length:
+            raise IndexError(t)
+        return [p for p in self.phases if p.start <= t][-1]
+
+    def drawn(self, s: str, t: int) -> int:
+        return self.phase(min(t, self.length - 1)).drawn(s, t)
+
+    def __getitem__(self, t: int):
+        return self.phase(t)[t]
 
 
 sizes = {"web": 1000, "wiki": 50, "code": 200}
@@ -1701,6 +1776,24 @@ try:
     stride_schedule(thirds, 20, exact=True)
 except ValueError as e:
     print("exact=True:", str(e).split(":")[0])
+
+# Epoch caps: wiki, with 50 documents, stops at 4 epochs; the others take over its slots
+capped = CappedStride(sizes, weights, seed=1, max_epochs=4.0)
+phase_starts = [p.start for p in capped.phases]
+cap_stream = [capped[t] for t in range(capped.length)]
+totals = {s: sum(1 for x, _ in cap_stream if x == s) for s in sorted(sizes)}
+assert totals == {s: 4 * n for s, n in sorted(sizes.items())}  # every budget is used
+assert capped.drawn("wiki", 2000) == 200 and capped.length == sum(totals.values())
+assert [capped[t] for t in range(1300, 1400)] == cap_stream[1300:1400]  # no replay
+for s, n in sizes.items():  # a source never goes past its cap ...
+    assert all(capped.drawn(s, t) <= 4 * n for t in (0, 1331, 1332, 2000, 4999))
+# ... and after wiki's cap its slots go to the others in proportion to their weights
+after = {s: capped.drawn(s, 2000) - capped.drawn(s, 1332) for s in sorted(sizes)}
+assert 3.9 < after["web"] / after["code"] < 4.1  # 0.7 : 0.15 is 4.7, rounded to 16 : 4
+print("phase starts:", phase_starts, "stream length:", capped.length)
+at_2000 = {s: capped.drawn(s, 2000) for s in sorted(sizes)}
+print("drawn by step 2000 with caps:", at_2000)
+print("drawn between steps 1332 and 2000:", after)
 ```
 
 % output
@@ -1712,6 +1805,9 @@ sample at step 1,000,000,007: ('web', 377)
 thirds at period 20: {'code': 0.35, 'web': 0.35, 'wiki': 0.3}
 thirds at period 21: {'code': 0.3333, 'web': 0.3333, 'wiki': 0.3333}
 exact=True: not whole multiples of 1/20
+phase starts: [0, 1332, 4330] stream length: 5000
+drawn by step 2000 with caps: {'code': 334, 'web': 1466, 'wiki': 200}
+drawn between steps 1332 and 2000: {'code': 134, 'web': 534, 'wiki': 0}
 ```
 
 (sec-ch5-shuffling-right-granularity)=
@@ -2164,6 +2260,44 @@ split by worker False: 3,600 samples yielded, 1,200 distinct, each seen 3 times
 split by worker True : 1,200 samples yielded, 1,200 distinct, each seen 1 times
 ```
 
+The same bug with PyTorch itself: one rank's `IterableDataset` read by a real `DataLoader` with three worker processes, and the fix with `get_worker_info()`. The names in the listing are the ones the libraries of {ref}`sec-ch5-tooling` use for the same split.
+
+```python
+from collections import Counter
+
+from torch.utils.data import DataLoader, IterableDataset, get_worker_info
+
+
+class RankStream(IterableDataset):
+    """The ids of one rank, optionally split again across the loader's workers."""
+
+    def __init__(self, ids, split_by_worker: bool):
+        self.ids, self.split_by_worker = list(ids), split_by_worker
+
+    def __iter__(self):
+        info = get_worker_info()  # None in the main process
+        if self.split_by_worker and info is not None:
+            return iter(self.ids[info.id :: info.num_workers])
+        return iter(self.ids)
+
+
+for split in (False, True):
+    loader = DataLoader(RankStream(range(0, 1200, 4), split), num_workers=3)
+    seen = Counter(int(x) for batch in loader for x in batch)
+    print(
+        f"split by worker {split!s:5s}: {sum(seen.values()):,} samples yielded, "
+        f"{len(seen):,} distinct"
+    )
+    assert len(seen) == 300 and sum(seen.values()) == (300 if split else 900)
+```
+
+% output
+
+```text
+split by worker False: 900 samples yielded, 300 distinct
+split by worker True : 300 samples yielded, 300 distinct
+```
+
 (sec-ch5-statistics-tests-monitoring)=
 
 ## 7. Statistics, Tests and Monitoring
@@ -2192,7 +2326,7 @@ The analogue of a unit test for data is a contract: a set of assertions about a 
 - Schema: every record has the required fields with the right types; identifiers are unique within the version
 - Ranges: no empty documents, no document above the length cap, token ids below the vocabulary size
 - Composition: each source's token share within a tolerance of the plan; no source silently empty
-- Hygiene: canary strings absent, PII patterns below the pipeline's residual rate, decontamination index overlap zero
+- Hygiene: no benchmark canary string and no canary planted in another version or source (canaries are defined in {ref}`sec-ch5-canaries-drift`), PII patterns below the pipeline's residual rate, decontamination index overlap zero
 - Integrity: every shard's hash matches the manifest, every shard is readable to the end
 
 ```python
@@ -2281,7 +2415,7 @@ Two monitoring practices borrowed from other fields:
 
 A drift check needs a statistic and a threshold fixed before the comparison. For a length distribution, a good statistic is the two-sample Kolmogorov-Smirnov statistic D, the largest gap between the two empirical distribution functions. Its threshold has a closed form. For samples of sizes $n$ and $m$ from one continuous distribution, the probability that $D$ exceeds $c\sqrt{1/n + 1/m}$ tends to $2 \sum_{k \ge 1} (-1)^{k-1} e^{-2 k^2 c^2}$, Kolmogorov's limiting distribution, which {cite:t}`smirnov1948table` tabulated. At a 1% tail the terms after the first add less than $10^{-8}$; setting $2 e^{-2c^2} = 0.01$ gives $c = 1.628$, and for two versions of 20,000 documents a threshold of $1.628 \sqrt{2/20{,}000} = 0.0163$.
 
-That fixes the false-alarm rate: one comparison in a hundred between two versions whose lengths come from the same distribution is flagged. The rate rests on two assumptions, large samples and no ties, and lengths in tokens are integers with many ties.
+That fixes the false-alarm rate: one comparison in a hundred between two versions whose lengths come from the same distribution is flagged. A build makes many comparisons, one for each statistic of each source, and the per-build rate is larger: with $m$ independent comparisons, each at a false-alarm rate of 0.01, the chance of at least one alarm is $1 - 0.99^m$, which is 26% for $m = 30$. To hold the per-build rate at 0.01, test each comparison at $0.01 / m$ (Bonferroni), here $0.01 / 30 \approx 3.3 \times 10^{-4}$. The rate rests on two assumptions, large samples and no ties, and lengths in tokens are integers with many ties.
 
 The listing therefore measures it on the data themselves: pool the two versions' lengths, relabel them at random into groups of the original sizes, which is what "same distribution" means for the data at hand (a permutation test), and count how often D exceeds the threshold. Each seed's 1,000 relabelings estimate the rate with a standard error of 0.31 points, so the listing asserts every seed between 0.25% and 2% and the five together, a standard error of 0.14 points, between 0.7% and 1.3%. A threshold taken instead as the 99th percentile of a few hundred relabelings is itself a noisy estimate: with 200 relabelings it lies between the second and third largest value, so it moves from seed to seed. (A deterministic rebuild with nothing changed is byte-identical and gives D = 0.)
 
@@ -2333,9 +2467,8 @@ v2_same = rng.lognormal(mean=6.0, sigma=1.0, size=20_000).astype(int) + 1
 v2_bug = v2_same.copy()
 # an extractor update drops the tables from 15% of documents ...
 tables = rng.random(v2_bug.size) < 0.15
-v2_bug[tables] = (v2_bug[tables] * 0.6).astype(
-    int
-) + 1  # ... which removes 40% of their tokens
+# ... which removes 40% of their tokens
+v2_bug[tables] = (v2_bug[tables] * 0.6).astype(int) + 1
 
 limit = ks_threshold(v1.size, v2_same.size)
 for name, v2 in (("same distribution", v2_same), ("tables dropped", v2_bug)):
@@ -2530,6 +2663,18 @@ The pieces exist as libraries, and most teams assemble rather than write them:
 - **Great Expectations** and similar for data contracts, though a few hundred lines of assertions in the build script are usually enough.
 - **Croissant** {cite}`akhtar2024croissant` for machine-readable dataset metadata.
 
+Some concepts of sections 5 and 6 appear under these names in the libraries' own documentation:
+
+| Concept (section) | Where it is set | Library |
+|---|---|---|
+| Shuffle buffer and seed (5.3, 5.2) | `IterableDataset.shuffle(seed=, buffer_size=)` | `datasets` ([streaming guide](https://huggingface.co/docs/datasets/stream)) |
+| Resuming the stream (5.2) | `IterableDataset.state_dict()` and `load_state_dict()`, which record the current shard and the example index in it | `datasets` (same guide) |
+| Shuffle buffer (5.3) | `wds.shuffle(n)` in the pipeline | WebDataset ([README](https://github.com/webdataset/webdataset)) |
+| Split across ranks and workers (6.1, 6.3) | `wds.split_by_node` and `wds.split_by_worker` in the pipeline | WebDataset (same README) |
+| Split across workers (6.3) | `torch.utils.data.get_worker_info()` inside `__iter__` | PyTorch ({cite}`pytorch2026data`) |
+
+The names are the ones to look for in a library's documentation; whether a default is deterministic, and how a library behaves when the world size changes, has to be checked against the version in use, as the listings of {ref}`sec-ch5-sharding-across-ranks` check it for the designs they build.
+
 What no tool supplies is the discipline: that every version is produced by the build, that no shard is edited in place, that every run names a tag, and that the statistics and the card are updated with the data rather than after it.
 
 (sec-ch5-summary)=
@@ -2609,9 +2754,7 @@ formats = [("gzip JSON Lines", read_jsonl, len(jsonl)),
 for name, read, size in formats:
     timings = []
     # the fastest of three reads, so that a cold first call does not decide the order
-    for _ in range(
-        3
-    ):
+    for _ in range(3):
         start = time.perf_counter()
         back = read()
         timings.append(time.perf_counter() - start)
