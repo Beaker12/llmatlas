@@ -202,12 +202,59 @@ def test_rope_equals_the_block_diagonal_rotation_of_the_derivation():
 
 def test_evaluate_tokenization_quality_reports_only_measured_metrics():
     ns = {"torch": torch, "np": np, "math": math}
-    exec(ch01_fence("class ComprehensiveTokenizer"), ns)  # noqa: S102
-    exec(ch01_fence("def evaluate_tokenization_quality"), ns)  # noqa: S102
+    exec(ch01_fence("def evaluate_tokenization_quality"), ns)  # noqa: S102  (same fence as the tokenizer)
     metrics = ns["evaluate_tokenization_quality"](ns["tokenizer"], ["The quick brown fox", "hello world"])
     assert set(metrics) == {"chars_per_token", "bytes_per_token", "reversibility_errors"}
     assert metrics["chars_per_token"] > 1.0
     assert metrics["reversibility_errors"] == 0.0
+    # the analysis counts only byte-level tokens: special ids are left out, every token is 1+ bytes
+    lengths, kinds = ns["analyze_tokenization_efficiency"](ns["tokenizer"], ns["held_out"])
+    assert sum(lengths.values()) == sum(kinds.values()) == 35 and min(lengths) >= 1
+    assert kinds == {"single byte": 15, "part of a chunk": 13, "whole chunk": 7}
+    held = ns["evaluate_tokenization_quality"](ns["tokenizer"], ns["held_out"])
+    assert round(held["bytes_per_token"], 3) == 1.914 and held["reversibility_errors"] == 0.0
+
+
+def test_deep_dive_exercise_t1_wordpiece_score():
+    ns = {}
+    exec(ch01_fence("def wordpiece_encode"), ns)  # noqa: S102
+    assert ns["pair_counts"]["##u", "##n"] == 16
+    assert abs(ns["scores"]["##u", "##n"] - 1 / 36) < 1e-12 and round(1 / 36, 4) == 0.0278
+    assert ns["scores"]["##u", "##n"] < ns["scores"]["##g", "##s"] == 0.05
+
+
+def test_deep_dive_exercise_t2_unigram_shares():
+    ns = {}
+    exec(ch01_fence("def wordpiece_encode"), ns)  # noqa: S102
+    p = ns["probs"]
+    assert math.isclose(p["un"] * p["happiness"], 1.6e-4) and math.isclose(p["un"] * p["happi"] * p["ness"], 9.6e-5)
+    assert round(1.6e-4 / 9.6e-5, 3) == 1.667
+    total = sum(ns["weights"])
+    assert round(total * 1e4, 3) == 2.608
+    assert round(ns["share"]["un happiness"], 3) == 0.613 and round(ns["share"]["un happi ness"], 3) == 0.368
+
+
+def test_deep_dive_exercise_t3_unseen_script_bytes():
+    ns = {}
+    exec(ch01_fence("class ComprehensiveTokenizer"), ns)  # noqa: S102
+    ids = ns["tokenizer"].encode("你好")
+    assert len(ids) == 8 and ns["tokenizer"].decode(ids) == "你好"
+
+
+def test_deep_dive_exercise_t4_vocabulary_cost():
+    assert 2 * 32_000 * 4096 == 262_144_000
+    assert 2 * 200_019 * 4096 == 1_638_555_648
+    assert 1_638_555_648 - 262_144_000 == 1_376_411_648 and round(1_376_411_648 / 8e9, 3) == 0.172
+
+
+def test_unigram_pruning_keeps_the_largest_losses():
+    ns = {}
+    exec(ch01_fence("def wordpiece_encode"), ns)  # noqa: S102
+    loss, kept, dropped = ns["loss"], ns["kept"], ns["dropped"]
+    assert dropped == ["unh"] and len(kept) == 4  # 80% of the five multi-character pieces
+    assert all(loss[k] > loss[d] for k in kept for d in dropped)
+    assert all(len(x) > 1 for x in loss)  # single characters are never candidates for removal
+    assert len([b for b, ch in ns["byte_char"].items() if ord(ch) != b]) == 68  # GPT-2's remapped bytes
 
 
 def test_subword_algorithms_listing_matches_the_deep_dive_prose():

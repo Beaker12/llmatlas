@@ -1,144 +1,18 @@
 # Tokenization in Depth
 
-This page collects the tokenizer material from Chapter 1 that goes beyond what you need to follow the transformer: modern tokenizers, special tokens, vocabulary construction, cross-lingual and domain issues, quality metrics, a complete BPE tokenizer, and analysis tools. Read {doc}`index` first.
-
-(sec-tdd-modern-tokenization-strategies)=
-
-## T.1 Modern Tokenization Strategies
-
-(sec-tdd-tiktoken-tokenizer)=
-
-### Tiktoken (OpenAI's Tokenizer)
-
-GPT models use a sophisticated tokenizer that:
-
-- Handles regex patterns for different text types
-- Uses byte-level BPE
-- Includes special tokens for different contexts
-
-```python
-# network
-import hashlib
-import os
-import tempfile
-import urllib.request
-
-import tiktoken
-
-# tiktoken downloads its encoding files without a User-Agent we can set, so fetch them ourselves into the
-# cache directory tiktoken reads (file name: SHA-1 of the URL) and send LLMATLAS_USER_AGENT.
-USER_AGENT = os.environ.get("LLMATLAS_USER_AGENT", "Mozilla/5.0 (compatible; reader)")
-BLOB = "https://openaipublic.blob.core.windows.net/"
-FILES = {
-    "gpt2": ["gpt-2/encodings/main/vocab.bpe", "gpt-2/encodings/main/encoder.json"],
-    "cl100k_base": ["encodings/cl100k_base.tiktoken"],
-    "o200k_base": ["encodings/o200k_base.tiktoken"],
-}
-CACHE = os.environ.setdefault("TIKTOKEN_CACHE_DIR", os.path.join(tempfile.gettempdir(), "tiktoken-cache"))
-
-
-def get_encoding(name):
-    os.makedirs(CACHE, exist_ok=True)
-    for path in FILES[name]:
-        target = os.path.join(CACHE, hashlib.sha1((BLOB + path).encode()).hexdigest())
-        if not os.path.exists(target):
-            request = urllib.request.Request(BLOB + path, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(request, timeout=60) as response, open(target, "wb") as f:
-                f.write(response.read())
-    return tiktoken.get_encoding(name)
-
-
-enc = get_encoding("cl100k_base")  # the GPT-4 encoding
-
-text = "Hello, world! Here's some code: `print('hi')`"
-tokens = enc.encode(text)
-assert enc.decode(tokens) == text  # byte-level BPE is lossless
-print(f"Token count: {len(tokens)}")
-print(f"Pieces: {[enc.decode([i]) for i in tokens]}")
-```
-
-% output
-
-```text
-Token count: 15
-Pieces: ['Hello', ',', ' world', '!', ' Here', "'s", ' some', ' code', ':', ' `', 'print', "('", 'hi', "')", '`']
-```
-
-(sec-tdd-multi-modal-tokenization)=
-
-### Multi-Modal Tokenization
-
-Modern models handle multiple modalities:
-
-- **Text tokens**: Standard subword tokens
-- **Image tokens**: Patch embeddings or discrete visual tokens
-- **Audio tokens**: Spectrogram patches or audio codebook tokens
-- **Special tokens**: Task indicators, separators, padding
-
-(sec-tdd-vocabulary-construction-strategies)=
-
-### Vocabulary Construction Strategies
-
-**Frequency-based**: Include most common tokens
-
-```python
-# pseudo-code: `tokenize` stands for any tokenizer function
-def build_vocab_frequency(corpus, vocab_size):
-    from collections import Counter
-
-    # Count token frequencies
-    token_counts = Counter()
-    for text in corpus:
-        tokens = tokenize(text)  # Your tokenization function
-        token_counts.update(tokens)
-
-    # Select top tokens
-    vocab = [token for token, count in token_counts.most_common(vocab_size)]
-    return vocab
-```
-
-**Coverage-based**: Ensure vocabulary covers percentage of corpus
-
-```python
-# pseudo-code: `tokenize` stands for any tokenizer function
-def build_vocab_coverage(corpus, coverage_threshold=0.95):
-    from collections import Counter
-
-    token_counts = Counter()
-    total_tokens = 0
-
-    for text in corpus:
-        tokens = tokenize(text)
-        token_counts.update(tokens)
-        total_tokens += len(tokens)
-
-    # Sort by frequency
-    sorted_tokens = token_counts.most_common()
-
-    vocab = []
-    covered_tokens = 0
-
-    for token, count in sorted_tokens:
-        vocab.append(token)
-        covered_tokens += count
-
-        if covered_tokens / total_tokens >= coverage_threshold:
-            break
-
-    return vocab
-```
+The chapter ({doc}`index`) builds byte pair encoding by hand and then moves on to the transformer. This page stays with tokenizers and covers what the chapter leaves out: the subword algorithms production models use and how real tokenizers split text ({ref}`sec-tdd-subword-algorithms`, {ref}`sec-tdd-modern-tokenization-strategies`), what the choice of tokenizer costs in length and fairness across languages ({ref}`sec-tdd-tokenization-impact-model-behavior`), special tokens and chat templates ({ref}`sec-tdd-special-tokens-their-roles`), vocabulary size, reversibility and Unicode normalization ({ref}`sec-tdd-practical-considerations`), hard inputs such as compounds, numbers and code ({ref}`sec-tdd-tokenization-challenges-solutions`), a complete byte-level BPE tokenizer ({ref}`sec-tdd-implementation-walkthrough`), how to measure a tokenizer ({ref}`sec-tdd-tokenization-quality-practice`) and the embedding layer that turns token ids into vectors ({ref}`sec-tdd-embeddings-in-practice`). It ends with a summary and four exercises. Read the chapter's tokenization section first.
 
 (sec-tdd-subword-algorithms)=
 
-## T.2 Subword Algorithms in Practice
+## T.1 Subword Algorithms in Practice
 
-The chapter builds byte pair encoding (BPE) by hand. Production tokenizers use four related schemes: WordPiece, the unigram language model, byte-level BPE and the SentencePiece library, which implements BPE and unigram. They differ in how they choose the vocabulary and in how they split a word once the vocabulary is fixed. The listing at the end of this section runs a small version of each.
+The chapter builds byte pair encoding (BPE) by hand. Production tokenizers use four related schemes: WordPiece, the unigram language model, byte-level BPE and the SentencePiece library, which implements BPE and unigram. They differ in how they choose the vocabulary and in how they split a word once the vocabulary is fixed. The listing at the end of this section runs small versions of the first three; the chapter's {ref}`sec-ch1-sentencepiece` trains a real SentencePiece model.
 
 (sec-tdd-wordpiece)=
 
 ### WordPiece
 
-WordPiece comes from Google's speech and translation systems {cite}`wu2016google` and is the tokenizer of BERT {cite}`devlin2018bert`. Training starts, as BPE does, from single characters and merges pairs, but it does not merge the most frequent pair. It merges the pair that most increases the likelihood of the training data {cite}`kudo2018subword`. Google never published its training algorithm; the score below is the reconstruction in the Hugging Face course {cite}`huggingface2026wordpiece`, which merges the pair with the highest
+WordPiece was introduced by {cite:t}`schuster2012japanese` for Japanese and Korean voice search, was later used in Google's neural translation system {cite}`wu2016google`, and is the tokenizer of BERT {cite}`devlin2018bert`. Training starts, as BPE does, from single characters and merges pairs, but the 2012 paper chooses each new unit "in a greedy way ... to maximize likelihood on the language model training data", not by frequency. The paper describes this rule but gives no exact scoring formula, and Google never released its implementation; the score below is the reconstruction in the Hugging Face course {cite}`huggingface2026wordpiece`, which merges the pair with the highest
 
 $$\operatorname{score}(\text{pair}) = \frac{\operatorname{count}(\text{pair})}{\operatorname{count}(\text{first piece}) \cdot \operatorname{count}(\text{second piece})}.$$
 
@@ -153,10 +27,12 @@ Pieces that continue a word carry the prefix `##`, so `##ing` and `ing` are diff
 The unigram model {cite}`kudo2018subword` works in the opposite direction. It starts from a large seed vocabulary (all characters plus the most frequent substrings of the corpus) and shrinks it. The probability of a segmentation of a word is the product of the probabilities of its pieces, which the model treats as independent. Training repeats three steps until the vocabulary has the target size:
 
 1. With the vocabulary fixed, estimate the piece probabilities with the EM algorithm, treating the segmentation of each sentence as hidden.
-2. For each piece, compute the loss: how much the likelihood of the corpus falls if that piece is removed.
-3. Keep the pieces with the smallest loss, for example the best 80%, but always keep single characters so that no input becomes unrepresentable.
+2. For each piece, compute its loss: how much the likelihood of the corpus falls if that piece is removed.
+3. Sort the pieces by loss and keep those with the *largest* loss, for example the top 80%; the pieces whose removal costs least are dropped. Single characters are always kept, so that no input becomes unrepresentable.
 
-Encoding picks the most probable segmentation with the Viterbi algorithm, a dynamic program over the end positions of the word. Because the model assigns a probability to every segmentation, it can also *sample* one: subword regularization trains a translation model on segmentations sampled afresh at each update, so the model sees a word split in several ways {cite}`kudo2018subword`. In the listing, "unhappiness" has 12 segmentations; Viterbi returns `un happiness`, and sampling returns `un happi ness` one time in five.
+In the paper's words, "Sort the symbols by $loss_i$ and keep top η % of subwords (η is 80, for example)". SentencePiece's `shrinking_factor` option, 0.75 by default, is the ratio by which each round prunes the vocabulary ([option reference](https://github.com/google/sentencepiece/blob/master/doc/options.md)). The listing applies step 3 to a two-word corpus, holding the other probabilities fixed instead of re-estimating them, and asserts that the pieces it keeps all have a larger loss than the one it drops.
+
+Encoding picks the most probable segmentation with the Viterbi algorithm, a dynamic program over the end positions of the word. Because the model assigns a probability to every segmentation, it can also *sample* one: subword regularization trains a translation model on segmentations sampled afresh at each update, so the model sees a word split in several ways {cite}`kudo2018subword`. In the listing, "unhappiness" has 12 segmentations. Viterbi returns `un happiness`, which carries 0.613 of the probability; `un happi ness` carries 0.368, so sampling returns it a little more than one time in three (once in the five samples shown).
 
 (sec-tdd-byte-level-bpe)=
 
@@ -165,12 +41,13 @@ Encoding picks the most probable segmentation with the Viterbi algorithm, a dyna
 A BPE vocabulary over Unicode characters would need over 130,000 base symbols to cover every string. GPT-2 runs BPE over UTF-8 bytes instead, so the base vocabulary is 256 symbols and every string can be encoded {cite}`radford2019language`. Two details make this work:
 
 - **Pre-tokenization.** Before any merge, a regular expression splits the text into chunks: common English contractions, runs of letters, runs of digits, runs of other symbols, and whitespace. A space stays attached to the start of the following chunk (`" world"`). Merges never cross chunk boundaries, which keeps BPE from learning separate tokens for `dog.`, `dog!` and `dog?` {cite}`radford2019language`.
-- **Printable bytes.** The released code maps each of the 256 bytes to a printable Unicode character, so the BPE code only ever handles strings without whitespace or control characters. Printable ASCII and Latin-1 bytes map to themselves; the others, including the space (byte 32), map to characters from U+0100 upward. The space becomes `Ġ` (U+0120), which is why GPT-2 vocabularies are full of tokens like `Ġworld`. A non-ASCII character spans several bytes and so several symbols: `é` is the two bytes `0xC3 0xA9`, shown as `Ã©` until a merge joins them.
+- **Printable bytes.** The released code maps each of the 256 bytes to a printable Unicode character, so the BPE code only ever handles strings without whitespace or control characters. The 188 bytes that are already printable characters (`!` to `~`, `¡` to `¬` and `®` to `ÿ`) map to themselves. The other 68, the control characters, the space (byte 32), the no-break space (0xA0) and the soft hyphen (0xAD), map to characters from U+0100 upward. The space becomes `Ġ` (U+0120), which is why GPT-2 vocabularies are full of tokens like `Ġworld`. A non-ASCII character spans several bytes and so several symbols: `é` is the two bytes `0xC3 0xA9`, shown as `Ã©` until a merge joins them.
+
 (sec-tdd-sentencepiece-library)=
 
 ### SentencePiece
 
-SentencePiece {cite}`kudo2018sentencepiece` is a library that trains and runs BPE or unigram models directly on raw text, with no language-specific pre-tokenization. It treats whitespace as an ordinary symbol, writing it as `▁` (U+2581), so `Hello world.` becomes `[Hello] [▁wor] [ld] [.]` and decoding is a matter of joining the pieces and turning `▁` back into a space. Three training options matter most in practice ([option reference](https://github.com/google/sentencepiece/blob/master/doc/options.md)):
+SentencePiece {cite}`kudo2018sentencepiece` is a library that trains and runs BPE or unigram models directly on raw text, with no language-specific pre-tokenization. It treats whitespace as an ordinary symbol, writing it as `▁` (U+2581), and by default (`add_dummy_prefix`) adds a space before the text, so the first word looks like every other word. In a model whose vocabulary holds `▁Hello` and `▁wor` but not `▁world`, `Hello world.` becomes `[▁Hello] [▁wor] [ld] [.]`, and decoding joins the pieces, turns `▁` back into spaces and drops the leading one. Three training options matter most in practice ([option reference](https://github.com/google/sentencepiece/blob/master/doc/options.md)):
 
 - `normalization_rule_name`: the input is Unicode-normalized before training and encoding, by default with a variant of Unicode NFKC normalization (`nmt_nfkc`).
 - `character_coverage`: the fraction of the corpus's characters that the base alphabet must cover; rarer characters are dropped from it. The documentation recommends 1.0 for languages with small alphabets and the default 0.9995 for Chinese, Japanese and Korean.
@@ -193,9 +70,9 @@ T5's paper calls its pieces "wordpieces" but builds them with SentencePiece. Lar
 
 (sec-tdd-subword-listing)=
 
-### The Four Schemes in Code
+### Three Schemes in Code
 
-The listing trains one WordPiece step on a toy word-count corpus, encodes words greedily, runs Viterbi and sampling over a toy unigram vocabulary, and shows GPT-2's pre-tokenization and byte characters. The byte map is GPT-2's own `bytes_to_unicode`, rewritten more compactly; the pattern is GPT-2's with its Unicode letter and digit classes narrowed to ASCII, because Python's `re` module has no `\p{L}`.
+The listing trains one WordPiece step on a toy word-count corpus, encodes words greedily, runs Viterbi, sampling and one pruning step over a toy unigram vocabulary, and shows GPT-2's pre-tokenization and byte characters. The byte map is GPT-2's own `bytes_to_unicode`, rewritten more compactly; the pattern is GPT-2's with its Unicode letter and digit classes narrowed to ASCII, because Python's `re` module has no `\p{L}`.
 
 ```python
 import math
@@ -249,11 +126,11 @@ probs = {"un": 0.08, "happi": 0.02, "ness": 0.06, "happiness": 0.002, "u": 0.03,
 logp = {piece: math.log(p) for piece, p in probs.items()}
 
 
-def segmentations(text):
+def segmentations(text, vocab=logp):
     if not text:
         return [[]]
-    return [[text[:k]] + rest for k in range(1, len(text) + 1) if text[:k] in logp
-            for rest in segmentations(text[k:])]
+    return [[text[:k]] + rest for k in range(1, len(text) + 1) if text[:k] in vocab
+            for rest in segmentations(text[k:], vocab)]
 
 
 def viterbi(text):
@@ -273,9 +150,28 @@ print(f"Unigram Viterbi: {pieces} (log p = {score:.3f})")
 candidates = segmentations("unhappiness")
 assert max(sum(logp[p] for p in seg) for seg in candidates) == score  # Viterbi found the best of all
 weights = [math.exp(sum(logp[p] for p in seg)) for seg in candidates]
+share = {" ".join(seg): w / sum(weights) for seg, w in zip(candidates, weights)}
+print(f"{len(candidates)} segmentations; P(un happiness) = {share['un happiness']:.3f}, "
+      f"P(un happi ness) = {share['un happi ness']:.3f}")
 rng = random.Random(0)
-print(f"{len(candidates)} segmentations; five samples:",
-      [" ".join(rng.choices(candidates, weights)[0]) for _ in range(5)])
+print("five samples:", [" ".join(rng.choices(candidates, weights)[0]) for _ in range(5)])
+
+# --- Unigram pruning: a piece's loss is how much the corpus log-likelihood falls without it ---
+corpus = {"unhappiness": 5, "happiness": 3}
+
+
+def log_likelihood(vocab):
+    """Sum over words of count * log P(word), with P(word) summed over its segmentations in `vocab`."""
+    return sum(n * math.log(sum(math.exp(sum(logp[p] for p in seg)) for seg in segmentations(w, vocab)))
+               for w, n in corpus.items())
+
+
+full = log_likelihood(set(logp))
+loss = {x: full - log_likelihood(set(logp) - {x}) for x in logp if len(x) > 1}  # single characters stay
+ranked = sorted(loss, key=loss.get, reverse=True)
+kept, dropped = ranked[: round(0.8 * len(ranked))], ranked[round(0.8 * len(ranked)):]
+assert min(loss[x] for x in kept) > max(loss[x] for x in dropped)  # keep the largest losses
+print("loss:", ", ".join(f"{x} {loss[x]:.3f}" for x in ranked), "| keep the top 80%, drop:", dropped)
 
 
 # --- Byte-level BPE as in GPT-2: every byte maps to a printable character, so a space shows as G-dot ---
@@ -296,7 +192,9 @@ pattern = re.compile(r"""'s|'t|'re|'ve|'m|'ll|'d| ?[A-Za-z]+| ?[0-9]+| ?[^\sA-Za
 chunks = pattern.findall("Hello world, it's 2024!")
 print("pre-tokenized:", chunks)
 print("as byte characters:", ["".join(byte_char[b] for b in c.encode("utf-8")) for c in chunks])
-print("base vocabulary:", len(byte_char), "| é becomes", "".join(byte_char[b] for b in "é".encode("utf-8")))
+remapped = [b for b, ch in byte_char.items() if ord(ch) != b]
+print("base vocabulary:", len(byte_char), "| remapped:", len(remapped), "| é becomes",
+      "".join(byte_char[b] for b in "é".encode("utf-8")))
 ```
 
 % output
@@ -306,10 +204,71 @@ BPE would merge:  ('##u', '##g') (count 20, score 0.0278)
 WordPiece merges: ('##g', '##s') (count 5, score 0.0500)
 WordPiece: ['un', '##happ', '##i', '##ness'] ['un', '##happ', '##y'] ['[UNK]']
 Unigram Viterbi: ['un', 'happiness'] (log p = -8.740)
-12 segmentations; five samples: ['un happiness', 'un happiness', 'un happiness', 'un happi ness', 'un happiness']
+12 segmentations; P(un happiness) = 0.613, P(un happi ness) = 0.368
+five samples: ['un happiness', 'un happiness', 'un happiness', 'un happi ness', 'un happiness']
+loss: un 19.976, happiness 7.845, happi 3.761, ness 3.760, unh 0.000 | keep the top 80%, drop: ['unh']
 pre-tokenized: ['Hello', ' world', ',', ' it', "'s", ' 2024', '!']
 as byte characters: ['Hello', 'Ġworld', ',', 'Ġit', "'s", 'Ġ2024', '!']
-base vocabulary: 256 | é becomes Ã©
+base vocabulary: 256 | remapped: 68 | é becomes Ã©
+```
+
+(sec-tdd-modern-tokenization-strategies)=
+
+## T.2 A Production Tokenizer
+
+(sec-tdd-tiktoken-tokenizer)=
+
+### Tiktoken (OpenAI's Tokenizer)
+
+OpenAI's `tiktoken` library runs the byte-level BPE of {ref}`sec-tdd-byte-level-bpe` with the vocabularies of its models: `gpt2` (50,257 entries), `cl100k_base` (used by GPT-4) and `o200k_base`. Each encoding pairs a merge table with its own pre-tokenization pattern and a few special tokens such as `<|endoftext|>`. The listing downloads `cl100k_base` and splits a short string that mixes prose and code. Each `# network` listing on the page carries the same download helper, so that it runs on its own:
+
+
+```python
+# network
+import hashlib
+import os
+import tempfile
+import urllib.request
+
+import tiktoken
+
+# tiktoken downloads its encoding files without a User-Agent we can set, so fetch them ourselves into the
+# cache directory tiktoken reads (file name: SHA-1 of the URL) and send LLMATLAS_USER_AGENT.
+USER_AGENT = os.environ.get("LLMATLAS_USER_AGENT", "Mozilla/5.0 (compatible; reader)")
+BLOB = "https://openaipublic.blob.core.windows.net/"
+FILES = {
+    "gpt2": ["gpt-2/encodings/main/vocab.bpe", "gpt-2/encodings/main/encoder.json"],
+    "cl100k_base": ["encodings/cl100k_base.tiktoken"],
+    "o200k_base": ["encodings/o200k_base.tiktoken"],
+}
+CACHE = os.environ.setdefault("TIKTOKEN_CACHE_DIR", os.path.join(tempfile.gettempdir(), "tiktoken-cache"))
+
+
+def get_encoding(name):
+    os.makedirs(CACHE, exist_ok=True)
+    for path in FILES[name]:
+        target = os.path.join(CACHE, hashlib.sha1((BLOB + path).encode()).hexdigest())
+        if not os.path.exists(target):
+            request = urllib.request.Request(BLOB + path, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(request, timeout=60) as response, open(target, "wb") as f:
+                f.write(response.read())
+    return tiktoken.get_encoding(name)
+
+
+enc = get_encoding("cl100k_base")  # the GPT-4 encoding
+
+text = "Hello, world! Here's some code: `print('hi')`"
+tokens = enc.encode(text)
+assert enc.decode(tokens) == text  # byte-level BPE is lossless
+print(f"Token count: {len(tokens)}")
+print(f"Pieces: {[enc.decode([i]) for i in tokens]}")
+```
+
+% output
+
+```text
+Token count: 15
+Pieces: ['Hello', ',', ' world', '!', ' Here', "'s", ' some', ' code', ':', ' `', 'print', "('", 'hi', "')", '`']
 ```
 
 (sec-tdd-tokenization-impact-model-behavior)=
@@ -334,8 +293,8 @@ print(f"Word tokens ({len(word_tokens)}): {word_tokens}")
 char_tokens = list(text)
 print(f"Character tokens ({len(char_tokens)}): {char_tokens[:20]}...")
 
-# Subword: the output of tiktoken's gpt2, cl100k_base and o200k_base encodings, which all give the same
-# 9 tokens here (run the network fence under "Linguistic Bias" to reproduce it)
+# Subword: the pieces that tiktoken's gpt2, cl100k_base and o200k_base encodings all give for this sentence
+# (the network listing under "Real Tokenizers on Hard Inputs" prints the count 9 for each)
 subword_tokens = [
     "The", " transformer", " architecture", " revolution", "ized", " natural", " language", " processing", ".",
 ]
@@ -351,11 +310,7 @@ Character tokens (72): ['T', 'h', 'e', ' ', 't', 'r', 'a', 'n', 's', 'f', 'o', '
 Subword tokens (9): ['The', ' transformer', ' architecture', ' revolution', 'ized', ' natural', ' language', ' processing', '.']
 ```
 
-**Computational implications**:
-
-- Sequence length affects attention computation: $\mathcal{O}(n^2)$ for self-attention over $n$ tokens
-- Longer sequences require more memory
-- Processing time scales with sequence length
+Self-attention compares every position with every other, so its score matrix has $n^2$ entries for $n$ tokens: $72^2 = 5{,}184$ for the characters, $7^2 = 49$ for the words and $9^2 = 81$ for the subword tokens ({ref}`sec-ch1-attention-complexity`). The character sequence costs 64 times as many attention scores as the subword one, and every per-token cost of the model (the feed-forward layers, the stored keys and values) grows eightfold with its length. Words give the shortest sequence, but a word-level vocabulary needs an entry for every word form and still meets words it has never seen; subwords sit between the two.
 
 (sec-tdd-linguistic-bias)=
 
@@ -444,12 +399,12 @@ Tokens per 100 characters for the five greetings above, from the counts the list
 
 ### Out-of-Vocabulary Handling
 
-Different strategies for unknown tokens:
+A tokenizer meets text its vocabulary does not cover in one of four ways, and each algorithm above picks one:
 
-1. **UNK token**: Replace unknown words with `<UNK>`
-1. **Subword fallback**: Break unknown words into subwords
-1. **Character fallback**: Fall back to character-level for unknown segments
-1. **Byte fallback**: Ultimate fallback to byte representation
+1. **Unknown token.** A word-level vocabulary maps every unseen word to `<UNK>` (the toy tokenizer in {ref}`sec-tdd-token-ids-embeddings`), and WordPiece maps a word to `[UNK]` when no sequence of its pieces covers it ({ref}`sec-tdd-wordpiece`). The text is lost.
+1. **Subword fallback.** BPE and unigram split an unseen word into known pieces, down to single characters if necessary; the word survives as long as its characters are in the base vocabulary.
+1. **Byte fallback.** SentencePiece with `byte_fallback` spells a character outside the vocabulary as its UTF-8 bytes ({ref}`sec-tdd-sentencepiece-library`).
+1. **Bytes as the base.** Byte-level BPE starts from all 256 byte values, so no input is unknown at all ({ref}`sec-tdd-byte-level-bpe`).
 
 (sec-tdd-special-tokens-their-roles)=
 
@@ -459,20 +414,20 @@ Different strategies for unknown tokens:
 
 ### Common Special Tokens
 
-```python
-SPECIAL_TOKENS = {
-    "<BOS>": "Beginning of sequence",
-    "<EOS>": "End of sequence",
-    "<UNK>": "Unknown token",
-    "<PAD>": "Padding token",
-    "<MASK>": "Masked token (for BERT-style training)",
-    "<SEP>": "Separator between segments",
-    "<CLS>": "Classification token",
-    "<|endoftext|>": "Document boundary (GPT)",
-    "<|im_start|>": "Start of instruction/message",
-    "<|im_end|>": "End of instruction/message",
-}
-```
+Special tokens are vocabulary entries that never come from splitting text: the tokenizer or the training pipeline inserts them. Each family of models has its own set:
+
+| Token | Role | Used by |
+| ----- | ---- | ------- |
+| `<s>`, `</s>` (generically `<BOS>`, `<EOS>`) | start and end of a sequence; generation stops at the end token | Mistral ({ref}`sec-tdd-chat-templates`) |
+| `<\|endoftext\|>` | boundary between documents packed into one training sequence | GPT-2's `gpt2` encoding |
+| `[CLS]` | first token of the input; its final vector represents the whole input for classification | BERT {cite}`devlin2018bert` |
+| `[SEP]` | separator between the two segments of an input pair | BERT |
+| `[MASK]` | replaces each token a masked language model must predict | BERT |
+| `[PAD]`, `<PAD>` | fills short sequences up to the batch length; masked out of attention and of the loss | batched training |
+| `[UNK]`, `<UNK>` | stands for input the vocabulary cannot represent | WordPiece and word-level vocabularies |
+| `<\|im_start\|>`, `<\|im_end\|>` | start and end of one chat message, with the speaker's role after the start token | the ChatML chat format |
+
+The byte-level tokenizer of {ref}`sec-tdd-implementation-walkthrough` reserves ids 256 to 260 for `<PAD>`, `<UNK>`, `<BOS>`, `<EOS>` and `<MASK>`.
 
 (sec-tdd-chat-templates)=
 
@@ -563,203 +518,202 @@ Words outside the vocabulary map to the `<UNK>` id, so decoding cannot recover t
 
 ### Choosing Vocabulary Size
 
-Common vocabulary sizes and their trade-offs:
+A larger vocabulary shortens every sequence, most of all for the languages and scripts a smaller one handles poorly ({ref}`sec-tdd-linguistic-bias`), but each entry adds a row of $d$ parameters to the embedding matrix and, unless the two are tied, to the output projection, and widens the softmax at every position. Vocabularies have grown over time:
 
-- **Small (1K-8K)**: character-like; used for code-only or single-domain models
-- **Medium (32K-50K)**: GPT-2 (50k), the original LLaMA (32k); the usual choice for research-scale models
-- **Large (100K-160K)**: GPT-4's `cl100k_base` (~100k), Llama 3 (128k), Qwen (~152k); better compression of multilingual text and code
-- **Very large (250K+)**: Gemma (256k) and multilingual models; the embedding and output matrices become a noticeable share of a small model's parameters
+| Tokenizer | Entries | Source |
+| --------- | ------- | ------ |
+| LLaMA, Llama 2 | 32k | {cite}`touvron2023llama` |
+| `gpt2` (GPT-2) | 50,257 | `n_vocab`, printed in {ref}`sec-tdd-hard-inputs` |
+| `cl100k_base` (GPT-4) | 100,277 | `n_vocab`, printed in {ref}`sec-tdd-hard-inputs` |
+| Llama 3 | 128K: 100K tokens from `tiktoken` plus 28K for other languages | {cite}`grattafiori2024llama` |
+| `o200k_base` | 200,019 | `n_vocab`, printed in {ref}`sec-tdd-hard-inputs` |
+| Gemma 2 | 256k, inherited from Gemini | {cite}`gemma2024gemma2` |
 
-(sec-tdd-efficiency-considerations)=
-
-### Tokenization Efficiency
-
-```python
-import time
-
-
-def benchmark_tokenization(texts, tokenizer):
-    start_time = time.time()
-
-    total_tokens = 0
-    for text in texts:
-        tokens = tokenizer.encode(text)
-        total_tokens += len(tokens)
-
-    end_time = time.time()
-
-    return {
-        "total_time": end_time - start_time,
-        "texts_processed": len(texts),
-        "total_tokens": total_tokens,
-        "tokens_per_second": total_tokens / (end_time - start_time),
-        "texts_per_second": len(texts) / (end_time - start_time),
-    }
-```
+The cost shows in Gemma 2's parameter table: its 27B model spends 1,180,237,824 parameters on the embedding against 26,047,480,320 on everything else, about 4.3% of the total {cite}`gemma2024gemma2`. {ref}`sec-tdd-exercise-4` works out the cost for a model of width 4,096.
 
 (sec-tdd-reversibility-information-loss)=
 
 ### Reversibility and Information Loss
 
-Good tokenizers should be reversible:
-
-```python
-def test_reversibility(tokenizer, texts):
-    """Test if tokenization is reversible."""
-    failures = []
-
-    for text in texts:
-        tokens = tokenizer.encode(text)
-        reconstructed = tokenizer.decode(tokens)
-
-        if text != reconstructed:
-            failures.append(
-                {"original": text, "reconstructed": reconstructed, "tokens": tokens}
-            )
-
-    return failures
-```
+A tokenizer is *reversible* when decoding the ids of any text gives back exactly that text. Byte-level tokenizers are reversible by construction. A tokenizer that changes the text before splitting it (lowercasing, collapsing whitespace, Unicode normalization) is not, and the change stays invisible until a user's text comes back different. The check is a round trip over a varied sample, which the listing in the next subsection runs.
 
 (sec-tdd-unicode-normalization)=
 
 ### Unicode Normalization
 
-The same visible text can be stored as different code points. "café" may end in the single code point U+00E9 or in "e" followed by the combining accent U+0301; a tokenizer that sees only code points or bytes would give the two spellings different tokens. **Normalization** maps such variants to one form before tokenization. Unicode defines two kinds. The canonical forms (NFC composes, NFD decomposes) only merge sequences that are the same character, so they lose nothing a reader could see. The compatibility forms (NFKC, NFKD) also fold characters that merely look alike or play the same role: the ligature "ﬁ" becomes "fi", fullwidth letters become ASCII, a superscript 2 becomes a plain 2. The listing applies NFC and NFKC to a few strings, written as escapes so the output stays in ASCII:
+The same visible text can be stored as different code points. "café" may end in the single code point U+00E9 or in "e" followed by the combining accent U+0301; a tokenizer that sees only code points or bytes would give the two spellings different tokens. **Normalization** maps such variants to one form before tokenization. Unicode defines two kinds. The canonical forms (NFC composes, NFD decomposes) only merge sequences that stand for the same character. The compatibility forms (NFKC, NFKD) also replace a character by a compatibility equivalent that plays the same role in a different shape: the ligature "ﬁ" becomes "fi", fullwidth letters become ASCII, a superscript 2 becomes a plain 2. They do not merge characters that merely look alike: the Cyrillic "а" (U+0430) stays distinct from the Latin "a". The listing normalizes a few strings, written as escapes so the output stays in ASCII, and then runs the round-trip test on three tokenizers: UTF-8 bytes, and code points after NFC or after NFKC.
 
 ```python
 import unicodedata
 
-for text in ["caf\u00e9", "cafe\u0301", "\ufb01le", "\uff21\uff22\uff23", "x\u00b2", "\u2460"]:
-    nfc = unicodedata.normalize("NFC", text)
-    nfkc = unicodedata.normalize("NFKC", text)
-    print(f"{ascii(text):<22} {len(text)} code points | NFC {ascii(nfc):<16} | NFKC {ascii(nfkc)}")
+texts = ["caf\u00e9", "cafe\u0301", "\ufb01le", "\uff21\uff22\uff23", "x\u00b2", "\u2460", "\u0430"]
+for text in texts:
+    nfc, nfkc = (unicodedata.normalize(form, text) for form in ("NFC", "NFKC"))
+    print(f"{ascii(text):<22} length {len(text)} | NFC {ascii(nfc):<16} | NFKC {ascii(nfkc)}")
+
+
+def test_reversibility(encode, decode, texts):
+    """The texts that do not come back unchanged from decode(encode(text))."""
+    return [text for text in texts if decode(encode(text)) != text]
+
+
+def code_points(form):
+    return lambda text: [ord(c) for c in unicodedata.normalize(form, text)]
+
+
+def from_code_points(ids):
+    return "".join(map(chr, ids))
+
+
+tokenizers = {
+    "UTF-8 bytes": (lambda text: list(text.encode("utf-8")), lambda ids: bytes(ids).decode("utf-8")),
+    "NFC code points": (code_points("NFC"), from_code_points),
+    "NFKC code points": (code_points("NFKC"), from_code_points),
+}
+for name, (encode, decode) in tokenizers.items():
+    changed = test_reversibility(encode, decode, texts)
+    print(f"{name:<17} {len(changed)} of {len(texts)} texts changed: {' '.join(ascii(t) for t in changed)}")
 ```
 
 % output
 
 ```text
-'caf\xe9'              4 code points | NFC 'caf\xe9'        | NFKC 'caf\xe9'
-'cafe\u0301'           5 code points | NFC 'caf\xe9'        | NFKC 'caf\xe9'
-'\ufb01le'             3 code points | NFC '\ufb01le'       | NFKC 'file'
-'\uff21\uff22\uff23'   3 code points | NFC '\uff21\uff22\uff23' | NFKC 'ABC'
-'x\xb2'                2 code points | NFC 'x\xb2'          | NFKC 'x2'
-'\u2460'               1 code points | NFC '\u2460'         | NFKC '1'
+'caf\xe9'              length 4 | NFC 'caf\xe9'        | NFKC 'caf\xe9'
+'cafe\u0301'           length 5 | NFC 'caf\xe9'        | NFKC 'caf\xe9'
+'\ufb01le'             length 3 | NFC '\ufb01le'       | NFKC 'file'
+'\uff21\uff22\uff23'   length 3 | NFC '\uff21\uff22\uff23' | NFKC 'ABC'
+'x\xb2'                length 2 | NFC 'x\xb2'          | NFKC 'x2'
+'\u2460'               length 1 | NFC '\u2460'         | NFKC '1'
+'\u0430'               length 1 | NFC '\u0430'         | NFKC '\u0430'
+UTF-8 bytes       0 of 7 texts changed: 
+NFC code points   1 of 7 texts changed: 'cafe\u0301'
+NFKC code points  5 of 7 texts changed: 'cafe\u0301' '\ufb01le' '\uff21\uff22\uff23' 'x\xb2' '\u2460'
 ```
 
-Both spellings of "café" become the same four code points under either form. NFKC goes further, and that is the trade-off: "x²" and "x2" become the same text, so a tokenizer that applies NFKC is not reversible in the sense of the test above. SentencePiece applies an NFKC-based normalization by default ({ref}`sec-tdd-sentencepiece-library`); GPT-2's byte-level BPE works on the bytes as given, so it never merges variants but always decodes back to the exact input ({ref}`sec-tdd-byte-level-bpe`).
+Both spellings of "café" become the same four code points under either form, so even NFC breaks a byte-exact round trip: the decomposed spelling comes back composed. NFKC changes five of the seven strings, and some of what it removes is visible to a reader: "x²" and "x2" become the same text. SentencePiece applies an NFKC-based normalization by default ({ref}`sec-tdd-sentencepiece-library`); GPT-2's byte-level BPE works on the bytes as given, so it never merges variants but always decodes back to the exact input ({ref}`sec-tdd-byte-level-bpe`).
 
 (sec-tdd-tokenization-challenges-solutions)=
 
 ## T.6 Tokenization Challenges and Solutions
 
+(sec-tdd-hard-inputs)=
+
+### Real Tokenizers on Hard Inputs
+
+The subsections below discuss inputs that strain a tokenizer: compounds, words built from many suffixes, text without spaces, code, URLs, numbers and specialist vocabulary. The listing encodes one example of each with the three OpenAI encodings of {ref}`sec-tdd-linguistic-bias`, prints each vocabulary's size and the token counts, and shows the pieces of the examples discussed in most detail. A `�` marks a token that holds only part of a character's UTF-8 bytes.
+
+```python
+# network
+import hashlib
+import os
+import tempfile
+import urllib.request
+
+import tiktoken
+
+# tiktoken downloads its encoding files without a User-Agent we can set, so fetch them ourselves into the
+# cache directory tiktoken reads (file name: SHA-1 of the URL) and send LLMATLAS_USER_AGENT.
+USER_AGENT = os.environ.get("LLMATLAS_USER_AGENT", "Mozilla/5.0 (compatible; reader)")
+BLOB = "https://openaipublic.blob.core.windows.net/"
+FILES = {
+    "gpt2": ["gpt-2/encodings/main/vocab.bpe", "gpt-2/encodings/main/encoder.json"],
+    "cl100k_base": ["encodings/cl100k_base.tiktoken"],
+    "o200k_base": ["encodings/o200k_base.tiktoken"],
+}
+CACHE = os.environ.setdefault("TIKTOKEN_CACHE_DIR", os.path.join(tempfile.gettempdir(), "tiktoken-cache"))
+
+
+def get_encoding(name):
+    os.makedirs(CACHE, exist_ok=True)
+    for path in FILES[name]:
+        target = os.path.join(CACHE, hashlib.sha1((BLOB + path).encode()).hexdigest())
+        if not os.path.exists(target):
+            request = urllib.request.Request(BLOB + path, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(request, timeout=60) as response, open(target, "wb") as f:
+                f.write(response.read())
+    return tiktoken.get_encoding(name)
+
+
+names = ["gpt2", "cl100k_base", "o200k_base"]
+encodings = {name: get_encoding(name) for name in names}
+samples = {
+    "German": "Donaudampfschifffahrtsgesellschaftskapitän",
+    "Turkish": "evlerimizde",
+    "Chinese": "我喜欢学习自然语言处理",
+    "English": "The transformer architecture revolutionized natural language processing.",
+    "Medical": "Patient presents with myocardial infarction and diabetes mellitus type 2",
+    "Legal": "The aforementioned clause notwithstanding the heretofore provisions",
+    "URL": "https://www.example.com/path/to/page?param=value",
+    "Code": "def fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)\n",
+    "Digits": "12345678",
+    "Decimal": "1,234,567.89",
+    "ISO date": "2023-12-25",
+}
+print(f"{'vocabulary':<10}" + "".join(f"{encodings[n].n_vocab:>13,}" for n in names))
+print(f"{'tokens':<10}" + "".join(f"{n:>13}" for n in names))
+for label, text in samples.items():
+    print(f"{label:<10}" + "".join(f"{len(encodings[n].encode(text)):>13}" for n in names))
+for label in ["German", "Turkish", "Chinese", "Digits", "Decimal", "ISO date"]:
+    for n in names:
+        pieces = [encodings[n].decode([i]) for i in encodings[n].encode(samples[label])]
+        print(f"{label:<9} {n:<12} {'|'.join(pieces)}")
+```
+
+% output
+
+```text
+vocabulary       50,257      100,277      200,019
+tokens             gpt2  cl100k_base   o200k_base
+German               19           17           13
+Turkish               5            5            4
+Chinese              26           13            6
+English               9            9            9
+Medical              16           15           12
+Legal                 9           10           10
+URL                  17           11           11
+Code                 49           28           28
+Digits                3            3            3
+Decimal               8            7            7
+ISO date              6            6            6
+German    gpt2         Don|aud|amp|fs|ch|if|ff|ah|r|ts|ges|ells|cha|ft|sk|ap|it|ä|n
+German    cl100k_base  D|ona|ud|amp|fs|ch|if|ff|ah|rt|sg|es|ellschaft|sk|ap|it|än
+German    o200k_base   D|ona|ud|amp|fsch|if|ff|ahr|ts|gesellschaft|skap|it|än
+Turkish   gpt2         ev|ler|im|iz|de
+Turkish   cl100k_base  ev|ler|im|iz|de
+Turkish   o200k_base   ev|ler|imiz|de
+Chinese   gpt2         �|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�
+Chinese   cl100k_base  我|�|�|�|�|学|�|�|自|然|语|言|处理
+Chinese   o200k_base   我|喜欢|学习|自然|语言|处理
+Digits    gpt2         123|45|678
+Digits    cl100k_base  123|456|78
+Digits    o200k_base   123|456|78
+Decimal   gpt2         1|,|234|,|5|67|.|89
+Decimal   cl100k_base  1|,|234|,|567|.|89
+Decimal   o200k_base   1|,|234|,|567|.|89
+ISO date  gpt2         20|23|-|12|-|25
+ISO date  cl100k_base  202|3|-|12|-|25
+ISO date  o200k_base   202|3|-|12|-|25
+```
+
 (sec-tdd-cross-lingual-tokenization)=
 
 ### Cross-Lingual Tokenization
 
-Different languages present unique tokenization challenges:
+**Compounding languages.** German writes compounds as one word. *Donaudampfschifffahrtsgesellschaftskapitän* ("Danube steamship company captain") is built from Donau, Dampf, Schiff, Fahrt, Gesellschaft and Kapitän, but no encoding finds those parts: `o200k_base` needs 13 tokens, of which only `gesellschaft` is a whole part, and `gpt2` needs 19. BPE merges what was frequent in its training data, not what is meaningful.
 
-**Compounding Languages** (German):
+**Agglutinative languages.** Turkish *evlerimizde* ("in our houses") is ev (house) + ler (plural) + imiz (our) + de (in). `o200k_base` splits it exactly so, `ev|ler|imiz|de`; the two older encodings split *imiz* into `im|iz`.
 
-```python
-# German compound words
-examples = {
-    "Donaudampfschifffahrtsgesellschaftskapitän": "Danube steamship company captain",
-    "Rindfleischetikettierungsüberwachungsaufgabenübertragungsgesetz": "Beef labeling supervision task transfer law",
-}
-
-# Traditional word tokenization would treat these as single rare tokens
-# Subword tokenization can break them into meaningful components:
-# ["Donau", "dampf", "schiff", "fahrt", "s", "gesellschaft", "s", "kapitän"]
-```
-
-**Agglutinative Languages** (Turkish, Finnish):
-
-```python
-# Turkish example: "evlerimizde" = "in our houses"
-# Morphological breakdown:
-# ev (house) + ler (plural) + imiz (our) + de (in/at)
-
-# Good tokenization preserves morphological structure:
-turkish_tokens = ["ev", "ler", "imiz", "de"]  # Ideal
-suboptimal_tokens = ["evl", "erimiz", "de"]  # Suboptimal
-```
-
-**Languages Without Spaces** (Chinese, Japanese, Thai):
-
-```python
-# Chinese doesn't use spaces between words
-chinese_text = "我喜欢学习自然语言处理"
-# Meaning: "I like learning natural language processing"
-
-# Character-level: ["我", "喜", "欢", "学", "习", "自", "然", "语", "言", "处", "理"]
-# Word-level (with segmentation): ["我", "喜欢", "学习", "自然语言处理"]
-# Subword: ["我", "喜欢", "学", "习", "自然", "语言", "处理"]
-```
+**Languages without spaces.** Chinese writes no spaces between words. In *我喜欢学习自然语言处理* ("I like learning natural language processing") `o200k_base` finds the six words 我, 喜欢, 学习, 自然, 语言 and 处理. `cl100k_base` needs 13 tokens, several of them fragments of a character's three UTF-8 bytes, and `gpt2` needs 26 for 11 characters, none of them a whole character.
 
 (sec-tdd-handling-special-cases)=
 
 ### Handling Special Cases
 
-**Code and Technical Text**:
+**Code.** Indentation is syntax in Python. GPT-2's vocabulary has no tokens for runs of spaces, so each indenting space is a token of its own and the four-line `fibonacci` function costs 49 tokens; `cl100k_base` and `o200k_base` have tokens for runs of spaces and for common identifiers such as ` fibonacci`, and need 28.
 
-```python
-code_example = """
-def fibonacci(n):
-    if n <= 1:
-        return n
-    return fibonacci(n-1) + fibonacci(n-2)
-"""
+**URLs and email addresses.** `gpt2` splits `https://www.example.com/path/to/page?param=value` at every punctuation mark, 17 tokens; the newer encodings attach punctuation to the word that follows it (`.example`, `/path`, `=value`) and need 11.
 
-# Challenges:
-# - Preserving code structure
-# - Handling indentation
-# - Function/variable names
-# - Special characters (:, (), +, -, etc.)
-
-# Good tokenization for code:
-# ["def", " fibonacci", "(", "n", "):", "\n", "    if", " n", " <=", " 1", ":", ...]
-```
-
-**URLs and Email Addresses**:
-
-```python
-web_examples = [
-    "https://www.example.com/path/to/page?param=value",
-    "user.name+tag@example.co.uk",
-    "file:///home/user/document.pdf",
-]
-
-# Challenges:
-# - Preserving URL structure
-# - Handling domain names
-# - Special characters (., @, /, ?, =, etc.)
-# - Email format preservation
-```
-
-**Numbers and Dates**:
-
-```python
-numerical_examples = [
-    "3.14159",  # Pi
-    "1,234,567.89",  # Large number with commas
-    "2023-12-25",  # ISO date
-    "12/25/2023",  # US date format
-    "25th December",  # Written date
-    "$1,250.00",  # Currency
-    "42%",  # Percentage
-    "1.2e-5",  # Scientific notation
-]
-
-# Different tokenization strategies:
-# Option 1: Preserve whole numbers
-# ["3.14159", "1,234,567.89", "2023-12-25"]
-
-# Option 2: Split on punctuation
-# ["3", ".", "14159", "1", ",", "234", ",", "567", ".", "89"]
-
-# Option 3: Smart number handling
-# ["3.14159", "1,234,567.89", "2023", "-", "12", "-", "25"]
-```
+**Numbers and dates.** How a model sees digits decides how hard arithmetic is for it. GPT-2 has no rule for digits: runs of digits are merged like any other text, so `12345678` becomes `123|45|678` and the year in `2023-12-25` becomes `20|23`. `cl100k_base` and `o200k_base` cut a run of digits into groups of at most three from the left, `123|456|78`, so the same year becomes `202|3`, and `1,234,567.89` keeps each comma group as one token, where `gpt2` splits 567 into `5|67`. LLaMA goes further and splits every number into single digits {cite}`touvron2023llama`, so that a number is always spelled the same way.
 
 (sec-tdd-domain-adaptation)=
 
@@ -786,7 +740,8 @@ medical_tokens = [
     " 2",
 ]
 
-# GPT-2's encoding (tiktoken "gpt2") splits the medical terms; cl100k_base needs 15 tokens, o200k_base 12
+# GPT-2's encoding (tiktoken "gpt2") splits the medical terms; the network listing above prints 16 tokens
+# for gpt2, 15 for cl100k_base and 12 for o200k_base
 generic_tokens = [
     "Pat", "ient", " presents", " with", " my", "ocard", "ial", " inf", "ar", "ction",
     " and", " diabetes", " mell", "itus", " type", " 2",
@@ -801,14 +756,7 @@ print(f"Domain vocabulary: {len(medical_tokens)} tokens; gpt2: {len(generic_toke
 Domain vocabulary: 10 tokens; gpt2: 16 tokens
 ```
 
-**Legal Text**:
-
-```python
-legal_text = "The aforementioned clause notwithstanding the heretofore provisions"
-
-# Legal language has specific terminology patterns
-# Need specialized vocabulary for legal corpus
-```
+**Legal Text**: `gpt2` splits *heretofore* as `here|to|fore`, its three parts, while both newer encodings give `her|et|of|ore`; the legal sentence of the listing costs 9 tokens in `gpt2` and 10 in the others. A larger vocabulary spends its extra entries on frequent strings, so it does not guarantee better splits of rare words.
 
 (sec-tdd-tokenizer-free)=
 
@@ -833,115 +781,219 @@ for text in ["Hello world", "caf\u00e9", "\u3053\u3093\u306b\u3061\u306f\u4e16\u
 
 English costs one byte per character, Arabic two and Japanese three. The Japanese greeting in the third line is 21 bytes, where GPT-2's tokenizer needs 10 tokens and `o200k_base` needs 2 ({ref}`sec-tdd-linguistic-bias`), so a byte-level model processes about ten times as many positions as a model with a large modern vocabulary for the same text. ByT5 shifts capacity to an encoder three times as deep as its decoder and is, in its authors' words, "competitive with a subword-level baseline" {cite}`xue2022byt5`; the widely used LLMs of this chapter still use subword tokenizers.
 
+
+(sec-tdd-implementation-walkthrough)=
+
+## T.7 Practical Implementation
+
+This section implements a tokenizer end to end. It is byte-level BPE, the scheme GPT-2 introduced: the base vocabulary is the 256 byte values, so any UTF-8 text can be encoded without an unknown token; whitespace stays inside the tokens (a token can start with a space, and runs of spaces or newlines are tokens of their own), so decoding returns the input exactly; and every chunk of the training text counts, however rare. With only 39 merges on a five-sentence corpus, frequent words such as `The` become one token while an unseen word falls back to short pieces.
+
+(sec-tdd-complete-tokenization-pipeline)=
+
+### Complete Tokenization Pipeline
+
+```python
+import re
+from collections import Counter
+from typing import Dict, List, Tuple
+
+# Pre-tokenization in the style of GPT-2: a chunk is an optional leading space followed by letters, digits or
+# punctuation, or a run of whitespace. Joining the chunks gives back the text exactly, so whitespace is kept
+# inside the tokens instead of being thrown away.
+CHUNK = re.compile(r" ?[^\W\d_]+| ?\d+| ?(?:[^\s\w]|_)+|\s+(?!\S)|\s+")
+
+
+class ComprehensiveTokenizer:
+    """Byte-level BPE: 256 byte tokens, five special tokens, then learned merges. Every text round-trips."""
+
+    def __init__(self, vocab_size: int = 300):
+        assert vocab_size >= 256 + 5
+        self.vocab_size = vocab_size
+        self.vocab: Dict[int, bytes] = {i: bytes([i]) for i in range(256)}  # id -> the bytes it stands for
+        names = ["<PAD>", "<UNK>", "<BOS>", "<EOS>", "<MASK>"]
+        self.special_tokens = {name: 256 + i for i, name in enumerate(names)}  # ids 256..260
+        self.merges: Dict[Tuple[int, int], int] = {}  # (left id, right id) -> merged id, in training order
+
+    @staticmethod
+    def _merge(ids: List[int], pair: Tuple[int, int], new_id: int) -> List[int]:
+        out, i = [], 0
+        while i < len(ids):
+            if i < len(ids) - 1 and (ids[i], ids[i + 1]) == pair:
+                out.append(new_id)
+                i += 2
+            else:
+                out.append(ids[i])
+                i += 1
+        return out
+
+    def train_bpe(self, corpus: List[str], verbose: bool = True) -> None:
+        """Learn vocab_size - 261 merges. Every chunk is counted; nothing is dropped for being rare."""
+        chunk_freq = Counter(c for text in corpus for c in CHUNK.findall(text))
+        words = {chunk: list(chunk.encode("utf-8")) for chunk in chunk_freq}
+        next_id = 256 + len(self.special_tokens)
+        while next_id < self.vocab_size:
+            pairs = Counter()
+            for chunk, ids in words.items():
+                for pair in zip(ids, ids[1:]):
+                    pairs[pair] += chunk_freq[chunk]
+            if not pairs:
+                break
+            best = max(pairs, key=lambda p: (pairs[p], -p[0], -p[1]))  # ties go to the smaller ids
+            self.merges[best] = next_id
+            self.vocab[next_id] = self.vocab[best[0]] + self.vocab[best[1]]
+            words = {chunk: self._merge(ids, best, next_id) for chunk, ids in words.items()}
+            next_id += 1
+        if verbose:
+            print(f"Training complete. {len(self.merges)} merges, vocabulary size {len(self.vocab) + 5}")
+
+    def encode_chunk(self, chunk: str) -> List[int]:
+        ids = list(chunk.encode("utf-8"))
+        while len(ids) > 1:
+            # apply the earliest-learned merge present, as the trainer did
+            pair = min(zip(ids, ids[1:]), key=lambda p: self.merges.get(p, float("inf")))
+            if pair not in self.merges:
+                break
+            ids = self._merge(ids, pair, self.merges[pair])
+        return ids
+
+    def encode(self, text: str) -> List[int]:
+        ids = [self.special_tokens["<BOS>"]]
+        for chunk in CHUNK.findall(text):
+            ids.extend(self.encode_chunk(chunk))
+        return ids + [self.special_tokens["<EOS>"]]
+
+    def decode(self, ids: List[int]) -> str:
+        data = b"".join(self.vocab[i] for i in ids if i in self.vocab)  # special ids are not in vocab
+        return data.decode("utf-8", errors="replace")
+
+    def pieces(self, text: str) -> List[str]:
+        """The tokens of `text` as strings, for display (special tokens left out)."""
+        return [self.vocab[i].decode("utf-8", errors="replace") for i in self.encode(text)[1:-1]]
+
+
+sample_corpus = [
+    "The quick brown fox jumps over the lazy dog",
+    "A journey of a thousand miles begins with a single step",
+    "To be or not to be that is the question",
+    "The only thing we have to fear is fear itself",
+    "Ask not what your country can do for you",
+] * 100
+
+tokenizer = ComprehensiveTokenizer(vocab_size=300)  # 39 merges: small enough that words still split
+tokenizer.train_bpe(sample_corpus)
+
+for text in ["The quick brown fox.", "Hello, world!", "two  spaces\nand a newline", "unthinkable", "你好"]:
+    assert tokenizer.decode(tokenizer.encode(text)) == text, text  # exact round trip, including whitespace
+for text in ["The quick brown fox.", "two  spaces\nand a newline", "unthinkable"]:  # the last is unseen
+    print(f"{text!r} -> {tokenizer.pieces(text)}")
+
+
+# --- Measuring the tokenizer on text it was not trained on ---
+def evaluate_tokenization_quality(tokenizer, corpus):
+    """Characters and bytes per token (special ids not counted) and the share of texts that do not round-trip."""
+    special = set(tokenizer.special_tokens.values())
+    n_chars = n_bytes = n_tokens = errors = 0
+    for text in corpus:
+        ids = tokenizer.encode(text)
+        n_chars += len(text)
+        n_bytes += len(text.encode("utf-8"))
+        n_tokens += sum(1 for i in ids if i not in special)
+        errors += tokenizer.decode(ids) != text
+    return {"chars_per_token": n_chars / n_tokens, "bytes_per_token": n_bytes / n_tokens,
+            "reversibility_errors": errors / len(corpus)}
+
+
+def analyze_tokenization_efficiency(tokenizer, corpus):
+    """Token lengths in bytes, and how many tokens are single bytes, whole pre-tokenized chunks or parts of one."""
+    special = set(tokenizer.special_tokens.values())
+    lengths, kinds = Counter(), Counter()
+    for text in corpus:
+        chunks = set(CHUNK.findall(text))
+        for i in tokenizer.encode(text):
+            if i not in special:
+                piece = tokenizer.vocab[i]
+                lengths[len(piece)] += 1
+                whole = piece.decode("utf-8", "replace") in chunks
+                kinds["single byte" if len(piece) == 1 else "whole chunk" if whole else "part of a chunk"] += 1
+    return dict(sorted(lengths.items())), dict(kinds)
+
+
+held_out = ["The question is what the fox can do for the dog", "Ask a thousand times"]
+print("held out:", {k: round(v, 3) for k, v in evaluate_tokenization_quality(tokenizer, held_out).items()})
+lengths, kinds = analyze_tokenization_efficiency(tokenizer, held_out)
+print("token lengths in bytes:", lengths, "| kinds:", kinds)
+for size in (261, 300, 400):
+    sized = ComprehensiveTokenizer(vocab_size=size)
+    sized.train_bpe(sample_corpus, verbose=False)
+    metrics = evaluate_tokenization_quality(sized, held_out)
+    print(f"vocabulary {size}: {len(sized.merges):>3} merges, {metrics['bytes_per_token']:.3f} bytes per token held out")
+```
+
+% output
+
+```text
+Training complete. 39 merges, vocabulary size 300
+'The quick brown fox.' -> ['The', ' qu', 'i', 'c', 'k', ' b', 'r', 'o', 'w', 'n', ' fo', 'x', '.']
+'two  spaces\nand a newline' -> ['t', 'w', 'o', ' ', ' s', 'p', 'a', 'c', 'es', '\n', 'an', 'd', ' a', ' n', 'e', 'w', 'l', 'in', 'e']
+'unthinkable' -> ['u', 'n', 't', 'h', 'in', 'k', 'a', 'b', 'l', 'e']
+held out: {'chars_per_token': 1.914, 'bytes_per_token': 1.914, 'reversibility_errors': 0.0}
+token lengths in bytes: {1: 15, 2: 10, 3: 8, 4: 2} | kinds: {'whole chunk': 7, 'part of a chunk': 13, 'single byte': 15}
+vocabulary 261:   0 merges, 1.000 bytes per token held out
+vocabulary 300:  39 merges, 1.914 bytes per token held out
+vocabulary 400: 115 merges, 3.722 bytes per token held out
+```
+
+(sec-tdd-tokenization-analysis-tools)=
+
+### Tokenization Analysis Tools
+
+The last block of the listing measures the trained tokenizer on two sentences it has not seen. With 39 merges it averages 1.914 bytes per token (the same number of characters, since the text is ASCII) and decodes both sentences exactly. `analyze_tokenization_efficiency` sorts the 35 tokens: 15 are single bytes, 13 are pieces of a pre-tokenized chunk and 7 are whole chunks, the longest 4 bytes. Words that are frequent in the five training sentences come out whole and other words fall apart into bytes, so on real text this breakdown shows where a vocabulary is too small for the domain. The loop at the end retrains at three vocabulary sizes; {ref}`sec-tdd-best-practices-tokenization` reads its result.
+
 (sec-tdd-tokenization-quality-practice)=
 
-## T.7 Measuring and Improving Tokenization
+## T.8 Measuring and Improving Tokenization
 
-The challenges above call for a way to tell a good tokenizer from a poor one. This section gives the measurements and then the practices they support.
+The challenges of {ref}`sec-tdd-tokenization-challenges-solutions` call for a way to tell a good tokenizer from a poor one. This section names the measurements and then the practices they support.
 
 (sec-tdd-quality-metrics-tokenization)=
 
 ### Quality Metrics for Tokenization
 
-```python
-def evaluate_tokenization_quality(tokenizer, corpus):
-    """Evaluate a tokenizer with encode/decode and special_tokens, such as ComprehensiveTokenizer below."""
-
-    # Only metrics this function actually measures are reported. A byte-level tokenizer has no
-    # out-of-vocabulary tokens, so there is no OOV rate. Morphological consistency and cross-lingual
-    # equity need linguistic annotations or parallel corpora.
-    special = set(tokenizer.special_tokens.values())
-    total_chars = total_bytes = total_tokens = reversibility_errors = 0
-
-    for text in corpus:
-        tokens = tokenizer.encode(text)
-        total_chars += len(text)
-        total_bytes += len(text.encode("utf-8"))
-        total_tokens += sum(1 for token in tokens if token not in special)
-        if tokenizer.decode(tokens) != text:
-            reversibility_errors += 1
-
-    return {
-        "chars_per_token": total_chars / total_tokens,
-        "bytes_per_token": total_bytes / total_tokens,
-        "reversibility_errors": reversibility_errors / len(corpus),
-    }
-
-
-def compare_tokenizers(tokenizers, test_corpus):
-    """Compare multiple tokenizers on the same corpus."""
-    results = {}
-
-    for name, tokenizer in tokenizers.items():
-        results[name] = evaluate_tokenization_quality(tokenizer, test_corpus)
-
-    # Create comparison table
-    import pandas as pd
-
-    df = pd.DataFrame(results).T
-    print("Tokenizer Comparison:")
-    print(df.round(3))
-
-    return df
-```
+Three numbers can be measured on any tokenizer without annotated data: characters per token and bytes per token, which measure compression (more per token means shorter sequences, {ref}`sec-tdd-sequence-length-cost`), and the share of texts that fail the round trip of {ref}`sec-tdd-reversibility-information-loss`. `evaluate_tokenization_quality` in {ref}`sec-tdd-complete-tokenization-pipeline` computes all three and leaves the special ids out of the count. A byte-level tokenizer has no out-of-vocabulary rate to report, because every input is covered. Two further properties are often wanted but need more data: whether splits follow word parts (the Turkish example of {ref}`sec-tdd-cross-lingual-tokenization`) needs morphological annotation, and equal cost across languages needs parallel text, as in {ref}`sec-tdd-linguistic-bias`.
 
 (sec-tdd-best-practices-tokenization)=
 
 ### Best Practices for Tokenization
 
-**1. Vocabulary Size Selection**:
+**1. Vocabulary Size Selection**: Train at several sizes and compare the metrics on held-out text. The last lines of the listing in {ref}`sec-tdd-complete-tokenization-pipeline` do this with `ComprehensiveTokenizer.train_bpe`: with no merges every byte is a token (1.000 bytes per token on the held-out sentences), 39 merges give 1.914, and 115 merges, after which every chunk of the training text is a single token, give 3.722. On a real corpus the sizes tried run from a few thousand entries to the hundreds of thousands of {ref}`sec-tdd-choosing-vocabulary-size`, and the gain in bytes per token is weighed against the parameters each size costs.
 
-```python
-# pseudo-code: `train_bpe_tokenizer` and `evaluate_tokenization_quality` are defined elsewhere in this section
-def find_optimal_vocab_size(corpus, vocab_sizes, validation_corpus=None):
-    """Find optimal vocabulary size through validation."""
-    results = {}
-
-    for vocab_size in vocab_sizes:
-        # Train tokenizer
-        tokenizer = train_bpe_tokenizer(corpus, vocab_size)
-
-        # Evaluate on validation set
-        if validation_corpus:
-            metrics = evaluate_tokenization_quality(tokenizer, validation_corpus)
-            results[vocab_size] = metrics
-
-    return results
-
-
-# Typical ranges to test:
-vocab_sizes = [1000, 2000, 4000, 8000, 16000, 32000, 50000, 64000]
-```
-
-**2. Preprocessing Strategies**:
+**2. Preprocessing**: Any change to the text before tokenization is a change the decoder cannot undo. The listing compares a conservative strategy (strip the ends) with an aggressive one (collapse every run of whitespace, remove the space before punctuation) on a line of prose and on two lines of Python:
 
 ```python
 import re
 
-def preprocess_for_tokenization(text, strategy="conservative"):
-    """Apply preprocessing before tokenization."""
 
-    if strategy == "conservative":
-        # Minimal preprocessing
-        return text.strip()
+def preprocess(text, strategy):
+    if strategy == "aggressive":
+        text = re.sub(r"\s+", " ", text)  # collapse every run of whitespace, newlines included
+        text = re.sub(r"\s+([,.!?])", r"\1", text)  # remove the space before punctuation
+    return text.strip()
 
-    elif strategy == "aggressive":
-        # Normalize whitespace
-        text = re.sub(r"\s+", " ", text)
 
-        # Handle special cases
-        text = re.sub(r"\s+([,.!?])", r"\1", text)  # Remove space before punctuation
-
-        return text.strip()
-
-    elif strategy == "code_aware":
-        # Preserve code structure
-        # Don't normalize indentation
-        # Keep special programming characters
-        return text
-
-    return text
+prose = "  Wait , what ?  Really !"
+code = "def f(x):\n    return x + 1\n"
+for strategy in ["conservative", "aggressive"]:
+    print(f"{strategy:<12} {preprocess(prose, strategy)!r:<26} {preprocess(code, strategy)!r}")
 ```
+
+% output
+
+```text
+conservative 'Wait , what ?  Really !'  'def f(x):\n    return x + 1'
+aggressive   'Wait, what? Really!'      'def f(x): return x + 1'
+```
+
+The aggressive strategy tidies the prose but deletes the newline and the indentation that are the code's syntax, so it suits neither a code model nor any model whose output must reproduce its input. Byte-level tokenizers such as GPT-2's apply no preprocessing at all.
 
 **3. Handling Rare Tokens**:
 
@@ -986,7 +1038,7 @@ def analyze_token_frequency(corpus, tokenizer):
     plt.legend(loc="upper right")
     plt.xlabel("Token rank")
     plt.ylabel("Frequency")
-    plt.title("Token frequency distribution (Zipf's law)")
+    plt.title("Token frequency by rank, with a slope -1 reference line")
     plt.grid(True)
     plt.show()
 
@@ -1044,211 +1096,7 @@ The listing's plot for its fixed sample, the 268 words of the Gettysburg Address
 
 {numref}`fig-ch1-word-frequency` shows the plot. A text this short shows the shape only roughly: Zipf's law describes large corpora, and a few hundred words cannot hold a long sequence of ranks with distinct counts.
 
-
-**4. Multi-Domain Tokenization**:
-
-```python
-# pseudo-code: `train_tokenizer` stands for any tokenizer trainer
-def create_multi_domain_tokenizer(domain_corpora, vocab_size=32000):
-    """Create tokenizer that works well across multiple domains."""
-
-    # Combine corpora with domain balancing
-    combined_corpus = []
-    min_size = min(len(corpus) for corpus in domain_corpora.values())
-
-    for domain, corpus in domain_corpora.items():
-        # Sample equally from each domain
-        sampled = random.sample(corpus, min_size)
-        combined_corpus.extend(sampled)
-
-    # Train on balanced corpus
-    tokenizer = train_tokenizer(combined_corpus, vocab_size)
-
-    # Evaluate on each domain
-    domain_performance = {}
-    for domain, corpus in domain_corpora.items():
-        metrics = evaluate_tokenization_quality(tokenizer, corpus[:1000])
-        domain_performance[domain] = metrics
-
-    return tokenizer, domain_performance
-```
-
-(sec-tdd-implementation-walkthrough)=
-
-## T.8 Practical Implementation
-
-This section implements a tokenizer end to end. It is byte-level BPE, the scheme GPT-2 introduced: the base vocabulary is the 256 byte values, so any UTF-8 text can be encoded without an unknown token; whitespace stays inside the tokens (a token can start with a space, and runs of spaces or newlines are tokens of their own), so decoding returns the input exactly; and every chunk of the training text counts, however rare. With only 39 merges on a five-sentence corpus, frequent words such as `The` become one token while an unseen word falls back to short pieces.
-
-(sec-tdd-complete-tokenization-pipeline)=
-
-### Complete Tokenization Pipeline
-
-```python
-import re
-from collections import Counter
-from typing import Dict, List, Tuple
-
-# Pre-tokenization in the style of GPT-2: a chunk is an optional leading space followed by letters, digits or
-# punctuation, or a run of whitespace. Joining the chunks gives back the text exactly, so whitespace is kept
-# inside the tokens instead of being thrown away.
-CHUNK = re.compile(r" ?[^\W\d_]+| ?\d+| ?(?:[^\s\w]|_)+|\s+(?!\S)|\s+")
-
-
-class ComprehensiveTokenizer:
-    """Byte-level BPE: 256 byte tokens, five special tokens, then learned merges. Every text round-trips."""
-
-    def __init__(self, vocab_size: int = 300):
-        assert vocab_size >= 256 + 5
-        self.vocab_size = vocab_size
-        self.vocab: Dict[int, bytes] = {i: bytes([i]) for i in range(256)}  # id -> the bytes it stands for
-        names = ["<PAD>", "<UNK>", "<BOS>", "<EOS>", "<MASK>"]
-        self.special_tokens = {name: 256 + i for i, name in enumerate(names)}  # ids 256..260
-        self.merges: Dict[Tuple[int, int], int] = {}  # (left id, right id) -> merged id, in training order
-
-    @staticmethod
-    def _merge(ids: List[int], pair: Tuple[int, int], new_id: int) -> List[int]:
-        out, i = [], 0
-        while i < len(ids):
-            if i < len(ids) - 1 and (ids[i], ids[i + 1]) == pair:
-                out.append(new_id)
-                i += 2
-            else:
-                out.append(ids[i])
-                i += 1
-        return out
-
-    def train_bpe(self, corpus: List[str]) -> None:
-        """Learn vocab_size - 261 merges. Every chunk is counted; nothing is dropped for being rare."""
-        chunk_freq = Counter(c for text in corpus for c in CHUNK.findall(text))
-        words = {chunk: list(chunk.encode("utf-8")) for chunk in chunk_freq}
-        next_id = 256 + len(self.special_tokens)
-        while next_id < self.vocab_size:
-            pairs = Counter()
-            for chunk, ids in words.items():
-                for pair in zip(ids, ids[1:]):
-                    pairs[pair] += chunk_freq[chunk]
-            if not pairs:
-                break
-            best = max(pairs, key=lambda p: (pairs[p], -p[0], -p[1]))  # ties go to the smaller ids
-            self.merges[best] = next_id
-            self.vocab[next_id] = self.vocab[best[0]] + self.vocab[best[1]]
-            words = {chunk: self._merge(ids, best, next_id) for chunk, ids in words.items()}
-            next_id += 1
-        print(f"Training complete. {len(self.merges)} merges, vocabulary size {len(self.vocab) + 5}")
-
-    def encode_chunk(self, chunk: str) -> List[int]:
-        ids = list(chunk.encode("utf-8"))
-        while len(ids) > 1:
-            # apply the earliest-learned merge present, as the trainer did
-            pair = min(zip(ids, ids[1:]), key=lambda p: self.merges.get(p, float("inf")))
-            if pair not in self.merges:
-                break
-            ids = self._merge(ids, pair, self.merges[pair])
-        return ids
-
-    def encode(self, text: str) -> List[int]:
-        ids = [self.special_tokens["<BOS>"]]
-        for chunk in CHUNK.findall(text):
-            ids.extend(self.encode_chunk(chunk))
-        return ids + [self.special_tokens["<EOS>"]]
-
-    def decode(self, ids: List[int]) -> str:
-        data = b"".join(self.vocab[i] for i in ids if i in self.vocab)  # special ids are not in vocab
-        return data.decode("utf-8", errors="replace")
-
-    def pieces(self, text: str) -> List[str]:
-        """The tokens of `text` as strings, for display (special tokens left out)."""
-        return [self.vocab[i].decode("utf-8", errors="replace") for i in self.encode(text)[1:-1]]
-
-
-sample_corpus = [
-    "The quick brown fox jumps over the lazy dog",
-    "A journey of a thousand miles begins with a single step",
-    "To be or not to be that is the question",
-    "The only thing we have to fear is fear itself",
-    "Ask not what your country can do for you",
-] * 100
-
-tokenizer = ComprehensiveTokenizer(vocab_size=300)  # 39 merges: small enough that words still split
-tokenizer.train_bpe(sample_corpus)
-
-for text in ["The quick brown fox.", "Hello, world!", "two  spaces\nand a newline", "unthinkable", "你好"]:
-    assert tokenizer.decode(tokenizer.encode(text)) == text, text  # exact round trip, including whitespace
-for text in ["The quick brown fox.", "two  spaces\nand a newline", "unthinkable"]:  # the last is unseen
-    print(f"{text!r} -> {tokenizer.pieces(text)}")
-```
-
-% output
-
-```text
-Training complete. 39 merges, vocabulary size 300
-'The quick brown fox.' -> ['The', ' qu', 'i', 'c', 'k', ' b', 'r', 'o', 'w', 'n', ' fo', 'x', '.']
-'two  spaces\nand a newline' -> ['t', 'w', 'o', ' ', ' s', 'p', 'a', 'c', 'es', '\n', 'an', 'd', ' a', ' n', 'e', 'w', 'l', 'in', 'e']
-'unthinkable' -> ['u', 'n', 't', 'h', 'in', 'k', 'a', 'b', 'l', 'e']
-```
-
-(sec-tdd-tokenization-analysis-tools)=
-
-### Tokenization Analysis Tools
-
-```python
-# pseudo-code: uses `tokenizer` and `sample_corpus` from the previous cell
-import numpy as np
-def analyze_tokenization_efficiency(tokenizer, corpus):
-    """Analyze tokenization efficiency and patterns."""
-
-    results = {
-        "compression_ratios": [],
-        "token_lengths": [],
-        "oov_rates": [],
-        "subword_patterns": Counter(),
-    }
-
-    for text in corpus:
-        # Encode text
-        token_ids = tokenizer.encode(text)
-        tokens = [tokenizer.vocab.get(tid, b"").decode("utf-8", "replace") for tid in token_ids]
-
-        # Calculate compression ratio
-        char_count = len(text)
-        token_count = len(token_ids)
-        compression_ratio = char_count / token_count if token_count > 0 else 0
-        results["compression_ratios"].append(compression_ratio)
-
-        # Track token lengths
-        for token in tokens:
-            if token not in tokenizer.special_tokens:
-                results["token_lengths"].append(len(token))
-
-                # Analyze subword patterns
-                if token.endswith("</w>"):
-                    results["subword_patterns"]["word_final"] += 1
-                elif len(token) == 1:
-                    results["subword_patterns"]["character"] += 1
-                else:
-                    results["subword_patterns"]["subword"] += 1
-
-        # Calculate OOV rate
-        oov_count = sum(
-            1 for tid in token_ids if tid == tokenizer.special_tokens["<UNK>"]
-        )
-        oov_rate = oov_count / len(token_ids) if len(token_ids) > 0 else 0
-        results["oov_rates"].append(oov_rate)
-
-    # Summary statistics
-    print("Tokenization Analysis Results:")
-    print(f"Average compression ratio: {np.mean(results['compression_ratios']):.2f}")
-    print(f"Average token length: {np.mean(results['token_lengths']):.2f}")
-    print(f"Average OOV rate: {np.mean(results['oov_rates']):.3f}")
-    print(f"Subword pattern distribution: {dict(results['subword_patterns'])}")
-
-    return results
-
-
-# Run analysis
-analysis_results = analyze_tokenization_efficiency(tokenizer, sample_corpus)
-```
-
+**4. Multi-Domain Tokenization**: A tokenizer trained on one mixed corpus learns the merges of whichever domain dominates it. To serve several domains, sample the training text so that each domain contributes the same amount, train once, and report the metrics of `evaluate_tokenization_quality` for each domain separately, so that a domain the tokenizer serves poorly shows up as a low bytes-per-token figure. The medical and code examples of {ref}`sec-tdd-hard-inputs` show the size of the effect: the same text costs from 12 to 16 tokens, or from 28 to 49, depending on what the vocabulary was trained on.
 
 (sec-tdd-embeddings-in-practice)=
 
@@ -1260,20 +1108,17 @@ This section extends the chapter's {ref}`sec-ch1-embeddings-positional-encoding`
 
 ### Understanding Embedding Dimensions
 
-The embedding dimension $d$ is a crucial hyperparameter that affects:
+The width $d$ of the embedding is also the width of every vector in the residual stream, so it sets the size of every weight matrix: each projection in attention and in the feed-forward network has $d$ rows or columns, and its parameters and multiply-adds grow with $d^2$ when its other dimension grows with $d$. The embedding table itself holds $|\mathcal{V}| \times d$ parameters. The widths of some published models:
 
-**Representational Capacity**: Higher dimensions can encode more information
+| Model | $d$ | Source |
+| ----- | --- | ------ |
+| T5-small | 512 | its released configuration (`d_model`) |
+| GPT-2 small | 768 | {cite}`radford2019language` |
+| Llama 3 8B | 4,096 | {cite}`grattafiori2024llama` |
+| Llama 3 70B | 8,192 | {cite}`grattafiori2024llama` |
+| Llama 3 405B | 16,384 | {cite}`grattafiori2024llama` |
 
-- 128-256d: Small models, limited expressiveness
-- 512-1024d: Medium models, good balance
-- 2048-4096d: Large models, rich representations
-- 8192d+: Very large models, potential diminishing returns
-
-**Computational Cost**: Embedding operations scale with dimension
-
-- Matrix multiplications: the cost of each projection grows linearly with $d$ when its other dimension is fixed
-- Memory usage: $|\mathcal{V}| \times d$ parameters just for embeddings
-- Attention computation: Affects all transformer operations
+Width grows with model size, but much more slowly than the parameter count: from Llama 3 8B to 405B the width grows four times while the parameter count grows about fifty times.
 
 (sec-tdd-embedding-visualization)=
 
@@ -1339,37 +1184,36 @@ for group in semantic_groups:
 
 ### Position Encoding Trade-offs
 
-The listing plots the extra parameters each scheme of {ref}`sec-ch1-positional-encodings` adds as the maximum length grows:
+The listing compares the extra parameters each scheme of {ref}`sec-ch1-positional-encodings` adds as the maximum length grows, at the sizes of T5-small ($d = 512$, 8 heads, 32 buckets). T5 keeps one bias table in the encoder's self-attention and one in the decoder's, each shared by all the layers of its stack; T5-small's released configuration (`relative_attention_num_buckets` 32, `num_heads` 8) gives $2 \times 32 \times 8 = 512$ parameters. A token embedding table for a 32,000-entry vocabulary is drawn for scale. The vertical axis is logarithmic, so lines that differ by orders of magnitude stay apart; the schemes that add no parameters (sinusoidal, RoPE, ALiBi) cannot be drawn on it and are listed instead.
 
 ```python
 import matplotlib.pyplot as plt
 
 
 def compare_position_encodings():
-    """Extra parameters each positional scheme adds, as a function of maximum length."""
-    seq_lens = [128, 512, 1024, 2048, 4096]
-    d_model, num_heads, num_buckets = 512, 8, 32
-
+    """Extra parameters each positional scheme adds, as a function of maximum length (T5-small's sizes)."""
+    seq_lens = [128, 256, 512, 1024, 2048, 4096]
+    d_model, num_heads, num_buckets, num_stacks, vocab = 512, 8, 32, 2, 32_000
     results = {
-        "Sinusoidal": [0 for _ in seq_lens],                                        # no parameters
-        "Learned absolute": [n * d_model for n in seq_lens],                        # one vector per position
-        "Relative bias (T5)": [num_buckets * num_heads for _ in seq_lens],  # per (bucket, head), all layers
-        "RoPE": [0 for _ in seq_lens],                                              # no parameters
+        "Token embedding, 32,000 entries": [vocab * d_model for _ in seq_lens],  # for scale; not a position cost
+        "Learned absolute": [n * d_model for n in seq_lens],  # one d-vector per position
+        "Relative bias (T5, 2 stacks)": [num_stacks * num_buckets * num_heads for _ in seq_lens],  # a table per stack
     }
+    print(f"{'max length':<32}" + "".join(f"{n:>11,}" for n in seq_lens))
     for method, params in results.items():
-        print(f"{method:<19}", " ".join(f"{p:>9,}" for p in params))
+        print(f"{method:<32}" + "".join(f"{p:>11,}" for p in params))
+    print("no parameters: sinusoidal, RoPE, ALiBi")
 
-    plt.figure(figsize=(6.4, 3.6))
-    styles = {"Sinusoidal": ("o", "-"), "Learned absolute": ("s", "-"), "Relative bias (T5)": ("^", "-"),
-              "RoPE": ("x", "--")}  # sinusoidal and RoPE overlap at zero, so they differ in marker and dash
-    for method, params in results.items():
-        marker, dash = styles[method]
-        plt.plot(seq_lens, [p / 1e6 for p in params], marker=marker, linestyle=dash, label=method)
+    plt.figure(figsize=(6.4, 3.8))
+    for (method, params), (marker, dash) in zip(results.items(), [("", "--"), ("s", "-"), ("^", "-")]):
+        plt.plot(seq_lens, params, marker=marker or None, linestyle=dash, label=method)
+    plt.xscale("log", base=2)
+    plt.yscale("log")
     plt.xlabel("Maximum sequence length", fontsize=11.5)
-    plt.ylabel("Additional parameters (millions)", fontsize=11.5)
-    plt.title("Parameter cost of positions (sinusoidal and RoPE add none)", fontsize=12)
+    plt.ylabel("Extra parameters", fontsize=11.5)
+    plt.title("Parameters spent on positions (log scale)", fontsize=12)
     plt.tick_params(labelsize=11)
-    plt.legend(fontsize=11)
+    plt.legend(fontsize=11, loc="center right")
     plt.grid(True)
     plt.show()
 
@@ -1380,22 +1224,22 @@ compare_position_encodings()
 % output
 
 ```text
-Sinusoidal                  0         0         0         0         0
-Learned absolute       65,536   262,144   524,288 1,048,576 2,097,152
-Relative bias (T5)        256       256       256       256       256
-RoPE                        0         0         0         0         0
+max length                              128        256        512      1,024      2,048      4,096
+Token embedding, 32,000 entries  16,384,000 16,384,000 16,384,000 16,384,000 16,384,000 16,384,000
+Learned absolute                     65,536    131,072    262,144    524,288  1,048,576  2,097,152
+Relative bias (T5, 2 stacks)            512        512        512        512        512        512
+no parameters: sinusoidal, RoPE, ALiBi
 ```
 
 ```{figure} figures/position-parameter-cost.*
 :name: fig-ch1-position-parameter-cost
 :width: 77%
-:alt: Four lines over maximum lengths 128 to 4096: learned absolute rises to about 2.1 million parameters; relative bias stays at 256; sinusoidal and RoPE stay at 0 and overlap.
+:alt: Log-log plot over maximum lengths 128 to 4096. A dashed flat line for the token embedding sits at 16.4 million; the learned absolute line rises from about 65 thousand to 2.1 million; the T5 relative bias line stays flat at 512.
 
-The listing's plot, $d = 512$, in millions of parameters. Only learned absolute positions grow with the length. Three lines lie on the axis: T5's relative bias is a constant 256 parameters (32 buckets times 8 heads), too few to leave the axis at this scale, and sinusoidal and RoPE add none.
+The listing's plot on logarithmic axes, at T5-small's sizes. Learned absolute positions grow in proportion to the maximum length, from 65,536 parameters at 128 to 2,097,152 at 4,096, an eighth of the token embedding table (dashed, 16,384,000). T5's two bias tables stay at 512 parameters at any length. Sinusoidal positions, RoPE and ALiBi add none and do not appear on a logarithmic axis.
 ```
 
-{numref}`fig-ch1-position-parameter-cost` plots these numbers. 
-Only learned absolute positions grow with the maximum length, by $d$ parameters per position; T5's bias table is fixed at 32 buckets times 8 heads.
+{numref}`fig-ch1-position-parameter-cost` shows that only learned absolute positions grow with the maximum length, by $d$ parameters per position, and that even at 4,096 positions they are small next to the vocabulary. Their real cost is that the model has no vector at all for a position past the end of the table, the extrapolation problem the relative schemes of {ref}`sec-ch1-positional-encodings` avoid.
 
 (sec-tdd-advanced-embedding-implementation)=
 
@@ -1410,7 +1254,7 @@ import torch
 import torch.nn as nn
 
 class PositionalEncoding(nn.Module):
-    """Enhanced positional encoding with multiple strategies."""
+    """Learned absolute positions ("learned") or none ("none"); other schemes do not belong in this layer."""
 
     def __init__(self, d_model, max_seq_length=5000, encoding_type="learned"):
         super().__init__()
@@ -1419,11 +1263,10 @@ class PositionalEncoding(nn.Module):
 
         if encoding_type == "learned":
             self.position_embeddings = nn.Embedding(max_seq_length, d_model)
-
-        elif encoding_type == "relative":
+        elif encoding_type != "none":
             raise ValueError(
-                "relative position bias is added to the attention scores, not to the input; "
-                "see RelativePositionBias in the chapter"
+                f"{encoding_type!r}: add a table from create_sinusoidal_encoding to the input instead; "
+                "relative schemes (RelativePositionBias, RoPE, ALiBi) act on the attention scores"
             )
 
     def forward(self, x, position_ids=None):
@@ -1431,8 +1274,7 @@ class PositionalEncoding(nn.Module):
             if position_ids is None:
                 position_ids = torch.arange(x.size(1), device=x.device)
             return x + self.position_embeddings(position_ids)
-
-        return x
+        return x  # "none": no positions added
 
 
 class TokenEmbeddingLayer(nn.Module):
@@ -1530,3 +1372,75 @@ Embedding norm: 22.627
 ```
 
 The norm is $\sqrt{512} = 22.627$ because the final LayerNorm rescales every vector to zero mean and unit variance across its 512 features (its $\gamma$ starts at 1 and $\beta$ at 0).
+
+(sec-tdd-summary)=
+
+## Summary
+
+- WordPiece merges the pair that most raises the training likelihood; the unigram model starts large and prunes, keeping the pieces with the largest loss; byte-level BPE starts from the 256 byte values; SentencePiece trains BPE or unigram on raw text with whitespace as a symbol ({ref}`sec-tdd-subword-algorithms`).
+- Real encodings differ widely on the same text: the Japanese greeting takes 10 tokens in `gpt2` and 2 in `o200k_base`, the German compound 19 and 13 ({ref}`sec-tdd-linguistic-bias`, {ref}`sec-tdd-hard-inputs`).
+- Special tokens and chat templates are part of a model's input format, fixed by its training data ({ref}`sec-tdd-special-tokens-their-roles`).
+- A larger vocabulary shortens sequences but costs $|\mathcal{V}| \times d$ parameters per embedding matrix; any normalization, even NFC, breaks the byte-exact round trip ({ref}`sec-tdd-practical-considerations`).
+- Tokenizers split numbers by different rules: learned merges in `gpt2`, groups of at most three digits in `cl100k_base` and `o200k_base`, single digits in LLaMA ({ref}`sec-tdd-handling-special-cases`).
+- A complete byte-level BPE tokenizer fits in one short class and round-trips every text; bytes per token on held-out text measures it ({ref}`sec-tdd-implementation-walkthrough`, {ref}`sec-tdd-tokenization-quality-practice`).
+- Only learned absolute positions cost parameters that grow with the length; T5's bias costs a fixed 512 in T5-small ({ref}`sec-tdd-embeddings-in-practice`).
+
+(sec-tdd-exercises)=
+
+## Exercises
+
+The exercises use the page's listings and are graded as in the chapter: level 1 applies one definition, level 2 combines two. The test suite checks every numerical answer.
+
+(sec-tdd-exercise-1)=
+
+### Exercise T1: A WordPiece score (level 1)
+
+In the WordPiece corpus of {ref}`sec-tdd-subword-listing` ("hug" 10 times, "pug" 5, "pun" 12, "bun" 4, "hugs" 5), compute the count and the score of the pair `##u ##n`. Is it merged before `##g ##s`?
+
+```{admonition} Solution T1
+:class: dropdown
+`##u` occurs in every word, $10 + 5 + 12 + 4 + 5 = 36$ times. `##n` occurs in "pun" and "bun", $12 + 4 = 16$ times, always after `##u`, so the pair also occurs 16 times. Its score is $16 / (36 \cdot 16) = 1/36 = 0.0278$, the same as `##u ##g`: when the second piece never occurs without the first, the score reduces to $1/\operatorname{count}(\text{first piece})$, and `##u` is common. `##g ##s` scores 0.05 and is merged first, although BPE would rank `##u ##n` (16 occurrences) above it (5).
+```
+
+(sec-tdd-exercise-2)=
+
+### Exercise T2: Viterbi against sampling (level 1)
+
+With the unigram probabilities of {ref}`sec-tdd-subword-listing`, compute the probabilities of the segmentations `un happiness` and `un happi ness` and their ratio. The 12 segmentations of "unhappiness" have total probability $2.608 \times 10^{-4}$. What share of it does each of the two carry?
+
+```{admonition} Solution T2
+:class: dropdown
+$P(\text{un happiness}) = 0.08 \times 0.002 = 1.6 \times 10^{-4}$ and $P(\text{un happi ness}) = 0.08 \times 0.02 \times 0.06 = 9.6 \times 10^{-5}$, so the ratio is $5/3 = 1.667$. Their shares are $1.6 / 2.608 = 0.613$ and $0.96 / 2.608 = 0.368$, the values the listing prints. Viterbi always returns the first; sampling returns the second about 0.368 of the time, which is why subword regularization shows the model more than one segmentation of a frequent word.
+```
+
+(sec-tdd-exercise-3)=
+
+### Exercise T3: Bytes of an unseen script (level 1)
+
+The `ComprehensiveTokenizer` of {ref}`sec-tdd-complete-tokenization-pipeline` was trained on five English sentences. How many ids does `tokenizer.encode("你好")` return, and what does `decode` give back?
+
+```{admonition} Solution T3
+:class: dropdown
+Each of the two characters is three UTF-8 bytes, 6 bytes in all. The training text is ASCII, so no merge involves these bytes and each stays a token of its own: 6 byte ids plus `<BOS>` and `<EOS>`, 8 ids. `decode` joins the bytes of the ids that are not special and returns "你好" exactly; the listing asserts this round trip.
+```
+
+(sec-tdd-exercise-4)=
+
+### Exercise T4: What a vocabulary costs (level 2)
+
+A model of width $d = 4096$ does not tie its input embedding and output projection. How many parameters do the two matrices hold together with a 32,000-entry vocabulary, and with the 200,019 entries of `o200k_base`? What fraction of an 8-billion-parameter model is the difference?
+
+```{admonition} Solution T4
+:class: dropdown
+Each matrix holds $|\mathcal{V}| \times d$ parameters, so the pair holds $2\,|\mathcal{V}|\,d$: $2 \times 32{,}000 \times 4{,}096 = 262{,}144{,}000$ and $2 \times 200{,}019 \times 4{,}096 = 1{,}638{,}555{,}648$. The difference is $1{,}376{,}411{,}648$ parameters, $1.376 / 8 = 0.172$ of the model. In return, text in the languages of {ref}`sec-tdd-linguistic-bias` gets shorter: the Arabic greeting falls from 10 tokens in `cl100k_base` to 4 in `o200k_base`.
+```
+
+(sec-tdd-further-reading)=
+
+## Further Reading
+
+- {cite:t}`kudo2018subword` introduces the unigram model and subword regularization, with the pruning algorithm of {ref}`sec-tdd-unigram`.
+- {cite:t}`kudo2018sentencepiece` describes the SentencePiece library.
+- The Hugging Face course's tokenizer chapter {cite}`huggingface2026wordpiece` implements BPE, WordPiece and unigram training step by step.
+- {cite:t}`petrov2023language` measure how much more some languages cost under common tokenizers.
+- {cite:t}`xue2022byt5` train a tokenizer-free byte-level model and compare it with subword models.
