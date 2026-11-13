@@ -24,15 +24,9 @@ Acquisition is where a model's knowledge, its languages, its biases and its lega
 
 {numref}`fig-ch3-acquisition-flow` shows how the parts connect: every source passes the rights checks and is written to the provenance manifest, from which Chapter 4 cleans the text and Chapter 5 samples it by the mixture plan.
 
-```{figure} figures/acquisition-flow.*
----
-name: fig-ch3-acquisition-flow
-alt: >-
-  Flow chart from top to bottom. Four sources (Common Crawl snapshots, your own crawl,
-  curated sources, synthetic text) feed a rights check, which feeds the provenance
-  manifest. The manifest feeds the mixture plan and Chapter 4's cleaning, and both feed
-  Chapter 5.
----
+:::{figure} figures/acquisition-flow.*
+:name: fig-ch3-acquisition-flow
+:alt: Flow chart from top to bottom. Four sources (Common Crawl snapshots, your own crawl, curated sources, synthetic text) feed a rights check, which feeds the provenance manifest. The manifest feeds the mixture plan and Chapter 4's cleaning, and both feed Chapter 5.
 
 From sources to training data. Rights are decided at acquisition
 ({ref}`sec-ch3-rights-licenses-consent`), each kept document gets a manifest record
@@ -40,7 +34,7 @@ From sources to training data. Rights are decided at acquisition
 ({ref}`sec-ch3-mixture-design-token-budgeting`) fixes each source's weight $w_s$ (its
 share of training tokens) and the number of times $e_s$ it is repeated, at most
 $e_{\max}$ epochs, before Chapter 5 samples the cleaned shards.
-```
+:::
 
 Every symbol the book uses is listed on the {ref}`notation page <sec-notation>`, with a link to the section that introduces each symbol used only in this chapter.
 
@@ -104,15 +98,9 @@ The Pile's shares are the paper's "Weight" column: each component's raw size tim
 
 {numref}`fig-ch3-mixtures` draws the same shares as bars, which makes the contrast visible at a glance: The Pile is the only mixture in which the web crawl is not the largest part.
 
-```{figure} figures/mixtures.*
----
-name: fig-ch3-mixtures
-alt: >-
-  Five horizontal stacked bars, one per mixture, split into web crawl, curated web,
-  books, papers, code and other, the last being 5 percent of The Pile. GPT-3 is 60, 25
-  and 16 percent; The Pile 18, 17, 15, 37 and 8; LLaMA 1 82, 6.5, 4.5, 2.5 and 4.5;
-  Dolma 81, 3, 0.2, 2.3 and 13.4; FineWeb 100 percent web crawl.
----
+:::{figure} figures/mixtures.*
+:name: fig-ch3-mixtures
+:alt: Five horizontal stacked bars, one per mixture, split into web crawl, curated web, books, papers, code and other, the last being 5 percent of The Pile. GPT-3 is 60, 25 and 16 percent; The Pile 18, 17, 15, 37 and 8; LLaMA 1 82, 6.5, 4.5, 2.5 and 4.5; Dolma 81, 3, 0.2, 2.3 and 13.4; FineWeb 100 percent web crawl.
 
 The published mixtures of the table above. Numbers are percentages as published and
 rounded, so GPT-3's row sums to 101%. "Other" is what the five columns leave of 100%:
@@ -122,7 +110,7 @@ every source, so its 0.1% is rounding. Segments under 3% are too narrow to label
 the bar; their values are written to the right of the bar. GPT-3 and LLaMA 1 are shares
 of training tokens, The Pile of training bytes after upsampling, Dolma and FineWeb of
 corpus tokens.
-```
+:::
 
 Three things stand out. The web is the bulk of every corpus but The Pile, because nothing else is large enough; The Pile, built to be diverse, takes most of its bytes from papers and curated sources instead. Curated sources are small in tokens but upweighted: Wikipedia is 3% of GPT-3's training tokens while being a tiny fraction of the raw data, and LLaMA samples it for more than two epochs. And the totals have grown fifty-fold in four years, from GPT-3's 300B tokens to the 15T of FineWeb and the roughly 15T used by Llama 3 {cite}`grattafiori2024llama`, which is why the question of whether the supply of human-written text is finite {cite}`villalobos2024run` is now taken seriously.
 
@@ -151,16 +139,9 @@ Two results bound how far a fixed corpus can be stretched:
 
 The effective stock is therefore a count of training tokens, not of distinct tokens, and the four-epoch result is already inside it: it should not be applied a second time. {numref}`fig-ch3-corpus-size` sets the training sets of the table in {ref}`sec-ch3-published-mixtures` against it in the same unit: on a log axis they climb about one order of magnitude every two years, and the largest, at 15T training tokens, is already within a factor of seven of the lower end of the interval.
 
-```{figure} figures/corpus-size.*
----
-name: fig-ch3-corpus-size
-alt: >-
-  Log-scale plot of tokens against year. GPT-3 300 billion in 2020, LLaMA 1 1.4 trillion
-  in 2023, Dolma 3 trillion, FineWeb 15 trillion and Llama 3 15 trillion in 2024. A
-  shaded band from 100 to 1,000 trillion with a dashed line at 300 trillion marks the
-  effective stock of public text, adjusted for quality and repetition; a gray span marks
-  the projected exhaustion years 2026 to 2032.
----
+:::{figure} figures/corpus-size.*
+:name: fig-ch3-corpus-size
+:alt: Log-scale plot of tokens against year. GPT-3 300 billion in 2020, LLaMA 1 1.4 trillion in 2023, Dolma 3 trillion, FineWeb 15 trillion and Llama 3 15 trillion in 2024. A shaded band from 100 to 1,000 trillion with a dashed line at 300 trillion marks the effective stock of public text, adjusted for quality and repetition; a gray span marks the projected exhaustion years 2026 to 2032.
 
 Training-set and corpus sizes against the effective stock of public text. Circles are
 tokens a model was trained on, squares tokens in a released corpus (The Pile is left out
@@ -171,7 +152,7 @@ of 100T to 1,000T tokens and the dashed line the central 300T of the effective s
 quality- and repetition-adjusted, as Epoch AI's summary {cite}`epoch2024runout` states
 them; the gray span is the years in which {cite:t}`villalobos2024run` project it to be
 used up.
-```
+:::
 
 Both results bear directly on acquisition. If repeated tokens are nearly free, then a small, high-quality source is worth collecting even though it will be seen many times. If the stock is finite, then every source lost to opt-outs or licensing is a permanent reduction, and synthetic data ({ref}`sec-ch3-synthetic-data`) stops being optional.
 
@@ -203,22 +184,15 @@ A WARC file is a sequence of gzip members, one per record, so that any record ca
 
 {numref}`fig-ch3-snapshot-layout` follows one path down this hierarchy to a single record, using the index entry that {ref}`sec-ch3-index-targeted-retrieval` looks up.
 
-```{figure} figures/snapshot-layout.*
----
-name: fig-ch3-snapshot-layout
-alt: >-
-  Tree from crawl-data/CC-MAIN-2026-39 to 100 segments, each with warc, wet and wat
-  directories of about 90, 7 and 16 TB per snapshot. One WARC file is drawn as a row of
-  gzip members (request, response, metadata), with the response member at offset
-  48,374,322 and 9,882 bytes long highlighted. A URL index line with that filename,
-  offset and length leads to a range request that fetches exactly that member.
----
+:::{figure} figures/snapshot-layout.*
+:name: fig-ch3-snapshot-layout
+:alt: Tree from crawl-data/CC-MAIN-2026-39 to 100 segments, each with warc, wet and wat directories of about 90, 7 and 16 TB per snapshot. One WARC file is drawn as a row of gzip members (request, response, metadata), with the response member at offset 48,374,322 and 9,882 bytes long highlighted. A URL index line with that filename, offset and length leads to a range request that fetches exactly that member.
 
 The layout of a snapshot. The manifest lists 100,000 WARC files, 1,000 per segment, each
 about a gigabyte and made of one gzip member per record. An index line gives a record's
 file, offset and length; the range request `bytes=48374322-48384203` fetches that member
 alone, and it decompresses without the rest of the file.
-```
+:::
 
 ```python
 # network
@@ -440,23 +414,16 @@ HTTP/1.1 200 OK
 
 {numref}`fig-ch3-warc-record` shows what the three parts of that split are: the WARC header that Common Crawl wrote, the HTTP header the server sent, and the page itself.
 
-```{figure} figures/warc-record.*
----
-name: fig-ch3-warc-record
-alt: >-
-  A gzip member of 9,882 bytes decompresses to one WARC record, drawn as a stack of five
-  bands. The WARC header (WARC/1.0, WARC-Type response, the target URI, WARC-Date
-  2026-09-08T10:00:30Z, the payload digest, Content-Type application/http), a blank
-  line, the HTTP response header starting HTTP/1.1 200 OK, a second blank line, and the
-  HTML payload of 34,357 bytes.
----
+:::{figure} figures/warc-record.*
+:name: fig-ch3-warc-record
+:alt: A gzip member of 9,882 bytes decompresses to one WARC record, drawn as a stack of five bands. The WARC header (WARC/1.0, WARC-Type response, the target URI, WARC-Date 2026-09-08T10:00:30Z, the payload digest, Content-Type application/http), a blank line, the HTTP response header starting HTTP/1.1 200 OK, a second blank line, and the HTML payload of 34,357 bytes.
 
 Anatomy of the response record fetched above. The first two blank lines (`\r\n\r\n`)
 divide the record into `warc_head`, `http_head` and `html`, which is the split the code
 makes. The WARC date and the payload digest are the capture time and digest in the index
 line; a record cut off at the size limit would also carry `WARC-Truncated: length`. The
 HTML length is that of the run shown, so it may differ if the record is fetched again.
-```
+:::
 
 Through the CDX API the same lookup is one request per URL, so a list of a hundred thousand URLs means a hundred thousand requests to the shared index server; at that scale the columnar index is the better route.
 
@@ -526,26 +493,16 @@ The Robots Exclusion Protocol (RFC 9309) {cite}`koster2022robots` lets a site st
 
 {numref}`fig-ch3-robots-decision` lays out the first two rules as the decision a crawler makes before each URL.
 
-```{figure} figures/robots-decision.*
----
-name: fig-ch3-robots-decision
-alt: >-
-  Flow chart from top to bottom. Fetch /robots.txt, reusing a copy for at most 24 hours.
-  A 4xx answer means no restrictions; a 5xx answer or network failure means the whole
-  site is disallowed; a 3xx answer is followed, at least five redirects in a row and
-  even to another host, and the file reached is applied to the original host, while more
-  than five redirects may be treated as unavailable; a 2xx answer is parsed for at least
-  the first 500 KiB and the group for this user agent, or else the star group, is used.
-  The longest matching rule then decides: Allow or no match leads to a fetch at the
-  host's delay, Disallow to skipping the URL.
----
+:::{figure} figures/robots-decision.*
+:name: fig-ch3-robots-decision
+:alt: Flow chart from top to bottom. Fetch /robots.txt, reusing a copy for at most 24 hours. A 4xx answer means no restrictions; a 5xx answer or network failure means the whole site is disallowed; a 3xx answer is followed, at least five redirects in a row and even to another host, and the file reached is applied to the original host, while more than five redirects may be treated as unavailable; a 2xx answer is parsed for at least the first 500 KiB and the group for this user agent, or else the star group, is used. The longest matching rule then decides: Allow or no match leads to a fetch at the host's delay, Disallow to skipping the URL.
 
 The robots.txt decision under RFC 9309. Note the asymmetry between the two failures: a
 missing file (4xx) permits everything, while a server error or network failure (5xx)
 forbids everything. A redirect (3xx) is followed to the file it leads to, up to at least
 five in a row; only beyond five may the crawler give up and treat the file as
 unavailable.
-```
+:::
 
 Python's standard library parses the file:
 
@@ -622,23 +579,15 @@ Bloom filter: 12.0 GB; 8-byte fingerprints: 80 GB
 
 Ten billion URLs fit in 12 GB, a fraction of a single machine's memory, against 80 GB for exact fingerprints. When to fetch is a priority order within each host's queue, set by an estimate of a page's value (links pointing to it, its host's quality) and, for pages already fetched, of how likely it is to have changed since. Two limits protect the frontier from pages that generate links without end, such as calendars with a "next month" link or URLs carrying a fresh session id: a page budget per host, and a cap on URL length and link depth. Choosing how often to re-fetch pages that change at different rates is its own problem, treated by {cite:t}`cho2003effective`; {cite:t}`olston2010web` survey all of these questions.
 
-```{figure} figures/crawler-architecture.*
----
-name: fig-ch3-crawler-architecture
-alt: >-
-  Left to right. Seed URLs and sitemaps fill a frontier of per-host queues. A scheduler,
-  consulting a robots.txt cache, serves the host whose delay expires first, at most one
-  request per host every two seconds. Fetchers handle DNS, connections, timeouts and
-  back-off. Their output goes to a WARC writer and to content deduplication, then to
-  link extraction and canonicalization, and the new URLs join their host's queue in the
-  frontier.
----
+:::{figure} figures/crawler-architecture.*
+:name: fig-ch3-crawler-architecture
+:alt: Left to right. Seed URLs and sitemaps fill a frontier of per-host queues. A scheduler, consulting a robots.txt cache, serves the host whose delay expires first, at most one request per host every two seconds. Fetchers handle DNS, connections, timeouts and back-off. Their output goes to a WARC writer and to content deduplication, then to link extraction and canonicalization, and the new URLs join their host's queue in the frontier.
 
 A crawler's parts. Politeness lives in the scheduler, which is why throughput is bounded
 by the number of hosts in flight rather than by bandwidth. The dashed box closes the
 loop: links found in fetched pages, once canonicalized and checked against the seen-set,
 go back into the frontier.
-```
+:::
 
 Rendering is the expensive option. A page that builds its content with JavaScript yields a near-empty HTML response to a plain fetcher; running a headless browser recovers the content at many times the cost per page. Most training-data crawls do not render, which is one reason single-page applications are under-represented in corpora.
 
@@ -959,7 +908,7 @@ Almost every document on the web is under copyright from the moment it is writte
 
   The US Copyright Office's report on generative AI training (Part 3, pre-publication version of May 2025) reaches no single answer either: "some uses of copyrighted works for generative AI training will qualify as fair use, and some will not" {cite}`usco2025part3`.
 - The **European Union**'s Digital Single Market directive (Directive 2019/790) created a text-and-data-mining exception for scientific research (Article 3) and a general one (Article 4) that applies only where use has not been "expressly reserved by their rightholders in an appropriate manner, such as machine-readable means in the case of content made publicly available online" {cite}`eu2019dsm`. The AI Act (Regulation 2024/1689) requires providers of general-purpose models to "put in place a policy to comply with Union law on copyright" that identifies and complies with those reservations (Article 53(1)(c)), and to publish "a sufficiently detailed summary about the content used for training" on a template from the AI Office (Article 53(1)(d)) {cite}`eu2024aiact`. A robots.txt directive is the most common machine-readable form, but the directive names none, and which forms count is contested.
-- **European courts** have begun to apply these rules to models. In *GEMA v. OpenAI* the Munich Regional Court I (judgment of 11 November 2025, 42 O 14139/24, under appeal) held that song lyrics memorized by a language model are reproduced in it, and that the text-and-data-mining exception covers copies made in assembling the training data but not the training of the model {cite}`gema2025openai`. In England, *Getty Images v. Stability AI* ([2025] EWHC 2863 (Ch), 4 November 2025) went the other way on the model itself: the judge found that the model "does not store any of those Copyright Works" and that "the model weights are not themselves an infringing copy", so Getty's secondary-infringement claim failed {cite}`getty2025stability`. Getty had abandoned its claim about the training itself, for want of evidence that it took place in the United Kingdom, so the court did not rule on it.
+- **European courts** have begun to apply these rules to models. In *GEMA v. OpenAI* the Munich Regional Court I (judgment of 11 November 2025, 42 O 14139/24, under appeal) held that song lyrics memorized by a language model are reproduced in it, and that the text-and-data-mining exception covers copies made in assembling the training data but not the training of the model {cite}`gema2025openai`. In England, *Getty Images v. Stability AI* ([2025] EWHC 2863 (Ch), 4 November 2025) went the other way on the model itself: the judge found that the model "does not store any of those Copyright Works" and that "the model weights are not themselves an infringing copy", so Getty's secondary-infringement claim failed {cite}`getty2025stability`. Getty had abandoned its claim about the training itself, for want of evidence that it took place in the United Kingdom, so the court did not rule on it. In Germany, *Kneschke v. LAION* concerned a photograph that had been downloaded to check a caption against its image when a public image-text dataset was assembled. The Hamburg Regional Court (27 September 2024, 310 O 227/23) dismissed the photographer's claim: the copy was covered by the exception for text and data mining for scientific research (section 60d of the Copyright Act), and whether the general exception (section 44b) also applied "does not need to be conclusively assessed" {cite}`lghamburg2024laion`. On the section 44b point, which the court discussed anyway, it said it "tends to regard a reservation of use written solely in 'natural language' as 'machine understandable'", depending on the technology available when the work was used. The Hanseatic Higher Regional Court dismissed the appeal on 10 December 2025 (5 U 104/24). On the reservation it held that the claimant had not shown that his natural-language reservation was machine-readable at the time of use, and it allowed an appeal on points of law, since no highest-court ruling on sections 44b and 60d exists {cite}`olghamburg2025laion`.
 - **Japan**'s Copyright Act, Article 30-4, permits exploiting a work in any case "in which it is not a person's purpose to personally enjoy or cause another person to enjoy the thoughts or sentiments expressed in that work", which covers training, unless the use "would unreasonably prejudice the interests of the copyright owner" {cite}`japan2024copyright`. The **United Kingdom** allows copying for text and data analysis only "for the sole purpose of research for a non-commercial purpose" (section 29A of the Copyright, Designs and Patents Act 1988) {cite}`uk1988cdpa29a`. Its government published a consultation on a broader exception on 17 December 2024 {cite}`ukipo2024consultation`, and the Data (Use and Access) Act 2025 then required it to publish, within nine months of the Act's passing, an economic impact assessment of the consultation's four policy options and a report on the use of copyright works in developing AI systems (sections 135 and 136) {cite}`uk2025duaa`. **Singapore**'s Copyright Act 2021 has a statutory exception for computational data analysis: in its Part 5 (permitted uses), Division 8, section 243 defines what computational data analysis is and section 244 permits "copying or communicating for computational data analysis" {cite}`singapore2021copyright`.
 
 Copyright is not the only legal route. A site's terms of service raise a contract question, and in the United States anti-hacking law adds another: the Computer Fraud and Abuse Act forbids accessing a protected computer "without authorization". In *hiQ Labs v. LinkedIn* the Ninth Circuit, reconsidering the case after the Supreme Court's *Van Buren* decision, held that hiQ had raised serious questions whether access can be "without authorization" under the CFAA "where, as here, prior authorization is not generally required, but a particular person—or bot—is refused access", that is, to pages anyone can view, while noting that trespass to chattels and breach of contract claims may still be available {cite}`hiq2022linkedin`. Scraping public pages is therefore not thereby lawful: the risk moves from copyright to contract and tort, which is why the terms-of-service restrictions measured in {ref}`sec-ch3-robots-txt-opt-outs-commons` matter even where robots.txt admits a crawler.
@@ -980,16 +929,9 @@ Consent in Crisis {cite}`longpre2024consent` measured, across C4, RefinedWeb and
 
 {numref}`fig-ch3-consent-restrictions` shows how abrupt the change was. From 2016, where the study's series begins, to mid-2023 the restricted share sat at a few percent; between August 2023 and April 2024 it rose to 19 to 32% of the head domains' tokens, against 5 to 7% of each corpus as a whole.
 
-```{figure} figures/consent-restrictions.*
----
-name: fig-ch3-consent-restrictions
-alt: >-
-  Line plot from January 2016 to April 2024 of the percentage of tokens fully restricted
-  by robots.txt. Three dashed red lines for head domains stay between 2 and 5 percent
-  until August 2023, then rise steeply to between 19 and 32 percent by April 2024. Three
-  solid blue lines for the full corpora stay between about 1 and 4.5 percent until
-  August 2023, highest in 2016 and 2017, and rise to between 5 and 7 percent.
----
+:::{figure} figures/consent-restrictions.*
+:name: fig-ch3-consent-restrictions
+:alt: Line plot from January 2016 to April 2024 of the percentage of tokens fully restricted by robots.txt. Three dashed red lines for head domains stay between 2 and 5 percent until August 2023, then rise steeply to between 19 and 32 percent by April 2024. Three solid blue lines for the full corpora stay between about 1 and 4.5 percent until August 2023, highest in 2016 and 2017, and rise to between 5 and 7 percent.
 
 Share of tokens fully restricted to AI crawlers by robots.txt, by domain tier, monthly
 from January 2016 to April 2024; data read from Fig. 2 of {cite:t}`longpre2024consent`.
@@ -997,7 +939,7 @@ Each tier has three lines, one for each of the three corpora the paper studied (
 RefinedWeb and Dolma); the source figure does not label which line is which corpus, so
 they are drawn alike. Head domains are the most-used, most actively maintained sources
 in each corpus.
-```
+:::
 
 Opt-out mechanisms beyond robots.txt:
 
@@ -1109,23 +1051,16 @@ The recurring finding, first established by the audit by {cite:t}`kreutzer2022qu
 
 {numref}`fig-ch3-fineweb2-rehydration` shows the U shape for French. The filters removed 70.4% of unique documents and 66.2% of the most-copied group, both above the global rate of 62.4%, but only 44.6% of documents with 19 copies; the sizes around that minimum get the weight 10, and the sizes whose removal rate is at or near the global rate get 1.
 
-```{figure} figures/fineweb2-rehydration.*
----
-name: fig-ch3-fineweb2-rehydration
-alt: >-
-  Bar chart of the percentage of documents removed by filters against MinHash cluster
-  size from 1 to 218, bars colored by upsampling weight from 1 to 10. Removal is 70.4
-  percent at size 1, falls to a minimum of about 45 percent near sizes 17 to 28 (weight
-  10), then rises slowly past 60 percent above size 175 (weight 1 to 2). A dashed line
-  marks the global removal rate of 62.4 percent.
----
+:::{figure} figures/fineweb2-rehydration.*
+:name: fig-ch3-fineweb2-rehydration
+:alt: Bar chart of the percentage of documents removed by filters against MinHash cluster size from 1 to 218, bars colored by upsampling weight from 1 to 10. Removal is 70.4 percent at size 1, falls to a minimum of about 45 percent near sizes 17 to 28 (weight 10), then rises slowly past 60 percent above size 175 (weight 1 to 2). A dashed line marks the global removal rate of 62.4 percent.
 
 Filter removal rate by duplicate-cluster size for French in FineWeb-2, and the
 upsampling weight each size receives; data read from Fig. 2 of
 {cite:t}`penedo2025fineweb2`. The weight is 10 at the size with the lowest removal rate,
 1 above the global removal rate, and interpolated between. The last bar groups the
 most-copied 0.1% of documents.
-```
+:::
 
 (sec-ch3-beyond-crawl)=
 
@@ -1339,21 +1274,15 @@ consent study measured for the best-maintained domains.
 
 {numref}`fig-ch3-epochs-per-source` is the notebook's plot. Its run is larger than the 2T-token example above: a budget of $C = 10^{24}$ FLOPs for an 8B-parameter model gives $D = C / 6N \approx 20.8$T tokens, so four small sources reach the cap of $e_{\max} = 4$ and the opt-outs push more of the load onto the quality web slice.
 
-```{figure} figures/epochs-per-source.*
----
-name: fig-ch3-epochs-per-source
-alt: >-
-  Grouped bar chart of epochs per source for a 21T-token run, planned and after
-  opt-outs. Web rises slightly, from about 1.17 to 1.23 epochs, web_quality from 1.5 to
-  2.1, code stays at 1.8, and papers, wikipedia, books and dialogue all sit at the
-  4-epoch cap in both plans. A dashed line marks the cap at 4.
----
+:::{figure} figures/epochs-per-source.*
+:name: fig-ch3-epochs-per-source
+:alt: Grouped bar chart of epochs per source for a 21T-token run, planned and after opt-outs. Web rises slightly, from about 1.17 to 1.23 epochs, web_quality from 1.5 to 2.1, code stays at 1.8, and papers, wikipedia, books and dialogue all sit at the 4-epoch cap in both plans. A dashed line marks the cap at 4.
 
 Epochs $e_s$ per source from the notebook's `plan_mixture` run ($D \approx 20.8$T
 tokens, cap $e_{\max} = 4$), before and after removing 5% of the web and 28% of the
 quality web, the losses measured by {cite:t}`longpre2024consent`. Sources already at the
 cap cannot absorb the loss, so it falls on the web slices that still have room.
-```
+:::
 
 (sec-ch3-provenance-documentation)=
 
