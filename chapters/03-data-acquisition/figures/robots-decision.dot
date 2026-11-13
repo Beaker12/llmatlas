@@ -1,0 +1,21 @@
+digraph robots_decision {
+  graph [fontname="DejaVu Sans", fontsize=13, nodesep=0.3, ranksep=0.4, pad=0.2];
+  node [fontname="DejaVu Sans", fontsize=12, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=11, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
+  fetch [label="Before the first URL on a host:\nGET /robots.txt\n(reuse a copy for at most 24 h)", fillcolor="#edf2f7"];
+  status [label="Status of the answer?", shape=diamond, style="filled", fillcolor="#edf2f7", fontsize=11];
+  unavailable [label="4xx: \"unavailable\"\nno restrictions,\nfetch any path", fillcolor="#dcfce7"];
+  parse [label="2xx: parse at least the\nfirst 500 KiB; use the group\nnaming this user agent,\notherwise the * group"];
+  unreachable [label="5xx or network failure:\n\"unreachable\"\nwhole site disallowed", fillcolor="#fde2e2"];
+  match [label="Longest matching rule\nfor the URL's path?", shape=diamond, style="filled", fillcolor="#edf2f7", fontsize=11];
+  allow [label="Fetch at the host's delay\n(Crawl-delay or a few seconds);\nback off on 429 and 503", fillcolor="#dcfce7"];
+  deny [label="Skip the URL", fillcolor="#fde2e2"];
+  fetch -> status;
+  status -> unavailable [label=" 4xx"];
+  status -> parse [label=" 2xx"];
+  status -> unreachable [label=" 5xx, error"];
+  status -> fetch [label=" 3xx: follow the redirect,\l even to another host, and apply\l the file to the original host;\l after more than five in a row,\l may treat as 4xx\l", constraint=false, style=dashed];
+  parse -> match;
+  match -> allow [label=" Allow, or\n no rule matches"];
+  match -> deny [label=" Disallow"];
+  {rank=same; unavailable; parse; unreachable}
+}
