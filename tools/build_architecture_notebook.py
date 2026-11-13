@@ -152,7 +152,7 @@ for repo in PINS:
 ''')
 
 md(r"""
-The four gated models, transcribed from their papers, except Gemma 2's vocabulary, which is the released checkpoint's as the hub reports it, and Gemma 3's layer shapes, which come from Google's reference implementation (the paper gives the counts but not the shapes); Gemma 3 is the text decoder of a multimodal model. Gemma 2's vocabulary: the paper's Table 1 lists 256,128 entries, the released checkpoint has 256,000 rows, and the hub's total is reproduced with 256,000. Gemma 2's head dimension (256) is larger than $d/n_h$, and its embeddings are tied.
+The four gated models, transcribed from their papers, except Gemma 2's vocabulary, which is the released checkpoint's as the hub reports it, and Gemma 3's layer shapes, which come from Google's reference implementation (the paper gives the counts but not the shapes); Gemma 3 is the text decoder of a multimodal model, with the 262,208 embedding rows of the released checkpoint (the reference implementation has 262,144; the Hugging Face conversion appends 64 for the image placeholder token). Gemma 2's vocabulary: the paper's Table 1 lists 256,128 entries, the released checkpoint has 256,000 rows, and the hub's total is reproduced with 256,000. Gemma 2's head dimension (256) is larger than $d/n_h$, and its embeddings are tied.
 """, tags=("static-numbers",))  # literature constants: the paper's and the checkpoint's vocabulary and head sizes
 code(r'''
 PAPER_CONFIGS = {
@@ -168,11 +168,11 @@ PAPER_CONFIGS = {
         "model_type": "gemma2", "hidden_size": 3584, "num_hidden_layers": 42,
         "num_attention_heads": 16, "num_key_value_heads": 8, "head_dim": 256,
         "intermediate_size": 14336, "vocab_size": 256000, "tie_word_embeddings": True},  # vocabulary: hub, not paper
-    # Gemma 3 12B, text decoder only: shapes from Google's reference code, vocabulary 262,144
+    # Gemma 3 12B, text decoder only: shapes from Google's reference code; vocabulary 262,208, the checkpoint's rows
     "google/gemma-3-12b-pt": {
         "model_type": "gemma3_text", "hidden_size": 3840, "num_hidden_layers": 48,
         "num_attention_heads": 16, "num_key_value_heads": 8, "head_dim": 256,
-        "intermediate_size": 15360, "vocab_size": 262144, "tie_word_embeddings": True},
+        "intermediate_size": 15360, "vocab_size": 262208, "tie_word_embeddings": True},
 }
 TEXT_ONLY = {"google/gemma-3-12b-pt"}  # multimodal checkpoint: the hub total includes the vision encoder
 ALL_CONFIGS = {**CONFIGS, **PAPER_CONFIGS}
@@ -207,10 +207,16 @@ print("hub totals reproduced exactly for", ", ".join(exact))
 # Gemma 3: the paper's Table 1 gives 10,759M non-embedding parameters and a 417M vision encoder
 gemma3 = PAPER_CONFIGS["google/gemma-3-12b-pt"]
 non_embedding = COUNTS["google/gemma-3-12b-pt"]["total"] - gemma3["vocab_size"] * gemma3["hidden_size"]
-rest = HUB_TOTALS["google/gemma-3-12b-pt"]["elements_total"] - COUNTS["google/gemma-3-12b-pt"]["total"]
-assert round(non_embedding / 1e6) == 10759 and 417e6 <= rest < 430e6, (non_embedding, rest)
-print(f"Gemma 3 12B text decoder: {non_embedding / 1e6:,.0f}M non-embedding, as in the paper; "
-      f"{rest / 1e6:.1f}M of the hub total is vision")
+assert round(non_embedding / 1e6) == 10759, non_embedding
+# ... and the hub total is exactly the text decoder, a SigLIP encoder at 896 pixels without its pooling head
+# (27 layers of width 1,152, MLP 4,304, 14-pixel patches, 4,096 positions, final norm) and the projection
+SIGLIP = 27 * (4 * (1152 ** 2 + 1152) + 2 * 1152 * 4304 + 4304 + 1152 + 4 * 1152) + 3 * 14 ** 2 * 1152 + 1152 \
+    + (896 // 14) ** 2 * 1152 + 2 * 1152
+PROJECTION = 1152 * 3840 + 1152
+assert round(SIGLIP / 1e6) == 417  # the paper's vision encoder
+assert COUNTS["google/gemma-3-12b-pt"]["total"] + SIGLIP + PROJECTION == HUB_TOTALS["google/gemma-3-12b-pt"]["elements_total"]
+print(f"Gemma 3 12B text decoder: {non_embedding / 1e6:,.0f}M non-embedding, as in the paper; hub total = "
+      f"{COUNTS['google/gemma-3-12b-pt']['total']:,} text + {SIGLIP:,} vision + {PROJECTION:,} projection")
 
 # 3. Published figures (billions): (total, tolerance, active, convention, tolerance)
 # Tolerances are half a unit in the last published digit, widened where the figure is consistent
@@ -219,7 +225,7 @@ print(f"Gemma 3 12B text decoder: {non_embedding / 1e6:,.0f}M non-embedding, as 
 PUBLISHED = {
     "Qwen/Qwen2.5-7B": (7.61, 0.01, None, None, None),
     "Qwen/Qwen3-8B-Base": (8.2, 0.05, None, None, None),
-    "allenai/OLMoE-1B-7B-0924": (6.9, 0.05, 1.3, "with", 0.05),
+    "allenai/OLMoE-1B-7B-0924": (7, 0.5, 1.3, "with", 0.05),  # paper: "7 billion (B) parameters"
     "deepseek-ai/DeepSeek-V2-Lite": (15.7, 0.05, 2.4, "without", 0.1),
     "deepseek-ai/DeepSeek-V3": (671, 0.5, 37, "without", 0.5),
     "mistralai/Mistral-7B-v0.1": (7.3, 0.1, None, None, None),
@@ -750,7 +756,7 @@ def norm_claims(arms):
             bool((top["post"] > STUCK).all() and (top["pre"] < TRAINS).all()),
         "at 3e-3 with warm-up, post-norm trains in some seeds but not in all":
             bool((warm < TRAINS).any() and (warm > STUCK).any()),
-        "at 1e-3 and 3e-4, with and without warm-up, post-norm ends lower than pre-norm in every seed":
+        "at 1e-3 and 3e-4, with and without warm-up, post-norm's loss after 400 steps is below pre-norm's in every seed":
             bool(all((by[key]["post"] < by[key]["pre"]).all() for key in lower)),
     }
 """.strip("\n")
@@ -760,9 +766,9 @@ md(r"""
 (nb-arch-train)=
 ## Post-Norm Against Pre-Norm
 
-A six-layer byte-level model is trained on the first 150 KB of *Pride and Prejudice*, once with each norm placement, for 400 steps of 8 sequences of 64 bytes. A model that has only learned byte frequencies sits near the entropy of the text's byte distribution, which the next cell computes with the model's size; anything clearly lower means it is using context. For each of five seeds both variants see the same batches. The score is the mean training loss over the last 20 steps. Everything is single-threaded and deterministic, so a seed reproduces exactly.
+A six-layer byte-level model is trained on the first 150 KB of *Pride and Prejudice*, once with each norm placement, for 400 steps of 8 sequences of 64 bytes. A model that has only learned byte frequencies sits near the entropy of the text's byte distribution, which the next cell computes with the model's size; anything clearly lower means it is using context. For each of five seeds both variants see the same batches. The score is the mean training loss over the last 20 of the 400 steps (steps 381 to 400): it measures how far each arrangement gets in 400 steps, not where it would end with longer training. Everything is single-threaded and deterministic, so a seed reproduces exactly.
 
-The comparison is a sweep over three learning rates ($3 \times 10^{-3}$, $10^{-3}$, $3 \times 10^{-4}$), each with no warm-up and with a linear warm-up over the first 100 steps: six arms of ten runs. **Live:** the $3 \times 10^{-3}$, no-warm-up arm is trained below. **Loaded:** the other five arms are read from `data/norm_sweep.json`, which `tools/build_architecture_notebook.py --sweep` wrote by running this notebook's own training cell; the file records that cell's SHA-256 and the torch version, and `--sweep --check` recomputes every arm.
+The comparison is a sweep over three learning rates ($3 \times 10^{-3}$, $10^{-3}$, $3 \times 10^{-4}$), each with no warm-up and with a linear warm-up over the first 100 steps: six arms of ten runs. **Live:** the $3 \times 10^{-3}$, no-warm-up arm is trained below. **Loaded:** the other five arms are read from `data/norm_sweep.json`, which `tools/build_architecture_notebook.py --sweep` wrote by running this notebook's own training cell; the file records that cell's SHA-256 and the torch version. `--sweep --check` recomputes every arm, writes nothing, and fails unless the cell's hash matches, every recomputed score is within $10^{-4}$ of the recorded score for the same arm and seed, and each statement asserted below still holds.
 """, tags=("static-numbers",))  # experiment settings: model size, data, steps, rates, seeds
 code(r'''
 import numpy as np
@@ -820,7 +826,7 @@ for _style in ("pre", "post"):
         code(f'''
 with timed("{_style}-norm, seed {_seed}"):
     RESULTS["{_style}"].append(train("{_style}", {_seed}))
-print("final loss (mean of last 20 steps):", round(float(np.mean(RESULTS["{_style}"][-1][-20:])), 3))
+print("loss after 400 steps (mean of steps 381-400):", round(float(np.mean(RESULTS["{_style}"][-1][-20:])), 3))
 ''')
 code(r'''
 final = {style: np.array([np.mean(r[-20:]) for r in runs]) for style, runs in RESULTS.items()}
@@ -885,7 +891,7 @@ for style, color in (("pre", "#4c72b0"), ("post", "#c44e52")):
 ax.axhline(BYTE_FREQ_LOSS, color="gray", lw=0.8, ls=":")
 ax.set_xscale("log")
 ax.set_xlabel("peak learning rate")
-ax.set_ylabel("final loss (nats per byte; mean, min-max over 5 seeds)")
+ax.set_ylabel("loss after 400 steps (nats per byte;\nmean, min-max over 5 seeds)")
 ax.legend(fontsize=8)
 plt.tight_layout()
 plt.show()
@@ -936,10 +942,13 @@ def build() -> None:
 # --- the learning-rate sweep behind Section 7 (decision D22) -------------------------------------------------
 # `--sweep` runs every arm (each norm placement, five seeds, three rates, with and without warm-up) with the
 # notebook's own training cell and writes the scores to data/norm_sweep.json; `--sweep --check` recomputes every
-# arm and exits non-zero unless each statement the notebook asserts from the sweep still holds. Runs are
-# independent, seeded and single-threaded, so running them in several processes gives the same numbers as a
-# serial run.
+# arm, writes nothing, and exits non-zero unless the training cell's hash matches the recorded one, every
+# recomputed score is within SWEEP_TOLERANCE of the recorded score of the same arm and seed, and each statement
+# the notebook asserts from the sweep still holds. A score is the mean training loss over the last 20 of the 400
+# steps. Runs are independent, seeded and single-threaded, so running them in several processes gives the same
+# numbers as a serial run; the tolerance allows for rounding differences between PyTorch builds.
 SWEEP_JSON = OUT.parent / "data" / "norm_sweep.json"
+SWEEP_TOLERANCE = 1e-4
 SWEEP_RATES = (3e-3, 1e-3, 3e-4)
 SWEEP_WARMUPS = (0, 100)
 SWEEP_SEEDS = tuple(range(5))
@@ -980,7 +989,7 @@ def run_sweep(processes: int) -> dict:
         scores = dict(pool.map(_sweep_run, jobs, chunksize=1))
     import torch
     return {
-        "description": "Final training loss (mean of the last 20 of 400 steps) of the Section 7 model, per arm "
+        "description": "Training loss after 400 steps (mean of steps 381 to 400) of the Section 7 model, per arm "
                        "and seed; written by tools/build_architecture_notebook.py --sweep.",
         "torch": torch.__version__,
         "train_cell_sha256": train_cell_sha256(),
@@ -1020,6 +1029,14 @@ def main(argv=None) -> int:
     recorded = json.loads(SWEEP_JSON.read_text(encoding="utf-8"))
     ok = recorded["train_cell_sha256"] == sweep["train_cell_sha256"]
     print("recorded training-cell hash matches:", ok)
+    # Compare the recomputed scores with the recorded ones arm by arm, seed by seed
+    same_arms = [(a["lr"], a["warmup"]) for a in recorded["arms"]] == [(a["lr"], a["warmup"]) for a in sweep["arms"]]
+    worst = max((abs(r - s) for ra, sa in zip(recorded["arms"], sweep["arms"]) for style in ("pre", "post")
+                 for r, s in zip(ra[style], sa[style])), default=float("inf")) if same_arms else float("inf")
+    values_ok = worst <= SWEEP_TOLERANCE
+    print(f"recorded scores reproduced (largest difference {worst:.2e}, tolerance {SWEEP_TOLERANCE:g}; "
+          f"torch {sweep['torch']} now, {recorded['torch']} recorded):", values_ok)
+    ok = ok and values_ok
     for name, holds in sweep_claims(sweep).items():
         print(f"{'holds' if holds else 'FAILS'}: {name}")
         ok = ok and holds
