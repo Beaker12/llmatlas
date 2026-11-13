@@ -190,7 +190,7 @@ def test_exercise_2_adam_first_step_and_rosenbrock_bound():
     lam = torch.linalg.eigvalsh(H).max().item()
     assert round(lam) == 1708 and round(math.sqrt(701**2 + 400**2), 1) == 807.1
     assert round(2 / lam, 6) == 1.171e-3 and round(3.8 / lam, 6) == 2.225e-3
-    s = exercise_text(2)
+    s = exercise_text(4)
     assert "9.99997 \\times 10^{-4}" in s and "3.162 \\times 10^{-3}" in s and "\\lambda_{\\max} = 1708" in s
 
 
@@ -214,7 +214,7 @@ def test_exercise_3_kaplan_and_chinchilla_by_hand():
     grid = [10 ** (9 + k / 1000) for k in range(3000)]       # brute force agrees with the closed form
     best = min(grid, key=lambda N: chin(N, C / (6 * N)))
     assert abs(best / N_star - 1) < 0.01
-    s = exercise_text(3)
+    s = exercise_text(8)
     assert "= 4.000" in s and "2.376" in s and "1.937, 1.983 and 1.934" in s and "about 93 tokens" in s
 
 
@@ -234,7 +234,7 @@ def test_exercise_4_softmax_saturation_and_residual_variance():
     g = 2 ** 0.5; pg = 1 / (1 + math.exp(-g))
     assert round(g, 2) == 1.41 and round(pg * (1 - pg), 3) == 0.157 and round(pg * (1 - pg) / slope(8)[1], -1) == 470
     assert [1 + 2 * L for L in (12, 48)] == [25, 97] and all(1 + 2 * L / (2 * L) == 2 for L in (12, 48))
-    s = exercise_text(4)
+    s = exercise_text(5)
     assert "3.352 \\times 10^{-4}" in s and "746 times" in s and "25 after 12 blocks and 97 after 48" in s
 
 
@@ -249,7 +249,7 @@ def test_exercise_5_fp16_underflow_loss_scaling_and_lost_updates():
         assert torch.finfo(dt).eps == gap
         assert (torch.tensor(1.0, dtype=dt) + torch.tensor(1e-4, dtype=dt)).item() == 1.0
     assert round((torch.tensor(1.0) + torch.tensor(1e-4)).item(), 4) == 1.0001
-    s = exercise_text(5)
+    s = exercise_text(2)
     assert "2^{14} = 16{,}384" in s and "6.552 \\times 10^{-4}" in s and "$1.0001$" in s
 
 
@@ -380,7 +380,7 @@ def test_exercise_8_schedule_clipping_accumulation():
     divisors = [min(n_acc, n - (i - 1) // n_acc * n_acc) for i in range(1, n + 1)]
     steps = [i for i in range(1, n + 1) if i % n_acc == 0 or i == n]
     assert steps == [4, 8, 10] and divisors == [4] * 8 + [2] * 2
-    s = exercise_text(8)
+    s = exercise_text(3)
     assert "2.605 \\times 10^{-4}" in s and "1.65 \\times 10^{-4}" in s and "(0.6, 0.8)" in s
 
 
@@ -409,3 +409,27 @@ def test_mutual_information_worked_table():
     assert hy == 1.0 and round(hyx, 4) == 0.7219 and round(mi, 4) == 0.2781 and math.isclose(mi, hy - hyx)
     text = CH02.read_text(encoding="utf-8")
     assert "= 0.7219$ bits" in text and "0.2781$ bits" in text
+
+
+def test_rescore3_adam_bound_conditions_and_planning_hours():
+    """Adam's 7.27 bound holds at beta2 = 0.999 only; the hours listing is exact."""
+    def bound(b1, b2):
+        return (1 - b1) / math.sqrt((1 - b2) * (1 - b1**2 / b2))
+
+    assert [round(bound(0.9, b), 2) for b in (0.999, 0.98, 0.95)] == [7.27, 1.7, 1.16]
+    text = CH02.read_text(encoding="utf-8")
+    summary = text[text.index("(sec-ch2-summary)="):text.index("## Exercises")]
+    assert "$\\beta_1 = 0.9$, $\\beta_2 = 0.999$ its step is bounded by $7.27" in summary
+    assert "\\beta_1^2 < \\beta_2" in summary
+    hours = 6 * 70e9 * 1.4e12 / (312e12 * 0.542) / 3600
+    assert f"{hours:,.0f}" == "965,875" and round(hours / 2048 / 24, 1) == 19.7
+    assert round(0.542 / 0.2, 1) == 2.7
+    # D_KL >= 0 on random distributions, the inequality the loss floor rests on
+    import random
+    rng = random.Random(0)
+    for _ in range(200):
+        p = [rng.random() + 1e-3 for _ in range(5)]
+        q = [rng.random() + 1e-3 for _ in range(5)]
+        p = [x / sum(p) for x in p]
+        q = [x / sum(q) for x in q]
+        assert sum(a * math.log(a / b) for a, b in zip(p, q)) >= 0

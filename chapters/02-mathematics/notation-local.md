@@ -39,8 +39,8 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\eta_{decay}$ | the decay schedule that follows warm-up | index.md, sec-ch2-linear-warmup |  |
 | $\sigma_g$ | standard deviation of a per-example gradient (mini-batch noise) | index.md, sec-ch2-minibatch-noise |  |
 | $n_{rank}$ | rank kept by a low-rank approximation | index.md, sec-ch2-svd-low-rank |  |
-| $\theta_x$ | first of the two parameters of the Rosenbrock function (exercise 2) | index.md, sec-ch2-exercises |  |
-| $\theta_y$ | second of the two parameters of the Rosenbrock function (exercise 2) | index.md, sec-ch2-exercises |  |
+| $\theta_x$ | first of the two parameters of the Rosenbrock function (exercise 4) | index.md, sec-ch2-exercises |  |
+| $\theta_y$ | second of the two parameters of the Rosenbrock function (exercise 4) | index.md, sec-ch2-exercises |  |
 | $z_{ff}$ | pre-activation of the feed-forward hidden layer | index.md, sec-ch2-ffn-embedding-head-gradients |  |
 | $x_i$ | feature $i$ of a layer's input row vector $x$ (LayerNorm and RMSNorm, sec-ch2-layer-normalization-mathematics and sec-ch2-epsilon-placement; the book-wide $x_i$ is the token at position $i$, and the page says which is meant) | index.md, sec-ch2-layer-normalization-mathematics |  |
 | $\lambda_{\min}$ | smallest eigenvalue of the Hessian (beside the book-wide $\lambda_{\max}$) | index.md, sec-ch2-stability-condition |  |

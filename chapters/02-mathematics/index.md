@@ -74,6 +74,8 @@ For $p = \mathrm{softmax}(z)$, $p_i = e^{z_i}/\sum_j e^{z_j}$,
 
 $$\frac{\partial p_i}{\partial z_j} = p_i(\delta_{ij} - p_j), \qquad \text{so for an upstream gradient } g: \quad \frac{\partial \mathcal{L}}{\partial z} = p \odot \left(g - \langle g, p\rangle \mathbf{1}\right)$$
 
+The derivation is the quotient rule. Write $S$ for the denominator $\sum_j e^{z_j}$, so $\partial S/\partial z_j = e^{z_j}$. For $i = j$, $\partial p_i/\partial z_i = (e^{z_i} S - e^{z_i} e^{z_i})/S^2 = p_i - p_i^2 = p_i(1 - p_i)$. For $i \ne j$ the numerator $e^{z_i}$ does not depend on $z_j$, so $\partial p_i/\partial z_j = -e^{z_i} e^{z_j}/S^2 = -p_i p_j$. Both cases are $p_i(\delta_{ij} - p_j)$. Contracting with $g$ gives $\partial \mathcal{L}/\partial z_j = \sum_i g_i\, p_i(\delta_{ij} - p_j) = p_j g_j - p_j \sum_i g_i p_i = p_j\,(g_j - \langle g, p\rangle)$.
+
 This is the identity behind the attention gradient in {ref}`sec-ch2-attention-gradient-analysis` and behind cross-entropy's gradient $p_j - \delta_{j x_i}$ (take $g_j = -\delta_{j x_i}/p_j$ for the target token $x_i$). It also explains saturation: if one $p_i \approx 1$ then every factor $p_i(\delta_{ij} - p_j)$ is near zero, and no gradient flows through that softmax.
 
 {numref}`fig-ch2-softmax-saturation` shows how fast the gradient through one softmax output vanishes as its logit pulls ahead.
@@ -86,7 +88,7 @@ The diagonal softmax derivative $\partial p_i/\partial z_i = p_i(1 - p_i)$ when 
 $z_i$ leads all the others by the same gap. It peaks at 0.25 where $p_i = 0.5$ and then
 falls by about a factor $e$ per unit of gap. At a gap of 8, the standard deviation of a
 single unscaled score at $d_k = 64$ (the gap between two such scores has standard
-deviation $8\sqrt{2} = 11.3$, Solution 4 of {ref}`sec-ch2-exercise-4`), it is 0.00034
+deviation $8\sqrt{2} = 11.3$, Solution 5 of {ref}`sec-ch2-exercise-5`), it is 0.00034
 with 2 logits and 0.02 with 64. Computed from the formula above by
 `figures/make_figures.py`.
 ```
@@ -241,7 +243,7 @@ Training by maximum likelihood is the same as minimizing this divergence from th
 
 $$\mathcal{L}(\theta) = -\mathbb{E}_{x \sim p_{\text{data}}}[\log p_\theta(x)] = H(p_{\text{data}}) + D_{KL}(p_{\text{data}} \,\|\, p_\theta).$$
 
-The entropy of the data does not depend on $\theta$, so any change of $\theta$ that lowers the loss lowers the KL divergence by exactly the same amount, and the loss can never fall below $H(p_{\text{data}})$, which is reached only when $p_\theta = p_{\text{data}}$. For a worked case take $p = (0.5, 0.25, 0.25)$ and $q = (0.25, 0.5, 0.25)$. In bits, $H(p) = 0.5 \cdot 1 + 0.25 \cdot 2 + 0.25 \cdot 2 = 1.5$, $H(p, q) = 0.5 \cdot 2 + 0.25 \cdot 1 + 0.25 \cdot 2 = 1.75$, and $D_{KL}(p \,\|\, q) = 0.5 \log_2 2 + 0.25 \log_2 0.5 + 0 = 0.25 = 1.75 - 1.5$.
+The divergence is never negative, and zero only when the two distributions are equal. To see it, use $\ln x \le x - 1$, which holds for every $x > 0$ with equality only at $x = 1$ (the curve $\ln x$ lies below its tangent at 1). Then $-D_{KL}(p \,\|\, q) = \sum_{x:\,p(x)>0} p(x) \ln\frac{q(x)}{p(x)} \le \sum_{x:\,p(x)>0} p(x)\left(\frac{q(x)}{p(x)} - 1\right) = \sum_{x:\,p(x)>0} q(x) - 1 \le 0$, with equality throughout only if $q(x) = p(x)$ for every $x$. The entropy of the data does not depend on $\theta$, so any change of $\theta$ that lowers the loss lowers the KL divergence by exactly the same amount, and the loss can never fall below $H(p_{\text{data}})$, which is reached only when $p_\theta = p_{\text{data}}$. For a worked case take $p = (0.5, 0.25, 0.25)$ and $q = (0.25, 0.5, 0.25)$. In bits, $H(p) = 0.5 \cdot 1 + 0.25 \cdot 2 + 0.25 \cdot 2 = 1.5$, $H(p, q) = 0.5 \cdot 2 + 0.25 \cdot 1 + 0.25 \cdot 2 = 1.75$, and $D_{KL}(p \,\|\, q) = 0.5 \log_2 2 + 0.25 \log_2 0.5 + 0 = 0.25 = 1.75 - 1.5$.
 
 This pair happens to give the same value both ways, $D_{KL}(q \,\|\, p) = 0.25$ too, but KL divergence is not symmetric in general. For $p = (0.9, 0.1)$ and the uniform $q = (0.5, 0.5)$, $D_{KL}(p \,\|\, q) = 0.9 \log_2 1.8 + 0.1 \log_2 0.2 = 0.531$ bits while $D_{KL}(q \,\|\, p) = 0.5 \log_2 (5/9) + 0.5 \log_2 5 = 0.737$ bits. The direction matters for training: the loss is $D_{KL}(p_{\text{data}} \,\|\, p_\theta)$, which weights each outcome by how often the data produces it, and it is infinite if the model gives probability zero to an outcome that occurs.
 
@@ -529,7 +531,7 @@ $\beta_{\text{mom}} = 0.9$) and Adam ($\eta = 10^{-2}$) on the Rosenbrock functi
 settles at (1, 1); its loss levels off near $2 \times 10^{-11}$ because the run is in
 float32, whose spacing near 1 is about $10^{-7}$, and the same run in float64 reaches
 $10^{-16}$; plain SGD (dashed, drawn on top) creeps along the valley floor and still has
-a loss of about $3 \times 10^{-5}$ at the end. From the notebook section
+a loss of about $3 \times 10^{-5}$ at the end. Adam's path runs under the dashed SGD line along most of the valley, and its loss levels off near $7 \times 10^{-13}$. From the notebook section
 {ref}`nb-math-rosenbrock`, by executing its cell tagged `figure:optimizer-trajectories`.
 ```
 
@@ -558,23 +560,23 @@ $$\theta_{t+1} = \theta_t - \eta_t \left(\frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \ep
 
 The alternative, L2 regularization, adds $\lambda\theta_t$ to the gradient $g_t$ before the moments are formed, and so the decay is divided by $\sqrt{\hat{v}_t}$ like everything else. A weight whose gradients have been large is then decayed less than one whose gradients have been small. Take two weights both at $\theta = 1$ with $\lambda = 0.01$, one with $\sqrt{\hat{v}_t} = 0.001$ and one with $\sqrt{\hat{v}_t} = 1$: once the moment has absorbed the decay term, L2 decays them by about $\eta \cdot 10$ and $\eta \cdot 0.01$ per step, a thousandfold difference, while AdamW decays both by $\eta \cdot 0.01$. {cite:t}`loshchilov2017decoupled` show that this decoupling is what makes weight decay effective with Adam.
 
-{cite:t}`kingma2014adam` designed Adam for "problems with very noisy and/or sparse gradients". A language model's embedding table is one source of sparse gradients: the row of a token that does not occur in a batch receives a zero gradient from that batch, so a rare token's row is updated only now and then, and Adam's per-parameter scaling gives those infrequent updates a usable size. They can also be larger than $\eta$: the first gradient after a long absence moves the row by about $3.15\,\eta$, and if the token keeps occurring the step grows to about $6.5\,\eta$ before it settles, below a general limit of $7.27\,\eta$ for these $\beta$s ({ref}`sec-ch2-adam-step-bound`).
+{cite:t}`kingma2014adam` designed Adam for "problems with very noisy and/or sparse gradients". A language model's embedding table is one source of sparse gradients: the row of a token that does not occur in a batch receives a zero gradient from that batch, so a rare token's row is updated only now and then, and Adam's per-parameter scaling gives those infrequent updates a usable size. They can also be larger than $\eta$: the first gradient after a long absence moves the row by about $3.15\,\eta$, and if the token keeps occurring the step grows to about $6.5\,\eta$ before it settles, below a general limit of $7.27\,\eta$ at $\beta_1 = 0.9$, $\beta_2 = 0.999$ ({ref}`sec-ch2-adam-step-bound`). Language-model training often sets $\beta_2$ lower: {cite:t}`touvron2023llama` train LLaMA with AdamW at $\beta_1 = 0.9$, $\beta_2 = 0.95$ and a weight decay of 0.1, and at $\beta_2 = 0.95$ the limit is $1.16\,\eta$.
 
 (sec-ch2-adam-step-bound)=
 
 #### How Large Adam's Step Can Get
 
-How far a single Adam update can move a weight is bounded in units of $\eta$, but not by the value usually quoted. Take $\epsilon$ to be negligible, so that the step is $\eta\,|\hat{m}_t|/\sqrt{\hat{v}_t}$. {cite:t}`kingma2014adam` give $(1 - \beta_1)/\sqrt{1 - \beta_2} = 0.1/\sqrt{0.001} = 3.16$ as the bound when $1 - \beta_1 > \sqrt{1 - \beta_2}$, a case that "only happens in the most severe case of sparsity: when a gradient has been zero at all timesteps except at the current timestep", and add that "for less sparse cases, the effective stepsize will be smaller". The first statement holds: a rare token's embedding row ({ref}`sec-ch2-adam-optimizer`) whose gradient has been zero for 5,000 steps and is then nonzero moves by $3.15\,\eta$. The second does not. If the token then occurs in every batch with the same gradient, $\hat{m}_t$ approaches the gradient within tens of steps while $\sqrt{\hat{v}_t}$ grows over thousands, and the step rises to $4.24\,\eta$ at the second occurrence and $6.55\,\eta$ at the twelfth before it falls back toward $\eta$, the same curve as the uncorrected steps of Solution 2 in {ref}`sec-ch2-exercise-2`.
+How far a single Adam update can move a weight is bounded in units of $\eta$, but not by the value usually quoted. Take $\epsilon$ to be negligible, so that the step is $\eta\,|\hat{m}_t|/\sqrt{\hat{v}_t}$. {cite:t}`kingma2014adam` give $(1 - \beta_1)/\sqrt{1 - \beta_2} = 0.1/\sqrt{0.001} = 3.16$ as the bound when $1 - \beta_1 > \sqrt{1 - \beta_2}$, a case that "only happens in the most severe case of sparsity: when a gradient has been zero at all timesteps except at the current timestep", and add that "for less sparse cases, the effective stepsize will be smaller". The first statement holds: a rare token's embedding row ({ref}`sec-ch2-adam-optimizer`) whose gradient has been zero for 5,000 steps and is then nonzero moves by $3.15\,\eta$. The second does not. If the token then occurs in every batch with the same gradient, $\hat{m}_t$ approaches the gradient within tens of steps while $\sqrt{\hat{v}_t}$ grows over thousands, and the step rises to $4.24\,\eta$ at the second occurrence and $6.55\,\eta$ at the twelfth before it falls back toward $\eta$, the same curve as the uncorrected steps of Solution 4 in {ref}`sec-ch2-exercise-4`.
 
-The bound that does hold for every gradient sequence follows from the Cauchy-Schwarz inequality, which bounds a sum of products by the square roots of the two sums of squares. Unrolled from their zero start, $m_t = (1 - \beta_1)\sum_{i=1}^{t} \beta_1^{t-i} g_i$ and $v_t = (1 - \beta_2)\sum_{i=1}^{t} \beta_2^{t-i} g_i^2$ ({ref}`sec-ch2-adam-optimizer`). Writing each term of the first sum as the product $(\beta_1/\sqrt{\beta_2})^{t-i} \cdot \beta_2^{(t-i)/2} g_i$ gives
+The bound that does hold for every gradient sequence, derived here (the ratio $\beta_1/\sqrt{\beta_2}$ that drives it also appears in the analysis of {cite:t}`defossez2022simple`, who assume $\beta_1 < \beta_2$), follows from the Cauchy-Schwarz inequality, which bounds a sum of products by the square roots of the two sums of squares. Unrolled from their zero start, $m_t = (1 - \beta_1)\sum_{i=1}^{t} \beta_1^{t-i} g_i$ and $v_t = (1 - \beta_2)\sum_{i=1}^{t} \beta_2^{t-i} g_i^2$ ({ref}`sec-ch2-adam-optimizer`). Writing each term of the first sum as the product $(\beta_1/\sqrt{\beta_2})^{t-i} \cdot \beta_2^{(t-i)/2} g_i$ gives
 
 $$\left|\sum_{i=1}^{t} \beta_1^{t-i} g_i\right| \le \sqrt{\sum_{i=1}^{t} \left(\frac{\beta_1^2}{\beta_2}\right)^{t-i}}\;\sqrt{\sum_{i=1}^{t} \beta_2^{t-i} g_i^2} = \sqrt{\frac{1 - (\beta_1^2/\beta_2)^t}{1 - \beta_1^2/\beta_2}}\;\sqrt{\frac{v_t}{1 - \beta_2}},$$
 
-where the first sum is geometric with ratio $\beta_1^2/\beta_2 = 0.8108$. Multiplying by $1 - \beta_1$ and dividing $m_t$ and $v_t$ by their bias corrections gives
+where the first sum is geometric with ratio $\beta_1^2/\beta_2 = 0.8108$. The limit below exists only when this ratio is below 1, that is $\beta_1^2 < \beta_2$; otherwise the sum grows without limit and the argument gives no bound. Multiplying by $1 - \beta_1$ and dividing $m_t$ and $v_t$ by their bias corrections gives
 
 $$\frac{|\hat{m}_t|}{\sqrt{\hat{v}_t}} \le \frac{1 - \beta_1}{1 - \beta_1^t}\sqrt{\frac{1 - \beta_2^t}{1 - \beta_2}\cdot\frac{1 - (\beta_1^2/\beta_2)^t}{1 - \beta_1^2/\beta_2}} \;\longrightarrow\; \frac{1 - \beta_1}{\sqrt{(1 - \beta_2)(1 - \beta_1^2/\beta_2)}} = \frac{0.1}{\sqrt{0.001 \times 0.1892}} = 7.27.$$
 
-The right-hand side is 1 at $t = 1$ and rises with $t$ toward its limit. Equality in Cauchy-Schwarz needs the two factors to be proportional, $\beta_2^{(t-i)/2} g_i \propto (\beta_1/\sqrt{\beta_2})^{t-i}$, that is $g_i \propto (\beta_2/\beta_1)^{i}$: a gradient that grows by the factor $\beta_2/\beta_1 = 1.11$ at every step. Such a gradient reaches $7.09\,\eta$ after 3,000 steps, and 7.27 is approached but never reached. For dense gradients of steady size the ratio is about 1 or less.
+The right-hand side is 1 at $t = 1$ and rises with $t$ toward its limit. Equality in Cauchy-Schwarz needs the two factors to be proportional, $\beta_2^{(t-i)/2} g_i \propto (\beta_1/\sqrt{\beta_2})^{t-i}$, that is $g_i \propto (\beta_2/\beta_1)^{i}$: a gradient that grows by the factor $\beta_2/\beta_1 = 1.11$ at every step. Such a gradient reaches $7.09\,\eta$ after 3,000 steps, and 7.27 is approached but never reached. For dense gradients of steady size the ratio is about 1 or less. The value 7.27 belongs to $\beta_1 = 0.9$, $\beta_2 = 0.999$ alone: the same formula gives 1.70 at $\beta_2 = 0.98$ and 1.16 at $\beta_2 = 0.95$, the setting of LLaMA, where Kingma and Ba's first case does not apply either since $1 - \beta_1 = 0.1 < \sqrt{0.05}$.
 
 ```python
 import math
@@ -589,15 +591,18 @@ for t, g in enumerate([0.0] * 5000 + [1.0] * 20, start=1):
         steps.append((m / (1 - beta1**t)) / math.sqrt(v / (1 - beta2**t)))
 print("step / eta at the 1st, 2nd and 12th occurrence:",
       [round(steps[k], 2) for k in (0, 1, 11)])
-bound = (1 - beta1) / math.sqrt((1 - beta2) * (1 - beta1**2 / beta2))
-print("Cauchy-Schwarz bound:", round(bound, 2))
+for b2 in (0.999, 0.98, 0.95):
+    bound = (1 - beta1) / math.sqrt((1 - b2) * (1 - beta1**2 / b2))
+    print(f"Cauchy-Schwarz bound at beta2 = {b2}:", round(bound, 2))
 ```
 
 % output
 
 ```text
 step / eta at the 1st, 2nd and 12th occurrence: [3.15, 4.24, 6.55]
-Cauchy-Schwarz bound: 7.27
+Cauchy-Schwarz bound at beta2 = 0.999: 7.27
+Cauchy-Schwarz bound at beta2 = 0.98: 1.7
+Cauchy-Schwarz bound at beta2 = 0.95: 1.16
 ```
 
 (sec-ch2-learning-rate-scheduling)=
@@ -1308,6 +1313,24 @@ budget 5.88e+23 FLOPs: N = 7e+10 parameters, D = 20N = 1.4e+12 tokens
 budget 1e+25 FLOPs: N = 2.89e+11 parameters, D = 20N = 5.77e+12 tokens
 ```
 
+A FLOP count becomes a schedule and a bill through the hardware's throughput. One accelerator delivers at most its peak rate, and a real run reaches a fraction of it, the **model FLOPs utilization** (MFU): the model FLOPs per second divided by the accelerator's theoretical peak. The accelerator-hours are then $C/(\text{peak} \times \text{MFU})$, divided by 3,600 when the rates are per second. {cite:t}`korthikanti2022reducing` take 312 teraFLOP/s as the peak of an NVIDIA A100 GPU and report an MFU of 54.2% for a 530-billion-parameter model on 2,240 of them. Those two numbers are an assumption here, not a property of any particular run:
+
+```python
+C = 6 * 70e9 * 1.4e12        # Chinchilla's FLOPs, from the formula above
+peak, mfu, chips = 312e12, 0.542, 2048
+hours = C / (peak * mfu) / 3600
+print(f"{hours:,.0f} accelerator-hours = {hours / chips / 24:.1f} days "
+      f"on {chips} accelerators")
+```
+
+% output
+
+```text
+965,875 accelerator-hours = 19.7 days on 2048 accelerators
+```
+
+At 20 percent utilization instead the same run would need 2.7 times as many hours, which is why utilization, and not only the FLOP count, decides the cost of a run.
+
 (sec-ch2-compute-scaling)=
 
 #### Compute Scaling
@@ -1635,7 +1658,7 @@ To prevent gradient underflow in fp16, gradients are scaled up during backpropag
 
 $$\mathrm{loss}_{\text{scaled}} = \mathrm{loss} \times \zeta$$
 
-where $\zeta$ is the scale factor. By the chain rule every gradient is multiplied by $\zeta$ as well, and the optimizer divides them by $\zeta$ in fp32 before the update, so the update itself is unchanged. A gradient of $10^{-8}$ is below fp16's smallest subnormal, $2^{-24} = 5.96 \times 10^{-8}$, and would be stored as zero; with $\zeta = 2^{16}$ it becomes $6.55 \times 10^{-4}$, which fp16 stores with its full ten mantissa bits ({ref}`sec-ch2-exercise-5`).
+where $\zeta$ is the scale factor. By the chain rule every gradient is multiplied by $\zeta$ as well, and the optimizer divides them by $\zeta$ in fp32 before the update, so the update itself is unchanged. A gradient of $10^{-8}$ is below fp16's smallest subnormal, $2^{-24} = 5.96 \times 10^{-8}$, and would be stored as zero; with $\zeta = 2^{16}$ it becomes $6.55 \times 10^{-4}$, which fp16 stores with its full ten mantissa bits ({ref}`sec-ch2-exercise-2`).
 
 The right $\zeta$ depends on the largest gradient: {cite:t}`micikevicius2017mixed` trained with constant factors between 8 and 32K, chosen so that the factor times "the maximum absolute gradient value is below 65,504", and noted that an overflow can be detected in the gradients and that update skipped. They proposed, as future work, that the factor "could be dynamically increased or decreased by inspecting the weight gradients for overflow". **Dynamic loss scaling** is that rule as frameworks implement it; PyTorch's `GradScaler` uses these defaults {cite}`pytorch2026gradscaler`: it starts at $\zeta = 2^{16}$; when any scaled gradient overflows to infinity or NaN it skips that optimizer step and multiplies $\zeta$ by 0.5; and after 2,000 consecutive steps without overflow it multiplies $\zeta$ by 2. The scale therefore settles just below the largest value that does not overflow, halving quickly when it is too large and probing upward again every 2,000 steps.
 
@@ -1753,6 +1776,7 @@ With an ordinary initialization each branch contributes about the same variance,
 ```python
 import torch
 
+torch.set_num_threads(1)  # small matrices: one thread is fastest
 d = 256
 
 
@@ -1797,7 +1821,7 @@ scaling.
 
 - **Linear algebra** ({ref}`sec-ch2-linear-algebra-you-need`). A weight matrix maps one space to another; dividing attention scores by $\sqrt{d_k}$ keeps their variance at 1 when query and key entries have unit variance. The softmax Jacobian is $\operatorname{diag}(p) - p p^\top$, which vanishes as one probability approaches 1. Reverse-mode differentiation never forms a Jacobian: it passes a vector-Jacobian product back through each operation.
 - **Probability and information theory** ({ref}`sec-ch2-probability-information-theory`). The training loss is the cross-entropy $H(p, q) = H(p) + D_{KL}(p\,\|\,q)$; perplexity is its exponential, and bits per byte divides the loss in bits by the bytes of text, so it compares models with different tokenizers. KL divergence is asymmetric and infinite where the model gives zero probability to an outcome that occurs.
-- **Optimization** ({ref}`sec-ch2-optimization-fundamentals`). On a quadratic, gradient descent is stable for $\eta < 2/\lambda_{\max}$ and heavy-ball momentum for $\eta < 2(1 + \beta_{\text{mom}})/\lambda_{\max}$. Adam divides the bias-corrected first moment by the root of the bias-corrected second moment, so its first step has size about $\eta$ whatever the scale of the gradient. Its step is bounded by $7.27\,\eta$ whatever the gradients, not by the $3.16\,\eta$ usually quoted. Warm-up, cosine decay, global-norm clipping and gradient accumulation (which reproduces a large batch's gradient from micro-batches) control the step.
+- **Optimization** ({ref}`sec-ch2-optimization-fundamentals`). On a quadratic, gradient descent is stable for $\eta < 2/\lambda_{\max}$ and heavy-ball momentum for $\eta < 2(1 + \beta_{\text{mom}})/\lambda_{\max}$. Adam divides the bias-corrected first moment by the root of the bias-corrected second moment, so its first step has size about $\eta$ whatever the scale of the gradient. For $\beta_1 = 0.9$, $\beta_2 = 0.999$ its step is bounded by $7.27\,\eta$ whatever the gradients, not by the $3.16\,\eta$ usually quoted (derived here; the bound needs $\beta_1^2 < \beta_2$ and is $1.16\,\eta$ at the $\beta_2 = 0.95$ that LLaMA uses). Warm-up, cosine decay, global-norm clipping and gradient accumulation (which reproduces a large batch's gradient from micro-batches) control the step.
 - **Backpropagation through transformers** ({ref}`sec-ch2-backpropagation-through-transformers`). A residual connection adds the identity to every layer's Jacobian, so a gradient path that skips every layer always exists; pre-LN keeps that path free of normalization. The attention gradient is the softmax Jacobian applied row by row, and the layer-norm gradient removes the components along the mean and along the normalized input.
 - **Scaling laws and compute** ({ref}`sec-ch2-scaling-laws-compute`). Training costs about $6N$ FLOPs per token, so $C \approx 6ND$: Chinchilla's 70 billion parameters and 1.4 trillion tokens cost $5.88 \times 10^{23}$ FLOPs. Kaplan's power laws have exponents 0.076 in parameters and 0.095 in data; the projections of Hoffmann et al.'s first approach (their Table 3) put the compute-optimal ratio near 20 tokens per parameter, the ratio Chinchilla was trained at, and their parametric loss fit gives 1.937 at Chinchilla's own size. Per layer, attention scores cost $2n^2 d$ multiply-adds against $12 n d^2$ for the weight matrices, so they dominate only beyond $n = 6d$. Training at the critical batch size, which grows as the loss falls, costs twice the minimum steps and twice the minimum data. Mixed-precision Adam holds 16 bytes per parameter before activations.
 - **Numerical stability** ({ref}`sec-ch2-numerical-stability-considerations`). fp16 overflows above 65,504 and underflows below its smallest subnormal, so its gradients need loss scaling; bf16 has fp32's exponent range and fewer than three significant decimal digits. Subtracting the largest logit makes softmax and log-sum-exp safe in any format. Xavier and He initialization, derived from how a layer changes a signal's variance, scale the weight variance to the layer's width so that activations neither grow nor shrink from layer to layer, and scaling each residual branch's output weights by $1/\sqrt{2L}$ keeps the residual stream's variance from growing with depth.
@@ -1836,11 +1860,70 @@ training text.
 
 (sec-ch2-exercise-2)=
 
-### Exercise 2: Adam's first step and the stability bound (level 2)
+### Exercise 2: Formats, underflow and loss scaling (level 1)
+
+Use the table in {ref}`sec-ch2-floating-point-precision`; fp16's smallest positive subnormal is $2^{-24}$. (a) What does a gradient of $10^{-8}$ become when stored in fp16? What does it become if the loss is first multiplied by $\zeta = 2^{16}$? (b) The largest gradient in a step is 3.0 before scaling. What is the largest power of two that $\zeta$ can be without overflowing fp16? (c) An optimizer adds an update of $10^{-4}$ to a weight equal to 1.0. What is the result in fp16, bf16 and fp32, and what does that imply for where the weights are kept in mixed-precision training?
+
+```{admonition} Solution 2
+:class: dropdown
+(a) $2^{-24} = 5.96 \times 10^{-8}$, and a value below half of it,
+$2.98 \times 10^{-8}$, rounds to zero, so $10^{-8}$ is stored as 0 and the gradient is
+lost. Scaled by $2^{16} = 65{,}536$ it becomes $6.554 \times 10^{-4}$, above fp16's
+smallest normal number $6.104 \times 10^{-5}$, and is stored as $6.552 \times 10^{-4}$
+with fp16's ten mantissa bits; dividing by $\zeta$ in fp32 afterwards recovers $10^{-8}$
+to three digits.
+
+(b) The scaled gradient $3\zeta$ must stay at or below 65,504, so
+$\zeta \le 65{,}504/3 = 21{,}834.67$, and the largest power of two is
+$2^{14} = 16{,}384$. Dynamic loss scaling finds this by halving $\zeta$ whenever a step
+overflows ({ref}`sec-ch2-loss-scaling`): from PyTorch's starting value $2^{16}$ the
+scaled gradient $3 \times 65{,}536 = 196{,}608$ overflows, $2^{15}$ gives 98,304 and
+overflows again, and $2^{14}$ gives 49,152, which fits, after two skipped steps.
+
+(c) Next to 1.0 the representable numbers are $2^{-10} = 9.766 \times 10^{-4}$ apart in
+fp16 and $2^{-7} = 7.812 \times 10^{-3}$ apart in bf16. An update smaller than half the
+gap rounds away, so in both formats $1.0 + 10^{-4} = 1.0$ and the weight never changes.
+In fp32 the gap is $1.192 \times 10^{-7}$ and the result is $1.0001$. This is why
+mixed-precision training keeps a master copy of the weights in fp32 and applies the
+update there, and why that copy is part of the 16 bytes per parameter in
+{ref}`sec-ch2-memory-requirements`.
+```
+
+(sec-ch2-exercise-3)=
+
+### Exercise 3: Schedule, clipping and accumulation (level 1)
+
+(a) A run uses linear warm-up and cosine decay ({ref}`sec-ch2-learning-rate-scheduling`) with $\eta_{\max} = 3 \times 10^{-4}$, $\eta_{\min} = 3 \times 10^{-5}$, $t_{\text{warm}} = 2000$ and $t_{\text{end}} = 100{,}000$. Compute $\eta_t$ at steps 0, 999, 26,500, 51,000 and 100,000. (b) A gradient $(3, 4)$ is clipped to norm 1.0 ({ref}`sec-ch2-gradient-clipping`). What is the clipped gradient? (c) An epoch has 10 micro-batches and $n_{acc} = 4$ ({ref}`sec-ch2-gradient-accumulation`). How many optimizer steps are taken, and by what must each micro-batch loss be divided?
+
+```{admonition} Solution 3
+:class: dropdown
+(a) Step 0: $3 \times 10^{-4} \times 1/2000 = 1.5 \times 10^{-7}$; step 999:
+$3 \times 10^{-4} \times 1000/2000 = 1.5 \times 10^{-4}$. After warm-up the cosine runs
+over $98{,}000$ steps: step 26,500 is a quarter of the way, $\cos(\pi/4) = 0.7071$, so
+
+$$
+\eta = 3 \times 10^{-5} + \tfrac12 \times 2.7 \times 10^{-4} \times 1.7071 = 2.605
+\times 10^{-4};$$
+
+step 51,000 is halfway, $\cos(\pi/2) = 0$, so
+$\eta = 3 \times 10^{-5} + 1.35 \times 10^{-4} = 1.65 \times 10^{-4}$; step 100,000 is
+the end, $\cos \pi = -1$, so $\eta = \eta_{\min} = 3 \times 10^{-5}$.
+
+(b) $\|g\| = 5$, so the gradient is multiplied by $1/5$: $(0.6, 0.8)$, with norm 1 and
+the same direction.
+
+(c) Three steps, after micro-batches 4, 8 and 10. The first two groups have four
+micro-batches and divide each loss by 4; the last group has two and divides by 2, so
+that each update uses the mean gradient of its own group.
+```
+
+(sec-ch2-exercise-4)=
+
+### Exercise 4: Adam's first step and the stability bound (level 2)
 
 (a) Adam starts with both moments at zero and uses $\beta_1 = 0.9$, $\beta_2 = 0.999$, $\eta = 10^{-3}$, $\epsilon = 10^{-8}$. For a single parameter whose first gradient is $g = 0.003$, and again for $g = 300$, compute the first update with bias correction and without it. (b) The notebook's test problem is the Rosenbrock function of two parameters, $\mathcal{L}(\theta) = (1 - \theta_x)^2 + 100\,(\theta_y - \theta_x^2)^2$. Compute its Hessian at the starting point $\theta = (-1, -1)$, its largest eigenvalue $\lambda_{\max}$, and the largest stable learning rates for gradient descent and for heavy-ball momentum with $\beta_{\text{mom}} = 0.9$ on a quadratic with that curvature.
 
-```{admonition} Solution 2
+```{admonition} Solution 4
 :class: dropdown
 (a) After one step the moments are $(1 - \beta_1) g = 0.1\,g$ and
 $(1 - \beta_2) g^2 = 0.001\,g^2$. Bias correction divides them by $1 - \beta_1 = 0.1$
@@ -1888,78 +1971,13 @@ curvature at the start, and momentum's overshoot carries the iterate into parts 
 valley where $\lambda_{\max}$ is larger ({ref}`sec-ch2-stability-condition`).
 ```
 
-(sec-ch2-exercise-3)=
+(sec-ch2-exercise-5)=
 
-### Exercise 3: Planning a training run with the scaling laws (level 3)
-
-Use Kaplan's parameter law $\mathcal{L}(N) = (N_c/N)^{\alpha_N}$ with $N_c = 8.8 \times 10^{13}$ and $\alpha_N = 0.076$, and the Chinchilla fit $\mathcal{L}(N, D) = 1.69 + 406.4/N^{0.34} + 410.7/D^{0.28}$. (a) By what factor must $N$ grow to lower Kaplan's loss by 10%? (b) Evaluate Kaplan's law at $N = 10^9$ and $N = 10^{10}$. (c) A budget of $C = 5.88 \times 10^{23}$ FLOPs, Chinchilla's own, can train 70 billion parameters on 1.4 trillion tokens, 280 billion on 350 billion, or 17.5 billion on 5.6 trillion; check that each costs $C$ under $C \approx 6ND$ and compare their Chinchilla losses. (d) Minimize the Chinchilla fit subject to $6ND = C$ and find the model size the fit itself prefers at this budget.
-
-```{admonition} Solution 3
-:class: dropdown
-(a) Multiplying $N$ by some factor multiplies $\mathcal{L}(N)$ by that factor raised to
-the power $-0.076$, so the loss falls by 10% when the factor is
-$0.9^{-1/0.076} = e^{0.10536/0.076} = e^{1.3863} = 4.000$. Each 10% off the loss costs
-four times the parameters; a power law with a small exponent is a law of steeply
-diminishing returns.
-
-(b) $\mathcal{L}(10^9) = (8.8 \times 10^4)^{0.076} = e^{0.076 \times 11.385} = 2.376$
-nats per token and $\mathcal{L}(10^{10}) = (8.8 \times 10^3)^{0.076} = 1.994$. Tenfold
-more parameters cut the loss by $1 - 10^{-0.076} = 16\%$. Here $N$ counts non-embedding
-parameters and the loss is on Kaplan's WebText2 data; Chinchilla's fit counts all
-parameters on a different dataset and tokenizer, so the two fits' losses are not
-comparable with each other, only within each fit.
-
-(c)
-
-$$
-6 \times 70 \times 10^9 \times 1.4 \times 10^{12} = 6 \times 280 \times 10^9
-\times 350 \times 10^9 = 6 \times 17.5 \times 10^9 \times 5.6 \times 10^{12} = 5.88
-\times 10^{23}.$$
-
-The two terms of the fit are $0.0835 + 0.1632$ for 70 billion, $0.0521 + 0.2405$ for 280
-billion and $0.1338 + 0.1107$ for 17.5 billion, giving losses of 1.937, 1.983 and 1.934.
-The large model on few tokens is clearly worse: its data term dominates. Moving from 70
-to 17.5 billion parameters changes the loss by only 0.002, so the minimum is flat, and
-it lies below 70 billion.
-
-(d) Substitute $D = C/(6N)$:
-$\mathcal{L} = 1.69 + 406.4\,N^{-0.34} + 410.7\,(C/6)^{-0.28} N^{0.28}$. Setting the
-derivative in $N$ to zero gives
-$0.34 \times 406.4\,N^{-1.34} = 0.28 \times 410.7\,(C/6)^{-0.28} N^{-0.72}$, so
-
-$$
-N^* = \left(\frac{0.34 \times 406.4}{0.28 \times 410.7}\right)^{1/0.62}
-\left(\frac{C}{6}\right)^{0.28/0.62} = 1.345 \left(\frac{C}{6}\right)^{0.4516}.$$
-
-At $C = 5.88 \times 10^{23}$, $C/6 = 9.8 \times 10^{22}$ and $N^* = 3.25 \times 10^{10}$
-parameters with $D^* = C/(6N^*) = 3.02 \times 10^{12}$ tokens, about 93 tokens per
-parameter, at a loss of 1.930. This is not the paper's own prescription: the projections
-of Hoffmann et al.'s Table 3, which come from their first approach, and Chinchilla
-itself sit near 20 tokens per parameter ({ref}`sec-ch2-training-implications`).
-{cite:t}`besiroglu2024chinchilla` found that the published constants of the parametric
-fit are inconsistent with the paper's first two approaches and with the ratio Chinchilla
-was trained at; refitting the same functional form to data reconstructed from the
-paper's figures, they obtained an optimum of about 20 tokens per parameter (25.6 at
-their point estimate). They report that Hoffmann et al.'s authors confirmed that the
-original fit stopped its minimizer early because it averaged the Huber loss over data
-points instead of summing it. The exponent $0.28/(0.34 + 0.28) = 0.4516$ rounds to 0.45,
-not to the $a_N = 0.46$ the paper reports for this fit. The fit's two exponents are
-published to two decimal places, which fixes the ratio only to between
-$0.275/(0.345 + 0.275) = 0.444$ and $0.285/(0.335 + 0.285) = 0.460$, so the paper's 0.46
-is consistent with the rounded constants. Either value is below the $a_N = 0.50$ and
-$0.49$ from its first two approaches ({ref}`sec-ch2-chinchilla-scaling-laws`). Because
-the fitted loss differs between 32.5 and 70 billion parameters by only 0.007, small
-errors in the constants move the optimum a long way, while the conclusion of part (c),
-that the 280-billion-parameter model is clearly worse, does not change.
-```
-
-(sec-ch2-exercise-4)=
-
-### Exercise 4: Saturation and depth (level 2)
+### Exercise 5: Saturation and depth (level 2)
 
 (a) A softmax over two logits $z_i \ge z_j$ gives the larger one the probability $p_i = 1/(1 + e^{-(z_i - z_j)})$, and $\partial p_i / \partial z_i = p_i(1 - p_i)$. Evaluate the probability and the derivative for gaps $z_i - z_j$ of 0, 1 and 8. Query and key entries are independent with mean 0 and variance 1, and $d_k = 64$: what is the standard deviation of a raw score $q \cdot k$, and of the scaled score $q \cdot k / \sqrt{d_k}$? (b) The residual stream starts as $h^{(0)}$ with variance 1 and has $2L$ branches added to it, each with variance 1 and uncorrelated with the rest. Compute its variance after $L = 12$ and $L = 48$ blocks, and again when each branch is multiplied by $1/\sqrt{2L}$.
 
-```{admonition} Solution 4
+```{admonition} Solution 5
 :class: dropdown
 (a) At gap 0, $p_i = 0.5$ and the derivative is $0.25$, its largest value. At gap 1,
 $p_i = 0.7311$ and the derivative is $0.1966$. At gap 8, $p_i = 0.99966$ and the
@@ -1982,37 +2000,6 @@ variance is 2 at any depth. The simulation in {ref}`sec-ch2-residual-init`, aver
 over 12 seeds, measures 25.1 and 97.2 unscaled and 2 with the scaling, matching $1 + 2L$
 and 2. A single seed can land a few percent to either side (94.9 to 99.8 at 48 blocks):
 that spread is sampling noise from the random weights and inputs, and it averages out.
-```
-
-(sec-ch2-exercise-5)=
-
-### Exercise 5: Formats, underflow and loss scaling (level 1)
-
-Use the table in {ref}`sec-ch2-floating-point-precision`; fp16's smallest positive subnormal is $2^{-24}$. (a) What does a gradient of $10^{-8}$ become when stored in fp16? What does it become if the loss is first multiplied by $\zeta = 2^{16}$? (b) The largest gradient in a step is 3.0 before scaling. What is the largest power of two that $\zeta$ can be without overflowing fp16? (c) An optimizer adds an update of $10^{-4}$ to a weight equal to 1.0. What is the result in fp16, bf16 and fp32, and what does that imply for where the weights are kept in mixed-precision training?
-
-```{admonition} Solution 5
-:class: dropdown
-(a) $2^{-24} = 5.96 \times 10^{-8}$, and a value below half of it,
-$2.98 \times 10^{-8}$, rounds to zero, so $10^{-8}$ is stored as 0 and the gradient is
-lost. Scaled by $2^{16} = 65{,}536$ it becomes $6.554 \times 10^{-4}$, above fp16's
-smallest normal number $6.104 \times 10^{-5}$, and is stored as $6.552 \times 10^{-4}$
-with fp16's ten mantissa bits; dividing by $\zeta$ in fp32 afterwards recovers $10^{-8}$
-to three digits.
-
-(b) The scaled gradient $3\zeta$ must stay at or below 65,504, so
-$\zeta \le 65{,}504/3 = 21{,}834.67$, and the largest power of two is
-$2^{14} = 16{,}384$. Dynamic loss scaling finds this by halving $\zeta$ whenever a step
-overflows ({ref}`sec-ch2-loss-scaling`): from PyTorch's starting value $2^{16}$ the
-scaled gradient $3 \times 65{,}536 = 196{,}608$ overflows, $2^{15}$ gives 98,304 and
-overflows again, and $2^{14}$ gives 49,152, which fits, after two skipped steps.
-
-(c) Next to 1.0 the representable numbers are $2^{-10} = 9.766 \times 10^{-4}$ apart in
-fp16 and $2^{-7} = 7.812 \times 10^{-3}$ apart in bf16. An update smaller than half the
-gap rounds away, so in both formats $1.0 + 10^{-4} = 1.0$ and the weight never changes.
-In fp32 the gap is $1.192 \times 10^{-7}$ and the result is $1.0001$. This is why
-mixed-precision training keeps a master copy of the weights in fp32 and applies the
-update there, and why that copy is part of the 16 bytes per parameter in
-{ref}`sec-ch2-memory-requirements`.
 ```
 
 (sec-ch2-exercise-6)=
@@ -2089,30 +2076,67 @@ component along $(1, 1, 1)$.
 
 (sec-ch2-exercise-8)=
 
-### Exercise 8: Schedule, clipping and accumulation (level 1)
+### Exercise 8: Planning a training run with the scaling laws (level 3)
 
-(a) A run uses linear warm-up and cosine decay ({ref}`sec-ch2-learning-rate-scheduling`) with $\eta_{\max} = 3 \times 10^{-4}$, $\eta_{\min} = 3 \times 10^{-5}$, $t_{\text{warm}} = 2000$ and $t_{\text{end}} = 100{,}000$. Compute $\eta_t$ at steps 0, 999, 26,500, 51,000 and 100,000. (b) A gradient $(3, 4)$ is clipped to norm 1.0 ({ref}`sec-ch2-gradient-clipping`). What is the clipped gradient? (c) An epoch has 10 micro-batches and $n_{acc} = 4$ ({ref}`sec-ch2-gradient-accumulation`). How many optimizer steps are taken, and by what must each micro-batch loss be divided?
+Use Kaplan's parameter law $\mathcal{L}(N) = (N_c/N)^{\alpha_N}$ with $N_c = 8.8 \times 10^{13}$ and $\alpha_N = 0.076$, and the Chinchilla fit $\mathcal{L}(N, D) = 1.69 + 406.4/N^{0.34} + 410.7/D^{0.28}$. (a) By what factor must $N$ grow to lower Kaplan's loss by 10%? (b) Evaluate Kaplan's law at $N = 10^9$ and $N = 10^{10}$. (c) A budget of $C = 5.88 \times 10^{23}$ FLOPs, Chinchilla's own, can train 70 billion parameters on 1.4 trillion tokens, 280 billion on 350 billion, or 17.5 billion on 5.6 trillion; check that each costs $C$ under $C \approx 6ND$ and compare their Chinchilla losses. (d) Minimize the Chinchilla fit subject to $6ND = C$ and find the model size the fit itself prefers at this budget.
 
 ```{admonition} Solution 8
 :class: dropdown
-(a) Step 0: $3 \times 10^{-4} \times 1/2000 = 1.5 \times 10^{-7}$; step 999:
-$3 \times 10^{-4} \times 1000/2000 = 1.5 \times 10^{-4}$. After warm-up the cosine runs
-over $98{,}000$ steps: step 26,500 is a quarter of the way, $\cos(\pi/4) = 0.7071$, so
+(a) Multiplying $N$ by some factor multiplies $\mathcal{L}(N)$ by that factor raised to
+the power $-0.076$, so the loss falls by 10% when the factor is
+$0.9^{-1/0.076} = e^{0.10536/0.076} = e^{1.3863} = 4.000$. Each 10% off the loss costs
+four times the parameters; a power law with a small exponent is a law of steeply
+diminishing returns.
+
+(b) $\mathcal{L}(10^9) = (8.8 \times 10^4)^{0.076} = e^{0.076 \times 11.385} = 2.376$
+nats per token and $\mathcal{L}(10^{10}) = (8.8 \times 10^3)^{0.076} = 1.994$. Tenfold
+more parameters cut the loss by $1 - 10^{-0.076} = 16\%$. Here $N$ counts non-embedding
+parameters and the loss is on Kaplan's WebText2 data; Chinchilla's fit counts all
+parameters on a different dataset and tokenizer, so the two fits' losses are not
+comparable with each other, only within each fit.
+
+(c)
 
 $$
-\eta = 3 \times 10^{-5} + \tfrac12 \times 2.7 \times 10^{-4} \times 1.7071 = 2.605
-\times 10^{-4};$$
+6 \times 70 \times 10^9 \times 1.4 \times 10^{12} = 6 \times 280 \times 10^9
+\times 350 \times 10^9 = 6 \times 17.5 \times 10^9 \times 5.6 \times 10^{12} = 5.88
+\times 10^{23}.$$
 
-step 51,000 is halfway, $\cos(\pi/2) = 0$, so
-$\eta = 3 \times 10^{-5} + 1.35 \times 10^{-4} = 1.65 \times 10^{-4}$; step 100,000 is
-the end, $\cos \pi = -1$, so $\eta = \eta_{\min} = 3 \times 10^{-5}$.
+The two terms of the fit are $0.0835 + 0.1632$ for 70 billion, $0.0521 + 0.2405$ for 280
+billion and $0.1338 + 0.1107$ for 17.5 billion, giving losses of 1.937, 1.983 and 1.934.
+The large model on few tokens is clearly worse: its data term dominates. Moving from 70
+to 17.5 billion parameters changes the loss by only 0.002, so the minimum is flat, and
+it lies below 70 billion.
 
-(b) $\|g\| = 5$, so the gradient is multiplied by $1/5$: $(0.6, 0.8)$, with norm 1 and
-the same direction.
+(d) Substitute $D = C/(6N)$:
+$\mathcal{L} = 1.69 + 406.4\,N^{-0.34} + 410.7\,(C/6)^{-0.28} N^{0.28}$. Setting the
+derivative in $N$ to zero gives
+$0.34 \times 406.4\,N^{-1.34} = 0.28 \times 410.7\,(C/6)^{-0.28} N^{-0.72}$, so
 
-(c) Three steps, after micro-batches 4, 8 and 10. The first two groups have four
-micro-batches and divide each loss by 4; the last group has two and divides by 2, so
-that each update uses the mean gradient of its own group.
+$$
+N^* = \left(\frac{0.34 \times 406.4}{0.28 \times 410.7}\right)^{1/0.62}
+\left(\frac{C}{6}\right)^{0.28/0.62} = 1.345 \left(\frac{C}{6}\right)^{0.4516}.$$
+
+At $C = 5.88 \times 10^{23}$, $C/6 = 9.8 \times 10^{22}$ and $N^* = 3.25 \times 10^{10}$
+parameters with $D^* = C/(6N^*) = 3.02 \times 10^{12}$ tokens, about 93 tokens per
+parameter, at a loss of 1.930. This is not the paper's own prescription: the projections
+of Hoffmann et al.'s Table 3, which come from their first approach, and Chinchilla
+itself sit near 20 tokens per parameter ({ref}`sec-ch2-training-implications`).
+{cite:t}`besiroglu2024chinchilla` found that the published constants of the parametric
+fit are inconsistent with the paper's first two approaches and with the ratio Chinchilla
+was trained at; refitting the same functional form to data reconstructed from the
+paper's figures, they obtained an optimum of about 20 tokens per parameter (25.6 at
+their point estimate). They report that Hoffmann et al.'s authors confirmed that the
+original fit stopped its minimizer early because it averaged the Huber loss over data
+points instead of summing it. The exponent $0.28/(0.34 + 0.28) = 0.4516$ rounds to 0.45,
+not to the $a_N = 0.46$ the paper reports for this fit. The fit's two exponents are
+published to two decimal places, which fixes the ratio only to between
+$0.275/(0.345 + 0.275) = 0.444$ and $0.285/(0.335 + 0.285) = 0.460$, so the paper's 0.46
+is consistent with the rounded constants. Either value is below the $a_N = 0.50$ and
+$0.49$ from its first two approaches ({ref}`sec-ch2-chinchilla-scaling-laws`). Because
+the fitted loss differs between 32.5 and 70 billion parameters by only 0.007, small
+errors in the constants move the optimum a long way, while the conclusion of part (c),
+that the 280-billion-parameter model is clearly worse, does not change.
 ```
 
 (sec-ch2-further-reading)=
@@ -2123,41 +2147,31 @@ that each update uses the mean gradient of its own group.
 
 ### Learning Path for Beginners
 
-**Start Here - Intuitive Explanations:**
-
-1. [3Blue1Brown: Neural Networks](https://www.3blue1brown.com/topics/neural-networks) {cite}`sanderson2026neural` - Visual explanations of backpropagation and gradient descent
-1. [Distill: Momentum](https://distill.pub/2017/momentum/) {cite}`goh2017momentum` - Interactive visualization of optimization algorithms
-1. [The Matrix Calculus You Need For Deep Learning](https://explained.ai/matrix-calculus/) {cite}`parr2018matrix` - Essential calculus for understanding backpropagation
-
-**Mathematical Foundations:**
-
-4. [Mathematics for Machine Learning](https://mml-book.github.io/) {cite}`deisenroth2020mathematics` - Free textbook covering linear algebra, calculus, and probability
-1. [MIT 18.065: Matrix Methods in Data Analysis](https://ocw.mit.edu/courses/18-065-matrix-methods-in-data-analysis-signal-processing-and-machine-learning-spring-2018/) - Gilbert Strang's course "Matrix Methods in Data Analysis, Signal Processing, and Machine Learning" {cite}`strang2018matrix`
+- {cite}`sanderson2026neural`: Visual explanations of backpropagation and gradient descent ([3Blue1Brown: Neural Networks](https://www.3blue1brown.com/topics/neural-networks))
+- {cite}`goh2017momentum`: Interactive visualization of optimization algorithms ([Distill: Momentum](https://distill.pub/2017/momentum/))
+- {cite}`parr2018matrix`: Essential calculus for understanding backpropagation ([The Matrix Calculus You Need For Deep Learning](https://explained.ai/matrix-calculus/))
+- {cite}`deisenroth2020mathematics`: Free textbook covering linear algebra, calculus, and probability ([Mathematics for Machine Learning](https://mml-book.github.io/))
+- {cite}`strang2018matrix`: Gilbert Strang's course on matrix methods in data analysis, signal processing and machine learning ([MIT 18.065](https://ocw.mit.edu/courses/18-065-matrix-methods-in-data-analysis-signal-processing-and-machine-learning-spring-2018/))
 
 (sec-ch2-further-reading-foundational-papers)=
 
 ### Foundational Papers
 
-- [Attention Is All You Need](https://arxiv.org/abs/1706.03762) {cite}`vaswani2017attention`: The original transformer paper with mathematical details ([arXiv:1706.03762](https://arxiv.org/abs/1706.03762))
-- [Scaling Laws for Neural Language Models](https://arxiv.org/abs/2001.08361) {cite}`kaplan2020scaling`: Mathematical analysis of scaling behavior ([arXiv:2001.08361](https://arxiv.org/abs/2001.08361))
-- [Training Compute-Optimal Large Language Models](https://arxiv.org/abs/2203.15556) {cite}`hoffmann2022training`: Chinchilla scaling laws ([arXiv:2203.15556](https://arxiv.org/abs/2203.15556))
-- {cite}`shazeer2020glu`: GLU variants of the transformer feed-forward layer ([arXiv:2002.05202](https://arxiv.org/abs/2002.05202))
+- {cite}`vaswani2017attention`: The original transformer paper with mathematical details ([arXiv:1706.03762](https://arxiv.org/abs/1706.03762))
+- {cite}`kaplan2020scaling`: Mathematical analysis of scaling behavior ([arXiv:2001.08361](https://arxiv.org/abs/2001.08361))
+- {cite}`hoffmann2022training`: Chinchilla scaling laws ([arXiv:2203.15556](https://arxiv.org/abs/2203.15556))
 
 (sec-ch2-further-reading-optimization-theory)=
 
 ### Optimization Theory
 
-**Optimizer Papers:**
-
 - {cite}`kingma2014adam`: Adam optimizer derivation and analysis ([arXiv:1412.6980](https://arxiv.org/abs/1412.6980))
+- {cite}`defossez2022simple`: Convergence proof of Adam and Adagrad whose analysis also uses the ratio of the two decay rates ([arXiv:2003.02395](https://arxiv.org/abs/2003.02395))
 - {cite}`loshchilov2017decoupled`: AdamW and weight decay regularization ([arXiv:1711.05101](https://arxiv.org/abs/1711.05101))
 - {cite}`polyak1964some`: Classical momentum optimization ([DOI](<https://doi.org/10.1016/0041-5553(64)90137-5>))
-
-**Learning Rate and Initialization:**
-
 - {cite}`zhang2019fixup`: Advanced initialization strategies without normalization ([arXiv:1901.09321](https://arxiv.org/abs/1901.09321))
 - {cite}`smith2017cyclical`: Cyclical learning rates, a practical learning-rate schedule ([arXiv:1506.01186](https://arxiv.org/abs/1506.01186))
-- [On the difficulty of training recurrent neural networks](https://proceedings.mlr.press/v28/pascanu13.html) {cite}`pascanu2013difficulty` - Gradient flow analysis
+- {cite}`pascanu2013difficulty`: Gradient flow analysis ([PMLR v28](https://proceedings.mlr.press/v28/pascanu13.html))
 
 (sec-ch2-further-reading-numerical-methods-efficiency)=
 

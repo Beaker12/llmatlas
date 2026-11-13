@@ -230,8 +230,8 @@ layer computes $xW$.
 | $\eta_{decay}$ | the decay schedule that follows warm-up | {ref}`sec-ch2-linear-warmup` |
 | $\sigma_g$ | standard deviation of a per-example gradient (mini-batch noise) | {ref}`sec-ch2-minibatch-noise` |
 | $n_{rank}$ | rank kept by a low-rank approximation | {ref}`sec-ch2-svd-low-rank` |
-| $\theta_x$ | first of the two parameters of the Rosenbrock function (exercise 2) | {ref}`sec-ch2-exercises` |
-| $\theta_y$ | second of the two parameters of the Rosenbrock function (exercise 2) | {ref}`sec-ch2-exercises` |
+| $\theta_x$ | first of the two parameters of the Rosenbrock function (exercise 4) | {ref}`sec-ch2-exercises` |
+| $\theta_y$ | second of the two parameters of the Rosenbrock function (exercise 4) | {ref}`sec-ch2-exercises` |
 | $z_{ff}$ | pre-activation of the feed-forward hidden layer | {ref}`sec-ch2-ffn-embedding-head-gradients` |
 | $x_i$ | feature $i$ of a layer's input row vector $x$ (LayerNorm and RMSNorm, {ref}`sec-ch2-layer-normalization-mathematics` and {ref}`sec-ch2-epsilon-placement`; the book-wide $x_i$ is the token at position $i$, and the page says which is meant) | {ref}`sec-ch2-layer-normalization-mathematics` |
 | $\lambda_{\min}$ | smallest eigenvalue of the Hessian (beside the book-wide $\lambda_{\max}$) | {ref}`sec-ch2-stability-condition` |
