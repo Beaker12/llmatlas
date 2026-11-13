@@ -314,9 +314,25 @@ The notebook section {ref}`nb-arch-kvcache` generates text with a cache and chec
 
 (sec-ch6-rope-one-paragraph)=
 
-### 5.1 RoPE in one paragraph
+### 5.1 RoPE and the relative offset
 
-Chapter 1 implements rotary embeddings ({ref}`sec-ch1-rope`) {cite}`su2021roformer`; this section states the formulas. Each pair of dimensions $(2i, 2i+1)$ of a query or key at position $m$ is rotated by the angle $m\,\omega_i$, with $\omega_i = b^{-2i/d_k}$ for a base $b$ (10,000 in the original), $i = 0, \dots, d_k/2 - 1$ and $d_k$ the head width. The dot product between a query at position $m$ and a key at position $m'$ then depends only on $m - m'$. The frequencies range from $\omega_0 = 1$ radian per position, which completes a turn in about 6 tokens, down to $\omega_{d_k/2-1} = b^{-(d_k-2)/d_k}$, almost $1/b$, which turns once in $2\pi b^{(d_k-2)/d_k}$ tokens: about 54,400 for $b = 10{,}000$ and $d_k = 128$, or 0.87 of $2\pi b$. The base therefore sets the longest wavelength the model can represent.
+Chapter 1 implements rotary embeddings ({ref}`sec-ch1-rope`) {cite}`su2021roformer`; this section states the formulas. Each pair of dimensions $(2i, 2i+1)$ of a query or key at position $m$ is rotated by the angle $m\,\omega_i$, with $\omega_i = b^{-2i/d_k}$ for a base $b$ (10,000 in the original), $i = 0, \dots, d_k/2 - 1$ and $d_k$ the head width. The dot product between a query at position $m$ and a key at position $m'$ then depends only on $m - m'$.
+
+In complex form the rotation is a single multiplication, and the relative-offset property takes three lines. Write pair $i$ of the query at position $m$ as the complex number $q_{m,i} = q_{m,2i} + \mathrm{i}\, q_{m,2i+1}$, and pair $i$ of the key at position $m'$ likewise as $k_{m',i}$. RoPE multiplies each pair by a unit complex number:
+
+$$q_{m,i} \mapsto q_{m,i}\, e^{\mathrm{i}\, m\, \omega_i}, \qquad k_{m',i} \mapsto k_{m',i}\, e^{\mathrm{i}\, m'\, \omega_i}$$ (eq-ch6-rope-complex)
+
+The dot product of two real 2-vectors equals the real part of the first, read as a complex number, times the complex conjugate of the second, which is written with a superscript star: for pair $i$ it is $\mathrm{Re}(q_{m,i}\, k_{m',i}^{*})$ before rotation. The contribution of pair $i$ to the attention score is therefore
+
+$$\begin{aligned}
+\mathrm{Re}\big[(q_{m,i}\, e^{\mathrm{i} m \omega_i})(k_{m',i}\, e^{\mathrm{i} m' \omega_i})^{*}\big]
+&= \mathrm{Re}\big[q_{m,i}\, k_{m',i}^{*}\, e^{\mathrm{i} m \omega_i}\, e^{-\mathrm{i} m' \omega_i}\big] \\
+&= \mathrm{Re}\big[q_{m,i}\, k_{m',i}^{*}\, e^{\mathrm{i} (m - m') \omega_i}\big].
+\end{aligned}$$
+
+The first step uses that the conjugate of a product is the product of the conjugates, and that conjugating $e^{\mathrm{i} m' \omega_i}$ negates its exponent; the second adds the exponents. The positions enter only through $m - m'$, and the score is the sum of these terms over the $d_k/2$ pairs, so it depends on the offset alone. Chapter 1 derives the same result with real $2 \times 2$ rotation matrices ({ref}`sec-ch1-rope`).
+
+The frequencies range from $\omega_0 = 1$ radian per position, which completes a turn in about 6 tokens, down to $\omega_{d_k/2-1} = b^{-(d_k-2)/d_k}$, almost $1/b$, which turns once in $2\pi b^{(d_k-2)/d_k}$ tokens: about 54,400 for $b = 10{,}000$ and $d_k = 128$, or 0.87 of $2\pi b$. The base therefore sets the longest wavelength the model can represent.
 
 (sec-ch6-trained-length-matters)=
 
@@ -333,6 +349,43 @@ Two families of fix change the frequencies, and both are used in the table:
 $$b' = b \cdot s_{ctx}^{\,d_k/(d_k-2)}$$
 
 This leaves the highest frequency $\omega_0 = 1$ unchanged and divides the lowest by exactly $s_{ctx}$, with the frequencies between spread geometrically. High-frequency components are preserved and low-frequency ones are interpolated. YaRN refines this: it interpolates the low-frequency dimensions, leaves the high-frequency ones, blends between them with a ramp, and multiplies the attention logits by a factor $1/\tau$ that grows slowly with the scale factor, so the temperature $\tau$ falls: $\sqrt{1/\tau} = 0.1 \ln s_{ctx} + 1$ in the YaRN paper's fit for LLaMA {cite}`peng2024yarn`, and DeepSeek-V2 uses $0.0707 \ln s_{ctx} + 1$ for the same factor {cite}`deepseek2024v2`. DeepSeek-V2 and V3 use YaRN with scale factor 40 over a 4,096-token pretraining length (163,840 positions in the configuration); the reports describe extension training at 32K for V2, evaluated up to 128K, and at 32K and then 128K for V3 {cite}`deepseek2024v2,deepseek2024v3`.
+
+Written out, YaRN's interpolation (called "NTK-by-parts" in the paper) works pair by pair, from the wavelength $\ell_i = 2\pi/\omega_i$ and the number of turns the pair completes within the trained length, $\xi_i = n_{train}/\ell_i$ {cite}`peng2024yarn`:
+
+$$\psi(\xi) = \begin{cases} 0 & \xi < \beta_{slow} \\ 1 & \xi > \beta_{fast} \\ \dfrac{\xi - \beta_{slow}}{\beta_{fast} - \beta_{slow}} & \text{otherwise} \end{cases} \qquad \omega_i' = \big(1 - \psi(\xi_i)\big)\, \frac{\omega_i}{s_{ctx}} + \psi(\xi_i)\, \omega_i$$
+
+A pair that turns more than $\beta_{fast}$ times during training keeps its frequency; one that turns fewer than $\beta_{slow}$ times is divided by $s_{ctx}$, as in position interpolation; those between are blended linearly. The paper's values for the Llama family are $\beta_{slow} = 1$ and $\beta_{fast} = 32$ (the paper names them alpha and beta). The attention factor $\sqrt{1/\tau}$ above completes the method. For $d_k = 128$, $b = 10{,}000$ and $n_{train} = 4{,}096$, the function below keeps 21 of the 64 pairs, blends 25 and fully interpolates 18.
+
+```python
+import math
+
+
+def yarn_frequencies(d, base, n_train, scale, beta_slow=1.0, beta_fast=32.0):
+    """YaRN's per-pair frequencies; returns them with the ramp value psi of each pair."""
+    out = []
+    for i in range(d // 2):
+        omega = base ** (-2 * i / d)
+        xi = n_train * omega / (2 * math.pi)  # turns completed within the trained length
+        psi = min(1.0, max(0.0, (xi - beta_slow) / (beta_fast - beta_slow)))
+        out.append(((1 - psi) * omega / scale + psi * omega, psi))
+    return out
+
+
+pairs = yarn_frequencies(128, 10000.0, 4096, 8)
+kept = sum(psi == 1.0 for _, psi in pairs)
+interpolated = sum(psi == 0.0 for _, psi in pairs)
+print(f"kept {kept}, blended {len(pairs) - kept - interpolated}, interpolated {interpolated}")
+print(f"lowest frequency divided by {(10000.0 ** (-126 / 128)) / pairs[-1][0]:.4g}")
+print(f"attention factor at s = 8: {0.1 * math.log(8) + 1:.4g}")
+```
+
+% output
+
+```text
+kept 21, blended 25, interpolated 18
+lowest frequency divided by 8
+attention factor at s = 8: 1.208
+```
 
 Two short functions capture the frequency arithmetic.
 
@@ -457,6 +510,8 @@ The notebook section {ref}`nb-arch-moe` routes 4,096 random tokens through a top
 (sec-ch6-exact-attention-faster)=
 
 ### 7.1 Exact attention, faster
+
+Before FlashAttention, the usual answer to the quadratic cost of attention was to approximate it. Linformer observes that the attention matrix is approximately low-rank and projects the keys and values along the sequence to a fixed length, which makes time and memory linear in $n$ {cite}`wang2020linformer`. Performers approximate the softmax kernel with random features, also in linear time and space {cite}`choromanski2021rethinking`. Sparse patterns such as Longformer's window restrict which pairs are scored at all {cite}`beltagy2020longformer`. None of the twelve models in this chapter uses an approximation; the sliding windows of Mistral and Gemma are exact attention over a shorter span. Dao et al. name the reason: approximate methods trade "model quality to reduce the compute complexity, but often do not achieve wall-clock speedup" {cite}`dao2022flashattention`. On a GPU the cost of attention was the memory traffic of the score matrix, which for one head at $n = 131{,}072$ would be $131{,}072^2 \times 2$ bytes $= 34.4$ GB in bf16, not the arithmetic, and an exact algorithm that avoids that traffic removed the reason to approximate.
 
 FlashAttention computes exactly the same attention output as the textbook implementation but never writes the $n \times n$ score matrix to GPU main memory. It processes blocks that fit in on-chip SRAM, keeping running softmax statistics, so the extra memory is linear rather than quadratic in sequence length and the traffic to main memory falls by a large constant factor {cite}`dao2022flashattention`. FlashAttention-2 improves the work partition across thread blocks and warps {cite}`dao2024flashattention2`. Because the result is identical up to floating-point rounding, these are kernel choices, not architectural ones, but they changed what is affordable: attention memory stopped limiting sequence length, and the architectural cost that remains is the KV cache. PyTorch's `scaled_dot_product_attention`, used in this chapter's notebook, dispatches to such a kernel when one is available.
 
@@ -593,7 +648,7 @@ For a dense model with $N$ parameters in matrix multiplications, the forward pas
 
 First, the embedding lookup is not a multiplication, so $N$ should exclude the input embedding table. The output projection is a multiplication and stays in. For a sparse model, $N$ is the *active* count, with the router included.
 
-Second, attention scores and their application to the values add a term proportional to the context length $n$, which the $6N$ rule omits. In Kaplan et al.'s accounting, the forward pass per token is $2N + 2\,L\,n\,d_{attn}$, where $d_{attn} = n_h d_k$ is the attention width, and training is three times that (up to a factor of two lower under causal masking, which skips half of the scores). The attention term is below about 10% of the total while the context is no longer than the model width, and grows past it.
+Second, attention scores and their application to the values add a term proportional to the context length $n$, which the $6N$ rule omits. In Kaplan et al.'s accounting, the forward pass per token is $2N + 2\,L\,n\,d_{attn}$, where $d_{attn} = n_h d_k$ is the attention width, and training is three times that (up to a factor of two lower under causal masking, which skips half of the scores). The attention term is below about 10% of the total while the context is no longer than the model width, and grows past it. At 128K it is the larger term. For Llama 3.1 8B a token that attends to all 131,072 earlier positions costs $2 \times 32 \times 131{,}072 \times 4{,}096 = 34.4$ GFLOPs in the attention term of the forward pass, against $2N = 2 \times 7.50\text{B} = 15.0$ GFLOPs for the weights, 2.3 times as much. Averaged over a causal sequence of that length each token attends to half the positions, 17.2 GFLOPs, still more than $2N$.
 
 | Model | Parameters in the $6N$ rule | $6N$ (GFLOPs per token) |
 | --- | --- | --- |
@@ -628,6 +683,42 @@ Decoder-only models dominate generation, but two other designs persist where the
 **Encoder-only models** (BERT {cite}`devlin2018bert`) apply bidirectional attention and are trained to fill in masked tokens. They produce a representation of each input token that can see both sides, which is what classification, retrieval and embedding need, at a size and cost far below a generative model. Most production embedding and reranking models are still encoders. ModernBERT brings the decoder block's improvements to the form: RoPE, GeGLU, bias-free layers, alternating local and global attention, an 8,192-token context and a modern training mix {cite}`warner2024smarter`.
 
 **Encoder-decoder models** (T5 {cite}`raffel2019exploring`) read the whole input with a bidirectional encoder and generate with a decoder that cross-attends to it. For tasks with a clear input and output, such as translation, summarization and structured extraction, the input is encoded once and need not be re-attended with a causal mask; at small and medium sizes these models are competitive with decoder-only models. At the frontier scale the field has standardized on decoders because one architecture and one objective serve every use through prompting.
+
+**Counting them.** The method of {ref}`sec-ch6-counting-parameters-configuration` carries over, with differences that the two functions below make explicit. BERT-base, from its configuration (vocabulary 30,522, 512 positions, 2 segment types, width 768, 12 layers, feed-forward width 3,072, which is $4d$), has learned position and segment embedding tables, a bias on every projection, layer norms with both a gain and a shift, a two-matrix feed-forward network and a pooler over the first token. It comes to 109,482,240 parameters, the paper's "Total Parameters=110M" {cite}`devlin2018bert`. The hub's checkpoint holds 110,106,428: the extra 624,188 are the two pretraining heads, 622,650 for masked-token prediction and 1,538 for next-sentence prediction.
+
+An encoder-decoder gives every decoder layer a cross-attention sublayer, with its own four projections and norm, so a decoder layer is a third larger than an encoder layer of the same width. T5 drops the biases, uses norms whose "activations are only rescaled and no additive bias is applied", shares one embedding matrix between the input and the output layer, and learns 32 relative-position embeddings per head, shared across the layers of each stack {cite}`raffel2019exploring`. T5-base (width 768, 12 encoder and 12 decoder layers, 12 heads of 64, feed-forward width 3,072, and the configuration's 32,128 vocabulary entries) has 222,903,552 parameters, the paper's "about 220 million", which it describes as "roughly twice the number of parameters of BERT$_{\text{BASE}}$ since our baseline model contains two layer stacks instead of one".
+
+```python
+def encoder_params(vocab, d, layers, d_ff, positions, segments):
+    """BERT-style encoder: learned position and segment tables, biases, LayerNorm with gain and shift."""
+    embeddings = (vocab + positions + segments) * d + 2 * d
+    attention = 4 * (d * d + d)
+    ffn = d * d_ff + d_ff + d_ff * d + d
+    pooler = d * d + d
+    return embeddings + layers * (attention + ffn + 2 * 2 * d) + pooler
+
+
+def encoder_decoder_params(vocab, d, layers, d_ff, heads, head_dim, buckets=32):
+    """T5-style: no biases, scale-only norms, one shared embedding, a relative-position table per stack."""
+    attention = 4 * d * heads * head_dim
+    ffn = 2 * d * d_ff
+    encoder = layers * (attention + ffn + 2 * d) + buckets * heads + d
+    decoder = layers * (2 * attention + ffn + 3 * d) + buckets * heads + d
+    return vocab * d + encoder + decoder, encoder, decoder
+
+
+bert = encoder_params(30522, 768, 12, 3072, 512, 2)
+t5, encoder, decoder = encoder_decoder_params(32128, 768, 12, 3072, 12, 64)
+print(f"BERT-base: {bert:,}")
+print(f"T5-base: {t5:,} (encoder {encoder:,}, decoder {decoder:,}, ratio to BERT-base {t5 / bert:.3g})")
+```
+
+% output
+
+```text
+BERT-base: 109,482,240
+T5-base: 222,903,552 (encoder 84,954,240, decoder 113,275,008, ratio to BERT-base 2.04)
+```
 
 **State-space and hybrid models** replace some or all attention layers with recurrent layers whose state does not grow with sequence length; Mamba is the best known {cite}`gu2023mamba`. They remove the KV cache's linear growth rather than shrinking it. They are outside the scope of this chapter and are planned for the roadmap's later chapters; see the {doc}`/roadmap`.
 
