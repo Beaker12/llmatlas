@@ -495,11 +495,11 @@ The appeal is that one scoring function replaces dozens of rules. The problems a
 
 Marion et al. {cite}`marion2023less` tested several pruning criteria and found that keeping the *middle* of the perplexity distribution, rather than the head, gave the best downstream models at a fixed token budget, for the reference models they tested. The extremes are both suspicious: the most predictable text is boilerplate and the least predictable is noise.
 
-A smoothed unigram model is enough to see how the ranking behaves. Perplexity of a document with tokens $w_1, \dots, w_N$ under a model $q$ is
+A smoothed unigram model is enough to see how the ranking behaves. Perplexity of a document with tokens $x_1, \dots, x_T$ under a model $q$ is
 
-$$\mathrm{PPL}(w_{1:N}) = \exp\left(-\frac{1}{N}\sum_{i=1}^{N} \log q(w_i \mid w_{<i})\right)$$
+$$\mathrm{PPL}(x_{1:T}) = \exp\left(-\frac{1}{T}\sum_{i=1}^{T} \log q(x_i \mid x_{<i})\right)$$
 
-and for an add-$\alpha$ smoothed unigram model, $q(w) = (c(w) + \alpha)/(C + \alpha |V|)$ where $c(w)$ is the reference count of $w$, $C$ the total reference count and $|V|$ the vocabulary size including an unknown-word slot.
+and for an add-$\alpha$ smoothed unigram model, $q(x) = (\mathrm{count}(x) + \alpha)/(T_{ref} + \alpha |\mathcal{V}|)$ where $\mathrm{count}(x)$ is the number of times token $x$ occurs in the reference corpus, $T_{ref}$ the total number of reference tokens and $|\mathcal{V}|$ the vocabulary size including an unknown-word slot.
 
 ```python
 import math
@@ -584,7 +584,7 @@ assert keep_rate[0] < 0.05  # score 0.0 almost never
 assert np.all(np.diff(keep_rate) >= -0.02)  # monotone up to sampling noise
 ```
 
-Because the expected keep rate at score $s$ is $P(X > 1 - s)$ for $X \sim \text{Pareto}(9)$, which is $(1 + 1 - s)^{-9}$, the curve is steep: a document at score 0.5 is kept with probability about $1.5^{-9} \approx 0.026$. Diversity comes from the sheer number of low-scoring documents, not from a generous acceptance rate.
+Because the expected keep rate at classifier score $\hat{p}$ is $\Pr[\text{Pareto}(9) > 1 - \hat{p}]$, which is $(1 + 1 - \hat{p})^{-9}$, the curve is steep: a document at score 0.5 is kept with probability about $1.5^{-9} \approx 0.026$. Diversity comes from the sheer number of low-scoring documents, not from a generous acceptance rate.
 
 (sec-ch4-measuring-whether-filter-helps)=
 
@@ -650,23 +650,23 @@ Exact matching over the whole document misses the common case where two copies d
 
 ### 5.3 Near-duplicate detection with MinHash and LSH
 
-Two documents are near-duplicates if the sets of their $n$-gram "shingles" have high Jaccard similarity,
+Two documents are near-duplicates if the sets of their $n$-gram "shingles" have high Jaccard similarity: for shingle sets $\mathcal{X}$ and $\mathcal{Y}$,
 
-$$J(A, B) = \frac{|A \cap B|}{|A \cup B|}$$
+$$J(\mathcal{X}, \mathcal{Y}) = \frac{|\mathcal{X} \cap \mathcal{Y}|}{|\mathcal{X} \cup \mathcal{Y}|}$$
 
-Computing Jaccard similarity for every pair of a billion documents is impossible, and MinHash {cite}`broder1997resemblance` is the standard way around it. The key fact: if $h$ is a random hash function over shingles and $\min h(A)$ denotes the smallest hash value among $A$'s shingles, then
+Computing Jaccard similarity for every pair of a billion documents is impossible, and MinHash {cite}`broder1997resemblance` is the standard way around it. The key fact: if $h$ is a random hash function over shingles and $\min h(\mathcal{X})$ denotes the smallest hash value among $\mathcal{X}$'s shingles, then
 
-$$P\left[\min h(A) = \min h(B)\right] = J(A, B)$$
+$$\Pr\left[\min h(\mathcal{X}) = \min h(\mathcal{Y})\right] = J(\mathcal{X}, \mathcal{Y})$$
 
-because the minimum over $A \cup B$ lands in $A \cap B$ with exactly that probability. With $k$ independent hash functions, the fraction of positions at which the two signatures agree is an unbiased estimate of $J$ with variance $J(1-J)/k$. A signature of 128 or 256 small integers replaces a document of any size.
+because the minimum over $\mathcal{X} \cup \mathcal{Y}$ lands in $\mathcal{X} \cap \mathcal{Y}$ with exactly that probability. With $n_{hash}$ independent hash functions, the fraction of positions at which the two signatures agree is an unbiased estimate of $J$ with variance $J(1-J)/n_{hash}$. A signature of 128 or 256 small integers replaces a document of any size.
 
-Locality-sensitive hashing (LSH) then turns the signature into candidate pairs without comparing every pair. Split the $k$ positions into $b$ bands of $r$ rows each ($k = br$). Hash each band of the signature to a bucket; two documents are candidates if any band lands them in the same bucket. The probability that a pair with similarity $s$ becomes a candidate is
+Locality-sensitive hashing (LSH) then turns the signature into candidate pairs without comparing every pair. Split the $n_{hash}$ positions into $b$ bands of $r$ rows each ($n_{hash} = br$). Hash each band of the signature to a bucket; two documents are candidates if any band lands them in the same bucket. The probability that a pair with Jaccard similarity $J$ becomes a candidate is
 
-$$P(\text{candidate}) = 1 - (1 - s^r)^b$$
+$$\Pr[\text{candidate}] = 1 - (1 - J^r)^b$$
 
 which is a steep S-curve with its midpoint near $(1/b)^{1/r}$. Choosing $b$ and $r$ sets the similarity threshold.
 
-Gopher used 13-word shingles with 450 hash functions at a 0.8 threshold; RefinedWeb used 5-word shingles with 9,000 hash functions at the same threshold; FineWeb used 5-word shingles with 112 hash functions in 14 bands of 8 rows, which puts its threshold near 0.75. Dolma relied on exact matching of URLs, documents and paragraphs through a Bloom filter rather than MinHash. The implementation below uses a universal hash family $h_i(x) = (a_i x + b_i) \bmod p$ over a 32-bit shingle hash, which is what most production implementations do.
+Gopher used 13-word shingles with 450 hash functions at a 0.8 threshold; RefinedWeb used 5-word shingles with 9,000 hash functions at the same threshold; FineWeb used 5-word shingles with 112 hash functions in 14 bands of 8 rows, which puts its threshold near 0.75. Dolma relied on exact matching of URLs, documents and paragraphs through a Bloom filter rather than MinHash. The implementation below uses a universal hash family $h_i(\chi) = (a_{i,1} \chi + a_{i,0}) \bmod P$ over the 32-bit integer id $\chi$ of a shingle, with $P$ a large prime, which is what most production implementations do.
 
 ```python
 import hashlib
@@ -769,7 +769,7 @@ Which document to keep from a cluster is not a detail. Keeping the shortest copy
 
 Document-level methods miss the case where a long passage (a licence header, a quotation, a boilerplate disclaimer) is embedded in otherwise distinct documents. Lee et al. {cite}`lee2022deduplicating` address this with a suffix array over the concatenated, tokenized corpus: sort all suffixes, then any two adjacent suffixes that share a prefix of at least 50 tokens mark a repeated span, which is removed from all but one occurrence.
 
-A suffix array over $N$ tokens needs about $8N$ bytes for the index alone, so the method is run over a few hundred gigabytes at a time on a large-memory machine rather than in a distributed map. The implementation below is the naive $O(N \log N)$-comparison version, enough to see the idea on a few thousand tokens.
+A suffix array over $T_{idx}$ tokens needs about $8T_{idx}$ bytes for the index alone, so the method is run over a few hundred gigabytes at a time on a large-memory machine rather than in a distributed map. The implementation below is the naive $\mathcal{O}(T_{idx} \log T_{idx})$-comparison version, enough to see the idea on a few thousand tokens.
 
 ```python
 def repeated_spans(tokens, min_len: int = 50):
@@ -809,7 +809,7 @@ Because substring removal cuts through the middle of documents, it is applied af
 
 ### 5.5 Semantic deduplication
 
-MinHash finds documents that share words. SemDeDup {cite}`abbas2023semdedup` finds documents that share meaning: embed every document with a pretrained encoder, cluster the embeddings with $k$-means, and within each cluster remove all but one of any group of documents whose cosine similarity exceeds a threshold (0.95 or higher in the paper). On LAION and C4 the method removed a further 20 to 50% of data after conventional deduplication with little or no loss, and training on the smaller set was correspondingly faster.
+MinHash finds documents that share words. SemDeDup {cite}`abbas2023semdedup` finds documents that share meaning: embed every document with a pretrained encoder, cluster the embeddings with k-means, and within each cluster remove all but one of any group of documents whose cosine similarity exceeds a threshold (0.95 or higher in the paper). On LAION and C4 the method removed a further 20 to 50% of data after conventional deduplication with little or no loss, and training on the smaller set was correspondingly faster.
 
 The cost is an embedding pass over the corpus, which is a forward pass of a small model per document, and the risk is removing paraphrases that a model would benefit from seeing both of. It is applied last among the deduplication stages and, in most published pipelines, conservatively.
 
@@ -1156,7 +1156,7 @@ The notebook section {ref}`nb-prep-pipeline` assembles normalisation, language i
 
 1. **Threshold sensitivity.** Take the Gopher quality filter and sweep the minimum word count from 10 to 200 on a sample of web text. Plot the fraction retained and inspect twenty rejected documents at each setting. At what threshold do you start rejecting documents you would want to keep?
 1. **Repetition definitions.** Change `repetition_stats` to count non-overlapping n-gram occurrences and compare its decisions with the overlapping version on a sample. How many documents change category? Which version matches your own judgement better?
-1. **LSH curve.** For 128 permutations, plot $1 - (1 - s^r)^b$ for $(b, r) \in \{(8, 16), (16, 8), (32, 4)\}$ and mark the similarity at which each crosses 0.5. Confirm the curve empirically with the notebook's MinHash implementation by generating pairs of documents with controlled overlap.
+1. **LSH curve.** For 128 permutations, plot $1 - (1 - J^r)^b$ for $(b, r) \in \{(8, 16), (16, 8), (32, 4)\}$ and mark the similarity at which each crosses 0.5. Confirm the curve empirically with the notebook's MinHash implementation by generating pairs of documents with controlled overlap.
 1. **Which copy to keep.** Build a cluster of near-duplicate documents (an article with and without its comment thread, with and without a navigation menu, truncated). For each "keep the longest", "keep the shortest" and "keep the earliest" policy, say what the model would see. Which policy would you choose for news? For documentation?
 1. **Phone numbers of the world.** Extend the redaction patterns to handle UK, German and Indian phone formats. Measure precision on a sample of text containing version numbers, ISBNs and timestamps.
 1. **Decontamination by paraphrase.** Paraphrase ten benchmark questions by hand and check whether the 13-gram index catches them. Then try 8-grams. What is the false-positive rate on innocent text at each $n$?
