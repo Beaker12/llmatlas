@@ -276,6 +276,7 @@ layer computes $xW$.
 | $\Pi$ | keyed bijection on example indices that fixes the within-epoch order | {ref}`sec-ch5-determinism-resumption` |
 | $n_{ex}$ | number of examples in an epoch | {ref}`sec-ch5-determinism-resumption` |
 | $n_{loader}$ | DataLoader worker processes per rank | {ref}`sec-ch5-loader-workers` |
+| $n_{slots}$ | number of slots in one period of a stride schedule | {ref}`sec-ch5-determinism-resumption` |
 
 ### Chapter 6: Modern Transformer Architectures
 

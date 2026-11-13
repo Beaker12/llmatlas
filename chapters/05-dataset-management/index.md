@@ -103,7 +103,7 @@ Those numbers drive the design choices in the rest of the chapter: shards rather
 
 Most pipelines use two of these: a text format for everything up to and including the released corpus, and a tokenized binary for training. The text format is what gets versioned and documented; the binary is derived from it and the tokenizer, and is rebuilt rather than versioned.
 
-The Hugging Face hub converts hosted corpora to Parquet for its viewer and `datasets` streams Parquet, JSON Lines and other formats from the hub without downloading everything {cite}`lhoest2021datasets`. The Megatron-LM codebase {cite}`shoeybi2019megatron` (the paper is about model parallelism; the data format lives in the repository), GPT-NeoX and their descendants train from an indexed binary format, a flat array of token ids alongside an array of document offsets. Mosaic's streaming format and WebDataset shards exist for the case where training reads directly from object storage and sequential throughput matters more than random access.
+The Hugging Face hub's dataset viewer converts every hosted dataset to Parquet {cite}`huggingface2026datasetviewer`, and `datasets` streams hosted corpora without downloading everything {cite}`lhoest2021datasets`. The Megatron-LM codebase {cite}`shoeybi2019megatron` (the paper is about model parallelism; the data format lives in the repository), GPT-NeoX and their descendants train from an indexed binary format, a flat array of token ids alongside an array of document offsets. Mosaic's streaming format and WebDataset shards exist for the case where training reads directly from object storage and sequential throughput matters more than random access.
 
 The two streaming formats differ in how a reader finds a sample, as {numref}`fig-ch5-wds-mds` shows.
 
@@ -481,25 +481,36 @@ Git works for source code because a commit is a hash of a tree of hashes of file
 
 - Each shard is content-addressed: its identity is the hash of its uncompressed content (as in {ref}`sec-ch5-sharding`), and it is stored and looked up under that hash. Publishing the hashes is also the defense {cite:t}`carlini2024poisoning` propose against split-view poisoning, in which the content behind a dataset's URLs changes after the dataset was indexed: a client that checks the hashes sees the data the maintainers saw.
 - A **manifest** lists the shards of a version by path, hash and size. The manifest is small enough to keep in Git.
-- The **version root** is the hash of the manifest, or a Merkle root over the shard hashes, so that one short string identifies the whole dataset.
+- The **version root** is the root of a Merkle tree over the manifest's (path, hash) entries, so that one short string identifies the whole dataset.
 
-A Merkle root does more than name the version. Pair the shard hashes, hash each pair, and repeat up to a single root: changing any one shard changes every hash on its path and so the root, and anyone who holds the root can check that a shard belongs to the version from the shard's hash and one sibling hash per level, four hashes for ten shards and about 20 for a million, without the rest of the manifest. Prefixing leaves and inner nodes with different bytes keeps a leaf from being passed off as an inner node.
+A Merkle tree {cite}`merkle1988digital` does more than name the version. Its leaves are the manifest's entries, each the hash of a shard's path and of its content hash, taken in the one order the manifest's paths define: sorted. Pair the leaves, hash each pair, and repeat up to a single root. The root commits to the paths and to the content behind each: renaming a shard, swapping the contents of two shards or changing one byte of one shard changes a leaf, every hash on its path and the root. It does not commit to the order in which a manifest happens to list its entries, since the sort fixes the order; the same version listed another way has the same root. Anyone who holds the root can check that a shard belongs to the version from the shard's path and hash and one sibling hash per level, four hashes for ten shards and about 20 for a million, without the rest of the manifest. Leaves are prefixed with the byte 0x00 and inner nodes with 0x01, the domain separation of Certificate Transparency {cite}`laurie2013rfc6962`, so that a leaf cannot be passed off as an inner node, and the path's length is written before the path so that a leaf's bytes split into a path and a hash in only one way.
 
 ```python
 import hashlib
 
 
-def _leaf(shard_hash: str) -> bytes:
-    return hashlib.sha256(b"\x00" + bytes.fromhex(shard_hash)).digest()  # 0x00: a leaf
+def _leaf(path: str, sha256: str) -> bytes:
+    """0x00, the path's length, the path, the shard's hash: a file and its content."""
+    name = path.encode()
+    data = len(name).to_bytes(2, "big") + name + bytes.fromhex(sha256)
+    return hashlib.sha256(b"\x00" + data).digest()
 
 
 def _node(left: bytes, right: bytes) -> bytes:
     return hashlib.sha256(b"\x01" + left + right).digest()  # 0x01: an inner node
 
 
-def merkle_levels(shard_hashes):
-    """Every level of the tree, leaves first; an unpaired last node is carried up unchanged."""
-    levels = [[_leaf(h) for h in shard_hashes]]
+def canonical(manifest):
+    """The (path, sha256) pairs sorted by path: the one order the root commits to."""
+    entries = sorted((m["path"], m["sha256"]) for m in manifest)
+    if len({path for path, _ in entries}) != len(entries):
+        raise ValueError("a path appears more than once in the manifest")
+    return entries
+
+
+def merkle_levels(manifest):
+    """Every level of the tree, leaves first; an unpaired last node is carried up."""
+    levels = [[_leaf(path, sha256) for path, sha256 in canonical(manifest)]]
     while len(levels[-1]) > 1:
         level = levels[-1]
         up = [_node(level[i], level[i + 1]) for i in range(0, len(level) - 1, 2)]
@@ -509,14 +520,16 @@ def merkle_levels(shard_hashes):
     return levels
 
 
-def merkle_root(shard_hashes) -> str:
-    return merkle_levels(shard_hashes)[-1][0].hex()
+def merkle_root(manifest) -> str:
+    """The version root."""
+    return merkle_levels(manifest)[-1][0].hex()
 
 
-def inclusion_proof(shard_hashes, index: int):
-    """The sibling hashes from leaf `index` to the root, each with the side it sits on."""
+def inclusion_proof(manifest, path: str):
+    """The sibling hashes from the leaf of `path` to the root, each with its side."""
+    index = [p for p, _ in canonical(manifest)].index(path)
     proof = []
-    for level in merkle_levels(shard_hashes)[:-1]:
+    for level in merkle_levels(manifest)[:-1]:
         sibling = index ^ 1
         if sibling < len(level):
             proof.append(("left" if sibling < index else "right", level[sibling].hex()))
@@ -524,43 +537,58 @@ def inclusion_proof(shard_hashes, index: int):
     return proof
 
 
-def verify_inclusion(shard_hash: str, proof, root: str) -> bool:
-    h = _leaf(shard_hash)
+def verify_inclusion(path: str, sha256: str, proof, root: str) -> bool:
+    h = _leaf(path, sha256)
     for side, sibling in proof:
-        h = _node(bytes.fromhex(sibling), h) if side == "left" else _node(h, bytes.fromhex(sibling))
+        s = bytes.fromhex(sibling)
+        h = _node(s, h) if side == "left" else _node(h, s)
     return h.hex() == root
 
 
-shards = [hashlib.sha256(f"shard {i}".encode()).hexdigest() for i in range(10)]
-root = merkle_root(shards)
-proof = inclusion_proof(shards, 6)
-print(f"root of 10 shards: {root[:16]}..., proof for shard 6: {len(proof)} hashes")
-assert verify_inclusion(shards[6], proof, root)
-assert not verify_inclusion(shards[7], proof, root)  # the proof is for shard 6 only
+def sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
-# Change one shard: the root changes, and the old proof no longer verifies against the new root
-edited = list(shards)
-edited[6] = hashlib.sha256(b"shard 6, refiltered").hexdigest()
-assert merkle_root(edited) != root and not verify_inclusion(shards[6], proof, merkle_root(edited))
-# Order matters: the root commits to the sequence of shards, not just their set
-assert merkle_root(shards[::-1]) != root
-print(f"after editing shard 6: {merkle_root(edited)[:16]}..., old proof valid: {verify_inclusion(shards[6], proof, merkle_root(edited))}")
+
+content = {f"shard_{i:03d}": f"shard {i}".encode() for i in range(10)}  # uncompressed bytes
+manifest = [{"path": path, "sha256": sha(data)} for path, data in content.items()]
+root = merkle_root(manifest)
+proof = inclusion_proof(manifest, "shard_006")
+print(f"root of 10 shards: {root[:16]}..., proof for shard_006: {len(proof)} hashes")
+assert verify_inclusion("shard_006", sha(content["shard_006"]), proof, root)
+assert not verify_inclusion("shard_007", sha(content["shard_007"]), proof, root)  # shard_006 only
+
+# The order of the listing is not part of the version: the root sorts by path
+assert merkle_root(manifest[::-1]) == root
+# The paths are: the same contents under other names, or two contents swapped
+renamed = [dict(m, path=m["path"].replace("shard", "part")) for m in manifest]
+assert merkle_root(renamed) != root
+swapped = [dict(m) for m in manifest]
+swapped[2]["sha256"], swapped[3]["sha256"] = manifest[3]["sha256"], manifest[2]["sha256"]
+assert merkle_root(swapped) != root
+# And so is every byte: change one byte of shard_006 and the root changes
+edited = bytearray(content["shard_006"])
+edited[0] ^= 1
+v2 = [dict(m, sha256=sha(bytes(edited))) if m["path"] == "shard_006" else m for m in manifest]
+root_v2 = merkle_root(v2)
+old_proof_valid = verify_inclusion("shard_006", sha(content["shard_006"]), proof, root_v2)
+assert root_v2 != root and not old_proof_valid
+print(f"one byte of shard_006 changed: {root_v2[:16]}..., old proof valid: {old_proof_valid}")
 ```
 
 % output
 
 ```text
-root of 10 shards: 56270bb62a689fd8..., proof for shard 6: 4 hashes
-after editing shard 6: 667b16bc86d691d8..., old proof valid: False
+root of 10 shards: f4471612a205a2f7..., proof for shard_006: 4 hashes
+one byte of shard_006 changed: 53619d808ca6a9e0..., old proof valid: False
 ```
 
 {numref}`fig-ch5-merkle` traces the listing's tree of ten shards.
 
 ```{figure} figures/merkle.*
 :name: fig-ch5-merkle
-:alt: A binary hash tree over shards 0 to 9. Shard 6 and its path, hash of shards 6–7, 4–7, 0–7 and the root, are orange. The four sibling hashes, shard 7, hash of 4–5, hash of 0–3 and hash of 8–9, are blue. The hash of shards 8–9 joins the root directly. The root reads v1 56270bb6 and v2 667b16bc.
+:alt: A binary hash tree over shards 0 to 9 in path order. Shard 6 and its path, hash of shards 6–7, 4–7, 0–7 and the root, are orange. The four sibling hashes, shard 7, hash of 4–5, hash of 0–3 and hash of 8–9, are blue. The hash of shards 8–9 joins the root directly. The root reads v1 f4471612 and v2 53619d80.
 
-The Merkle tree of the listing's ten shards. Refiltering shard 6 (v1 to v2) changes only the four hashes on its path and the root (orange), the root from `56270bb6…` to `667b16bc…`. The four blue hashes are the inclusion proof for shard 6. With them and the root, a reader can check shard 6 without the other nine shard hashes. The hash of shards 8–9 has no partner on two levels, so it is carried up unchanged and joins the root directly.
+The Merkle tree of the listing's ten shards, in path order. Changing one byte of shard 6 (v1 to v2) changes only its leaf, the hashes on its path and the root (orange), the root from `f4471612…` to `53619d80…`. The four blue hashes are the inclusion proof for shard 6. With them and the root, a reader can check shard 6 without the other nine shard hashes. The hash of shards 8–9 has no partner on two levels, so it is carried up unchanged and joins the root directly.
 ```
 
 Because shards are stored by hash, two versions that share most of their shards share the storage, and the diff between them is the diff between their manifests. A corpus rebuilt with one filter changed differs in the shards that filter touched and nowhere else, and the manifest diff says exactly which. This holds only if shard membership is stable: a document must land in the same shard in both builds. Shards cut by running count do not have that property, since removing one document shifts every later shard by one; shards cut by source and by a hash of the document identifier do, which is why pipelines bucket by key rather than by count.
@@ -580,12 +608,6 @@ import hashlib
 import json
 
 
-def manifest_root(manifest) -> str:
-    """Hash of the sorted (path, sha256) pairs; identifies the version."""
-    canonical = json.dumps(sorted((m["path"], m["sha256"]) for m in manifest))
-    return hashlib.sha256(canonical.encode()).hexdigest()
-
-
 def diff_manifests(old, new):
     old_by_path = {m["path"]: m["sha256"] for m in old}
     new_by_path = {m["path"]: m["sha256"] for m in new}
@@ -603,22 +625,18 @@ v2[2]["sha256"] = "h2-refiltered"
 v2.append({"path": "shard_005", "sha256": "h5"})
 del v2[0]
 
-assert manifest_root(v1) != manifest_root(v2)
-assert manifest_root(v1) == manifest_root(list(reversed(v1)))  # order-independent
 assert diff_manifests(v1, v2) == {
     "added": ["shard_005"],
     "removed": ["shard_000"],
     "changed": ["shard_002"],
     "unchanged": 3,
 }
-print("v1 root:", manifest_root(v1)[:16], "v2 root:", manifest_root(v2)[:16])
 print(diff_manifests(v1, v2))
 ```
 
 % output
 
 ```text
-v1 root: c2ebdcb4a3b52f44 v2 root: 0f241186fa4f3428
 {'added': ['shard_005'], 'removed': ['shard_000'], 'changed': ['shard_002'], 'unchanged': 3}
 ```
 
@@ -897,14 +915,14 @@ The same six documents (11, 7, 5, 9, 3 and 13 tokens, each counting its end-of-d
 :name: fig-ch5-packing-histogram
 :alt: A histogram of documents ending in each packed sequence. Most of the 177 sequences hold two to six documents, a handful hold none, and a long tail runs out to one sequence holding 68 documents.
 
-The number of documents that end in each of the notebook's 177 best-fit packed sequences, at sequence length 512. This is a different corpus from the fence above. A sequence with zero documents holds a full 512-token piece of a longer document, a piece that does not contain the document's end. The tail comes from many short documents filling the gaps left by long ones.
+The number of documents that end in each of the notebook's 177 best-fit packed sequences, at sequence length 512. This is a different corpus from the listing above. A sequence with zero documents holds a full 512-token piece of a longer document, a piece that does not contain the document's end. The tail comes from many short documents filling the gaps left by long ones.
 ```
 
 (sec-ch5-cross-document-attention)=
 
 ### 4.2 Cross-document attention
 
-When a sequence holds several documents, causal attention lets a token in the second document attend to the first, which is both a waste (the first document is irrelevant) and a source of the model learning spurious dependencies. The fix is a document mask: a token attends only to earlier tokens of its own document. With a segment id $\operatorname{seg}(i)$ for each position $i$, the mask is $M_{ij} = [j \le i] \cdot [\operatorname{seg}(i) = \operatorname{seg}(j)]$, block-diagonal within the causal triangle. Efficient attention kernels accept this as a list of segment boundaries rather than a full matrix.
+When a sequence holds several documents, causal attention lets a token in the second document attend to the first, which is both a waste (the first document is irrelevant) and a source of the model learning spurious dependencies. The fix is a document mask: a token attends only to earlier tokens of its own document. With a segment id $\operatorname{seg}(i)$ for each position $i$, the mask is $M_{ij} = [j \le i] \cdot [\operatorname{seg}(i) = \operatorname{seg}(j)]$, where a bracket around a condition is 1 when it holds and 0 when it does not (the Iverson bracket), block-diagonal within the causal triangle. Efficient attention kernels accept this as a list of segment boundaries rather than a full matrix.
 
 ```python
 import numpy as np
@@ -963,7 +981,7 @@ The notebook section {ref}`nb-dm-packing` packs the same corpus by chunking and 
 
 ### 4.3 Length bucketing for fine-tuning
 
-Fine-tuning data is the case where padding is the norm: examples are short, of very different lengths, and often kept one per sequence so that the loss can be masked to the response. A batch is padded to its longest example, so a batch drawn at random from a long-tailed length distribution is mostly padding. Length bucketing groups examples of similar length into the same batch and then shuffles the batches, so that the order across steps stays random while the padding within a batch shrinks; the Hugging Face Trainer offers it as `group_by_length`, which groups "samples of roughly the same length together (to minimize padding and be more efficient)" {cite}`huggingface2026trainer`. The listing draws 32,000 example lengths with a median of 147 tokens, batches them 32 at a time, and sorts within pools of 50 batches: padding falls from 75.7% of the batch to 13.0%. Each shuffle has a job. The permutation before pooling makes every pool a random sample of the data, so the pools are alike. The shuffle of all batches afterwards undoes the sort, so that batch length does not rise across a pool and steps do not run from short to long examples. What remains is the cost: every batch holds examples of nearly the same length, so a step's gradient comes from one length range instead of a mix of short and long examples.
+Fine-tuning data is the case where padding is the norm: examples are short, of very different lengths, and often kept one per sequence so that the loss can be masked to the response. A batch is padded to its longest example, so a batch drawn at random from a long-tailed length distribution is mostly padding. Length bucketing groups examples of similar length into the same batch and then shuffles the batches, so that the order across steps stays random while the padding within a batch shrinks; the Hugging Face Trainer offers it as `train_sampling_strategy="group_by_length"` (version 5.22.2; in version 4.57.1 it was the boolean argument `group_by_length`), which groups "samples of roughly the same length together (to minimize padding and be more efficient)" {cite}`huggingface2026trainer`. The listing draws 32,000 example lengths with a median of 147 tokens, batches them 32 at a time, and sorts within pools of 50 batches: padding falls from 75.7% of the batch to 13.0%. Each shuffle has a job. The permutation before pooling makes every pool a random sample of the data, so the pools are alike. The shuffle of all batches afterwards undoes the sort, so that batch length does not rise across a pool and steps do not run from short to long examples. What remains is the cost: every batch holds examples of nearly the same length, so a step's gradient comes from one length range instead of a mix of short and long examples.
 
 ```python
 import numpy as np
@@ -1017,9 +1035,9 @@ Given weights $w_s$ that sum to one, the sampler draws each document's source wi
 
 ```{figure} figures/temperature.*
 :name: fig-ch5-temperature
-:alt: A grouped bar chart with one group each for code, web and wiki and four bars per group for temperatures 0.5, 1, 2 and 4. As temperature rises, web falls from about 0.82 to 0.40 while code and wiki rise. A black tick over each bar marks its target, and every bar lies close to its tick.
+:alt: A grouped bar chart with one group each for code, web and wiki and four bars per group for temperatures 0.5, 1, 2 and 4. As temperature rises, web falls from about 0.82 to 0.40 while code and wiki rise. A black tick over each bar marks its target. With 600 draws per group the bars lie within a few hundredths of their ticks.
 
-The fraction of 600 draws from each source (bars) against the tempered target $p_s$ (black ticks). The weights are web 0.6, wiki 0.25 and code 0.15. At $\tau = 0.5$ the largest weight is sharpened to about 0.8. At $\tau = 4$ the three sources move toward equal shares.
+The fraction of 600 draws from each source (bars) against the tempered target $p_s$ (black ticks). The weights are web 0.6, wiki 0.25 and code 0.15. At $\tau = 0.5$ the largest weight is sharpened to about 0.8. At $\tau = 4$ the three sources move toward equal shares. Each bar is a fraction of 600 draws, so it differs from its tick by sampling noise of up to a few hundredths (a standard error of about 0.016 for the web bar at $\tau = 0.5$).
 ```
 
 ```{figure} figures/epoch-cap.*
@@ -1099,7 +1117,7 @@ class MixtureSampler:
 
     def _permutation(self, s: int, epoch: int):
         if self._perm[s] is None or self._perm[s][0] != epoch:
-            prng = np.random.default_rng([self.seed, s, epoch])  # counter-based seeding
+            prng = np.random.default_rng([self.seed, s, epoch])  # keyed by (seed, source, epoch)
             self._perm[s] = (epoch, prng.permutation(self.sizes[s]))
         return self._perm[s][1]
 
@@ -1169,10 +1187,10 @@ probabilities at temperature 3: {'code': 0.2724, 'web': 0.4552, 'wiki': 0.2724}
 restored at step 300 from the cursors alone: 176 of the next 200 draws differ; with the generator state: 0
 ```
 
-The `seek` method replays draws, which is fine for millions of steps and a few sources. Constant work per step needs two further constructions, and it is worth seeing why seeding alone does not give it. Seeding each permutation by `(seed, source, epoch)`, as `_permutation` does, makes an epoch's order reproducible without replay, but `permutation` still builds the whole array, $\mathcal{O}(n_{\text{ex}})$ work and memory for a source of $n_{\text{ex}}$ documents, to read one element of it. And the cursor, $\operatorname{drawn}_s(t)$, the number of documents of source $s$ drawn before step $t$, is a sum over $t$ independent source draws: hashing each slot fixes every term, but it does not give the sum without adding up the terms.
+The `seek` method replays draws, which is fine for millions of steps and a few sources. Constant work per step needs two further constructions, and it is worth seeing why seeding alone does not give it. Seeding each permutation by `(seed, source, epoch)`, as `_permutation` does, makes an epoch's order reproducible without replay, but `permutation` still builds the whole array, $\mathcal{O}(n_{ex})$ work and memory for a source of $n_{ex}$ documents, to read one element of it. And the cursor, $\operatorname{drawn}_s(t)$, the number of documents of source $s$ drawn before step $t$, is a sum over $t$ independent source draws: hashing each slot fixes every term, but it does not give the sum without adding up the terms.
 
-- **Within-epoch order: a keyed bijection.** Replace the stored array by a function $\Pi$ on $\{0, \dots, n_{\text{ex}} - 1\}$ that can be evaluated at one point. A Feistel network does this. It splits an integer of an even number of bits into a left and a right half and, in each round, replaces (left, right) by (right, left XOR F(right)) with a keyed hash F. A round is undone from its output whatever F is, so the network is a bijection on its domain for any key. Taking the smallest even bit width that covers $n_{\text{ex}}$ gives a domain of fewer than $4 n_{\text{ex}}$ integers when $n_{\text{ex}} > 1$ (and of 4 for a single document); a value that lands outside the range is encrypted again until it falls back in (cycle-walking). This is still a bijection, because each cycle of the network visits the in-range values in a fixed order and the walk moves each one to the next. Summed over all $n_{\text{ex}}$ starting points the walks touch each point of the domain at most once, so the mean cost is at most the domain size over $n_{\text{ex}}$: below four encryptions per index for $n_{\text{ex}} > 1$, and 1.024 for $n_{\text{ex}} = 1{,}000$ with its 1,024-point domain.
-- **Cursors: a stride schedule.** Fix the mixture in advance as a repeating pattern of slots, here 20 slots in which each source holds its weight times 20, spread out by weighted round-robin. Then $\operatorname{drawn}_s(t)$ is the number of whole periods before $t$ times the source's slots per period, plus the source's count among the first $t \bmod 20$ slots, read from a table of 21 prefix counts. The document at step $t$ is $\Pi(\operatorname{drawn}_s(t) \bmod n_{\text{ex}})$, with $\Pi$ keyed by the seed, the source and the epoch $\lfloor \operatorname{drawn}_s(t) / n_{\text{ex}} \rfloor$.
+- **Within-epoch order: a keyed bijection.** Replace the stored array by a function $\Pi$ on $\{0, \dots, n_{ex} - 1\}$ that can be evaluated at one point. A Feistel network does this. It splits an integer of an even number of bits into a left and a right half and, in each round, replaces (left, right) by (right, left XOR F(right)) with a keyed hash F. A round is undone from its output whatever F is, so the network is a bijection on its domain for any key. Taking the smallest even bit width that covers $n_{ex}$ gives a domain of fewer than $4 n_{ex}$ integers when $n_{ex} > 1$ (and of 4 for a single document); a value that lands outside the range is encrypted again until it falls back in (cycle-walking). This is still a bijection, because each cycle of the network visits the in-range values in a fixed order and the walk moves each one to the next. Summed over all $n_{ex}$ starting points the walks touch each point of the domain at most once, so the mean cost is at most the domain size over $n_{ex}$: below four encryptions per index for $n_{ex} > 1$, and 1.024 for $n_{ex} = 1{,}000$ with its 1,024-point domain.
+- **Cursors: a stride schedule.** Fix the mixture in advance as a repeating pattern of $n_{slots}$ slots, here $n_{slots} = 20$. Source $s$ gets $\lfloor w_s n_{slots} \rfloor$ slots, and the slots still free go to the sources with the largest remainders $w_s n_{slots} - \lfloor w_s n_{slots} \rfloor$, so each count is within one slot of $w_s n_{slots}$ and each realized share within $1/n_{slots}$ of its weight. The shares equal the weights exactly when every $w_s n_{slots}$ is a whole number, that is, when every weight is a multiple of $1/n_{slots}$: 0.7, 0.15 and 0.15 are exact at $n_{slots} = 20$, thirds need $n_{slots}$ a multiple of 3, and a weight given to 0.1% needs $n_{slots} = 1{,}000$. The slots are spread out by the smooth weighted round-robin of nginx's load balancer ([`ngx_http_upstream_round_robin.c`](https://github.com/nginx/nginx/blob/master/src/http/ngx_http_upstream_round_robin.c)), which keeps each source's slots evenly spaced. Then $\operatorname{drawn}_s(t)$ is the number of whole periods before $t$ times the source's slots per period, plus the source's count among the first $t \bmod 20$ slots, read from a table of 21 prefix counts. The document at step $t$ is $\Pi(\operatorname{drawn}_s(t) \bmod n_{ex})$, with $\Pi$ keyed by the seed, the source and the epoch $\lfloor \operatorname{drawn}_s(t) / n_{ex} \rfloor$.
 
 Each step is then a table lookup, a division and a few hash evaluations, whatever $t$ is. The price is that the mixture is fixed when the schedule is computed: epoch caps and changes of weight between phases are applied there, and a change of weights mid-run starts a new schedule at a recorded step. A sampler that draws sources at random, like the one above, cannot seek in constant work, but it need not replay from step 0 either. A checkpoint that stores its step, its cursors and the state of its random generator lets it resume exactly at the checkpoint, so reaching a step between two checkpoints replays at most one checkpoint interval. The cursors alone are not enough: the next source draw comes from `self.rng`, whose state depends on every draw before it, which is why the end of the `MixtureSampler` listing restores the generator state as well and shows that a restore from the cursors alone continues with a different stream.
 
@@ -1206,11 +1224,23 @@ class FeistelPermutation:
         return x
 
 
-def stride_schedule(weights: dict, period: int):
-    """A fixed pattern of `period` slots, round(w * period) per source, spread out by smooth
-    weighted round-robin, and for each source the prefix counts of its slots in the pattern."""
-    counts = {s: round(w * period) for s, w in sorted(weights.items())}
-    assert sum(counts.values()) == period
+def stride_schedule(weights: dict, period: int, exact: bool = False):
+    """A pattern of `period` slots and, per source, the prefix counts of its slots.
+
+    Source s gets floor(w_s * period) slots and the slots left over go to the largest
+    remainders, so its share is within 1 / period of w_s, and equal to w_s when
+    w_s * period is whole; exact=True refuses to round. The slots are spread out by
+    smooth weighted round-robin."""
+    if period < 1 or min(weights.values()) < 0 or abs(sum(weights.values()) - 1) > 1e-9:
+        raise ValueError(f"need weights >= 0 summing to 1 and a period >= 1: {weights}, {period}")
+    ideal = {s: w * period for s, w in sorted(weights.items())}
+    counts = {s: int(x) for s, x in ideal.items()}
+    by_remainder = sorted(ideal, key=lambda s: counts[s] - ideal[s])
+    for s in by_remainder[: period - sum(counts.values())]:
+        counts[s] += 1
+    if exact and max(abs(counts[s] - ideal[s]) for s in ideal) > 1e-9:
+        nearest = {s: c / period for s, c in counts.items()}
+        raise ValueError(f"not whole multiples of 1/{period}: {weights}; nearest {nearest}")
     credit = dict.fromkeys(counts, 0)
     pattern = []
     for _ in range(period):
@@ -1224,6 +1254,8 @@ def stride_schedule(weights: dict, period: int):
         for s in counts:
             prefix[s].append(prefix[s][-1] + (slot == s))
     return pattern, prefix
+
+
 
 
 class StrideSampler:
@@ -1269,6 +1301,17 @@ wiki = [d for s, d in stream if s == "wiki"]
 assert sorted(wiki[:50]) == list(range(50)) and sorted(wiki[50:100]) == list(range(50))  # each epoch is a permutation
 print("drawn by step 2000:", {s: sampler.drawn(s, 2000) for s in sorted(sizes)})
 print("sample at step 1,000,000,007:", StrideSampler(sizes, weights, seed=1)[1_000_000_007])
+
+thirds = dict.fromkeys(["web", "wiki", "code"], 1 / 3)
+for period in (20, 21):
+    _, prefix = stride_schedule(thirds, period)
+    shares = {s: prefix[s][-1] / period for s in sorted(thirds)}
+    assert max(abs(shares[s] - 1 / 3) for s in thirds) <= 1 / period
+    print(f"thirds at period {period}:", {s: round(v, 4) for s, v in shares.items()})
+try:
+    stride_schedule(thirds, 20, exact=True)
+except ValueError as e:
+    print("exact=True:", str(e).split(":")[0])
 ```
 
 % output
@@ -1277,6 +1320,9 @@ print("sample at step 1,000,000,007:", StrideSampler(sizes, weights, seed=1)[1_0
 Feistel on range(1000): permutation True, 1.024 encryptions per index
 drawn by step 2000: {'code': 300, 'web': 1400, 'wiki': 300}
 sample at step 1,000,000,007: ('web', 377)
+thirds at period 20: {'code': 0.35, 'web': 0.35, 'wiki': 0.3}
+thirds at period 21: {'code': 0.3333, 'web': 0.3333, 'wiki': 0.3333}
+exact=True: not whole multiples of 1/20
 ```
 
 (sec-ch5-shuffling-right-granularity)=
@@ -1375,10 +1421,10 @@ The notebook section {ref}`nb-dm-sampler` runs the mixture sampler, plots the re
 
 ### 6.1 Sharding across ranks
 
-A training job with $n_{\text{ranks}}$ processes (data-parallel ranks) needs each step's global batch of $B$ sequences split into $n_{\text{ranks}}$ micro-batches of $B / n_{\text{ranks}}$, with every rank reading different data and no rank reading what another reads. Two designs:
+A training job with $n_{ranks}$ processes (data-parallel ranks) needs each step's global batch of $B$ sequences split into $n_{ranks}$ micro-batches of $B / n_{ranks}$, with every rank reading different data and no rank reading what another reads. Two designs:
 
-- **Shard assignment.** Shards are partitioned among ranks, each rank gets every $n_{\text{ranks}}$-th shard, and each rank samples within its own shards. Simple, and what a WebDataset-style loader does. The drawback is that the global batch at step $t$ depends on $n_{\text{ranks}}$: change the number of GPUs and the data order changes, so a run resumed on a different cluster size is not the same run. Resumed mid-epoch, it also repeats samples that it trained on before and never reaches others, because each rank's position in its shards no longer matches what was consumed; Exercise 6 of {ref}`sec-ch5-exercises` counts them.
-- **Global indexing.** The sampler produces a single global sequence of samples; the sample at global position $t B + i$ goes to rank $i \bmod n_{\text{ranks}}$ (or rank $\lfloor i\, n_{\text{ranks}} / B \rfloor$). Every rank runs the same sampler and takes its slice. The global batch is then independent of $n_{\text{ranks}}$, and a run can be resumed with a different number of ranks and see the same data in the same order.
+- **Shard assignment.** Shards are partitioned among ranks, each rank gets every $n_{ranks}$-th shard, and each rank samples within its own shards. Simple, and what a WebDataset-style loader does. The drawback is that the global batch at step $t$ depends on $n_{ranks}$: change the number of GPUs and the data order changes, so a run resumed on a different cluster size is not the same run. Resumed mid-epoch, it also repeats samples that it trained on before and never reaches others, because each rank's position in its shards no longer matches what was consumed; Exercise 6 of {ref}`sec-ch5-exercises` counts them.
+- **Global indexing.** The sampler produces a single global sequence of samples; the sample at global position $t B + i$ goes to rank $i \bmod n_{ranks}$ (or rank $\lfloor i\, n_{ranks} / B \rfloor$). Every rank runs the same sampler and takes its slice. The global batch is then independent of $n_{ranks}$, and a run can be resumed with a different number of ranks and see the same data in the same order.
 
 The second property, that the stream is a function of `(seed, step)` and nothing else, is what makes a large run reproducible across hardware changes, and it costs nothing beyond requiring that every rank can read any shard. Mosaic Streaming {cite}`mosaicml2022streaming` is built around it: its sample order is fixed by the seed and the number of canonical nodes, so with `num_canonical_nodes` pinned it does not change with the number of GPUs. The default is not pinned: it is derived from the number of physical nodes of the initial run (64 times that number for the `py1s` and `py2s` shuffles) {cite}`mosaicml2026streamingdocs`.
 
@@ -1439,7 +1485,7 @@ shard assignment, step 3, 2 vs 4 ranks: [12, 13, 14, 15] [6, 7, 22, 23]
 :name: fig-ch5-ranks
 :alt: Two panels for step 3 with a global batch of 8. Shard assignment: with 2 ranks, rank 0 reads documents 12–15 and rank 1 reads 28–31; with 4 ranks, the ranks read 6, 7; 22, 23; 38, 39; and 54, 55, so the global batch differs. Global indexing: with 2 ranks and with 4 the ranks split samples 24–31 among themselves, so the global batch is the same.
 
-The documents in the global batch at step 3 ($B = 8$, ten shards of 16 documents) for 2 and 4 ranks. Under shard assignment, each rank walks its own shards, so the set of documents seen at a step depends on $n_{\text{ranks}}$. Under global indexing, the batch is always global positions 24 to 31, and only the split between ranks changes.
+The documents in the global batch at step 3 ($B = 8$, ten shards of 16 documents) for 2 and 4 ranks. Under shard assignment, each rank walks its own shards, so the set of documents seen at a step depends on $n_{ranks}$. Under global indexing, the batch is always global positions 24 to 31, and only the split between ranks changes.
 ```
 
 (sec-ch5-throughput)=
@@ -1459,7 +1505,7 @@ The notebook section {ref}`nb-dm-distributed` simulates shard assignment for one
 
 ### 6.3 Worker processes within a rank
 
-Each rank usually reads through $n_{\text{loader}}$ worker processes, which is a second level of splitting below the ranks, and the place where a common bug lives. With a map-style dataset the loader hands each worker a list of indices, and nothing is read twice. With an iterable dataset, the kind a streaming loader is, every worker receives a copy of the whole dataset object; the PyTorch documentation warns that "naive multi-process loading will often result in duplicated data" {cite}`pytorch2026data`. Each worker then yields the rank's entire stream, and the rank trains on every sample $n_{\text{loader}}$ times. The loss curve looks normal, only the effective dataset is smaller. The fix is to split the rank's stream again by worker inside the dataset's iterator, using the worker's id and the worker count that `torch.utils.data.get_worker_info()` reports. The listing simulates four ranks of three workers each over 1,200 samples: without the split each sample is seen three times, and with it once.
+Each rank usually reads through $n_{loader}$ worker processes, which is a second level of splitting below the ranks, and the place where a common bug lives. With a map-style dataset the loader hands each worker a list of indices, and nothing is read twice. With an iterable dataset, the kind a streaming loader is, every worker receives a copy of the whole dataset object; the PyTorch documentation warns that "naive multi-process loading will often result in duplicated data" {cite}`pytorch2026data`. Each worker then yields the rank's entire stream, and the rank trains on every sample $n_{loader}$ times. The loss curve looks normal, only the effective dataset is smaller. The fix is to split the rank's stream again by worker inside the dataset's iterator, using the worker's id and the worker count that `torch.utils.data.get_worker_info()` reports. The listing simulates four ranks of three workers each over 1,200 samples: without the split each sample is seen three times, and with it once.
 
 ```python
 def rank_stream(rank: int, world_size: int, n: int):
@@ -1596,9 +1642,11 @@ Two monitoring practices borrowed from other fields:
 - **Canaries.** Insert a handful of unique, random strings into the corpus at known positions and with known repetition counts. After training, test whether the model can complete them. Canaries measure memorization directly {cite}`carlini2019secret`, and a canary that appears in a version where it should not have is proof that an upstream shard leaked.
 - **Drift.** Compare every statistic of {ref}`sec-ch5-statistics-per-version` between consecutive versions and flag changes beyond a threshold. Most data bugs (an extractor update that drops tables, a language-identification model update that rejects more of one language, a source that silently went offline) show up as a drift in a per-source statistic before they show up in a loss curve.
 
-A drift check needs a statistic and a threshold fixed before the comparison. For a length distribution, a good statistic is the two-sample Kolmogorov-Smirnov statistic D, the largest gap between the two empirical distribution functions. The threshold can come from the data themselves: pool the two versions' lengths, relabel them at random into groups of the original sizes many times, and take the value of D that only 1% of the relabelings exceed. That fixes the false-alarm rate: about one comparison in a hundred between two versions whose lengths come from the same distribution is flagged. (A deterministic rebuild with nothing changed is byte-identical and gives D = 0.) The listing compares a version with a second draw from the same length distribution and with a build in which an extractor update dropped the tables from 15% of documents: the first stays under the threshold and the second is flagged. On corpora of millions of documents the threshold becomes so small that real but harmless changes cross it, so in practice it is paired with a minimum effect size, such as a change in mean length of more than a few percent.
+A drift check needs a statistic and a threshold fixed before the comparison. For a length distribution, a good statistic is the two-sample Kolmogorov-Smirnov statistic D, the largest gap between the two empirical distribution functions. Its threshold has a closed form. For samples of sizes $n$ and $m$ from one continuous distribution, the probability that $D$ exceeds $c\sqrt{1/n + 1/m}$ tends to $2 \sum_{k \ge 1} (-1)^{k-1} e^{-2 k^2 c^2}$, Kolmogorov's limiting distribution, which {cite:t}`smirnov1948table` tabulated; in it,, at a 1% tail, the terms after the first add less than $10^{-8}$; setting $2 e^{-2c^2} = 0.01$ gives $c = 1.628$, and for two versions of 20,000 documents a threshold of $1.628 \sqrt{2/20{,}000} = 0.0163$. That fixes the false-alarm rate: one comparison in a hundred between two versions whose lengths come from the same distribution is flagged. The rate rests on two assumptions, large samples and no ties, and lengths in tokens are integers with many ties. The listing therefore measures it on the data themselves: pool the two versions' lengths, relabel them at random into groups of the original sizes, which is what "same distribution" means for the data at hand (a permutation test), and count how often D exceeds the threshold. Each seed's 1,000 relabelings estimate the rate with a standard error of 0.31 points, so the listing asserts every seed between 0.25% and 2% and the five together, a standard error of 0.14 points, between 0.7% and 1.3%. A threshold taken instead as the 99th percentile of a few hundred relabelings moves with the seed: with 200 it lies between the second and third largest value, and over six seeds it ranged from 0.0149 to 0.0177 on the listing's data, false-alarm rates of about 2.4% and 0.4% by the formula above. (A deterministic rebuild with nothing changed is byte-identical and gives D = 0.) The listing compares a version with a second draw from the same length distribution and with a build in which an extractor update dropped the tables from 15% of documents: the first stays under the threshold and the second is flagged. On corpora of millions of documents the threshold becomes so small that real but harmless changes cross it, so in practice it is paired with a minimum effect size, such as a change in mean length of more than a few percent.
 
 ```python
+import math
+
 import numpy as np
 
 
@@ -1610,15 +1658,26 @@ def ks_statistic(a, b) -> float:
                                - np.searchsorted(b, grid, side="right") / b.size)))
 
 
-def permutation_threshold(a, b, false_alarm: float = 0.01, trials: int = 200, seed: int = 0) -> float:
-    """The statistic that only `false_alarm` of random relabelings of the pooled lengths exceed."""
+def ks_threshold(n: int, m: int, false_alarm: float = 0.01) -> float:
+    """The D that samples of sizes n and m from one continuous distribution exceed with
+    probability `false_alarm`: P(D > c sqrt(1/n + 1/m)) -> 2 exp(-2 c^2) for large n, m."""
+    return math.sqrt(-math.log(false_alarm / 2) / 2 * (1 / n + 1 / m))
+
+
+def relabeled_rate(a, b, threshold: float, trials: int, seed: int) -> float:
+    """Share of random relabelings of the pooled sample with D above `threshold`: the
+    false-alarm rate measured on the data themselves, ties included."""
+    pooled = np.sort(np.concatenate([a, b]))
+    run_end = np.append(pooled[1:] != pooled[:-1], True)  # D is read where a run of ties ends
     rng = np.random.default_rng(seed)
-    pooled = np.concatenate([a, b])
-    null = []
+    above = 0
     for _ in range(trials):
-        shuffled = rng.permutation(pooled)
-        null.append(ks_statistic(shuffled[: a.size], shuffled[a.size :]))
-    return float(np.quantile(null, 1 - false_alarm))
+        in_a = rng.permutation(pooled.size) < a.size
+        gap = np.cumsum(in_a) / a.size - np.cumsum(~in_a) / b.size
+        above += np.abs(gap[run_end]).max() > threshold
+    return above / trials
+
+
 
 
 rng = np.random.default_rng(7)
@@ -1628,20 +1687,26 @@ v2_bug = v2_same.copy()
 tables = rng.random(v2_bug.size) < 0.15   # an extractor update drops the tables from 15% of documents ...
 v2_bug[tables] = (v2_bug[tables] * 0.6).astype(int) + 1  # ... which removes 40% of their tokens
 
+limit = ks_threshold(v1.size, v2_same.size)
 for name, v2 in (("same distribution", v2_same), ("tables dropped", v2_bug)):
-    d, limit = ks_statistic(v1, v2), permutation_threshold(v1, v2)
+    d = ks_statistic(v1, v2)
     print(f"{name:17s}: D = {d:.4f}, threshold {limit:.4f}, flagged {d > limit}")
 print(f"mean length {v1.mean():.4g} -> {v2_bug.mean():.4g} tokens")
-assert ks_statistic(v1, v2_same) < permutation_threshold(v1, v2_same)
-assert ks_statistic(v1, v2_bug) > permutation_threshold(v1, v2_bug)
+assert ks_statistic(v1, v2_same) < limit < ks_statistic(v1, v2_bug)
+
+rates = [relabeled_rate(v1, v2_same, limit, trials=1_000, seed=s) for s in range(5)]
+print(f"false alarms in 5 x 1,000 relabelings: {min(rates):.1%} to {max(rates):.1%}, "
+      f"together {np.mean(rates):.2%}")
+assert all(0.0025 <= r <= 0.02 for r in rates) and 0.007 <= np.mean(rates) <= 0.013
 ```
 
 % output
 
 ```text
-same distribution: D = 0.0049, threshold 0.0170, flagged False
-tables dropped   : D = 0.0356, threshold 0.0171, flagged True
+same distribution: D = 0.0049, threshold 0.0163, flagged False
+tables dropped   : D = 0.0356, threshold 0.0163, flagged True
 mean length 656.2 -> 617.9 tokens
+false alarms in 5 x 1,000 relabelings: 0.7% to 1.4%, together 1.10%
 ```
 
 ```{admonition} Statistics and Contracts
@@ -1664,7 +1729,7 @@ A dataset version is accompanied by a document that says what it is for someone 
 
 The pretraining corpora that are well documented (The Pile {cite}`gao2020pile`, Dolma {cite}`soldaini2024dolma`, FineWeb {cite}`penedo2024fineweb`) publish a datasheet or card, the per-source statistics, the pipeline code and the ablation results together, and that combination is what allows anyone else to build on them. C4's post-hoc documentation {cite}`dodge2021documenting`, written about eighteen months after the T5 paper by authors none of whom had written it, found text from unexpected sources such as patents, machine-generated text, evaluation examples from benchmark datasets, and a blocklist filter that disproportionately removed text from and about minority individuals.
 
-Croissant, a machine-readable metadata vocabulary built on schema.org, {cite}`akhtar2024croissant` is becoming the common format for the card's structured part (sources, licenses, fields, splits) so that hubs and loaders can read it; the prose part still needs a person.
+Croissant {cite}`akhtar2024croissant`, a machine-readable metadata vocabulary built on schema.org, is becoming the common format for the card's structured part (sources, licenses, fields, splits) so that hubs and loaders can read it; the prose part still needs a person.
 
 (sec-ch5-licenses-provenance-record)=
 
@@ -1806,7 +1871,7 @@ What no tool supplies is the discipline: that every version is produced by the b
 ## Summary
 
 - A training corpus is kept twice: as text shards (JSON Lines or Parquet) that are versioned, inspected and documented, and as tokenized binaries with a document index that training memory-maps. The binary names its tokenizer by hash, and its sidecar records the special-token policy.
-- A shard's identity is the SHA-256 of its uncompressed bytes. A version is a manifest of those hashes, named by a Merkle root, diffed shard by shard and never edited in place, and a split assigned by a hash of each document's key keeps validation documents in validation from one version to the next.
+- A shard's identity is the SHA-256 of its uncompressed bytes. A version is a manifest of those hashes, named by the Merkle root of its (path, hash) entries sorted by path, diffed shard by shard and never edited in place, and a split assigned by a hash of each document's key keeps validation documents in validation from one version to the next.
 - Documents are concatenated with end-of-document tokens and then either chunked, which splits documents at sequence boundaries, or packed best-fit, which keeps them whole for a little padding. The document mask stops attention across document boundaries inside a sequence.
 - Sources are mixed by weight, flattened by a temperature and capped in epochs. The sampler is a function of the seed and the step, so a run resumes exactly, and a keyed Feistel permutation with a stride schedule makes seeking to any step constant work.
 - Global indexing makes the global batch independent of the world size; per-rank shard assignment does not, and resuming it with a different world size repeats and skips data. Loader workers and prefetching keep the accelerators fed.
@@ -2106,13 +2171,22 @@ starts[:, 1:] = seg[:, 1:] != seg[:, :-1]
 position = index - torch.where(starts, index, 0).cummax(1).values  # position of the input token in its document
 changed = seg > 0  # tokens after the first document boundary: the only ones whose context the mask changes
 buckets = [(0, 0), (1, 3), (4, 7), (8, 15), (16, SEQ)]
-loss_by = {}
+first = changed & (position == 0)
+loss_by, probe = {}, {}
 for seed in (0, 1):
     for doc_mask in (False, True):
         model = train(doc_mask, seed)
         with torch.no_grad():
-            loss = F.cross_entropy(model(x, doc_mask).reshape(-1, VOCAB), y.reshape(-1), reduction="none").view_as(seg)
+            logits = model(x, doc_mask)
+        loss = F.cross_entropy(logits.reshape(-1, VOCAB), y.reshape(-1), reduction="none").view_as(seg)
         loss_by[seed, doc_mask] = [loss[changed & (position >= lo) & (position <= hi)].mean().item() for lo, hi in buckets]
+        # Probe at a document's first token: how much probability goes to repeating it?
+        probs = logits.softmax(-1)
+        p_repeat, p_target = probs.gather(-1, x[..., None])[..., 0], probs.gather(-1, y[..., None])[..., 0]
+        other = first & (y != x)  # the targets that are not a repeat
+        probe[seed, doc_mask] = (p_repeat[first].mean().item(), probs[..., EOD][first].mean().item(),
+                                 -p_target[other].log().mean().item(),
+                                 -(p_target / (1 - p_repeat))[other].log().mean().item())
 print(f"{'held-out loss by position in document':40s}" + " ".join(f"{h:>6}" for h in ("0", "1-3", "4-7", "8-15", "16+")))
 for (seed, doc_mask), row in loss_by.items():
     label = f"seed {seed}, {'document mask' if doc_mask else 'causal only'}"
@@ -2122,6 +2196,16 @@ for seed in (0, 1):
     print(f"{f'seed {seed}, gap (causal - mask)':40s}" + " ".join(f"{g:+6.2f}" for g in gap))
     assert gap[0] < 0  # at a document's first token the mask does not help
     assert min(gap[2:]) > 0.2  # from position 4 on it lowers the loss by more than 0.2
+eod = (y[first] == EOD).float().mean().item()
+constant = -(eod * np.log(eod) + (1 - eod) * np.log((1 - eod) / (VOCAB - 1)))
+print(f"position 0: {int(first.sum())} targets, {eod:.1%} of them EOD; best constant loss {constant:.2f}")
+print(f"{'':24s}P(repeat)  P(EOD)  loss  loss without the repeat")
+for (seed, doc_mask), (repeat, p_eod, raw, rest) in probe.items():
+    label = f"seed {seed}, {'document mask' if doc_mask else 'causal only'}"
+    print(f"{label:24s}{repeat:9.3f} {p_eod:7.3f} {raw:5.2f} {rest:23.2f}")
+for seed in (0, 1):
+    assert probe[seed, True][0] > 5 * probe[seed, False][0]  # the mask makes it predict a repeat
+    assert probe[seed, True][2] - probe[seed, True][3] > 0.1  # and that mass costs it over 0.1
 ```
 
 % output-shape
@@ -2136,9 +2220,15 @@ seed 1, causal only                       4.19   4.23   4.10   3.99   3.90
 seed 1, document mask                     4.84   4.33   3.66   3.45   3.47
 seed 0, gap (causal - mask)              -0.48  -0.11  +0.46  +0.51  +0.41
 seed 1, gap (causal - mask)              -0.64  -0.10  +0.45  +0.55  +0.43
+position 0: 487 targets, 8.2% of them EOD; best constant loss 4.09
+                        P(repeat)  P(EOD)  loss  loss without the repeat
+seed 0, causal only         0.015   0.053  4.22                    4.20
+seed 0, document mask       0.178   0.048  4.74                    4.53
+seed 1, causal only         0.013   0.059  4.19                    4.18
+seed 1, document mask       0.182   0.046  4.88                    4.67
 ```
 
-The mask removes 62.0% of the causal attention pairs and changes the context of 75.6% of the tokens: every token after the first document boundary of its sequence. The change is largest for a document's first tokens, which without the mask see up to several thousand tokens of an unrelated document and with it see only the document's own tokens. For the training comparison the listing scales the setting down by 64, to 64-token sequences and documents averaging 16 tokens, and trains a two-layer decoder for 200 steps with and without the document mask, from the same initial weights and on the same batches, for two seeds. Each document repeats a random pattern of three to eight tokens, so its first tokens cannot be predicted and its later tokens can be copied from earlier in the same document, while nothing in an earlier document helps. The held-out loss is averaged by the position of the token in its document, over the tokens whose context the mask changes. The losses depend in their last digits on the machine, so the output above is the shape of one run, and the result is what the listing asserts for every seed: the gap (loss without the mask minus loss with it) is negative at position 0, the prediction of a document's second token from its first, and from position 4 on the mask lowers the loss by more than 0.2. In the run shown, both models are near or above the chance level of ln 63 ≈ 4.14 at position 0, and the masked model is the further above it (4.70 and 4.84 against 4.22 and 4.19 without the mask), a gap of −0.48 and −0.64; the listing does not measure why. From position 4 on, where the document has a pattern to copy, the gain is between +0.41 and +0.55 in every bucket and both seeds, and the output shows no clear peak: it is about the same at positions 4 to 7, 8 to 15 and beyond 16.
+The mask removes 62.0% of the causal attention pairs and changes the context of 75.6% of the tokens: every token after the first document boundary of its sequence. The change is largest for a document's first tokens, which without the mask see up to several thousand tokens of an unrelated document and with it see only the document's own tokens. For the training comparison the listing scales the setting down by 64, to 64-token sequences and documents averaging 16 tokens, and trains a two-layer decoder for 200 steps with and without the document mask, from the same initial weights and on the same batches, for two seeds. Each document repeats a random pattern of three to eight tokens, so its first tokens cannot be predicted and its later tokens can be copied from earlier in the same document, while nothing in an earlier document helps. The held-out loss is averaged by the position of the token in its document, over the tokens whose context the mask changes. The losses depend in their last digits on the machine, so the output above is the shape of one run, and the result is what the listing asserts for every seed: the gap (loss without the mask minus loss with it) is negative at position 0, the prediction of a document's second token from its first, and from position 4 on the mask lowers the loss by more than 0.2. In the run shown, both models are above the best constant prediction at position 0, which is 4.09 nats rather than ln 63 ≈ 4.14 because 8.2% of these targets are the end-of-document token, and the masked model is the further above it (4.70 and 4.84 against 4.22 and 4.19 without the mask), a gap of −0.48 and −0.64. The probe at the end of the listing accounts for part of that gap. Under the mask a document's first token can attend only to itself, and the masked model gives 0.18 of its probability to the next token repeating it, against 0.013 to 0.015 without the mask, though a document's second token repeats its first only by chance. Taking that mass away and renormalizing lowers the masked model's loss on the targets that are not a repeat by 0.21 (4.74 to 4.53 and 4.88 to 4.67) and the causal model's by 0.01 to 0.02, and the listing asserts for both seeds that the repeat costs the masked model more than 0.1. The rest of the gap, 0.33 and 0.49 nats on those targets, is not the end-of-document token, to which both models give about 0.05; the probe rules that out and does not explain the remainder. From position 4 on, where the document has a pattern to copy, the gain is between +0.41 and +0.55 in every bucket and both seeds, and the output shows no clear peak: it is about the same at positions 4 to 7, 8 to 15 and beyond 16.
 ````
 
 1. **Seeking across mixture phases.** The `StrideSampler` of {ref}`sec-ch5-determinism-resumption` seeks in constant work for one fixed mixture, but runs often change the mixture partway through. Extend its cursors $\operatorname{drawn}_s(t)$ to a schedule of two phases: weights 0.7, 0.15 and 0.15 for web, wiki and code until step 5,000, then 0.5, 0.25 and 0.25. Verify the closed form against iteration: seeking to step $t$ and iterating to it must agree at a thousand random steps.
@@ -2152,11 +2242,23 @@ Each phase is a stride schedule of its own, started at the phase's first step. T
 import numpy as np
 
 
-def stride_schedule(weights: dict, period: int):
-    """A fixed pattern of `period` slots, round(w * period) per source, spread out by smooth
-    weighted round-robin, and for each source the prefix counts of its slots in the pattern."""
-    counts = {s: round(w * period) for s, w in sorted(weights.items())}
-    assert sum(counts.values()) == period
+def stride_schedule(weights: dict, period: int, exact: bool = False):
+    """A pattern of `period` slots and, per source, the prefix counts of its slots.
+
+    Source s gets floor(w_s * period) slots and the slots left over go to the largest
+    remainders, so its share is within 1 / period of w_s, and equal to w_s when
+    w_s * period is whole; exact=True refuses to round. The slots are spread out by
+    smooth weighted round-robin."""
+    if period < 1 or min(weights.values()) < 0 or abs(sum(weights.values()) - 1) > 1e-9:
+        raise ValueError(f"need weights >= 0 summing to 1 and a period >= 1: {weights}, {period}")
+    ideal = {s: w * period for s, w in sorted(weights.items())}
+    counts = {s: int(x) for s, x in ideal.items()}
+    by_remainder = sorted(ideal, key=lambda s: counts[s] - ideal[s])
+    for s in by_remainder[: period - sum(counts.values())]:
+        counts[s] += 1
+    if exact and max(abs(counts[s] - ideal[s]) for s in ideal) > 1e-9:
+        nearest = {s: c / period for s, c in counts.items()}
+        raise ValueError(f"not whole multiples of 1/{period}: {weights}; nearest {nearest}")
     credit = dict.fromkeys(counts, 0)
     pattern = []
     for _ in range(period):
@@ -2170,6 +2272,8 @@ def stride_schedule(weights: dict, period: int):
         for s in counts:
             prefix[s].append(prefix[s][-1] + (slot == s))
     return pattern, prefix
+
+
 
 
 # Two mixture phases: the second, from step 5,000, raises the share of wiki and code
