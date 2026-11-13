@@ -1,0 +1,29 @@
+digraph sharding_deletion {
+  graph [fontname="DejaVu Sans", fontsize=13, nodesep=0.3, ranksep=0.45, pad=0.2];
+  node [fontname="DejaVu Sans", fontsize=12, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=11, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
+  subgraph cluster_count { label="cut by running count: 4 documents per shard"; style="rounded,filled"; fillcolor="#edf2f7"; color="#4a5568"; fontsize=12;
+    cv1_0 [label="v1 shard 0\nd0 d1 d2 d3", fillcolor="#ffffff"];
+    cv1_1 [label="v1 shard 1\nd4 d5 d6 d7", fillcolor="#ffffff"];
+    cv1_2 [label="v1 shard 2\nd8 d9 d10 d11", fillcolor="#ffffff"];
+    cv2_0 [label="v2 shard 0\nd0 d2 d3 d4", fillcolor="#fde7cf"];
+    cv2_1 [label="v2 shard 1\nd5 d6 d7 d8", fillcolor="#fde7cf"];
+    cv2_2 [label="v2 shard 2\nd9 d10 d11", fillcolor="#fde7cf"];
+    cv1_0 -> cv2_0;
+    cv1_1 -> cv2_1;
+    cv1_2 -> cv2_2;
+  }
+  subgraph cluster_hash { label="bucketed by hash of the document id, mod 3"; style="rounded,filled"; fillcolor="#edf2f7"; color="#4a5568"; fontsize=12;
+    hv1_0 [label="v1 shard 0\nd8 d9", fillcolor="#ffffff"];
+    hv1_1 [label="v1 shard 1\nd0 d1 d2 d5 d6", fillcolor="#ffffff"];
+    hv1_2 [label="v1 shard 2\nd3 d4 d7 d10 d11", fillcolor="#ffffff"];
+    hv2_0 [label="v2 shard 0\nd8 d9", fillcolor="#ffffff"];
+    hv2_1 [label="v2 shard 1\nd0 d2 d5 d6", fillcolor="#fde7cf"];
+    hv2_2 [label="v2 shard 2\nd3 d4 d7 d10 d11", fillcolor="#ffffff"];
+    hv1_0 -> hv2_0;
+    hv1_1 -> hv2_1;
+    hv1_2 -> hv2_2;
+  }
+  note [shape=plain, style="", label="orange: shard hash differs from v1.\nCount-based: 3 of 3 shards change.  Hash-bucketed: 1 of 3."];
+  cv2_1 -> hv1_1 [style=invis];
+  hv2_1 -> note [style=invis];
+}

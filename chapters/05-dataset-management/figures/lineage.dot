@@ -1,0 +1,22 @@
+digraph lineage {
+  graph [fontname="DejaVu Sans", fontsize=13, nodesep=0.3, ranksep=0.45, pad=0.2];
+  node [fontname="DejaVu Sans", fontsize=12, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=11, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
+    sources [label="Sources\ncrawl snapshots, dumps,\nrepositories", fillcolor="#dbeafe"];
+    corpus [label="Processed corpus v1.0\ndocument shards + manifest\nidentified by its root hash", fillcolor="#dbeafe"];
+    tokenized [label="Tokenized build\ntoken arrays + offsets", fillcolor="#dcfce7"];
+    stream [label="Training stream\nbatches for steps 1 … N", fillcolor="#fde7cf"];
+  key [shape=plain, style="", label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" COLOR="#4a5568"><TR><TD BGCOLOR="#dbeafe">versioned and stored</TD></TR><TR><TD BGCOLOR="#dcfce7">derived, rebuilt on demand</TD></TR><TR><TD BGCOLOR="#fde7cf">recomputed, never stored</TD></TR></TABLE>>];
+  key -> model [style=invis];
+  model [label="Model checkpoint", fillcolor="#edf2f7"];
+  tok [label="Tokenizer\n(by hash)", shape=note, style=filled];
+  cfg [label="Packing method\nmixture weights\ndata seed, steps", shape=note, style=filled];
+  sources -> corpus [label="clean, filter,\ndeduplicate"];
+  corpus -> tokenized [label="tokenize"];
+  tok -> tokenized;
+  tokenized -> stream [label="pack, mix,\nshuffle"];
+  cfg -> stream;
+  stream -> model [label="train"];
+  {rank=same; sources; corpus}
+  {rank=same; tok; tokenized}
+  {rank=same; cfg; stream; model}
+}

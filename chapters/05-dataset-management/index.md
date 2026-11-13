@@ -66,6 +66,15 @@ Three distinct things are called "the dataset" and each needs its own handling:
 
 Reproducing a model means reproducing the third from the second, which means the second has to be fixed and the transformation has to be deterministic. The practical rule used by every serious training codebase: a run's configuration names a corpus version by hash, a tokenizer by hash, and a data seed, and the loader is a pure function of those.
 
+{numref}`fig-ch5-lineage` shows the three objects in the order a build produces them, and what each step adds.
+
+```{figure} figures/lineage.*
+:name: fig-ch5-lineage
+:alt: A flow from Sources to Processed corpus v1.0 (both blue, versioned and stored), then to Tokenized build (green, derived), which also takes the tokenizer by hash, then to Training stream (orange, recomputed), which also takes the packing method, mixture weights, data seed and steps, then to the model checkpoint.
+
+The lineage of a model's data. Only the sources and the processed corpus are stored and versioned. The tokenized build can be rebuilt from the corpus and the tokenizer. The training stream is never stored: it is recomputed from the build and the run's packing, mixture, seed and step count, which is why the run configuration has to name all of them.
+```
+
 (sec-ch5-scale-problem)=
 
 ### 1.2 The scale of the problem
@@ -93,6 +102,15 @@ Those numbers drive the design choices in the rest of the chapter: shards rather
 Most pipelines use two of these: a text format for everything up to and including the released corpus, and a tokenized binary for training. The text format is what gets versioned and documented; the binary is derived from it and the tokenizer, and is rebuilt rather than versioned.
 
 The Hugging Face hub converts hosted corpora to Parquet for its viewer and `datasets` streams Parquet, JSON Lines and other formats from the hub without downloading everything {cite}`lhoest2021datasets`. The Megatron-LM codebase {cite}`shoeybi2019megatron` (the paper is about model parallelism; the data format lives in the repository), GPT-NeoX and their descendants train from an indexed binary format, a flat array of token ids alongside an array of document offsets. Mosaic's streaming format and WebDataset shards exist for the case where training reads directly from object storage and sequential throughput matters more than random access.
+
+The two streaming formats differ in how a reader finds a sample, as {numref}`fig-ch5-wds-mds` shows.
+
+```{figure} figures/wds-mds.*
+:name: fig-ch5-wds-mds
+:alt: Left: a WebDataset tar shard whose members are 000000.txt, 000000.json, 000001.txt, 000001.json in order, grouped into samples by their shared key. Right: an MDS directory in which index.json lists the shards, and each shard.00000.mds file begins with a sample count, an offsets array and a JSON config, followed by the samples.
+
+Shard layouts of the two streaming formats. A WebDataset shard is an ordinary tar file. A sample is the run of consecutive members that share a key, so the shard is read from front to back. An MDS shard starts with a header: the sample count $n$, $n + 1$ byte offsets and the column config. The reader can therefore seek to any sample. `index.json` lists every shard with its sample count, columns and hashes, following the writer in the `mosaicml/streaming` repository.
+```
 
 A Parquet file is a sequence of row groups, each holding one compressed chunk per column, followed by a footer with the schema, the location of every column chunk and per-chunk statistics such as each column's minimum and maximum; the footer is written last so that the file can be written in one pass {cite}`apache2026parquet`. A reader opens the footer first, and two savings follow. Column projection reads only the chunks of the columns asked for, so a query over `num_tokens` never decompresses `text`. Predicate push-down skips any row group whose statistics show it cannot match. The listing writes 1,000 documents in four row groups and reads the long ones back: the footer rules out three of the four row groups before any data is read. The same table written as an Arrow IPC file is the layout Hugging Face `datasets` caches on disk: memory-mapping it gives typed columns with no decoding step {cite}`apache2026arrow`.
 
@@ -343,6 +361,15 @@ with tempfile.TemporaryDirectory() as tmp:
 document 1: [7552, 5001, 8441, 9177, 8494, 0]
 ```
 
+{numref}`fig-ch5-token-layout` draws the three files the listing writes.
+
+```{figure} figures/token-layout.*
+:name: fig-ch5-token-layout
+:alt: A table with four rows. The offsets row marks positions 0, 4, 10 and 12. The token row holds twelve uint16 ids: 5001, 4854, 9514, 0 for "the cat sat"; 7552, 5001, 8441, 9177, 8494, 0 for "on the mat and slept"; 7977, 0 for "fin". Below it, the JSON sidecar records dtype uint16, tokenizer hash toy-v1 and three documents, and a box reads document 1 as tokens[4 : 10].
+
+The listing's three documents on disk. `demo.bin` is the flat token array, with EOD id 0 ending each document. `demo.idx.npy` holds the offsets [0, 4, 10, 12], one more than the number of documents. `demo.json` names the dtype and the tokenizer hash, and opening the shard with another tokenizer raises an error. Reading document 1 is the slice from `offsets[1]` to `offsets[2]`. The word "the" is id 5001 in both of the first two documents.
+```
+
 The tokenizer hash is the part people skip and regret. Two tokenizers with the same name and vocabulary size but different normalization or merge order produce different id streams, and a model evaluated with the wrong one is silently broken. Hash the tokenizer's serialized files and store the hash with every binary that depends on it.
 
 The special-token policy is part of the same contract. The layout above puts an end-of-document token after each document, as GPT-3 did; many tokenizers also define a beginning-of-sequence token, and a build can put one before every document as well. Either way the rule is written into the binary's sidecar and applied identically at inference, because a model trained with a BOS token before every document and prompted without one sees a context it never saw in training. Two details follow from the policy. The BOS token is never a prediction target: it always follows an EOD, so there is nothing to learn, and the loss mask drops it. And the overhead is one or two tokens per document: for documents averaging 60 tokens, EOD alone is 1.62% of the stream and BOS plus EOD 3.19%, which the listing measures.
@@ -524,7 +551,25 @@ root of 10 shards: 56270bb62a689fd8..., proof for shard 6: 4 hashes
 after editing shard 6: 667b16bc86d691d8..., old proof valid: False
 ```
 
+{numref}`fig-ch5-merkle` traces the listing's tree of ten shards.
+
+```{figure} figures/merkle.*
+:name: fig-ch5-merkle
+:alt: A binary hash tree over shards 0 to 9. Shard 6 and its path, hash of shards 6–7, 4–7, 0–7 and the root, are orange. The four sibling hashes, shard 7, hash of 4–5, hash of 0–3 and hash of 8–9, are blue. The hash of shards 8–9 joins the root directly. The root reads v1 56270bb6 and v2 667b16bc.
+
+The Merkle tree of the listing's ten shards. Refiltering shard 6 (v1 to v2) changes only the four orange hashes on its path, and with them the root, from `56270bb6…` to `667b16bc…`. The four blue hashes are the inclusion proof for shard 6. With them and the root, a reader can check shard 6 without the other nine shard hashes. The hash of shards 8–9 has no partner on two levels, so it is carried up unchanged and joins the root directly.
+```
+
 Because shards are stored by hash, two versions that share most of their shards share the storage, and the diff between them is the diff between their manifests. A corpus rebuilt with one filter changed differs in the shards that filter touched and nowhere else, and the manifest diff says exactly which. This holds only if shard membership is stable: a document must land in the same shard in both builds. Shards cut by running count do not have that property, since removing one document shifts every later shard by one; shards cut by source and by a hash of the document identifier do, which is why pipelines bucket by key rather than by count.
+
+{numref}`fig-ch5-sharding-deletion` deletes one document of twelve under each rule.
+
+```{figure} figures/sharding-deletion.*
+:name: fig-ch5-sharding-deletion
+:alt: Two panels, each showing three v1 shards above three v2 shards after document d1 is deleted. Cut by running count, all three v2 shards differ from v1 because every later document moves up by one. Bucketed by hash of the document id, only shard 1, the one that held d1, differs.
+
+Deleting document d1 from twelve. Cut by count, four per shard: every later document moves up one place, so all three shards get new hashes and the manifest diff says nothing useful. Bucketed by SHA-256 of the document id mod 3: only shard 1, which held d1, changes. The other two shards keep their hashes and their storage.
+```
 
 ```python
 import hashlib
@@ -1192,6 +1237,15 @@ Three levels of shuffling exist and they are not interchangeable:
 
 Streaming loaders compromise with a shuffle buffer: read shards in a seeded order, hold a few thousand documents in memory, and emit from the buffer at random. The quality of the mix depends on the buffer size relative to the shard size, and a buffer smaller than a shard barely shuffles at all. Mosaic's streaming format and WebDataset both document their shuffle schemes precisely because an insufficiently shuffled stream shows up as a periodic loss curve, which is hard to diagnose after the fact.
 
+{numref}`fig-ch5-shuffle` puts the three levels and the buffer in the order a streaming loader applies them.
+
+```{figure} figures/shuffle.*
+:name: fig-ch5-shuffle
+:alt: Four shards feed step 1, visiting shards in a seeded order (2, 0, 3, 1), then step 2, permuting documents within each shard, then a shuffle buffer of a few thousand documents that emits a random slot and refills it, then the training batches. Beside the buffer, a dashed box for step 3, a global permutation that needs random access, connects to the batches as the ideal the buffer approximates.
+
+Three granularities of shuffling in a streaming loader. Shard order and within-shard order are cheap. The shuffle buffer then mixes documents from neighboring shards. A global permutation over the whole corpus is what the buffer approximates. It needs random access to any document, which the indexed sampler has and a sequential stream does not.
+```
+
 ```{admonition} The Sampler
 :class: note
 The notebook section {ref}`nb-dm-sampler` runs the mixture sampler, plots the realized source fractions at several temperatures with the tempered target weights marked, shows the epoch cap re-normalizing the mixture once the smallest source is exhausted, and checks resumption at a hundred random steps.
@@ -1261,6 +1315,15 @@ print("shard assignment, step 3, 2 vs 4 ranks:", shard_assignment_batch(3, 8, 2,
 ```text
 rank 1 of 4 at step 7: [464, 465, 466, 467, 468, 469, 470, 471, 472, 473, 474, 475, 476, 477, 478, 479]
 shard assignment, step 3, 2 vs 4 ranks: [12, 13, 14, 15] [6, 7, 22, 23]
+```
+
+{numref}`fig-ch5-ranks` spells out the second line of that output for the whole global batch.
+
+```{figure} figures/ranks.*
+:name: fig-ch5-ranks
+:alt: Two panels for step 3 with a global batch of 8. Shard assignment: at W = 2, rank 0 reads documents 12–15 and rank 1 reads 28–31; at W = 4, the ranks read 6, 7; 22, 23; 38, 39; and 54, 55, so the global batch differs. Global indexing: at both W = 2 and W = 4 the ranks split samples 24–31 among themselves, so the global batch is the same.
+
+The documents in the global batch at step 3 ($B = 8$, ten shards of 16 documents) for 2 and 4 ranks. Under shard assignment, each rank walks its own shards, so the set of documents seen at a step depends on $n_{\text{ranks}}$. Under global indexing, the batch is always global positions 24 to 31, and only the split between ranks changes.
 ```
 
 (sec-ch5-throughput)=
@@ -1504,6 +1567,15 @@ Requests to remove content arrive after release: an opt-out, a takedown, a disco
 1. Locate the document. A content-addressed index from document hash (or URL, or source identifier) to the shards and versions containing it answers this in one lookup. Without it, removal means scanning every version.
 1. Cut a new version without the document, with the manifest diff naming the shards that changed, and record the reason.
 1. Record which models were trained on versions containing it, from the lineage graph. What is done about those models is a policy question (retraining, machine unlearning, or disclosure) that the data system cannot answer, but it can say exactly which models are affected.
+
+{numref}`fig-ch5-removal` follows one request through the three steps, using the document index of the listing below.
+
+```{figure} figures/removal.*
+:name: fig-ch5-removal
+:alt: A flow from a removal request for document alpha to step 1, locate via the document index at (v1.0, s0) and (v1.1, s0), step 2, cut v1.2 without alpha with a manifest diff naming s0 and the reason recorded, and step 3, record every model trained on v1.0 or v1.1 from the lineage graph. The flow ends at a policy decision outside the data system, with three outcomes: retrain, machine unlearning, or disclose.
+
+The removal workflow for the document `alpha` of the listing below. The data system answers the first three steps exactly: where the document is, which shards a new version changes, and which models saw it. The choice between retraining, unlearning and disclosure is policy. Under SISA-style unlearning, only the constituent models whose shards held the document are retrained.
+```
 
 ```python
 import hashlib
