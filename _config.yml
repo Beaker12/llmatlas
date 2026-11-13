@@ -112,6 +112,9 @@ sphinx:
         % Rows of the long tables (the notation page) are several lines tall: a chunk of 20 rows is taller than a
         % page and ran past the footer, so break after every 3 rows.
         \LTchunksize=3\relax
+        % An admonition's title bar is never left alone at the foot of a page: start the box on a new page when
+        % fewer than six lines remain (the title row plus the first lines of the body).
+        \BeforeBeginEnvironment{sphinxadmonition}{\par\needspace{6\baselineskip}}
     linkcheck_ignore:
       - "https://doi.org/10.1145/.*"      # dl.acm.org returns 403 to non-browser clients
       - "https://doi.org/10.1162/.*"      # direct.mit.edu returns 403 to non-browser clients

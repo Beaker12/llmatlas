@@ -156,7 +156,7 @@ for repo in PINS:
 ''')
 
 md(r"""
-The four gated models, transcribed from their papers, except Gemma 2's vocabulary, which is the released checkpoint's as the hub reports it, and Gemma 3's layer shapes, which come from Google's reference implementation (the paper gives the counts but not the shapes); Gemma 3 is the text decoder of a multimodal model, with the 262,208 embedding rows of the released checkpoint (the reference implementation has 262,144; the Hugging Face conversion appends 64 for the image placeholder token). Gemma 2's vocabulary: the paper's Table 1 lists 256,128 entries, the released checkpoint has 256,000 rows, and the hub's total is reproduced with 256,000. Gemma 2's head dimension (256) is larger than $d/n_h$, and its embeddings are tied.
+The four gated models, transcribed from their papers, except that the vocabulary sizes are the released checkpoints' as the hub reports them (section 8.2 of the chapter reconciles them with the papers) and Gemma 3's layer shapes come from Google's reference implementation (the paper gives the counts but not the shapes). Gemma 3 is the text decoder of a multimodal model. Gemma 2's head dimension (256) is larger than $d/n_h$, and its embeddings are tied.
 """, tags=("static-numbers",))  # literature constants: the paper's and the checkpoint's vocabulary and head sizes
 code(r'''
 PAPER_CONFIGS = {
