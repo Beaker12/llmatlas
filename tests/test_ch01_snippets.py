@@ -29,7 +29,15 @@ CH01_DIR = Path(__file__).resolve().parents[1] / "chapters" / "01-foundations"
 #                   chapters link to. Example: {"sec-ch2-flops": "Training Complexity"}
 # A NOT_A_RESULT or NOTATION_OK entry that matches nothing is a failure: remove it with the sentence it was for.
 # The chapter's checker reads every exemption with `python tools/list_exemptions.py chapters/<dir>`.
-SYNC_EXEMPT: dict[str, str] = {}  # name -> reason it may differ between the chapter and its notebook
+SYNC_EXEMPT: dict[str, str] = {  # name -> reason it may differ between the chapter and its notebook
+    "MultiHeadAttention": "the notebook version delegates to ScaledDotProductAttention, which is frozen in both "
+    "notebooks during Phase 1, and returns the attention weights its heatmaps plot; the chapter fence is "
+    "self-contained and returns only the output",
+    "TransformerBlock": "calls MultiHeadAttention, whose notebook version returns (output, weights) and the "
+    "chapter version only the output (see MultiHeadAttention)",
+    "RelativePositionBias": "the notebook keeps a short clipping distance (10) so its bias heatmap is readable "
+    "at the demo's sequence length; the chapter uses the T5-scale 128. The offset sign is settled with C1-12",
+}
 
 # (chapter regex, notebook-output regex, comparator); each regex has exactly one capture group.
 # Comparator: eq, gt, lt or approx:<rel>, applied as `chapter_value <op> notebook_value`.

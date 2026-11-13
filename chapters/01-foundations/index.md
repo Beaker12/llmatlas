@@ -639,12 +639,12 @@ print(bias.shape)  # torch.Size([8, 16, 16])
 import torch
 
 
-def apply_rope(x, positions, base=10000.0):
+def apply_rope(x: torch.Tensor, positions: torch.Tensor, base: float = 10000.0) -> torch.Tensor:
     """Rotary position embedding (Su et al., 2021), applied to queries and keys.
 
     x: [..., seq, d]; positions: [seq]. Consecutive pairs of features are rotated by an
-    angle m * theta_i, where m is the position and theta_i = base^(-2i/d). Because a rotation
-    preserves norms and q_m . k_n then depends only on m - n, RoPE encodes relative position
+    angle m * omega_i, where m is the position and omega_i = base^(-2i/d). Because a rotation
+    preserves norms and q_m . k_m' then depends only on m - m', RoPE encodes relative position
     without any parameters.
     """
     d = x.size(-1)
@@ -1122,9 +1122,10 @@ To prevent the model from "seeing the future," causal masking ensures attention 
 ```python
 import torch
 
-def create_causal_mask(seq_length):
+def create_causal_mask(seq_length: int) -> torch.Tensor:
+    """Create a causal mask to prevent attention to future tokens."""
     mask = torch.triu(torch.ones(seq_length, seq_length), diagonal=1)
-    return mask == 0  # True for allowed positions
+    return mask == 0  # True for allowed positions, False for masked
 ```
 
 (sec-ch1-training-process)=
