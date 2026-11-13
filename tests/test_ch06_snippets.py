@@ -169,3 +169,31 @@ def test_yarn_attention_factor_grows_so_temperature_falls():
     taus = [1 / (0.1 * math.log(s) + 1) ** 2 for s in (1, 2, 8, 40)]
     assert taus[0] == 1 and all(a > b for a, b in zip(taus, taus[1:]))
     assert round(0.1 * math.log(8) + 1, 3) == 1.208  # the paper's worked value for s = 8
+
+
+SWEEP = DATA / "norm_sweep.json"
+NOTEBOOK = DATA.parent / "architecture_demo.ipynb"
+
+
+def test_norm_sweep_records_the_current_training_cell():
+    """D22: the sweep's recorded SHA-256 is that of the notebook's training cell as committed today."""
+    import hashlib
+    cells = json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"]
+    train_cell = [c for c in cells if c["cell_type"] == "code" and "def train(" in "".join(c["source"])]
+    assert len(train_cell) == 1
+    digest = hashlib.sha256("".join(train_cell[0]["source"]).encode("utf-8")).hexdigest()
+    recorded = json.loads(SWEEP.read_text(encoding="utf-8"))
+    assert recorded["train_cell_sha256"] == digest
+    assert [(a["lr"], a["warmup"]) for a in recorded["arms"]] == [
+        (lr, w) for lr in (3e-3, 1e-3, 3e-4) for w in (0, 100)]
+    assert all(len(a["pre"]) == len(a["post"]) == 5 for a in recorded["arms"])
+
+
+@pytest.mark.live
+def test_norm_sweep_check_recomputes_every_arm():
+    """D22: recompute all 60 runs and require every statement the notebook asserts from the sweep to hold."""
+    import subprocess
+    import sys
+    result = subprocess.run([sys.executable, str(ROOT / "tools" / "build_architecture_notebook.py"),
+                             "--sweep", "--check"], capture_output=True, text=True, timeout=3600)
+    assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-3000:]

@@ -124,9 +124,9 @@ It is worth stating what is *constant*, because it explains why the field moved 
 
 ### 2.1 Pre-norm and post-norm
 
-The original transformer applied layer normalization *after* adding the sublayer output to the residual (post-norm): $x \leftarrow \mathrm{Norm}(x + F(x))$. Every layer's output passes through a normalization on the way to the next, which means the gradient reaching early layers is rescaled at each step. At initialization the gradients near the output are large, and the model needs a learning-rate warm-up to avoid diverging {cite}`xiong2020layer`.
+The original transformer applied layer normalization *after* adding the sublayer output to the residual (post-norm): $x \leftarrow \mathrm{Norm}(x + F(x))$. Every layer's output passes through a normalization on the way to the next, which means the gradient reaching early layers is rescaled at each step. At initialization the gradients near the output are large, and Xiong et al. trace post-norm's reliance on a learning-rate warm-up to them {cite}`xiong2020layer`. How strict that reliance is depends on the learning rate: in the notebook section {ref}`nb-arch-train`, post-norm fails without warm-up only at the highest of three rates, and warm-up lets it train there in some seeds but not in all.
 
-Pre-norm moves the normalization inside the branch: $x \leftarrow x + F(\mathrm{Norm}(x))$. The residual path from the embedding to the output is then an unnormalized identity, so gradients reach every layer directly. Xiong et al. show that this keeps the gradient scale stable at initialization and makes warm-up optional. The price is that the residual stream's magnitude grows with depth, so the representation of the last layers can be dominated by the accumulated sum; this is why every pre-norm model adds a final normalization before the output projection. The notebook section {ref}`nb-arch-train` trains both arrangements side by side.
+Pre-norm moves the normalization inside the branch: $x \leftarrow x + F(\mathrm{Norm}(x))$. The residual path from the embedding to the output is then an unnormalized identity, so gradients reach every layer directly. Xiong et al. show that this keeps the gradient scale stable at initialization and makes warm-up optional. The price is that the residual stream's magnitude grows with depth, so the representation of the last layers can be dominated by the accumulated sum; this is why every pre-norm model adds a final normalization before the output projection. The notebook section {ref}`nb-arch-train` trains both arrangements side by side at three learning rates, with and without warm-up.
 
 Post-norm is not extinct, and the question is revisited every few years, but the practical argument favours pre-norm: a diverged run on a cluster costs far more than any small quality difference at a size where both train.
 
@@ -164,7 +164,7 @@ The residual stream is a sum of $2L$ terms. If each term has unit variance at in
 
 ```{admonition} Norm Placement in Practice
 :class: note
-The notebook section {ref}`nb-arch-block` checks the chapter's RMSNorm against PyTorch's reference, and {ref}`nb-arch-train` trains a six-layer post-norm and pre-norm model from the same seeds and learning rate, reporting the loss of each over five seeds.
+The notebook section {ref}`nb-arch-block` checks the chapter's RMSNorm against PyTorch's reference, and {ref}`nb-arch-train` trains a six-layer post-norm and pre-norm model from the same seeds at three learning rates, with and without warm-up: post-norm fails at the highest rate, where pre-norm still trains, and ends lower than pre-norm in every seed at the two lower rates.
 ```
 
 (sec-ch6-feed-forward-network)=
@@ -340,7 +340,7 @@ def ntk_aware_base(base, scale, d):
     return base * scale ** (d / (d - 2))
 ```
 
-The notebook section {ref}`nb-arch-rope` asserts the identities above to $10^{-9}$: after NTK-aware scaling, $\omega_0$ is unchanged and $\omega_{d_k/2-1}$ is exactly $1/s_{ctx}$ of its old value; with position interpolation, the largest angle at the low-frequency components over the extended length stays below the largest angle seen in training.
+The notebook section {ref}`nb-arch-rope` asserts the identities above to $10^{-9}$: after NTK-aware scaling, $\omega_0$ is unchanged and $\omega_{d_k/2-1}$ is exactly $1/s_{ctx}$ of its old value; with position interpolation, the largest angle at the low-frequency components over the extended length stays within one position's rotation of the largest angle seen in training.
 
 (sec-ch6-alternatives-rope)=
 

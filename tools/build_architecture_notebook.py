@@ -53,7 +53,7 @@ md(r"""
 
 **Purpose**: This notebook builds the pieces of Chapter 6 and checks each against an independent reference: the parameter count of ten real models from their configuration files (seven downloaded, three transcribed from papers), a grouped-query attention layer, a KV cache, a simplified latent cache, rotary-frequency scaling, a mixture-of-experts router, and a seeded comparison of post-norm and pre-norm training. Every section ends in assertions, so a silent change to any formula fails the notebook.
 
-**Data**: model configurations are read from the Hugging Face hub at pinned commits when a network is available, and from copies committed in `data/` otherwise; set `LLMATLAS_OFFLINE=1` to skip the network. Both sources are verified against the committed checksums, so the results do not depend on which one is used. The training text is Jane Austen's *Pride and Prejudice*, public domain, from Project Gutenberg.
+**Data**: model configurations are read from the Hugging Face hub at pinned commits when a network is available, and from copies committed in `data/` otherwise; set `LLMATLAS_OFFLINE=1` to skip the network. Both sources are verified against the committed checksums, so the results do not depend on which one is used, and the configuration cell prints the same label either way (the source of each file is kept in `SOURCES`). The training text is Jane Austen's *Pride and Prejudice*, public domain, from Project Gutenberg.
 """)
 
 md("## 1. Setup")
@@ -125,16 +125,15 @@ def load_config(repo):
             return json.loads(committed), "committed copy (hub bytes differ)"
         except (urllib.error.URLError, TimeoutError, OSError) as error:  # incl. HTTP 401/403/404/429
             live_ok = False  # do not wait for a timeout on every remaining model
-            print(f"hub unreachable ({type(error).__name__}); using committed copies")
     return json.loads(committed), "committed copy"
 
 
-with timed("configs"):
-    CONFIGS, SOURCES = {}, {}
-    for repo in PINS:
-        CONFIGS[repo], SOURCES[repo] = load_config(repo)
-for repo, source in SOURCES.items():
-    print(f"{repo:32} {CONFIGS[repo]['model_type']:12} {source}")
+CONFIGS, SOURCES = {}, {}  # SOURCES records where each file came from; the printed label does not depend on it
+for repo in PINS:
+    CONFIGS[repo], SOURCES[repo] = load_config(repo)
+assert set(SOURCES.values()) <= {"hub, pinned commit", "committed copy", "committed copy (hub bytes differ)"}
+for repo in PINS:
+    print(f"{repo:32} {CONFIGS[repo]['model_type']:12} checksum verified")
 ''')
 
 md(r"""
@@ -523,18 +522,20 @@ for s in (2.0, 4.0, 8.0, 40.0):
     assert abs(scaled[0] - theta[0]) < 1e-12                       # highest frequency unchanged
     assert abs(theta[last] / scaled[last] - s) < 1e-9 * s          # lowest divided by exactly s
 
-# Position interpolation, s = 4: trained on positions 0 .. L-1, extended to 0 .. L*s-1.
+# Position interpolation, s = 4: trained on positions 0 .. TRAINED-1, extended to 0 .. TRAINED*s-1.
 s = 4.0
 low = [i for i in range(D // 2) if TRAINED * theta[i] < 2 * math.pi]   # turn less than once in training
 high = [i for i in range(D // 2) if TRAINED * theta[i] >= 2 * math.pi]
-seen = TRAINED * theta[low]                                            # largest angle seen in training
+seen = (TRAINED - 1) * theta[low]                                      # largest angle seen in training
 interpolated = (TRAINED - 1 / s) * theta[low]                          # largest angle after dividing positions by s
 extrapolated = (TRAINED * s - 1) * theta[low]                          # largest angle when positions are not rescaled
 assert len(low) > 0 and last in low
-assert torch.all(interpolated < seen) and torch.all(extrapolated > seen)
+assert torch.all(interpolated > seen)                  # the last rescaled position, 4095.75, is past 4095 ...
+assert torch.all(interpolated < seen + theta[low])     # ... but within one position's rotation of it
+assert torch.all(extrapolated > seen + theta[low])     # without rescaling, angles run far past it
 assert high[0] == 0 and all(TRAINED * theta[i] > 2 * math.pi for i in high)  # these wrap many times already
 print(f"{len(low)} of {D // 2} frequency pairs turn less than once in {TRAINED} positions; "
-      f"interpolation keeps them inside the trained range, extrapolation does not")
+      f"interpolation keeps them within one position's rotation of the trained range, extrapolation does not")
 
 fig, ax = plt.subplots(figsize=(6.5, 3.4))
 index = np.arange(D // 2)
@@ -679,23 +680,50 @@ print(f"sparse toy model: {total:,} total parameters, {total - idle:,} active pe
       f"({100 * (total - idle) / total:.0f}%)")
 ''')
 
+CLAIMS_CELL = r"""
+import numpy as np
+
+STUCK, TRAINS = 3.0, 2.5  # nats: a byte-frequency model sits at 3.11; below 2.5 a model is using context
+
+
+def norm_claims(arms):
+    # each statement this section makes about the sweep, as a boolean, from its arms (lr, warmup, pre, post)
+    by = {(a["lr"], a["warmup"]): {k: np.array(a[k]) for k in ("pre", "post")} for a in arms}
+    top, warm = by[(3e-3, 0)], by[(3e-3, 100)]["post"]
+    lower = [key for key in by if key[0] < 3e-3]
+    return {
+        "at 3e-3 without warm-up, post-norm stays at the byte-frequency loss and pre-norm trains, in every seed":
+            bool((top["post"] > STUCK).all() and (top["pre"] < TRAINS).all()),
+        "at 3e-3 with warm-up, post-norm trains in some seeds but not in all":
+            bool((warm < TRAINS).any() and (warm > STUCK).any()),
+        "at 1e-3 and 3e-4, with and without warm-up, post-norm ends lower than pre-norm in every seed":
+            bool(all((by[key]["post"] < by[key]["pre"]).all() for key in lower)),
+    }
+""".strip("\n")
+
+
 md(r"""
 (nb-arch-train)=
 ## 7. Post-Norm Against Pre-Norm
 
-A six-layer byte-level model (about 0.3 million parameters) is trained on the first 150 KB of *Pride and Prejudice*, once with each norm placement, at a learning rate of $3 \times 10^{-3}$ with no warm-up, for 400 steps of 8 sequences of 64 bytes. A model that has only learned byte frequencies sits near a loss of 3.1 nats; anything lower means it is using context. For each of five seeds both variants see the same batches. The score is the mean training loss over the last 20 steps. Everything is single-threaded and deterministic, so a seed reproduces exactly.
+A six-layer byte-level model (about 0.3 million parameters) is trained on the first 150 KB of *Pride and Prejudice*, once with each norm placement, for 400 steps of 8 sequences of 64 bytes. A model that has only learned byte frequencies sits near a loss of 3.11 nats; anything clearly lower means it is using context. For each of five seeds both variants see the same batches. The score is the mean training loss over the last 20 steps. Everything is single-threaded and deterministic, so a seed reproduces exactly.
+
+The comparison is a sweep over three learning rates ($3 \times 10^{-3}$, $10^{-3}$, $3 \times 10^{-4}$), each with no warm-up and with a linear warm-up over the first 100 steps: six arms of ten runs. **Live:** the $3 \times 10^{-3}$, no-warm-up arm is trained below. **Loaded:** the other five arms are read from `data/norm_sweep.json`, which `tools/build_architecture_notebook.py --sweep` wrote by running this notebook's own training cell; the file records that cell's SHA-256 and the torch version, and `--sweep --check` recomputes every arm.
 """)
-code(r'''
+TRAIN_CELL = r'''
 raw = (DATA / "pride_and_prejudice_150k.txt").read_bytes()
 assert sha256(raw) == CHECKSUMS["pride_and_prejudice_150k.txt"]
 TEXT = torch.tensor(list(raw), dtype=torch.long)
 BATCH, SEQ, STEPS, LR = 8, 64, 400, 3e-3
 
 
-def train(style, seed):
+def train(style, seed, lr=LR, warmup=0):
+    """Training losses of one run; `warmup` > 0 raises the rate linearly over that many steps."""
     torch.manual_seed(seed)
     model = TinyLM(n_layers=6, n_kv_heads=4, style=style)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    if warmup:
+        schedule = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda t: min(1.0, (t + 1) / warmup))
     g = torch.Generator().manual_seed(1000 + seed)           # the same batches for both variants
     losses = []
     for _ in range(STEPS):
@@ -706,14 +734,22 @@ def train(style, seed):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        if warmup:
+            schedule.step()
         losses.append(loss.item())
     return losses
 
 
+def score(losses):
+    """The score of a run: the mean training loss over its last 20 steps."""
+    return float(np.mean(losses[-20:]))
+
+
 print(f"{sum(p.numel() for p in TinyLM(n_layers=6, n_kv_heads=4).parameters()):,} parameters; "
-      f"{BATCH * SEQ:,} tokens per step; unigram-uniform loss is ln 256 = {math.log(256):.3f}")
+      f"{BATCH * SEQ:,} tokens per step; uniform-distribution loss is ln 256 = {math.log(256):.3f}")
 RESULTS = {"pre": [], "post": []}
-''')
+'''
+code(TRAIN_CELL)
 md("One cell per run keeps each well inside the time limit of a notebook cell on a small machine (a run takes about twenty seconds on one thread).")
 for _style in ("pre", "post"):
     for _seed in range(5):
@@ -731,8 +767,6 @@ print(f"post {final['post'].mean():.3f} +- {final['post'].std():.3f}")
 print(f"gap per seed {np.round(gap, 3)}; mean gap {gap.mean():.3f} = {gap.mean() / spread:.1f}x the larger spread")
 
 assert all(np.isfinite(v).all() for v in final.values())
-POSITIVE_RESULT = bool((gap > 0).all() and gap.mean() > 3 * spread)
-print("pre-norm beats post-norm in every seed by more than 3x the seed spread:", POSITIVE_RESULT)
 
 # Reproducibility: re-running one seed gives the identical curve
 assert train("pre", 0) == RESULTS["pre"][0]
@@ -750,13 +784,58 @@ plt.show()
 ''')
 
 md(r"""
+### The sweep: one live arm, five loaded
+
+The row marked *live* is the ten runs above; the other five rows are *loaded* from `data/norm_sweep.json`. Each statement printed after the table is asserted on these numbers.
+""")
+code(CLAIMS_CELL)
+code(r'''
+SWEEP = json.loads((DATA / "norm_sweep.json").read_text())
+recorded = next(a for a in SWEEP["arms"] if (a["lr"], a["warmup"]) == (LR, 0))
+difference = max(float(np.abs(final[k] - np.array(recorded[k])).max()) for k in ("pre", "post"))
+if SWEEP["torch"] == torch.__version__:  # same version: the live arm reproduces the recorded one exactly
+    assert difference == 0.0
+print(f"sweep recorded with torch {SWEEP['torch']}, this kernel {torch.__version__}; "
+      f"largest live-recorded difference {difference:.1g}")
+ARMS = [{**a, **{k: [float(v) for v in final[k]] for k in ("pre", "post")}} if (a["lr"], a["warmup"]) == (LR, 0)
+        else a for a in SWEEP["arms"]]
+
+print(f"{'rate':>6} {'warm-up':>8} {'source':>7} {'pre-norm':>9} {'post-norm':>10}  (mean over 5 seeds)")
+for a in ARMS:
+    source = "live" if (a["lr"], a["warmup"]) == (LR, 0) else "loaded"
+    print(f"{a['lr']:6.0e} {a['warmup']:8d} {source:>7} {np.mean(a['pre']):9.3f} {np.mean(a['post']):10.3f}")
+for claim, holds in norm_claims(ARMS).items():
+    print(f"{claim}: {holds}")
+    assert holds, claim
+
+fig, ax = plt.subplots(figsize=(6.5, 3.4))
+for style, color in (("pre", "#4c72b0"), ("post", "#c44e52")):
+    for warmup, line in ((0, "-"), (100, "--")):
+        rows = [a for a in ARMS if a["warmup"] == warmup]
+        rates = [a["lr"] for a in rows]
+        mean = np.array([np.mean(a[style]) for a in rows])
+        low = mean - np.array([np.min(a[style]) for a in rows])
+        high = np.array([np.max(a[style]) for a in rows]) - mean
+        ax.errorbar(rates, mean, yerr=[low, high], fmt="o" + line, color=color, capsize=3,
+                    label=f"{style}-norm, {'no warm-up' if warmup == 0 else f'{warmup}-step warm-up'}")
+ax.axhline(3.11, color="gray", lw=0.8, ls=":")
+ax.set_xscale("log")
+ax.set_xlabel("peak learning rate")
+ax.set_ylabel("final loss (nats per byte; mean, min-max over 5 seeds)")
+ax.legend(fontsize=8)
+plt.tight_layout()
+plt.show()
+''')
+
+md(r"""
 ## 8. Summary
 
 - The parameter counter reproduces the stored tensors of seven checkpoints and the published totals of three more, exactly, and the vendors' own "active" figures only under the convention each vendor uses.
 - Grouped-query attention is multi-head attention with shared key/value weights; the cache is smaller by exactly the ratio of head counts, and decoding with it equals the full pass.
 - A latent cache stores `d_c + d_rope` numbers per token and gives the same attention output as the expanded keys and values.
-- NTK-aware scaling keeps the highest rotation frequency and divides the lowest by the scale; interpolation keeps the low frequencies inside the angles seen in training.
+- NTK-aware scaling keeps the highest rotation frequency and divides the lowest by the scale; interpolation keeps the low frequencies within one position's rotation of the angles seen in training.
 - A top-k router with an auxiliary loss distributes tokens evenly when it is balanced; capacity limits drop the overflow of a router that is not.
+- Post-norm fails at the highest learning rate where pre-norm still trains: at $3 \times 10^{-3}$ without warm-up it stays at the byte-frequency loss in every seed, and warm-up lets it train there in some seeds but not in all. At $10^{-3}$ and $3 \times 10^{-4}$ it ends lower than pre-norm in every seed, with and without warm-up. The experiment shows post-norm's sensitivity to the learning rate, not a lower loss for pre-norm.
 """)
 
 
@@ -773,5 +852,98 @@ def build() -> None:
     print(f"wrote {OUT.relative_to(ROOT)} with {len(nb.cells)} cells")
 
 
+# --- the learning-rate sweep behind Section 7 (decision D22) -------------------------------------------------
+# `--sweep` runs every arm (each norm placement, five seeds, three rates, with and without warm-up) with the
+# notebook's own training cell and writes the scores to data/norm_sweep.json; `--sweep --check` recomputes every
+# arm and exits non-zero unless each statement the notebook asserts from the sweep still holds. Runs are
+# independent, seeded and single-threaded, so running them in several processes gives the same numbers as a
+# serial run.
+SWEEP_JSON = OUT.parent / "data" / "norm_sweep.json"
+SWEEP_RATES = (3e-3, 1e-3, 3e-4)
+SWEEP_WARMUPS = (0, 100)
+SWEEP_SEEDS = tuple(range(5))
+_SWEEP_NS: dict = {}
+
+
+def train_cell_sha256() -> str:
+    """SHA-256 of the training cell's source exactly as it appears in the notebook."""
+    import hashlib
+    return hashlib.sha256(TRAIN_CELL.strip("\n").encode("utf-8")).hexdigest()
+
+
+def _sweep_worker_init() -> None:
+    """Run the notebook's code cells up to and including the training cell, offline and without output."""
+    import contextlib
+    import io
+    import os
+    os.environ["LLMATLAS_OFFLINE"] = "1"
+    os.environ["MPLBACKEND"] = "Agg"
+    os.chdir(OUT.parent)
+    stop = CELLS.index(("code", TRAIN_CELL.strip("\n")))
+    with contextlib.redirect_stdout(io.StringIO()):
+        for kind, text in CELLS[:stop + 1]:
+            if kind == "code":
+                exec(compile(text, "<notebook cell>", "exec"), _SWEEP_NS)
+
+
+def _sweep_run(job):
+    style, seed, lr, warmup = job
+    return job, _SWEEP_NS["score"](_SWEEP_NS["train"](style, seed, lr=lr, warmup=warmup))
+
+
+def run_sweep(processes: int) -> dict:
+    import multiprocessing
+    jobs = [(style, seed, lr, warmup) for lr in SWEEP_RATES for warmup in SWEEP_WARMUPS
+            for style in ("pre", "post") for seed in SWEEP_SEEDS]
+    with multiprocessing.get_context("spawn").Pool(processes, initializer=_sweep_worker_init) as pool:
+        scores = dict(pool.map(_sweep_run, jobs, chunksize=1))
+    import torch
+    return {
+        "description": "Final training loss (mean of the last 20 of 400 steps) of the Section 7 model, per arm "
+                       "and seed; written by tools/build_architecture_notebook.py --sweep.",
+        "torch": torch.__version__,
+        "train_cell_sha256": train_cell_sha256(),
+        "seeds": list(SWEEP_SEEDS),
+        "arms": [{"lr": lr, "warmup": warmup,
+                  **{style: [scores[(style, seed, lr, warmup)] for seed in SWEEP_SEEDS] for style in ("pre", "post")}}
+                 for lr in SWEEP_RATES for warmup in SWEEP_WARMUPS],
+    }
+
+
+def sweep_claims(sweep: dict) -> dict:
+    """Each statement the notebook asserts from the sweep, evaluated on `sweep` (the notebook's own cell)."""
+    namespace: dict = {}
+    exec(compile(CLAIMS_CELL, "<claims cell>", "exec"), namespace)
+    return namespace["norm_claims"](sweep["arms"])
+
+
+def main(argv=None) -> int:
+    import argparse
+    import json
+    import time
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--sweep", action="store_true", help="run the Section 7 learning-rate sweep")
+    parser.add_argument("--check", action="store_true", help="with --sweep: recompute and check, write nothing")
+    parser.add_argument("--processes", type=int, default=12)
+    args = parser.parse_args(argv)
+    if not args.sweep:
+        build()
+        return 0
+    start = time.perf_counter()
+    sweep = run_sweep(args.processes)
+    print(f"sweep: {len(sweep['arms']) * 2 * len(SWEEP_SEEDS)} runs in {time.perf_counter() - start:.0f} s")
+    if not args.check:
+        SWEEP_JSON.write_text(json.dumps(sweep, indent=1) + "\n", encoding="utf-8")
+        print(f"wrote {SWEEP_JSON.relative_to(ROOT)}")
+        return 0
+    recorded = json.loads(SWEEP_JSON.read_text(encoding="utf-8"))
+    ok = recorded["train_cell_sha256"] == sweep["train_cell_sha256"]
+    print("recorded training-cell hash matches:", ok)
+    for name, holds in sweep_claims(sweep).items():
+        print(f"{'holds' if holds else 'FAILS'}: {name}")
+        ok = ok and holds
+    return 0 if ok else 1
+
+
 if __name__ == "__main__":
-    build()
+    raise SystemExit(main())
