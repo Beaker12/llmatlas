@@ -7,12 +7,12 @@ digraph pre_post_ln {
   edge  [fontname="DejaVu Sans", fontsize=13];
 
   subgraph cluster_post {
-    label=<post-LN:  h<SUP><FONT POINT-SIZE="11">(l+1)</FONT></SUP> = LN(h<SUP><FONT POINT-SIZE="11">(l)</FONT></SUP> + F(h<SUP><FONT POINT-SIZE="11">(l)</FONT></SUP>))>; fontsize=16; labelloc="b"; color="#4a5568"; style="rounded,filled"; fillcolor="#fdf1e6";
-    a_in  [label=<h<SUP><FONT POINT-SIZE="11">(l)</FONT></SUP>>, fontsize=16, color="#4a5568", fillcolor="#e8eef7"];
+    label=<post-LN:  h<SUP><FONT POINT-SIZE="17">(l+1)</FONT></SUP> = LN(h<SUP><FONT POINT-SIZE="17">(l)</FONT></SUP> + F(h<SUP><FONT POINT-SIZE="17">(l)</FONT></SUP>))>; fontsize=16; labelloc="b"; color="#4a5568"; style="rounded,filled"; fillcolor="#fdf1e6";
+    a_in  [label=<h<SUP><FONT POINT-SIZE="17">(l)</FONT></SUP>>, fontsize=16, color="#4a5568", fillcolor="#e8eef7"];
     a_f   [label="F", fontsize=16, color="#4a5568", fillcolor="#ffffff"];
-    a_add [label="+", shape=circle, width=0.4, fixedsize=true, color="#4a5568", fillcolor="#ffffff"];
+    a_add [label="+", fontsize=22, shape=circle, width=0.4, fixedsize=true, color="#4a5568", fillcolor="#ffffff"];
     a_ln  [label="LN", fontsize=16, color="#4a5568", fillcolor="#f4b183"];
-    a_out [label=<h<SUP><FONT POINT-SIZE="11">(l+1)</FONT></SUP>>, fontsize=16, color="#4a5568", fillcolor="#e8eef7"];
+    a_out [label=<h<SUP><FONT POINT-SIZE="17">(l+1)</FONT></SUP>>, fontsize=16, color="#4a5568", fillcolor="#e8eef7"];
     a_in -> a_f [color="#4a5568"];
     a_f -> a_add [color="#4a5568"];
     a_in -> a_add [label="residual", fontsize=16, color="#d62728", fontcolor="#b01e1e", penwidth=2.4];
@@ -21,12 +21,12 @@ digraph pre_post_ln {
   }
 
   subgraph cluster_pre {
-    label=<pre-LN:  h<SUP><FONT POINT-SIZE="11">(l+1)</FONT></SUP> = h<SUP><FONT POINT-SIZE="11">(l)</FONT></SUP> + F(LN(h<SUP><FONT POINT-SIZE="11">(l)</FONT></SUP>))>; fontsize=16; labelloc="b"; color="#4a5568"; style="rounded,filled"; fillcolor="#eaf4ea";
-    b_in  [label=<h<SUP><FONT POINT-SIZE="11">(l)</FONT></SUP>>, group="spine", fontsize=16, color="#4a5568", fillcolor="#e8eef7"];
+    label=<pre-LN:  h<SUP><FONT POINT-SIZE="17">(l+1)</FONT></SUP> = h<SUP><FONT POINT-SIZE="17">(l)</FONT></SUP> + F(LN(h<SUP><FONT POINT-SIZE="17">(l)</FONT></SUP>))>; fontsize=16; labelloc="b"; color="#4a5568"; style="rounded,filled"; fillcolor="#eaf4ea";
+    b_in  [label=<h<SUP><FONT POINT-SIZE="17">(l)</FONT></SUP>>, group="spine", fontsize=16, color="#4a5568", fillcolor="#e8eef7"];
     b_ln  [label="LN", fontsize=16, color="#4a5568", fillcolor="#f4b183"];
     b_f   [label="F", fontsize=16, color="#4a5568", fillcolor="#ffffff"];
-    b_add [label="+", group="spine", shape=circle, width=0.4, fixedsize=true, color="#4a5568", fillcolor="#ffffff"];
-    b_out [label=<h<SUP><FONT POINT-SIZE="11">(l+1)</FONT></SUP>>, group="spine", fontsize=16, color="#4a5568", fillcolor="#e8eef7"];
+    b_add [label="+", fontsize=22, group="spine", shape=circle, width=0.4, fixedsize=true, color="#4a5568", fillcolor="#ffffff"];
+    b_out [label=<h<SUP><FONT POINT-SIZE="17">(l+1)</FONT></SUP>>, group="spine", fontsize=16, color="#4a5568", fillcolor="#e8eef7"];
     b_in -> b_ln [color="#4a5568"];
     b_ln -> b_f [color="#4a5568"];
     b_f -> b_add [color="#4a5568"];
