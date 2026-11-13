@@ -2,11 +2,23 @@
 
 The chapter ({doc}`index`) builds byte pair encoding by hand and then moves on to the transformer. This page stays with tokenizers and covers what the chapter leaves out: the subword algorithms production models use and how real tokenizers split text ({ref}`sec-tdd-subword-algorithms`, {ref}`sec-tdd-modern-tokenization-strategies`), what the choice of tokenizer costs in length and fairness across languages ({ref}`sec-tdd-tokenization-impact-model-behavior`), special tokens and chat templates ({ref}`sec-tdd-special-tokens-their-roles`), vocabulary size, reversibility and Unicode normalization ({ref}`sec-tdd-practical-considerations`), hard inputs such as compounds, numbers and code ({ref}`sec-tdd-tokenization-challenges-solutions`), a complete byte-level BPE tokenizer ({ref}`sec-tdd-implementation-walkthrough`), how to measure a tokenizer ({ref}`sec-tdd-tokenization-quality-practice`) and the embedding layer that turns token ids into vectors ({ref}`sec-tdd-embeddings-in-practice`). It ends with a summary and four exercises. Read the chapter's tokenization section first.
 
+(sec-tdd-learning-objectives)=
+
+## Learning Objectives
+
+After this page you should be able to:
+
+- compute a WordPiece merge score and a unigram segmentation's probability by hand, and say how the two algorithms build their vocabularies;
+- explain how byte-level BPE covers every string with 256 base symbols, and why a space shows up as `Ġ` in GPT-2 vocabularies;
+- read the token counts of real encodings and say what they cost in sequence length and across languages;
+- train a small byte-level BPE tokenizer, check that it decodes its input exactly, and measure its bytes per token;
+- count the parameters that a vocabulary and a positional scheme add to a model.
+
 (sec-tdd-subword-algorithms)=
 
 ## T.1 Subword Algorithms in Practice
 
-The chapter builds byte pair encoding (BPE) by hand. Production tokenizers use four related schemes: WordPiece, the unigram language model, byte-level BPE and the SentencePiece library, which implements BPE and unigram. They differ in how they choose the vocabulary and in how they split a word once the vocabulary is fixed. The listing at the end of this section runs small versions of the first three; the chapter's {ref}`sec-ch1-sentencepiece` trains a real SentencePiece model.
+The chapter builds byte pair encoding (BPE) by hand. Production tokenizers use four related schemes: WordPiece, the unigram language model, byte-level BPE and the SentencePiece library, which implements BPE and unigram. They differ in how they choose the vocabulary and in how they split a word once the vocabulary is fixed. The listing at the end of this section trains and runs small versions of WordPiece and the unigram model; for byte-level BPE it only shows the pre-tokenization and the byte mapping, and learns no merges (a complete byte-level BPE tokenizer is trained in {ref}`sec-tdd-implementation-walkthrough`). The chapter's {ref}`sec-ch1-sentencepiece` trains a real SentencePiece model.
 
 (sec-tdd-wordpiece)=
 
@@ -30,7 +42,7 @@ The unigram model {cite}`kudo2018subword` works in the opposite direction. It st
 2. For each piece, compute its loss: how much the likelihood of the corpus falls if that piece is removed.
 3. Sort the pieces by loss and keep those with the *largest* loss, for example the top 80%; the pieces whose removal costs least are dropped. Single characters are always kept, so that no input becomes unrepresentable.
 
-In the paper's words, "Sort the symbols by $loss_i$ and keep top η % of subwords (η is 80, for example)". SentencePiece's `shrinking_factor` option, 0.75 by default, is the ratio by which each round prunes the vocabulary ([option reference](https://github.com/google/sentencepiece/blob/master/doc/options.md)). The listing applies step 3 to a two-word corpus, holding the other probabilities fixed instead of re-estimating them, and asserts that the pieces it keeps all have a larger loss than the one it drops.
+In the paper's words, "Sort the symbols by $\text{loss}_i$ and keep top η % of subwords (η is 80, for example)". SentencePiece's `shrinking_factor` option, 0.75 by default, is the fraction of pieces each round keeps, so a round keeps the top 75% of pieces by loss ([option reference](https://github.com/google/sentencepiece/blob/master/doc/options.md)). The listing applies step 3 to a two-word corpus, holding the other probabilities fixed instead of re-estimating them, and asserts that the pieces it keeps all have a larger loss than the one it drops.
 
 Encoding picks the most probable segmentation with the Viterbi algorithm, a dynamic program over the end positions of the word. Because the model assigns a probability to every segmentation, it can also *sample* one: subword regularization trains a translation model on segmentations sampled afresh at each update, so the model sees a word split in several ways {cite}`kudo2018subword`. In the listing, "unhappiness" has 12 segmentations. Viterbi returns `un happiness`, which carries 0.613 of the probability; `un happi ness` carries 0.368, so sampling returns it a little more than one time in three (once in the five samples shown).
 
@@ -221,7 +233,6 @@ base vocabulary: 256 | remapped: 68 | é becomes Ã©
 ### Tiktoken (OpenAI's Tokenizer)
 
 OpenAI's `tiktoken` library runs the byte-level BPE of {ref}`sec-tdd-byte-level-bpe` with the vocabularies of its models: `gpt2` (50,257 entries), `cl100k_base` (used by GPT-4) and `o200k_base`. Each encoding pairs a merge table with its own pre-tokenization pattern and a few special tokens such as `<|endoftext|>`. The listing downloads `cl100k_base` and splits a short string that mixes prose and code. Each `# network` listing on the page carries the same download helper, so that it runs on its own:
-
 
 ```python
 # network
@@ -522,7 +533,7 @@ A larger vocabulary shortens every sequence, most of all for the languages and s
 
 | Tokenizer | Entries | Source |
 | --------- | ------- | ------ |
-| LLaMA, Llama 2 | 32k | {cite}`touvron2023llama` |
+| LLaMA, Llama 2 | 32k | {cite}`touvron2023llama`, {cite}`touvron2023llama2` |
 | `gpt2` (GPT-2) | 50,257 | `n_vocab`, printed in {ref}`sec-tdd-hard-inputs` |
 | `cl100k_base` (GPT-4) | 100,277 | `n_vocab`, printed in {ref}`sec-tdd-hard-inputs` |
 | Llama 3 | 128K: 100K tokens from `tiktoken` plus 28K for other languages | {cite}`grattafiori2024llama` |
@@ -653,10 +664,12 @@ print(f"{'vocabulary':<10}" + "".join(f"{encodings[n].n_vocab:>13,}" for n in na
 print(f"{'tokens':<10}" + "".join(f"{n:>13}" for n in names))
 for label, text in samples.items():
     print(f"{label:<10}" + "".join(f"{len(encodings[n].encode(text)):>13}" for n in names))
-for label in ["German", "Turkish", "Chinese", "Digits", "Decimal", "ISO date"]:
+for label in ["German", "Turkish", "Chinese", "Legal", "URL", "Code", "Digits", "Decimal", "ISO date"]:
     for n in names:
         pieces = [encodings[n].decode([i]) for i in encodings[n].encode(samples[label])]
-        print(f"{label:<9} {n:<12} {'|'.join(pieces)}")
+        # show a space as · and a newline as \n so that whitespace tokens can be seen and counted
+        shown = [p.replace(" ", "·").replace("\n", "\\n") for p in pieces]
+        print(f"{label:<9} {n:<12} {'|'.join(shown)}")
 ```
 
 % output
@@ -684,6 +697,15 @@ Turkish   o200k_base   ev|ler|imiz|de
 Chinese   gpt2         �|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�
 Chinese   cl100k_base  我|�|�|�|�|学|�|�|自|然|语|言|处理
 Chinese   o200k_base   我|喜欢|学习|自然|语言|处理
+Legal     gpt2         The|·aforementioned|·clause|·notwithstanding|·the|·here|to|fore|·provisions
+Legal     cl100k_base  The|·aforementioned|·clause|·notwithstanding|·the|·her|et|of|ore|·provisions
+Legal     o200k_base   The|·aforementioned|·clause|·notwithstanding|·the|·her|et|of|ore|·provisions
+URL       gpt2         https|://|www|.|example|.|com|/|path|/|to|/|page|?|param|=|value
+URL       cl100k_base  https|://|www|.example|.com|/path|/to|/page|?|param|=value
+URL       o200k_base   https|://|www|.example|.com|/path|/to|/page|?|param|=value
+Code      gpt2         def|·fib|on|acci|(|n|):|\n|·|·|·|·if|·n|·<=|·1|:|\n|·|·|·|·|·|·|·|·return|·n|\n|·|·|·|·return|·fib|on|acci|(|n|-|1|)|·+|·fib|on|acci|(|n|-|2|)|\n
+Code      cl100k_base  def|·fibonacci|(n|):\n|···|·if|·n|·<=|·|1|:\n|·······|·return|·n|\n|···|·return|·fibonacci|(n|-|1|)|·+|·fibonacci|(n|-|2|)\n
+Code      o200k_base   def|·fibonacci|(n|):\n|···|·if|·n|·<=|·|1|:\n|·······|·return|·n|\n|···|·return|·fibonacci|(n|-|1|)|·+|·fibonacci|(n|-|2|)\n
 Digits    gpt2         123|45|678
 Digits    cl100k_base  123|456|78
 Digits    o200k_base   123|456|78
@@ -709,9 +731,9 @@ ISO date  o200k_base   202|3|-|12|-|25
 
 ### Handling Special Cases
 
-**Code.** Indentation is syntax in Python. GPT-2's vocabulary has no tokens for runs of spaces, so each indenting space is a token of its own and the four-line `fibonacci` function costs 49 tokens; `cl100k_base` and `o200k_base` have tokens for runs of spaces and for common identifiers such as ` fibonacci`, and need 28.
+**Code.** Indentation is syntax in Python. The listing shows a space as `·`. In `gpt2` every indenting space but the last is a token of its own (the eight spaces before `return n` are seven `·` tokens and `·return`), the name `fibonacci` is three tokens, `·fib|on|acci`, and each line break is a separate `\n`; the four-line `fibonacci` function costs 49 tokens. `cl100k_base` and `o200k_base` give the same 28 pieces: a run of spaces is one token (`···` before `·if`, `·······` before `·return`), `·fibonacci` is one token, and a line break joins the punctuation before it (`):\n`).
 
-**URLs and email addresses.** `gpt2` splits `https://www.example.com/path/to/page?param=value` at every punctuation mark, 17 tokens; the newer encodings attach punctuation to the word that follows it (`.example`, `/path`, `=value`) and need 11.
+**URLs and email addresses.** `gpt2` splits `https://www.example.com/path/to/page?param=value` at every punctuation mark, 17 tokens. The newer encodings keep `https`, `://`, `www` and `?` apart but attach a dot, slash or equals sign to the word that follows it (`.example`, `/path`, `=value`) and need 11.
 
 **Numbers and dates.** How a model sees digits decides how hard arithmetic is for it. GPT-2 has no rule for digits: runs of digits are merged like any other text, so `12345678` becomes `123|45|678` and the year in `2023-12-25` becomes `20|23`. `cl100k_base` and `o200k_base` cut a run of digits into groups of at most three from the left, `123|456|78`, so the same year becomes `202|3`, and `1,234,567.89` keeps each comma group as one token, where `gpt2` splits 567 into `5|67`. LLaMA goes further and splits every number into single digits {cite}`touvron2023llama`, so that a number is always spelled the same way.
 
@@ -756,7 +778,7 @@ print(f"Domain vocabulary: {len(medical_tokens)} tokens; gpt2: {len(generic_toke
 Domain vocabulary: 10 tokens; gpt2: 16 tokens
 ```
 
-**Legal Text**: `gpt2` splits *heretofore* as `here|to|fore`, its three parts, while both newer encodings give `her|et|of|ore`; the legal sentence of the listing costs 9 tokens in `gpt2` and 10 in the others. A larger vocabulary spends its extra entries on frequent strings, so it does not guarantee better splits of rare words.
+**Legal Text**: in the listing, `gpt2` splits *heretofore* as `here|to|fore`, its three parts, while both newer encodings give `her|et|of|ore`; every other word of the sentence is one token in all three encodings, so the legal sentence of the listing costs 9 tokens in `gpt2` and 10 in the others. A larger vocabulary spends its extra entries on frequent strings, so it does not guarantee better splits of rare words.
 
 (sec-tdd-tokenizer-free)=
 
@@ -780,7 +802,6 @@ for text in ["Hello world", "caf\u00e9", "\u3053\u3093\u306b\u3061\u306f\u4e16\u
 ```
 
 English costs one byte per character, Arabic two and Japanese three. The Japanese greeting in the third line is 21 bytes, where GPT-2's tokenizer needs 10 tokens and `o200k_base` needs 2 ({ref}`sec-tdd-linguistic-bias`), so a byte-level model processes about ten times as many positions as a model with a large modern vocabulary for the same text. ByT5 shifts capacity to an encoder three times as deep as its decoder and is, in its authors' words, "competitive with a subword-level baseline" {cite}`xue2022byt5`; the widely used LLMs of this chapter still use subword tokenizers.
-
 
 (sec-tdd-implementation-walkthrough)=
 
@@ -995,7 +1016,7 @@ aggressive   'Wait, what? Really!'      'def f(x): return x + 1'
 
 The aggressive strategy tidies the prose but deletes the newline and the indentation that are the code's syntax, so it suits neither a code model nor any model whose output must reproduce its input. Byte-level tokenizers such as GPT-2's apply no preprocessing at all.
 
-**3. Handling Rare Tokens**:
+**3. Word Frequency and Zipf's Law**: Most entries of any vocabulary are rare, and the listing shows why on a fixed sample. It splits the Gettysburg Address on everything but letters, counts the lowercase words, not tokens of any tokenizer, and plots their counts against their rank:
 
 ```python
 import re
@@ -1004,7 +1025,7 @@ import matplotlib.pyplot as plt
 
 
 def analyze_token_frequency(corpus, tokenizer):
-    """Analyze token frequency distribution."""
+    """Count the units tokenizer.encode returns over the corpus, print the counts and plot them by rank."""
     from collections import Counter
 
     all_tokens = []
@@ -1018,14 +1039,14 @@ def analyze_token_frequency(corpus, tokenizer):
     total_tokens = len(all_tokens)
     unique_tokens = len(token_counts)
 
-    # Find rare tokens (appear < 5 times)
+    # distinct units seen fewer than 5 times
     rare_threshold = 5
     rare_tokens = sum(1 for count in token_counts.values() if count < rare_threshold)
 
-    print(f"Total tokens: {total_tokens:,}")
-    print(f"Unique tokens: {unique_tokens:,}")
+    print(f"Units counted: {total_tokens:,}")
+    print(f"Distinct units: {unique_tokens:,}")
     print(
-        f"Rare tokens (< {rare_threshold}): {rare_tokens:,} ({rare_tokens/unique_tokens:.1%})"
+        f"Distinct units seen fewer than {rare_threshold} times: {rare_tokens:,} ({rare_tokens/unique_tokens:.1%})"
     )
 
     # Plot frequency distribution
@@ -1080,9 +1101,9 @@ print("most frequent:", ", ".join(f"{w} {c}" for w, c in counts.most_common(5)))
 % output
 
 ```text
-Total tokens: 268
-Unique tokens: 140
-Rare tokens (< 5): 127 (90.7%)
+Units counted: 268
+Distinct units: 140
+Distinct units seen fewer than 5 times: 127 (90.7%)
 most frequent: that 12, the 10, we 10, to 8, here 8
 ```
 
@@ -1094,7 +1115,7 @@ most frequent: that 12, the 10, we 10, to 8, here 8
 The listing's plot for its fixed sample, the 268 words of the Gettysburg Address split into lowercase words of letters only; `figures/make_figures.py` runs the listing to draw it. The dashed line has slope −1, Zipf's law anchored at the most frequent word ("that", 12 times). The counts stay above the line (rank 10 has 5 occurrences where the line gives 1.2), and 93 of the 140 distinct words occur once, which makes the flat tail on the right.
 ```
 
-{numref}`fig-ch1-word-frequency` shows the plot. A text this short shows the shape only roughly: Zipf's law describes large corpora, and a few hundred words cannot hold a long sequence of ranks with distinct counts.
+{numref}`fig-ch1-word-frequency` shows the plot. A text this short shows the shape only roughly: Zipf's law describes large corpora, and a few hundred words cannot hold a long sequence of ranks with distinct counts. Even here 127 of the 140 distinct words occur fewer than five times. A word-level vocabulary would have to hold this long tail or map it to an unknown token; a subword vocabulary instead spends its entries on frequent strings and spells a rare word from smaller pieces, down to single bytes in a byte-level tokenizer ({ref}`sec-tdd-out-of-vocabulary-handling`).
 
 **4. Multi-Domain Tokenization**: A tokenizer trained on one mixed corpus learns the merges of whichever domain dominates it. To serve several domains, sample the training text so that each domain contributes the same amount, train once, and report the metrics of `evaluate_tokenization_quality` for each domain separately, so that a domain the tokenizer serves poorly shows up as a low bytes-per-token figure. The medical and code examples of {ref}`sec-tdd-hard-inputs` show the size of the effect: the same text costs from 12 to 16 tokens, or from 28 to 49, depending on what the vocabulary was trained on.
 
@@ -1124,61 +1145,7 @@ Width grows with model size, but much more slowly than the parameter count: from
 
 ### Embedding Visualization and Analysis
 
-To see whether related tokens sit close together, project their rows of a trained embedding table to two dimensions:
-
-```python
-# pseudo-code: needs a trained `model`, its `tokenizer`, and scikit-learn
-import numpy as np
-from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
-
-
-def visualize_embeddings(embedding_matrix, token_to_id, tokens_to_plot):
-    """Visualize token embeddings in 2D using PCA."""
-
-    # Extract embeddings for specified tokens
-    embeddings = []
-    labels = []
-
-    for token in tokens_to_plot:
-        if token in token_to_id:
-            token_id = token_to_id[token]
-            embedding = embedding_matrix[token_id].detach().numpy()
-            embeddings.append(embedding)
-            labels.append(token)
-
-    embeddings = np.array(embeddings)
-
-    # Reduce to 2D using PCA
-    pca = PCA(n_components=2)
-    embeddings_2d = pca.fit_transform(embeddings)
-
-    # Plot
-    plt.figure(figsize=(10, 8))
-    plt.scatter(embeddings_2d[:, 0], embeddings_2d[:, 1])
-
-    for i, label in enumerate(labels):
-        plt.annotate(label, (embeddings_2d[i, 0], embeddings_2d[i, 1]))
-
-    plt.title("Token Embeddings Visualization (PCA)")
-    plt.xlabel(f"PC1 ({pca.explained_variance_ratio_[0]:.2%} variance)")
-    plt.ylabel(f"PC2 ({pca.explained_variance_ratio_[1]:.2%} variance)")
-    plt.show()
-
-
-# Example usage
-semantic_groups = [
-    # Colors
-    ["red", "blue", "green", "yellow", "orange"],
-    # Animals
-    ["cat", "dog", "bird", "fish", "horse"],
-    # Numbers
-    ["one", "two", "three", "four", "five"],
-]
-
-for group in semantic_groups:
-    visualize_embeddings(model.embeddings.weight, tokenizer.token_to_id, group)
-```
+To see whether related tokens sit close together, take their rows of a trained embedding table, one vector of width $d$ per token, and project them onto two dimensions. Principal component analysis (PCA) is the usual choice: subtract the mean row, then keep the two directions along which the rows vary most, which are the first two right singular vectors of the centered matrix. Each token becomes a point in the plane, and the share of the variance the two directions carry says how much of the table the picture shows; when that share is small, two points that look close may be far apart in the full $d$ dimensions, so compare suspected neighbors by their cosine similarity in the full space as well. A table worth inspecting must be trained first: the chapter's notebook (`examples/attention_mechanisms_demo.ipynb`) trains a small character-level language model, and its embedding table, `char_model.embed.embedding.weight` (64 numbers per character), is a matrix to which this method applies.
 
 (sec-tdd-position-encoding-trade-offs)=
 
@@ -1278,7 +1245,7 @@ class PositionalEncoding(nn.Module):
 
 
 class TokenEmbeddingLayer(nn.Module):
-    """Complete token embedding layer with multiple features."""
+    """Token ids to vectors: embedding lookup, optional sqrt(d) scaling, learned positions, LayerNorm, dropout."""
 
     def __init__(
         self,
@@ -1295,21 +1262,16 @@ class TokenEmbeddingLayer(nn.Module):
         self.d_model = d_model
         self.scale_embeddings = scale_embeddings
 
-        # Token embeddings
         self.token_embeddings = nn.Embedding(vocab_size, d_model)
 
-        # Positional encoding
         self.position_encoding = PositionalEncoding(
             d_model, max_seq_length, position_encoding
         )
 
-        # Optional layer normalization
         self.layer_norm = nn.LayerNorm(d_model) if layer_norm else None
 
-        # Dropout
         self.dropout = nn.Dropout(dropout)
 
-        # Initialize embeddings
         self._init_embeddings()
 
     def _init_embeddings(self):
@@ -1317,21 +1279,17 @@ class TokenEmbeddingLayer(nn.Module):
         nn.init.normal_(self.token_embeddings.weight, mean=0.0, std=self.d_model**-0.5)
 
     def forward(self, input_ids, position_ids=None):
-        # Get token embeddings
         token_embeds = self.token_embeddings(input_ids)
 
-        # Scale embeddings (following original transformer)
+        # scale by sqrt(d), as in the original transformer
         if self.scale_embeddings:
             token_embeds = token_embeds * math.sqrt(self.d_model)
 
-        # Add positional encoding
         embeddings = self.position_encoding(token_embeds, position_ids)
 
-        # Apply layer normalization
         if self.layer_norm:
             embeddings = self.layer_norm(embeddings)
 
-        # Apply dropout
         embeddings = self.dropout(embeddings)
 
         return embeddings
@@ -1428,11 +1386,11 @@ Each of the two characters is three UTF-8 bytes, 6 bytes in all. The training te
 
 ### Exercise T4: What a vocabulary costs (level 2)
 
-A model of width $d = 4096$ does not tie its input embedding and output projection. How many parameters do the two matrices hold together with a 32,000-entry vocabulary, and with the 200,019 entries of `o200k_base`? What fraction of an 8-billion-parameter model is the difference?
+A model of width $d = 4096$ does not tie its input embedding and output projection. How many parameters do the two matrices hold together with the 100,277 entries of `cl100k_base`, and with the 200,019 entries of `o200k_base`? What fraction of an 8-billion-parameter model is the difference?
 
 ```{admonition} Solution T4
 :class: dropdown
-Each matrix holds $|\mathcal{V}| \times d$ parameters, so the pair holds $2\,|\mathcal{V}|\,d$: $2 \times 32{,}000 \times 4{,}096 = 262{,}144{,}000$ and $2 \times 200{,}019 \times 4{,}096 = 1{,}638{,}555{,}648$. The difference is $1{,}376{,}411{,}648$ parameters, $1.376 / 8 = 0.172$ of the model. In return, text in the languages of {ref}`sec-tdd-linguistic-bias` gets shorter: the Arabic greeting falls from 10 tokens in `cl100k_base` to 4 in `o200k_base`.
+Each matrix holds $|\mathcal{V}| \times d$ parameters, so the pair holds $2\,|\mathcal{V}|\,d$: $2 \times 100{,}277 \times 4{,}096 = 821{,}469{,}184$ and $2 \times 200{,}019 \times 4{,}096 = 1{,}638{,}555{,}648$. The difference is $817{,}086{,}464$ parameters, $0.817 / 8 = 0.102$ of the model. In return, text in the languages of {ref}`sec-tdd-linguistic-bias` gets shorter: the Arabic greeting falls from 10 tokens in `cl100k_base` to 4 in `o200k_base`.
 ```
 
 (sec-tdd-further-reading)=

@@ -242,9 +242,9 @@ def test_deep_dive_exercise_t3_unseen_script_bytes():
 
 
 def test_deep_dive_exercise_t4_vocabulary_cost():
-    assert 2 * 32_000 * 4096 == 262_144_000
+    assert 2 * 100_277 * 4096 == 821_469_184
     assert 2 * 200_019 * 4096 == 1_638_555_648
-    assert 1_638_555_648 - 262_144_000 == 1_376_411_648 and round(1_376_411_648 / 8e9, 3) == 0.172
+    assert 1_638_555_648 - 821_469_184 == 817_086_464 and round(817_086_464 / 8e9, 3) == 0.102
 
 
 def test_unigram_pruning_keeps_the_largest_losses():
