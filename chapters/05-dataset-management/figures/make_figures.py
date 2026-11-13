@@ -89,6 +89,57 @@ def epoch_cap_timeline(ns, out):
     save(fig, out / "epoch-cap.svg")
 
 
+def stride_walk(ns, out):
+    """The 20-slot pattern of the page's weights, its prefix counts for one source, and
+    step t = 47 read off to drawn_s(t) and to the permuted index with one cycle-walk."""
+    weights = {"web": 0.7, "wiki": 0.15, "code": 0.15}
+    n_slots, t, n_ex = 20, 47, 50
+    pattern, prefix = ns["stride_schedule"](weights, n_slots)
+    s = pattern[t % n_slots]
+    periods, r = divmod(t, n_slots)
+    drawn = periods * prefix[s][-1] + prefix[s][r]
+    epoch, within = divmod(drawn, n_ex)
+    # the first key for which the first encryption of this index leaves the range
+    perm = next(q for q in (ns["FeistelPermutation"](n_ex, key=b"figure%d" % k)
+                            for k in range(100)) if q._encrypt(within) >= n_ex)
+    start = within
+    chain = [start, perm._encrypt(start)]
+    while chain[-1] >= n_ex:
+        chain.append(perm._encrypt(chain[-1]))
+    assert perm(start) == chain[-1] and chain[-1] < n_ex and len(chain) >= 3
+    colors = {"web": "#4e79a7", "wiki": "#f28e2b", "code": "#59a14f"}
+    fig, ax = plt.subplots(figsize=(6.5, 3.3))
+    for i, name in enumerate(pattern):
+        edge = "black" if i == r else "#4a5568"
+        ax.add_patch(plt.Rectangle((i, 2), 1, 1, facecolor=colors[name], edgecolor=edge,
+                                   lw=2.2 if i == r else 0.6))
+        ax.text(i + 0.5, 2.5, "WKC"[["web", "wiki", "code"].index(name)], ha="center", va="center", fontsize=9, color="white",
+                fontweight="bold")
+        ax.text(i + 0.5, 1.5, str(prefix[s][i]), ha="center", va="center", fontsize=8)
+    ax.text(n_slots + 0.5, 1.5, str(prefix[s][-1]), ha="left", va="center", fontsize=8)
+    ax.text(-0.3, 2.5, "slot", ha="right", va="center", fontsize=9)
+    ax.text(-0.3, 1.5, f"prefix$_{{{s}}}$", ha="right", va="center", fontsize=9)
+    ax.text(0, 3.35, "W = web, K = wiki, C = code; prefix = web slots among the first i slots",
+            fontsize=9, va="bottom")
+    ax.annotate("", xy=(r + 0.5, 2), xytext=(r + 0.5, 0.75), arrowprops=dict(arrowstyle="->"))
+    lines = [
+        f"t = {t} = {periods} periods + remainder {r}; slot {r} (outlined) is {s}",
+        f"drawn = {periods} * {prefix[s][-1]} + prefix[{r}] = {drawn}; epoch {epoch}, "
+        f"index {within}",
+        f"walk in a 64-point domain: {' -> '.join(map(str, chain))}; the last value "
+        f"is below {n_ex}",
+        f"so the document is Pi({within}) = {chain[-1]}",
+    ]
+    for k, line in enumerate(lines):
+        ax.text(0, 0.45 - 0.5 * k, line, fontsize=9, va="center")
+    ax.set_xlim(-4.2, n_slots + 1.2)
+    ax.set_ylim(-1.3, 4.0)
+    ax.axis("off")
+    fig.tight_layout()
+    save(fig, out / "stride-walk.svg")
+    return {"source": s, "drawn": drawn, "chain": chain, "start": start}
+
+
 SIX_DOCS = [11, 7, 5, 9, 3, 13]   # lengths in tokens, each including its end-of-document token
 SEQ = 16                          # sequence length n of the example
 DOC_COLORS = ["#4e79a7", "#f28e2b", "#59a14f", "#e15759", "#b07aa1", "#9c755f"]
@@ -168,6 +219,7 @@ def main(out):
     packing_schematic(out)
     namespace = run_notebook(out)
     epoch_cap_timeline(namespace, out)
+    print(stride_walk(namespace, out))
 
 
 if __name__ == "__main__":
