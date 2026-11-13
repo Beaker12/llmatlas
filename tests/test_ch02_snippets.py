@@ -43,7 +43,7 @@ NOTATION_OK: dict[str, str] = {}
 # Section labels other chapters link to: label -> the text of the heading it sits directly above.
 INTERFACE_LABELS: dict[str, str] = {
     "sec-ch2-sqrt-dk": "Why attention scores are divided by the key dimension's square root",
-    "sec-ch2-pre-post-ln": "Residual Connections",
+    "sec-ch2-pre-post-ln": "Pre-LN versus Post-LN",
     "sec-ch2-flops": "Training Complexity",
     "sec-ch2-residual-init": "Transformer-Specific Initialization",
 }

@@ -702,6 +702,39 @@ w after one batch of 8:              0.4000
 
 Understanding how gradients flow through transformer architectures reveals why certain design choices (layer normalization, residual connections) are crucial for training stability.
 
+(sec-ch2-reverse-mode)=
+
+#### Reverse-Mode Automatic Differentiation
+
+Backpropagation is reverse-mode automatic differentiation {cite}`baydin2018automatic`. The forward pass evaluates the network operation by operation and stores every intermediate value it will need later. The backward pass starts from $\partial \mathcal{L} / \partial \mathcal{L} = 1$ and visits the operations in reverse order; each one turns the gradient of its output into gradients of its inputs with its vector-Jacobian product ({ref}`sec-ch2-vjp`), and an input used by several operations adds up the gradients it receives. One backward pass yields the gradient with respect to every parameter, and, in Baydin et al.'s words, "the amount of arithmetic goes up by no more than a small constant factor" over the forward pass. Forward-mode differentiation would instead need one pass per input, which for a model with billions of parameters is out of the question. The price of reverse mode is memory: the stored intermediates are the activations counted in {ref}`sec-ch2-memory-requirements`.
+
+The listing below differentiates $\mathcal{L} = (\tanh(wx) - 0.5)^2$ at $x = 2$, $w = 0.3$ by hand, one stored intermediate at a time, and compares the result with PyTorch.
+
+```python
+import math
+
+import torch
+
+x, w_value, target = 2.0, 0.3, 0.5
+# forward pass: store every intermediate
+a = w_value * x                # 0.6
+h = math.tanh(a)               # 0.5370
+loss = (h - target) ** 2
+# backward pass: one VJP per operation, in reverse order
+dL_dh = 2 * (h - target)
+dL_da = dL_dh * (1 - h ** 2)   # tanh'(a) = 1 - tanh(a)^2
+dL_dw = dL_da * x
+w = torch.tensor(w_value, requires_grad=True)
+((torch.tanh(w * x) - target) ** 2).backward()
+print(f"loss {loss:.4g}; dL/dw by hand {dL_dw:.4g}, by autograd {w.grad.item():.4g}")
+```
+
+% output
+
+```text
+loss 0.001373; dL/dw by hand 0.1055, by autograd 0.1055
+```
+
 (sec-ch2-vanishing-gradient-problem)=
 
 #### The Vanishing Gradient Problem
@@ -712,7 +745,7 @@ $$\frac{\partial \mathcal{L}}{\partial \theta^{(1)}} = \frac{\partial \mathcal{L
 
 If $\left\|\frac{\partial h^{(l)}}{\partial h^{(l-1)}}\right\| < 1$, gradients vanish as depth increases.
 
-(sec-ch2-pre-post-ln)=
+(sec-ch2-residual-connections)=
 
 #### Residual Connections
 
@@ -726,6 +759,16 @@ $$\frac{\partial h^{(l+1)}}{\partial h^{(l)}} = I + \frac{\partial F(h^{(l)})}{\
 
 The identity term gives every layer a direct path for the gradient, so a deep stack no longer multiplies a long chain of possibly small Jacobians {cite}`he2016deep`. It does not by itself bound the gradient's magnitude: where normalization sits relative to the residual branch matters, and the original post-LN transformer needs learning-rate warm-up precisely because its gradients at initialization are not well behaved, which is why most later models normalize before each sublayer (pre-LN) {cite}`xiong2020layer`.
 
+(sec-ch2-pre-post-ln)=
+
+#### Pre-LN versus Post-LN
+
+The original transformer normalizes after adding the branch (post-LN); most later models normalize the branch's input instead (pre-LN):
+
+$$\text{post-LN: } h^{(l+1)} = \operatorname{LN}\left(h^{(l)} + F(h^{(l)})\right), \qquad \text{pre-LN: } h^{(l+1)} = h^{(l)} + F\left(\operatorname{LN}(h^{(l)})\right).$$
+
+In pre-LN the residual stream is never normalized on its way through the stack, so $\partial h^{(l+1)} / \partial h^{(l)} = I + \partial F(\operatorname{LN}(h^{(l)}))/\partial h^{(l)}$ keeps the identity term of {ref}`sec-ch2-residual-connections`, and the gradient reaching layer $l$ contains the output gradient unchanged. In post-LN every block's output passes through a LayerNorm Jacobian ({ref}`sec-ch2-layer-normalization-mathematics`), which divides by the standard deviation of $h^{(l)} + F(h^{(l)})$, so there is no path on which the gradient passes untouched. {cite:t}`xiong2020layer` make the difference quantitative at initialization: for post-LN "the scale of the gradients to the last FFN layer is of order $\mathcal{O}(d\sqrt{\ln d})$ which is independent of $L$", while for pre-LN it is $\mathcal{O}(d\sqrt{\ln d / L})$, because the residual stream entering the final LayerNorm grows with depth and the normalization divides the gradients of all parameters by about $\sqrt{L}$. For a 24-layer model that factor is $\sqrt{24} = 4.899$: the post-LN gradients near the output are about five times larger relative to pre-LN, which is why post-LN needs warm-up ({ref}`sec-ch2-linear-warmup`) and pre-LN can often do without it.
+
 (sec-ch2-layer-normalization-mathematics)=
 
 ### 3.2 Layer Normalization Mathematics
@@ -735,6 +778,40 @@ Layer normalization is defined in {ref}`sec-ch1-layernorm`: $y = \gamma \odot \f
 $$\frac{\partial \mathcal{L}}{\partial x_i} = \frac{1}{\sigma}\left(\tilde{g}_i - \frac{1}{d}\sum_j \tilde{g}_j - \hat{x}_i \frac{1}{d}\sum_j \tilde{g}_j \hat{x}_j\right)$$
 
 where $\tilde{g}_j = \gamma_j \frac{\partial \mathcal{L}}{\partial y_j}$ carries the per-feature scale and $\hat{x}_j = (x_j-\mu)/\sigma$ is the normalized input.
+
+The formula follows from the Jacobian of $\hat{x}$. Since $\mu = \frac{1}{d}\sum_i x_i$, $\partial \mu / \partial x_j = 1/d$. Since $\sigma^2 = \frac{1}{d}\sum_i (x_i - \mu)^2 + \epsilon$, and the terms that come from differentiating $\mu$ sum to zero because $\sum_i (x_i - \mu) = 0$, $\partial \sigma^2/\partial x_j = \frac{2}{d}(x_j - \mu)$ and so $\partial \sigma / \partial x_j = (x_j - \mu)/(d\sigma) = \hat{x}_j / d$. The quotient rule on $\hat{x}_i = (x_i - \mu)/\sigma$ then gives
+
+$$\frac{\partial \hat{x}_i}{\partial x_j} = \frac{\delta_{ij} - 1/d}{\sigma} - \frac{x_i - \mu}{\sigma^2}\cdot\frac{\hat{x}_j}{d} = \frac{1}{\sigma}\left(\delta_{ij} - \frac{1}{d} - \frac{\hat{x}_i \hat{x}_j}{d}\right).$$
+
+Contracting with $\tilde{g}$, $\frac{\partial \mathcal{L}}{\partial x_j} = \sum_i \tilde{g}_i \frac{\partial \hat{x}_i}{\partial x_j}$, gives the gradient above term by term. Each row of the Jacobian sums to zero, since $\sum_j (\delta_{ij} - 1/d) = 0$ and $\sum_j \hat{x}_j = 0$: adding the same constant to every feature does not change the output, so it receives no gradient. The listing checks the formula against PyTorch.
+
+```python
+import torch
+
+torch.manual_seed(0)
+d, eps = 5, 1e-5
+x = torch.randn(d, dtype=torch.float64)
+
+
+def normalize(t):
+    mu = t.mean()
+    return (t - mu) / torch.sqrt(((t - mu) ** 2).mean() + eps)
+
+
+sigma = torch.sqrt(x.var(unbiased=False) + eps)
+x_hat = normalize(x)
+formula = (torch.eye(d, dtype=torch.float64) - 1 / d - torch.outer(x_hat, x_hat) / d) / sigma
+autograd = torch.autograd.functional.jacobian(normalize, x)
+print("Jacobian formula matches autograd:", torch.allclose(formula, autograd))
+print("every row of the Jacobian sums to zero:", torch.allclose(formula.sum(dim=1), torch.zeros(d, dtype=torch.float64)))
+```
+
+% output
+
+```text
+Jacobian formula matches autograd: True
+every row of the Jacobian sums to zero: True
+```
 
 {cite:t}`ba2016layer` introduced layer normalization because batch normalization depends "on the mini-batch size and it is not obvious how to apply it to recurrent neural networks". Layer normalization computes its statistics within each token's feature vector, so it behaves the same at any batch size and at every position of a sequence.
 
@@ -808,6 +885,73 @@ print("dQ, dK, dV match autograd:", all(torch.allclose(a, b) for a, b in zip(our
 
 ```text
 dQ, dK, dV match autograd: True
+```
+
+(sec-ch2-ffn-embedding-head-gradients)=
+
+### 3.4 Gradients of the Feed-Forward Layer, Embedding and Output Head
+
+The remaining pieces of a transformer are a feed-forward layer, the embedding lookup and the output head, and each has a short backward rule built from the VJPs of {ref}`sec-ch2-vjp`.
+
+**Feed-forward layer.** For one position, $z_{ff} = x W_{up}$ and $y = \operatorname{act}(z_{ff})\,W_{down}$. Given $g = \partial \mathcal{L}/\partial y$, the backward pass runs the forward pass in reverse:
+
+$$\frac{\partial \mathcal{L}}{\partial W_{down}} = \operatorname{act}(z_{ff})^\top g, \qquad \frac{\partial \mathcal{L}}{\partial z_{ff}} = \left(g W_{down}^\top\right) \odot \operatorname{act}'(z_{ff}), \qquad \frac{\partial \mathcal{L}}{\partial W_{up}} = x^\top \frac{\partial \mathcal{L}}{\partial z_{ff}}, \qquad \frac{\partial \mathcal{L}}{\partial x} = \frac{\partial \mathcal{L}}{\partial z_{ff}} W_{up}^\top.$$
+
+For a sequence the same products are taken with one row per position, and the weight gradients sum over the positions.
+
+**Embedding.** The embedding of token $x_i$ is row $x_i$ of $W_E$, so the gradient of $W_E$ is zero except in the rows of tokens that occur, and the row of a token that occurs at several positions is the sum of $\partial \mathcal{L} / \partial h^{(0)}_i$ over those positions. This is the sparse gradient of {ref}`sec-ch2-adam-optimizer`.
+
+**Output head.** The logits at position $i$ are $z = h_i W_{out}$, and the loss is the mean cross-entropy over $T$ positions. By {ref}`sec-ch2-softmax-jacobian`, $\partial \mathcal{L}/\partial z_j = (p_j - \delta_{j x_i})/T$, where $x_i$ here stands for the target, the token to be predicted at position $i$, and $\partial \mathcal{L}/\partial W_{out} = \sum_i h_i^\top \partial \mathcal{L}/\partial z$, a sum of outer products over positions. With $T = 3$ and a model that gives the target probability 0.2, that logit's gradient is $(0.2 - 1)/3 = -0.2667$.
+
+The listing builds a three-token sequence through an embedding, a feed-forward layer with $\operatorname{act} = \tanh$ and an output head, applies these rules by hand and compares them with autograd.
+
+```python
+import torch
+import torch.nn.functional as F
+
+torch.manual_seed(0)
+vocab, d, d_ff = 10, 4, 16
+tokens, targets = torch.tensor([3, 7, 3]), torch.tensor([7, 3, 1])
+W_E = torch.randn(vocab, d, dtype=torch.float64, requires_grad=True)
+W_up = torch.randn(d, d_ff, dtype=torch.float64, requires_grad=True)
+W_down = torch.randn(d_ff, d, dtype=torch.float64, requires_grad=True)
+W_out = torch.randn(d, vocab, dtype=torch.float64, requires_grad=True)
+
+# forward pass
+x = W_E[tokens]                     # embedding lookup, one row per position
+z_ff = x @ W_up
+a = torch.tanh(z_ff)
+h = x + a @ W_down                  # a residual feed-forward block
+logits = h @ W_out
+loss = F.cross_entropy(logits, targets)
+loss.backward()
+
+# backward pass by hand
+T = len(tokens)
+p = torch.softmax(logits.detach(), dim=-1)
+dz = (p - F.one_hot(targets, vocab)) / T
+g_out = h.detach().T @ dz
+dh = dz @ W_out.detach().T
+g_down = a.detach().T @ dh
+dz_ff = (dh @ W_down.detach().T) * (1 - a.detach() ** 2)
+g_up = x.detach().T @ dz_ff
+dx = dh + dz_ff @ W_up.detach().T
+g_E = torch.zeros_like(W_E).index_add_(0, tokens, dx)
+
+for name, ours, ref in (("W_out", g_out, W_out.grad), ("W_down", g_down, W_down.grad),
+                        ("W_up", g_up, W_up.grad), ("W_E", g_E, W_E.grad)):
+    print(f"{name}: matches autograd {torch.allclose(ours, ref)}")
+print("rows of W_E with a nonzero gradient:", g_E.abs().sum(dim=1).nonzero().flatten().tolist())
+```
+
+% output
+
+```text
+W_out: matches autograd True
+W_down: matches autograd True
+W_up: matches autograd True
+W_E: matches autograd True
+rows of W_E with a nonzero gradient: [3, 7]
 ```
 
 ```{admonition} Gradient Flow Analysis
