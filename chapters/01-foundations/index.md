@@ -499,9 +499,11 @@ def create_sinusoidal_encoding(max_seq_len, d_model):
 def visualize_positional_encoding(max_seq_len=100, d_model=64):
     """Visualize positional encodings."""
     pe = create_sinusoidal_encoding(max_seq_len, d_model)
+    print(f"encoding table: {tuple(pe.shape)}, values from {pe.min():.4f} to {pe.max():.4f}")
+    print(f"position 0: {pe[0, :4].tolist()}")
 
     plt.figure(figsize=(12, 8))
-    plt.imshow(pe.T, cmap="RdBu", aspect="auto")
+    plt.imshow(pe.T.numpy(), cmap="RdBu", aspect="auto")
     plt.colorbar()
     plt.title("Sinusoidal Positional Encodings")
     plt.xlabel("Position")
@@ -522,6 +524,15 @@ def visualize_positional_encoding(max_seq_len=100, d_model=64):
 # Visualize the encodings
 visualize_positional_encoding()
 ```
+
+% output
+
+```text
+encoding table: (100, 64), values from -1.0000 to 1.0000
+position 0: [0.0, 1.0, 0.0, 1.0]
+```
+
+Position 0 is $(0, 1, 0, 1, \dots)$ because $\sin 0 = 0$ and $\cos 0 = 1$, and every entry stays within $[-1, 1]$.
 
 (sec-ch1-learned-positions)=
 
