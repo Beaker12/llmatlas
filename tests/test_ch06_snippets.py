@@ -69,12 +69,11 @@ def config(repo: str) -> dict:
 
 # repo: (total in billions, tolerance, active in billions, convention, tolerance)
 PUBLISHED = {
-    "Qwen/Qwen2.5-7B": (7.61, 0.01, None, None, None),  # vendor truncates 7.6156
-    "allenai/OLMo-2-1124-7B": (7.3, 0.05, None, None, None),
+    "Qwen/Qwen2.5-7B": (7.61, 0.01, None, None, None),  # consistent with truncating 7.6156
     "allenai/OLMoE-1B-7B-0924": (6.9, 0.05, 1.3, "with", 0.05),
     "deepseek-ai/DeepSeek-V2-Lite": (15.7, 0.05, 2.4, "without", 0.1),  # vendor truncates 2.451
     "deepseek-ai/DeepSeek-V3": (671, 0.5, 37, "without", 0.5),
-    "mistralai/Mistral-7B-v0.1": (7.3, 0.1, None, None, None),  # vendor rounds 7.2417 up
+    "mistralai/Mistral-7B-v0.1": (7.3, 0.1, None, None, None),  # consistent with rounding 7.2417 up
     "mistralai/Mixtral-8x7B-v0.1": (46.7, 0.05, 12.9, "with", 0.05),
 }
 

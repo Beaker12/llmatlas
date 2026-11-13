@@ -184,11 +184,11 @@ for repo in PAPER_CONFIGS:
 print("hub totals reproduced exactly for", ", ".join(PAPER_CONFIGS))
 
 # 3. Published figures (billions): (total, tolerance, active, convention, tolerance)
-# Tolerances are half a unit in the last published digit, widened where the vendor truncates
-# (Qwen 7.6156 -> 7.61, DeepSeek-V2-Lite 2.451 -> 2.4) or rounds up (Mistral 7.2417 -> 7.3).
+# Tolerances are half a unit in the last published digit, widened where the figure is consistent
+# with truncation (Qwen 7.6156 -> 7.61, DeepSeek-V2-Lite 2.451 -> 2.4) or with rounding up
+# (Mistral 7.2417 -> 7.3). OLMo 2 7B has no published total more precise than its name.
 PUBLISHED = {
     "Qwen/Qwen2.5-7B": (7.61, 0.01, None, None, None),
-    "allenai/OLMo-2-1124-7B": (7.3, 0.05, None, None, None),
     "allenai/OLMoE-1B-7B-0924": (6.9, 0.05, 1.3, "with", 0.05),
     "deepseek-ai/DeepSeek-V2-Lite": (15.7, 0.05, 2.4, "without", 0.1),
     "deepseek-ai/DeepSeek-V3": (671, 0.5, 37, "without", 0.5),
@@ -553,7 +553,7 @@ md(r"""
 (nb-arch-moe)=
 ## 6. A Mixture-of-Experts Router
 
-The router from the chapter, run on 4,096 random tokens with 8 experts and top-2 routing. Each row of the router weight has unit norm, so no expert is favoured at initialisation, and the dispatch fraction of an expert is its share of the routed slots (they sum to one).
+The router from the chapter, run on 4,096 random tokens with 8 experts and top-2 routing. Each row of the router weight has unit norm, so no expert is favored at initialization, and the dispatch fraction of an expert is its share of the routed slots (they sum to one).
 """)
 code(fence(CH06, "def route_top_k"))
 code(r'''
@@ -581,7 +581,7 @@ w, x = make_router(0)
 ids, gates, aux_balanced = route_top_k(x, w, K)
 assert torch.allclose(gates.sum(-1), torch.ones(T)) and ids.shape == (T, K)
 
-# A router that favours expert 0: shift every token towards its weight row
+# A router that favors expert 0: shift every token towards its weight row
 ids_b, _, aux_biased = route_top_k(x + 3 * w[0], w, K)
 print(f"load-balancing loss: balanced {aux_balanced:.3f}, biased {aux_biased:.3f} (uniform routing gives 1)")
 assert 0.95 < aux_balanced < 1.1 and aux_biased > 2
@@ -624,7 +624,7 @@ plt.show()
 ''')
 
 md(r"""
-A full layer, checked against a per-token reference that follows Mixtral's formulation literally: take the top-2 router *logits*, then apply a softmax over just those two. The chapter's router renormalises the full softmax over the selected pair, which is the same thing. The layer is then placed in a small model, and its total and active parameters are compared with `count_params`.
+A full layer, checked against a per-token reference that follows Mixtral's formulation literally: take the top-2 router *logits*, then apply a softmax over just those two. The chapter's router renormalizes the full softmax over the selected pair, which is the same thing. The layer is then placed in a small model, and its total and active parameters are compared with `count_params`.
 """)
 code(r'''
 class MoELayer(nn.Module):

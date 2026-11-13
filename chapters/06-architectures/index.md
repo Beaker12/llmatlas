@@ -1,6 +1,6 @@
 # Modern Transformer Architectures
 
-Chapter 1 built the transformer as it was drawn in 2017, and listed in one section what changed. This chapter takes that list apart. A decoder-only model released in 2024 or 2025 is still recognisably the 2017 block, but nearly every part of it has been replaced for a reason: to keep a 70-billion-parameter run from diverging, to shrink the cache that dominates serving memory, to stretch the context window, or to buy more parameters per unit of compute. We go through those replacements one at a time, put numbers on each from the published configuration files of real models, and finish with the accounting that turns a configuration into parameters, FLOPs and bytes.
+Chapter 1 built the transformer as it was drawn in 2017, and listed in one section what changed. This chapter takes that list apart. A decoder-only model released in 2024 or 2025 is still recognizably the 2017 block, but nearly every part of it has been replaced for a reason: to keep a 70-billion-parameter run from diverging, to shrink the cache that dominates serving memory, to stretch the context window, or to buy more parameters per unit of compute. We go through those replacements one at a time, put numbers on each from the published configuration files of real models, and finish with the accounting that turns a configuration into parameters, FLOPs and bytes.
 
 (sec-ch6-learning-objectives)=
 
@@ -59,7 +59,7 @@ The theme throughout is that architecture choices are constraints from somewhere
 
 ### 1.1 The models in this chapter
 
-Ten models are used as running examples. They span dense and sparse designs, three attention families and six organisations. Every figure below traces to a pinned `config.json` or to the model's paper, with the paper-derived rows expressed in the conventions of the Hugging Face configurations (for example vocabulary entries, and the width of one gate or up projection).
+Ten models are used as running examples, among them the open mixture-of-experts model OLMoE {cite}`muennighoff2025olmoe`. They span dense and sparse designs, three attention families and six organizations. Every figure below traces to a pinned `config.json` or to the model's paper, with the paper-derived rows expressed in the conventions of the Hugging Face configurations (for example vocabulary entries, and the width of one gate or up projection).
 
 All ten have the same outer structure: a token embedding, a stack of identical blocks, a final normalization, and an output projection to the vocabulary. Within a block, a normalization, an attention sublayer and a residual addition are followed by a normalization, a feed-forward sublayer and a second residual addition. Only the contents of the boxes differ.
 
@@ -71,7 +71,7 @@ All ten have the same outer structure: a token embedding, a stack of identical b
 | Llama 3.1 70B | 80 | 8,192 | 64 / 8 × 128 | 28,672 | 128,256 | 500,000 | 128K | 70.55B | paper |
 | Mistral 7B v0.1 | 32 | 4,096 | 32 / 8 × 128 | 14,336 | 32,000 | 10,000 | 8,192 (paper), 32,768 (config) | 7.24B | config |
 | Qwen2.5 7B | 28 | 3,584 | 28 / 4 × 128 | 18,944 | 152,064 | 1,000,000 | 131,072 (config; 32,768 trained, longer with YaRN) | 7.62B | config |
-| Gemma 2 9B | 42 | 3,584 | 16 / 8 × 256 | 14,336 | 256,000 | not stated | 8,192 | 9.24B | paper |
+| Gemma 2 9B | 42 | 3,584 | 16 / 8 × 256 | 14,336 | 256,000 | not stated (Transformers default 10,000) | 8,192 | 9.24B | paper |
 | OLMo 2 7B (1124) | 32 | 4,096 | 32 / 32 × 128 | 11,008 | 100,352 | 500,000 | 4,096 | 7.30B | config |
 
 **Sparse (mixture-of-experts) models.**
@@ -85,14 +85,14 @@ All ten have the same outer structure: a token embedding, a stack of identical b
 
 A few notes on reading the tables.
 
-- **Source.** "config" means the value is read from the model's `config.json` at the pinned commit listed in `data/pins.json`. "paper" means the architecture is taken from the model's paper, because the repository is gated (it needs an account and a licence acceptance). A paper-derived row is not unverified: the hub reports the exact parameter total of a gated checkpoint in its public metadata, and the configurations transcribed from the papers reproduce those totals to the last digit (Section 8.2). One value in the gated rows comes from the hub rather than the paper: Gemma 2's vocabulary size, explained in the next note.
+- **Source.** "config" means the value is read from the model's `config.json` at the pinned commit listed in `data/pins.json`. "paper" means the architecture is taken from the model's paper, because the repository is gated (it needs an account and a license acceptance). A paper-derived row is not unverified: the hub reports the exact parameter total of a gated checkpoint in its public metadata, and the configurations transcribed from the papers reproduce those totals to the last digit (Section 8.2). One value in the gated rows comes from the hub rather than the paper: Gemma 2's vocabulary size, explained in the next note.
 - **Parameters** are exact element counts divided by $10^9$, from the checkpoints' tensor shapes rather than from rounded marketing figures. Section 8 explains the "with" and "without" embedding convention for active parameters.
 - **Vocabulary.** The Llama 3 paper describes a 128K vocabulary; the configuration has 128,256 entries, the 128,000 of the tokenizer plus 256 reserved special tokens. The Gemma 2 paper's Table 1 lists a vocabulary of 256,128 and its Table 2 counts 917,962,752 embedding parameters accordingly ($256{,}128 \times 3{,}584$); the released checkpoint has 256,000 rows (917,504,000 parameters), and the table uses the checkpoint's 256,000 {cite}`gemma2024gemma2`. The paper's non-embedding count for 9B, 8,324,201,984, is reproduced exactly. Likewise Gemma 2's paper lists the feed-forward width as the combined 28,672 of the gate and up projections, which is twice the 14,336 of each in the configuration and the table.
 - **Context.** Mistral 7B v0.1's paper reports training at 8,192 tokens with a 4,096-token sliding window; its configuration advertises 32,768 positions. Both are quoted because they answer different questions: what the model saw, and what the code accepts (Section 5.4).
 - **Gemma 2's head dimension.** Sixteen heads of 256 give an attention width of 4,096, larger than the model width of 3,584. The head width is a free parameter, not $d/n_h$.
 - **DeepSeek-V3's total.** The 671.03B counts the main model. The released checkpoint also contains a 13.46B-element multi-token-prediction layer (Section 7.3), about 1.85B of which are copies of the embedding and output head that the paper shares with the main model, and 41.5M FP8 scale factors; the model card's "685B" includes both.
 
-Beyond shapes, the models make different design choices, summarised here and developed in the sections that follow.
+Beyond shapes, the models make different design choices, summarized here and developed in the sections that follow.
 
 | Model | Norm placement | QK-norm | Attention biases | Tied embeddings | Attention pattern |
 | --- | --- | --- | --- | --- | --- |
@@ -124,11 +124,11 @@ It is worth stating what is *constant*, because it explains why the field moved 
 
 ### 2.1 Pre-norm and post-norm
 
-The original transformer applied layer normalization *after* adding the sublayer output to the residual (post-norm): $x \leftarrow \mathrm{Norm}(x + F(x))$. Every layer's output passes through a normalization on the way to the next, which means the gradient reaching early layers is rescaled at each step. At initialization the gradients near the output are large, and Xiong et al. trace post-norm's reliance on a learning-rate warm-up to them {cite}`xiong2020layer`. How strict that reliance is depends on the learning rate: in the notebook section {ref}`nb-arch-train`, post-norm fails without warm-up only at the highest of three rates, and warm-up lets it train there in some seeds but not in all.
+The original transformer {cite}`vaswani2017attention` applied layer normalization *after* adding the sublayer output to the residual (post-norm): $x \leftarrow \mathrm{Norm}(x + F(x))$. Every layer's output passes through a normalization on the way to the next, which means the gradient reaching early layers is rescaled at each step. At initialization the gradients near the output are large, and Xiong et al. trace post-norm's reliance on a learning-rate warm-up to them {cite}`xiong2020layer`. How strict that reliance is depends on the learning rate: in the notebook section {ref}`nb-arch-train`, post-norm fails without warm-up only at the highest of three rates, and warm-up lets it train there in some seeds but not in all.
 
 Pre-norm moves the normalization inside the branch: $x \leftarrow x + F(\mathrm{Norm}(x))$. The residual path from the embedding to the output is then an unnormalized identity, so gradients reach every layer directly. Xiong et al. show that this keeps the gradient scale stable at initialization and makes warm-up optional. The price is that the residual stream's magnitude grows with depth, so the representation of the last layers can be dominated by the accumulated sum; this is why every pre-norm model adds a final normalization before the output projection. The notebook section {ref}`nb-arch-train` trains both arrangements side by side at three learning rates, with and without warm-up.
 
-Post-norm is not extinct, and the question is revisited every few years, but the practical argument favours pre-norm: a diverged run on a cluster costs far more than any small quality difference at a size where both train.
+Chapter 2 follows the gradient through the residual path and notes that where the normalization sits matters ({ref}`sec-ch2-pre-post-ln`). Post-norm is not extinct, and the question is revisited every few years, but the practical argument favors pre-norm: a diverged run on a cluster costs far more than any small quality difference at a size where both train.
 
 (sec-ch6-rmsnorm)=
 
@@ -136,17 +136,17 @@ Post-norm is not extinct, and the question is revisited every few years, but the
 
 Layer normalization subtracts the mean and divides by the standard deviation. RMSNorm drops the mean subtraction and the bias {cite}`zhang2019root`:
 
-$$\mathrm{RMSNorm}(x) = \gamma \odot \frac{x}{\sqrt{\frac{1}{d}\sum_{i=1}^{d} x_i^2 + \epsilon}}$$
+$$\mathrm{RMSNorm}(x) = \gamma \odot \frac{x}{\sqrt{\lVert x \rVert^2 / d + \epsilon}}$$
 
-The argument is that the re-scaling is what matters and the re-centring is not. It has one parameter vector instead of two and a cheaper forward and backward pass; it is what every model in the table uses. Chapter 1 gives the implementation, and Chapter 2 derives the backward pass of layer normalization. In the parameter count, each RMSNorm contributes $d$ weights.
+The argument is that the re-scaling is what matters and the re-centering is not. It has one parameter vector instead of two and a cheaper forward and backward pass; it is what every model in the table uses. Chapter 1 lists RMSNorm and SwiGLU among the changes to the block since 2017 ({ref}`sec-ch1-modern-block`). In the parameter count, each RMSNorm contributes $d$ weights.
 
 (sec-ch6-normalizing-queries-keys)=
 
 ### 2.3 Normalizing queries and keys
 
-Attention logits are dot products $q \cdot k / \sqrt{d_k}$. If a few directions in $q$ and $k$ grow large during training, the softmax saturates into a one-hot distribution, gradients through it vanish, and the loss spikes. Normalizing the queries and keys before the dot product (QK-norm) was proposed for translation models by Henry et al. in 2020, and Dehghani et al. used it to stabilise a 22-billion-parameter vision transformer {cite}`dehghani2023scaling`. It bounds the logits regardless of how the projection weights drift.
+Attention logits are dot products $q \cdot k / \sqrt{d_k}$. If a few directions in $q$ and $k$ grow large during training, the softmax saturates into a one-hot distribution, gradients through it vanish, and the loss spikes. Normalizing the queries and keys before the dot product (QK-norm) was proposed for translation models by {cite:t}`henry2020query`, and Dehghani et al. used it to stabilize a 22-billion-parameter vision transformer {cite}`dehghani2023scaling`. It bounds the logits regardless of how the projection weights drift.
 
-OLMo 2 {cite}`olmo2024olmo2` and OLMoE (whose configuration and model code show the same layout) apply an RMSNorm to the full query and key projections before they are split into heads; in the parameter count this adds $n_h d_k$ weights for the queries and $n_{kv} d_k$ for the keys per layer. DeepSeek's multi-head latent attention normalizes the compressed latents instead (Section 4.4).
+OLMo 2 {cite}`olmo2024olmo2` and OLMoE {cite}`muennighoff2025olmoe` (whose configuration and model code show the same layout) apply an RMSNorm to the full query and key projections before they are split into heads; in the parameter count this adds $n_h d_k$ weights for the queries and $n_{kv} d_k$ for the keys per layer. DeepSeek's multi-head latent attention normalizes the compressed latents instead (Section 4.4).
 
 (sec-ch6-normalizing-sublayer-outputs)=
 
@@ -160,7 +160,7 @@ All of these keep the *magnitude* of what each layer adds to the residual stream
 
 ### 2.5 Initialization of the residual branches
 
-The residual stream is a sum of $2L$ terms. If each term has unit variance at initialization, the sum's variance grows as $2L$. GPT-2 scales the weights of the residual projections by $1/\sqrt{2L}$ at initialization, with $2L$ the number of residual layers {cite}`radford2019language`, and most codebases do something equivalent for the output projections of attention and the feed-forward network. Chapter 2's section on initialization derives why this keeps the signal and gradient variance constant with depth.
+The residual stream is a sum of $2L$ terms. If each term has unit variance at initialization, the sum's variance grows as $2L$. GPT-2 scales the weights of the residual projections by $1/\sqrt{2L}$ at initialization, with $2L$ the number of residual layers {cite}`radford2019language`, and most codebases do something equivalent for the output projections of attention and the feed-forward network. Chapter 2 states this rule ({ref}`sec-ch2-residual-init`).
 
 ```{admonition} Norm Placement in Practice
 :class: note
@@ -175,7 +175,7 @@ The notebook section {ref}`nb-arch-block` checks the chapter's RMSNorm against P
 
 ### 3.1 From ReLU to gated units
 
-The 2017 feed-forward network is $\mathrm{ReLU}(x W_{up})\, W_{down}$ with a hidden width of $4d$. GPT-1, GPT-2 and BERT swapped ReLU for GELU {cite}`hendrycks2016gaussian`. Shazeer then tested gated variants, in which the hidden activation is the elementwise product of two projections, one passed through a nonlinearity {cite}`shazeer2020glu`:
+The 2017 feed-forward network is $\mathrm{ReLU}(x W_{up})\, W_{down}$ with a hidden width of $4d$; Chapter 1 sets it beside the gated form that replaced it ({ref}`sec-ch1-modern-block`). GPT-1, GPT-2 and BERT swapped ReLU for GELU {cite}`hendrycks2016gaussian`. Shazeer then tested gated variants, in which the hidden activation is the elementwise product of two projections, one passed through a nonlinearity {cite}`shazeer2020glu`:
 
 $$\mathrm{SwiGLU}(x) = \big(\mathrm{SiLU}(x W_{gate}) \odot x W_{up}\big) W_{down}$$
 
@@ -185,7 +185,7 @@ With a GELU gate this is GeGLU, which Gemma uses; with SiLU it is SwiGLU, which 
 
 ### 3.2 Width
 
-A gated unit has three matrices instead of two, so to keep the parameter count at that of a $4d$ feed-forward network the hidden width is reduced to $\tfrac{8}{3} d$. In practice the width is rounded to a hardware-friendly multiple, and then chosen freely. OLMo 2 7B's width of 11,008 is $\tfrac{8}{3} \times 4096$ rounded up to a multiple of 256, as in the first LLaMA. The later designs go wider: 14,336 is $3.5 d$ for Llama 3.1 and Mistral, and Qwen2.5 7B uses $5.3 d$.
+A gated unit has three matrices instead of two, so to keep the parameter count at that of a $4d$ feed-forward network the hidden width is reduced to $\tfrac{8}{3} d$. In practice the width is rounded to a hardware-friendly multiple, and then chosen freely. OLMo 2 7B's width of 11,008 is $\tfrac{8}{3} \times 4096$ rounded up to a multiple of 256, as in the first LLaMA {cite}`touvron2023llama`. The later designs go wider: 14,336 is $3.5 d$ for Llama 3.1 and Mistral, and Qwen2.5 7B uses $5.3 d$.
 
 Each feed-forward network has $3\,d \cdot d_{ff}$ parameters. Across the dense models above, that is between 59% (OLMo 2 7B) and 80% (Llama 3.1 70B) of all parameters; the notebook computes each share. The feed-forward network is where most of a dense model's capacity, and most of its FLOPs, live, which is also why it is the part that mixture-of-experts models replace (Section 6).
 
@@ -193,7 +193,7 @@ Each feed-forward network has $3\,d \cdot d_{ff}$ parameters. Across the dense m
 
 ### 3.3 No biases
 
-Linear layers in these models have no bias terms. The biases add few parameters but cost memory traffic and, with some parallelism schemes, extra communication, and the models that dropped them report no loss from doing so. The exception in the table is Qwen2.5, which keeps biases on the query, key and value projections only; this detail is fixed in the model code rather than in `config.json`, a pattern that matters for the parameter count in Section 8.
+Linear layers in these models have no bias terms, as the model code of each shows. PaLM's authors give a reason: removing the biases from the dense layers and layer norms "result[ed] in increased training stability for large models" {cite}`chowdhery2023palm`. The exception in the table is Qwen2.5, which keeps biases on the query, key and value projections only; this detail is fixed in the model code rather than in `config.json`, a pattern that matters for the parameter count in Section 8.
 
 (sec-ch6-attention-variants)=
 
@@ -239,6 +239,7 @@ The choice of $n_{kv}$ is a direct dial on the cache. Llama 3.1 8B uses 8 key/va
 | Model | KV elements per token | Bytes per token | Compared with MHA |
 | --- | --- | --- | --- |
 | OLMo 2 7B (MHA) | 262,144 | 524,288 | 1× |
+| OLMoE 1B-7B (MHA) | 65,536 | 131,072 | 1× |
 | Mistral 7B, Mixtral, Llama 3.1 8B (GQA, 8 KV heads) | 65,536 | 131,072 | 4× smaller |
 | Qwen2.5 7B (GQA, 4 KV heads) | 28,672 | 57,344 | 7× smaller |
 | Gemma 2 9B (GQA, 8 KV heads of 256) | 172,032 | 344,064 | 2× smaller |
@@ -262,20 +263,20 @@ import torch.nn.functional as F
 
 
 def grouped_query_attention(q, k, v):
-    """q: [batch, n_heads, seq, d_h]; k, v: [batch, n_kv, seq, d_h], n_heads % n_kv == 0."""
+    """q: [batch, n_heads, seq, head_dim]; k, v: [batch, n_kv, seq, head_dim], n_heads % n_kv == 0."""
     group = q.size(1) // k.size(1)
     k = k.repeat_interleave(group, dim=1)  # each KV head serves `group` adjacent query heads
     v = v.repeat_interleave(group, dim=1)
     return F.scaled_dot_product_attention(q, k, v, is_causal=True)
 ```
 
-Production kernels avoid materialising the repeated tensors, but the result is the same. That equivalence is what the notebook asserts ({ref}`nb-arch-block`): grouped-query attention equals multi-head attention whose key and value weights are the grouped weights repeated, to floating-point precision, and multi-query attention is the `n_kv = 1` case.
+Production kernels avoid materializing the repeated tensors, but the result is the same. That equivalence is what the notebook asserts ({ref}`nb-arch-block`): grouped-query attention equals multi-head attention whose key and value weights are the grouped weights repeated, to floating-point precision, and multi-query attention is the `n_kv = 1` case.
 
 (sec-ch6-multi-head-latent-attention)=
 
 ### 4.4 Multi-head latent attention
 
-DeepSeek-V2 reduces the cache by a different route: instead of sharing heads, it compresses them {cite}`deepseek2024v2`. The hidden state $h_i$ at position $i$ is projected down to a latent vector $c_i = h_i W^{DKV}$ of size $d_c$ (512 in both V2-Lite and V3). Keys and values for all heads are reconstructed from the latent by up-projections, $k_i = c_i W^{UK}$ and $v_i = c_i W^{UV}$, and only $c_i$ is cached. At inference the up-projection of the keys can be absorbed into the query projection and that of the values into the output projection, so the full keys and values are never materialised.
+DeepSeek-V2 reduces the cache by a different route: instead of sharing heads, it compresses them {cite}`deepseek2024v2`. The hidden state $h_i$ at position $i$ is projected down to a latent vector $c_i = h_i W^{DKV}$ of size $d_c$ (512 in both V2-Lite and V3). Keys and values for all heads are reconstructed from the latent by up-projections, $k_i = c_i W^{UK}$ and $v_i = c_i W^{UV}$, and only $c_i$ is cached. At inference the up-projection of the keys can be absorbed into the query projection and that of the values into the output projection, so the full keys and values are never materialized.
 
 There is a complication. RoPE rotates the key by a position-dependent matrix, and that matrix would sit between $W^{UK}$ and the query, preventing the absorption. DeepSeek therefore splits each head into a part without positional information (128 dimensions) and a small decoupled part that carries RoPE (64 dimensions). The rotary key is shared across heads and cached separately, which is the $d_{rope} = 64$ in the cache formula. DeepSeek-V3's cache per token per layer is $512 + 64 = 576$ elements; the same layer under multi-head attention with its 128 heads would hold $128 \times (128 + 64 + 128) = 40{,}960$ elements, a factor of 71.
 
@@ -306,23 +307,23 @@ The notebook section {ref}`nb-arch-kvcache` generates text with a cache and chec
 
 ### 5.1 RoPE in one paragraph
 
-Chapter 1 derived rotary embeddings {cite}`su2021roformer`. Each pair of dimensions $(2i, 2i+1)$ of a query or key at position $m$ is rotated by the angle $m\,\omega_i$, with $\omega_i = b^{-2i/d_k}$ for a base $b$ (10,000 in the original), $i = 0, \dots, d_k/2 - 1$ and $d_k$ the head width. The dot product between a query at position $m$ and a key at position $m'$ then depends only on $m - m'$. The frequencies range from $\omega_0 = 1$ radian per position, which completes a turn in about 6 tokens, down to $\omega_{d_k/2-1} = b^{-(d_k-2)/d_k}$, almost $1/b$, which turns once in about $2\pi b$ tokens. The base therefore sets the longest wavelength the model can represent.
+Chapter 1 implements rotary embeddings ({ref}`sec-ch1-rope`) {cite}`su2021roformer`; this section states the formulas. Each pair of dimensions $(2i, 2i+1)$ of a query or key at position $m$ is rotated by the angle $m\,\omega_i$, with $\omega_i = b^{-2i/d_k}$ for a base $b$ (10,000 in the original), $i = 0, \dots, d_k/2 - 1$ and $d_k$ the head width. The dot product between a query at position $m$ and a key at position $m'$ then depends only on $m - m'$. The frequencies range from $\omega_0 = 1$ radian per position, which completes a turn in about 6 tokens, down to $\omega_{d_k/2-1} = b^{-(d_k-2)/d_k}$, almost $1/b$, which turns once in $2\pi b^{(d_k-2)/d_k}$ tokens: about 54,400 for $b = 10{,}000$ and $d_k = 128$, or 0.87 of $2\pi b$. The base therefore sets the longest wavelength the model can represent.
 
 (sec-ch6-trained-length-matters)=
 
 ### 5.2 Why trained length matters
 
-A model trained on sequences up to $n_{train}$ tokens has only ever seen rotation angles $m\,\omega_i$ with $m < n_{train}$. For high-frequency pairs this covers many full turns, so every angle in $[0, 2\pi)$ has been seen. For the low-frequency pairs, those with $n_{train}\,\omega_i < 2\pi$, the training positions cover only part of a turn. At position $m \geq n_{train}$ these pairs rotate to angles never seen in training, and the model's behaviour is unconstrained. The failures of naive extrapolation come from these low-frequency components.
+A model trained on sequences up to $n_{train}$ tokens has only ever seen rotation angles $m\,\omega_i$ with $m < n_{train}$. For high-frequency pairs this covers many full turns, so every angle in $[0, 2\pi)$ has been seen. For the low-frequency pairs, those with $n_{train}\,\omega_i < 2\pi$, the training positions cover only part of a turn. At position $m \geq n_{train}$ these pairs rotate to angles never seen in training, and the model's behavior is unconstrained. The failures of naive extrapolation come from these low-frequency components.
 
 Two families of fix change the frequencies, and both are used in the table:
 
-**A larger base.** Raising $b$ lowers every frequency, so the angles at position $m$ are those of a smaller position. Llama 3 raised the base from 10,000 to 500,000 {cite}`grattafiori2024llama`, Qwen2.5 and Mixtral use 1,000,000. It is the simplest approach: train from the start, or continue training, with the larger base.
+**A larger base.** Raising $b$ lowers every frequency, so the angles at position $m$ are those of a smaller position. Xiong et al. proposed raising the base from 10,000 to 500,000 for long-context training {cite}`xiong2024effective`, and Llama 3 uses that value {cite}`grattafiori2024llama`; Qwen2.5 and Mixtral use 1,000,000. It is the simplest approach: train from the start, or continue training, with the larger base.
 
-**Rescaling an existing model.** Position interpolation divides every position by the length ratio $s_{ctx} = n'/n_{train}$ of a target context length $n'$ to the trained one, so positions up to the target length map into $[0, n_{train})$ and no angle exceeds what training saw {cite}`chen2023extending`. Its drawback is that it squeezes the high frequencies too, blurring the distinction between adjacent tokens. NTK-aware scaling, from a pseudonymous 2023 post that appeared shortly after position interpolation and before YaRN {cite}`bloc972023ntk`, instead changes the base:
+**Rescaling an existing model.** Position interpolation divides every position by the length ratio $s_{ctx} = n'/n_{train}$ of a target context length $n'$ to the trained one, so positions up to the target length map into $[0, n_{train})$ and no angle exceeds what training saw {cite}`chen2023extending`. Its drawback is that it squeezes the high frequencies too, blurring the distinction between adjacent tokens. NTK-aware scaling, from a 2023 Reddit post by the pseudonymous {cite:t}`bloc972023ntk`, instead changes the base; the YaRN paper writes the rule out (its Eq. 22, arXiv v3) {cite}`peng2024yarn`:
 
 $$b' = b \cdot s_{ctx}^{\,d_k/(d_k-2)}$$
 
-This leaves the highest frequency $\omega_0 = 1$ unchanged and divides the lowest by exactly $s_{ctx}$, with the frequencies between spread geometrically. High-frequency components are preserved and low-frequency ones are interpolated. YaRN refines this: it interpolates the low-frequency dimensions, leaves the high-frequency ones, blends between them with a ramp, and multiplies the attention logits by a factor $1/\tau$ that grows slowly with the scale factor, so the temperature $\tau$ falls: $\sqrt{1/\tau} = 0.1 \ln s_{ctx} + 1$ in the YaRN paper's fit for LLaMA {cite}`peng2024yarn`, and DeepSeek-V2 uses $0.0707 \ln s_{ctx} + 1$ for the same factor {cite}`deepseek2024v2`. DeepSeek-V2 and V3 use YaRN with scale factor 40, from a trained length of 4,096 to 163,840 positions.
+This leaves the highest frequency $\omega_0 = 1$ unchanged and divides the lowest by exactly $s_{ctx}$, with the frequencies between spread geometrically. High-frequency components are preserved and low-frequency ones are interpolated. YaRN refines this: it interpolates the low-frequency dimensions, leaves the high-frequency ones, blends between them with a ramp, and multiplies the attention logits by a factor $1/\tau$ that grows slowly with the scale factor, so the temperature $\tau$ falls: $\sqrt{1/\tau} = 0.1 \ln s_{ctx} + 1$ in the YaRN paper's fit for LLaMA {cite}`peng2024yarn`, and DeepSeek-V2 uses $0.0707 \ln s_{ctx} + 1$ for the same factor {cite}`deepseek2024v2`. DeepSeek-V2 and V3 use YaRN with scale factor 40 over a 4,096-token pretraining length (163,840 positions in the configuration); the reports describe extension training at 32K for V2, evaluated up to 128K, and at 32K and then 128K for V3 {cite}`deepseek2024v2,deepseek2024v3`.
 
 Two short functions capture the frequency arithmetic.
 
@@ -331,7 +332,7 @@ import torch
 
 
 def rope_frequencies(d, base=10000.0):
-    """theta_i = base^(-2i/d) for i = 0 .. d/2 - 1, in float64."""
+    """omega_i = base^(-2i/d) for i = 0 .. d/2 - 1, in float64."""
     return 1.0 / (base ** (torch.arange(0, d, 2, dtype=torch.float64) / d))
 
 
@@ -346,13 +347,13 @@ The notebook section {ref}`nb-arch-rope` asserts the identities above to $10^{-9
 
 ### 5.3 Alternatives to RoPE
 
-ALiBi adds a penalty to attention scores proportional to the distance between query and key, with a different slope per head, and no positional signal elsewhere {cite}`press2022train`. It extrapolates to longer sequences with no change, which was its selling point, but it has been displaced by RoPE with rescaling in most recent models. T5's bucketed biases {cite}`raffel2019exploring`, implemented in Chapter 1, belong to the same family: a learned additive bias indexed by distance. Shaw et al. introduced relative positions earlier, as learned vectors added to the keys and values {cite}`shaw2018self`.
+ALiBi adds a penalty to attention scores proportional to the distance between query and key, with a different slope per head, and no positional signal elsewhere {cite}`press2022train`. It extrapolates to longer sequences with no change, which was its selling point, but it has been displaced by RoPE with rescaling in most recent models. T5's bucketed biases {cite}`raffel2019exploring`, of which Chapter 1 implements a clipped-offset variant ({ref}`sec-ch1-relative-bias`), belong to the same family: a learned additive bias indexed by distance. Shaw et al. introduced relative positions earlier, as learned vectors added to the keys and values {cite}`shaw2018self`.
 
 (sec-ch6-long-context-training)=
 
 ### 5.4 Long-context training and what a number promises
 
-The configuration's `max_position_embeddings` says what the code accepts, not what the model does well. A long-context model is made in stages. Pretraining is done at a short length because attention cost grows with the square of it. A short final stage, a small fraction of total tokens, continues at the long length with a larger RoPE base or rescaled frequencies. Llama 3.1 does this in six increments up to 128K, and checks at each that short-context quality is unchanged and that needle-in-a-haystack retrieval succeeds at the new length before moving on {cite}`grattafiori2024llama`.
+The configuration's `max_position_embeddings` says what the code accepts, not what the model does well. A long-context model is made in stages. Pretraining is done at a short length because attention cost grows with the square of it. A short final stage, a small fraction of total tokens, continues at the long length with a larger RoPE base or rescaled frequencies. Llama 3's 405B model does this in six stages from 8K to 128K, and the authors check at each that short-context quality is unchanged and that needle-in-a-haystack retrieval succeeds at the new length before moving on {cite}`grattafiori2024llama`.
 
 Three different statements get blurred under "context length":
 
@@ -377,11 +378,11 @@ The notebook section {ref}`nb-arch-rope` checks that RoPE preserves norms and ma
 
 A dense model uses all of its parameters for every token. A mixture-of-experts (MoE) layer replaces the feed-forward network by $E$ separate feed-forward networks (experts) and a router that chooses $n_{act}$ of them for each token. The layer's parameters grow with $E$; its compute per token grows with $n_{act}$. Capacity is decoupled from cost.
 
-A router computes a logit $r_i$ for every expert $i$ from the token's hidden state $x$ and a probability $\rho_i = \mathrm{softmax}(r)_i$, keeps the $n_{act}$ experts with the largest logits, $\mathrm{TopK}(r)$, and combines the chosen experts' outputs weighted by their renormalised probabilities:
+A router computes a logit $r_i$ for every expert $i$ from the token's hidden state $x$ and a probability $\rho_i = \mathrm{softmax}(r)_i$, keeps the $n_{act}$ experts with the largest logits, $\mathrm{TopK}(r)$, and combines the chosen experts' outputs weighted by their probabilities, renormalized over the chosen experts in this form:
 
 $$y = \sum_{i \in \mathrm{TopK}(r)} \tilde{\rho}_i\, \mathrm{FFN}_i(x), \qquad \tilde{\rho}_i = \frac{\rho_i}{\sum_{j \in \mathrm{TopK}(r)} \rho_j}$$
 
-GShard introduced top-2 routing for translation transformers {cite}`lepikhin2021gshard`; Switch Transformers showed that routing to a single expert works at trillion-parameter scale {cite}`fedus2022switch`. Mixtral uses top-2 of 8 experts in every layer, and the softmax over the two selected logits is the same as renormalising the full softmax over the selected pair {cite}`jiang2024mixtral`. A sketch of the router:
+GShard introduced top-2 routing for translation transformers {cite}`lepikhin2021gshard`; Switch Transformers showed that routing to a single expert works at trillion-parameter scale {cite}`fedus2022switch`. Mixtral uses top-2 of 8 experts in every layer, and the softmax over the two selected logits is the same as renormalizing the full softmax over the selected pair {cite}`jiang2024mixtral`. Renormalization is a per-model choice: Mixtral and DeepSeek-V3 renormalize over the selected experts, while OLMoE and DeepSeek-V2-Lite weight by the raw probabilities $\rho_i$ (their configurations set `norm_topk_prob: false`). A sketch of the router:
 
 ```python
 import torch
@@ -409,9 +410,9 @@ def route_top_k(x, router_weight, k):
 
 Left alone, routers collapse: an expert that gets slightly more tokens trains faster, gets better, and receives still more. The remaining experts starve and their parameters are wasted. Three mechanisms counter this.
 
-**An auxiliary loss.** The Switch loss is $\lambda_{aux}\, E \sum_{i=1}^{E} f_i \bar{\rho}_i$, where $f_i$ is the fraction of tokens dispatched to expert $i$ and $\bar{\rho}_i$ is the mean router probability assigned to it {cite}`fedus2022switch`. With $\sum_i f_i = 1$ (defined over the routed slots when $n_{act} > 1$), the loss is minimised, at the value 1, by uniform routing. Because $f_i$ is not differentiable, the gradient flows through $\bar{\rho}_i$. The coefficient trades balance against quality: Mixtral's configuration has 0.02 and OLMoE's 0.01. ST-MoE adds a *router z-loss*, a penalty on the squared log-sum-exp of the router logits that keeps them small and the routing computation numerically stable in bf16 {cite}`zoph2022st`.
+**An auxiliary loss.** The Switch loss is $\lambda_{aux}\, E \sum_{i=1}^{E} f_i \bar{\rho}_i$, where $f_i$ is the fraction of tokens dispatched to expert $i$ and $\bar{\rho}_i$ is the mean router probability assigned to it {cite}`fedus2022switch`. With $\sum_i f_i = 1$ (defined over the routed slots when $n_{act} > 1$), the loss equals 1 under uniform routing. It is not a minimum over all routers: with two experts, 30% of tokens at $\rho = (1, 0)$ and 70% at $(0.49, 0.51)$ give 0.886. If $f$ tracked $\bar{\rho}$ exactly, the loss would be $E \sum_i \bar{\rho}_i^2 \geq 1$, with equality only for uniform routing, which is the sense in which Fedus et al. call it minimized. A value near 1 therefore does not certify balance. Because $f_i$ is not differentiable, the gradient flows through $\bar{\rho}_i$. The coefficient trades balance against quality: Mixtral's configuration has 0.02 and OLMoE's 0.01. ST-MoE adds a *router z-loss*, a penalty on the squared log-sum-exp of the router logits that keeps them small and the routing computation numerically stable in bf16 {cite}`zoph2022st`.
 
-**A capacity factor.** On parallel hardware each expert processes a fixed-size buffer of $\kappa = \lceil \phi\, n_{act}\, T / E \rceil$ tokens for $T$ tokens in a batch and capacity factor $\phi$. Tokens beyond an expert's capacity are dropped from that expert (they pass through the residual connection unchanged). A factor of 1.0 is fully balanced and drops any overload; larger values waste compute on padding. "Dropless" implementations, such as the one used for OLMoE, avoid the choice at the cost of irregular shapes.
+**A capacity factor.** On parallel hardware each expert processes a fixed-size buffer of $\kappa = \lceil \phi\, n_{act}\, T / E \rceil$ tokens for $T$ tokens in a batch and capacity factor $\phi$. Tokens beyond an expert's capacity are dropped from that expert (they pass through the residual connection unchanged). A factor of 1.0 is fully balanced and drops any overload; larger values waste compute on padding. "Dropless" implementations such as MegaBlocks {cite}`gale2023megablocks`, used for OLMoE {cite}`muennighoff2025olmoe`, avoid the choice at the cost of irregular shapes.
 
 **Expert-choice routing.** Zhou et al. invert the direction: each expert chooses its top tokens, which makes balance exact by construction, though it complicates autoregressive decoding, where the future tokens that would compete for an expert are not yet known {cite}`zhou2022mixture`.
 
@@ -419,9 +420,9 @@ Left alone, routers collapse: an expert that gets slightly more tokens trains fa
 
 ### 6.3 Fine-grained and shared experts
 
-DeepSeekMoE makes two changes to the Mixtral layout {cite}`dai2024deepseekmoe`. *Fine-grained experts* splits each expert into several smaller ones and routes to more of them: OLMoE uses 64 experts of width 1,024 with top-8, DeepSeek-V3 uses 256 with width 2,048 and top-8, instead of 8 experts with width 14,336 and top-2. The number of combinations of experts a token can use grows combinatorially, which should let experts specialise more finely. *Shared experts* are always active: DeepSeek keeps one or two that process every token, so common knowledge need not be duplicated across the routed experts.
+DeepSeekMoE makes two changes to the conventional layout of GShard-style top-$n_{act}$ routing {cite}`dai2024deepseekmoe`. *Fine-grained experts* splits each expert into several smaller ones and routes to more of them: OLMoE uses 64 experts of width 1,024 with top-8, DeepSeek-V3 uses 256 with width 2,048 and top-8, instead of 8 experts with width 14,336 and top-2. The number of combinations of experts a token can use grows combinatorially, which should let experts specialize more finely. *Shared experts* are always active: DeepSeek keeps one or two that process every token, so common knowledge need not be duplicated across the routed experts.
 
-DeepSeek-V3 adds three more refinements {cite}`deepseek2024v3`. Its router uses sigmoid scores (normalised over the selected experts, then multiplied by 2.5), rather than softmax. Routing is node-limited, as DeepSeek-V2 already did with devices: the 256 experts are divided into 8 groups, a token chooses its best 4 groups and then the top 8 experts among them, which bounds cross-node communication. And it replaces the auxiliary loss with *auxiliary-loss-free* balancing {cite}`wang2024auxiliary`: a per-expert bias is added to the scores for the *selection* of the top experts only (not for the gate weights), and after each step the bias of overloaded experts is lowered and of underloaded ones raised. No gradient from a balancing objective competes with the language-modelling loss; a very small sequence-level auxiliary loss remains as a safeguard. The bias is stored per layer, one value per expert, which is why V3's router has $E$ extra parameters per layer in Section 8.
+DeepSeek-V3 adds three more refinements {cite}`deepseek2024v3`. Its router uses sigmoid scores (normalized over the selected experts, then multiplied by 2.5), rather than softmax. Routing is node-limited, as DeepSeek-V2 already did with devices: the 256 experts are divided into 8 groups, a token chooses its best 4 groups and then the top 8 experts among them, which bounds cross-node communication. And it replaces the auxiliary loss with *auxiliary-loss-free* balancing {cite}`wang2024auxiliary`: a per-expert bias is added to the scores for the *selection* of the top experts only (not for the gate weights), and after each step the bias of overloaded experts is lowered and of underloaded ones raised. No gradient from a balancing objective competes with the language-modeling loss; a very small sequence-level auxiliary loss remains as a safeguard. The bias is stored per layer, one value per expert, which is why V3's router has $E$ extra parameters per layer in Section 8.
 
 The first layers of both DeepSeek models are dense (one in V2-Lite, three in V3); the configuration's `first_k_dense_replace` says how many.
 
@@ -431,7 +432,7 @@ The first layers of both DeepSeek models are dense (one in V2-Lite, three in V3)
 
 A sparse model has two sizes. Its *total* parameters set the memory needed to hold it; its *active* parameters, those a single token touches, set the compute per token. Mixtral 8x7B holds 46.7B parameters and uses 12.9B for each token, so it costs per token about what a 13B dense model does while requiring memory for a 47B one. DeepSeek-V3 holds 671B and activates 36.6B, 5.5% of them.
 
-This changes what "size" means when comparing models. For compute, FLOPs per token, and training cost, the active count is what matters. For serving memory, and the number of GPUs needed to hold the weights, the total counts. Because a batch of tokens activates many different experts, the whole parameter set is touched at any reasonable batch size, so the memory bandwidth required per decoding step is also closer to that of the total than of the active count. Sparse models are cheaper to *train* than dense models of equal quality, and their serving advantage is smaller and depends on batch size and the interconnect.
+This changes what "size" means when comparing models. For compute, FLOPs per token, and training cost, the active count is what matters. For serving memory, and the number of GPUs needed to hold the weights, the total counts. Because a batch of tokens activates many different experts, the whole parameter set is touched at any reasonable batch size, so the memory bandwidth required per decoding step is also closer to that of the total than of the active count. Sparse models are cheaper to *train* than dense models of equal quality: Switch Transformers reached the quality of a dense T5 model up to seven times faster "while still using the same FLOPS per token" {cite}`fedus2022switch`. Their serving advantage is smaller and depends on batch size and the interconnect.
 
 Vendors disagree on whether "active" includes the input embedding table, which contributes parameters but no matrix multiplications (a lookup is not a multiplication). DeepSeek's 2.4B and 37B match a count that excludes it; OLMoE's 1.3B and Mixtral's 12.9B match a count that includes it. Section 8 computes both and states which each vendor's figure matches.
 
@@ -562,14 +563,13 @@ A parameter counter is only useful if it is right, and "right" has three differe
 | Model | Computed total | Published | Computed active | Published active (convention) |
 | --- | --- | --- | --- | --- |
 | Qwen2.5 7B | 7,615,616,512 | 7.61B | — | — |
-| OLMo 2 7B | 7,298,617,344 | 7.3B | — | — |
 | Mistral 7B v0.1 | 7,241,732,096 | 7.3B | — | — |
 | Mixtral 8x7B | 46,702,792,704 | 46.7B | 12,879,925,248 (with) | 12.9B (with) |
 | OLMoE 1B-7B | 6,919,161,856 | 6.9B | 1,282,017,280 (with) | 1.3B (with) |
 | DeepSeek-V2-Lite | 15,706,484,224 | 15.7B | 2,451,435,008 (without) | 2.4B (without) |
 | DeepSeek-V3 | 671,026,419,200 | 671B | 36,625,618,432 (without) | 37B (without) |
 
-Two entries need a comment. Qwen's 7.61B is a truncation of 7.6156B, and Mistral's 7.3B is a rounding of 7.2417B up to the next tenth of a billion; the checks for these two use correspondingly wider tolerances (0.01B and 0.1B). DeepSeek-V2-Lite's "2.4B active" is a truncation of 2.451B. These are the vendors' choices and the exact counts are in the committed regression test.
+Three entries need a comment. Qwen's 7.61B is consistent with truncating 7.6156B, and Mistral's 7.3B, from its release announcement, with rounding 7.2417B up to the next tenth of a billion; the checks for these two use correspondingly wider tolerances (0.01B and 0.1B). DeepSeek-V2-Lite's "2.4B active" is consistent with truncating 2.451B. OLMo 2 7B is not in the table: its model card names it 7B and quotes no more precise total, so the 7.30B of Section 1.1 is the hub's count, which the checkpoint check already covers. These are the vendors' choices and the exact counts are in the committed regression test.
 
 The three checks catch different mistakes. The checkpoint comparison finds wrong formulas, including a forgotten bias or norm. The hub-totals comparison verifies the descriptions transcribed from papers. The published-figure comparison finds convention mismatches (the embedding in "active"), which the first two cannot, because they only concern the total.
 
@@ -577,7 +577,7 @@ The three checks catch different mistakes. The checkpoint comparison finds wrong
 
 ### 8.3 FLOPs per token
 
-For a dense model with $N$ parameters in matrix multiplications, the forward pass costs about $2N$ FLOPs per token (one multiply and one add per weight) and the backward pass twice that, so training costs $6N$ per token {cite}`kaplan2020scaling`. Chapter 2 gives the derivation. Two refinements matter for modern models.
+For a dense model with $N$ parameters in matrix multiplications, the forward pass costs about $2N$ FLOPs per token (one multiply and one add per weight) and the backward pass twice that, so training costs $6N$ per token {cite}`kaplan2020scaling`. Chapter 2 counts the multiply-adds of each layer from which this follows ({ref}`sec-ch2-flops`). Two refinements matter for modern models.
 
 First, the embedding lookup is not a multiplication, so $N$ should exclude the input embedding table. The output projection is a multiplication and stays in. For a sparse model, $N$ is the *active* count, with the router included.
 
@@ -600,7 +600,7 @@ Weights take the parameter count times the bytes per parameter: 2 for bf16, 1 fo
 
 **A dense example.** Llama 3.1 8B in bf16 needs $8{,}030{,}261{,}248 \times 2 = 16.06$ GB for the weights. One sequence of 128K tokens needs $131{,}072$ bytes $\times$ $131{,}072$ tokens $= 17.18$ GB for the cache, so serving a single full-length request needs about 33 GB before activations, and a second concurrent request adds another 17 GB. The same cache with 32 key/value heads (multi-head attention) would be 69 GB per sequence, and the model would not fit at that length on a 40 GB card at all. This is the practical content of grouped-query attention.
 
-**A sparse example.** DeepSeek-V3 in FP8 needs about 671 GB for its weights, which is why it is served on a cluster, not a card. The attention cache is the small part: $70{,}272 \times 131{,}072 = 9.2$ GB for a 128K-token sequence, compared with 655 GB had it used multi-head attention with its head shape. Compute per token is that of a 37B model; weight memory is that of a 671B one, and the batch must be large enough for every expert to receive tokens for the compute advantage to be realised.
+**A sparse example.** DeepSeek-V3 in FP8 needs about 671 GB for its weights, which is why it is served on a cluster, not a card. The attention cache is the small part: $70{,}272 \times 131{,}072 = 9.2$ GB for a 128K-token sequence, compared with 655 GB had it used multi-head attention with its head shape. Compute per token is that of a 37B model; weight memory is that of a 671B one, and the batch must be large enough for every expert to receive tokens for the compute advantage to be realized.
 
 ```{admonition} The Accounting Function
 :class: tip
@@ -615,7 +615,7 @@ Decoder-only models dominate generation, but two other designs persist where the
 
 **Encoder-only models** (BERT {cite}`devlin2018bert`) apply bidirectional attention and are trained to fill in masked tokens. They produce a representation of each input token that can see both sides, which is what classification, retrieval and embedding need, at a size and cost far below a generative model. Most production embedding and reranking models are still encoders. ModernBERT brings the decoder block's improvements to the form: RoPE, GeGLU, bias-free layers, alternating local and global attention, an 8,192-token context and a modern training mix {cite}`warner2024smarter`.
 
-**Encoder-decoder models** (T5 {cite}`raffel2019exploring`) read the whole input with a bidirectional encoder and generate with a decoder that cross-attends to it. For tasks with a clear input and output, such as translation, summarisation and structured extraction, the input is encoded once and need not be re-attended with a causal mask; at small and medium sizes these models are competitive with decoder-only models. At the frontier scale the field has standardised on decoders because one architecture and one objective serve every use through prompting.
+**Encoder-decoder models** (T5 {cite}`raffel2019exploring`) read the whole input with a bidirectional encoder and generate with a decoder that cross-attends to it. For tasks with a clear input and output, such as translation, summarization and structured extraction, the input is encoded once and need not be re-attended with a causal mask; at small and medium sizes these models are competitive with decoder-only models. At the frontier scale the field has standardized on decoders because one architecture and one objective serve every use through prompting.
 
 **State-space and hybrid models** replace some or all attention layers with recurrent layers whose state does not grow with sequence length; Mamba is the best known {cite}`gu2023mamba`. They remove the KV cache's linear growth rather than shrinking it. They are outside the scope of this chapter and are planned for the roadmap's later chapters; see the {doc}`/roadmap`.
 
@@ -624,6 +624,7 @@ Decoder-only models dominate generation, but two other designs persist where the
 ## 10. Summary
 
 - A 2025 decoder block is the 2017 block with the normalization moved or added so that residual contributions stay bounded, a gated feed-forward network without biases, rotary positions, and grouped or latent key/value sharing.
+- In the notebook's six-layer model, post-norm fails at the highest of three learning rates without warm-up while pre-norm trains, warm-up rescues post-norm there in some seeds but not all, and at the two lower rates post-norm ends lower than pre-norm in every seed.
 - The key/value structure sets the KV cache: $2 n_{kv} d_k$ per token per layer for GQA and $d_c + d_{rope}$ for MLA, ranging in bf16 from 524 KB per token (OLMo 2 7B) to 31 KB (DeepSeek-V2-Lite) and 70 KB (DeepSeek-V3).
 - Long context is a frequency change plus a short stage of training at the new length. A context-length number from a configuration is a statement about the code.
 - A mixture-of-experts layer buys parameters at constant compute; it needs a balancing mechanism, and "active parameters" depends on whether the input embedding is counted.
