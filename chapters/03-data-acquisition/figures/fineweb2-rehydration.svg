@@ -2972,15 +2972,28 @@ z
     </g>
    </g>
    <g id="patch_223">
-    <path d="M 151.859654 137.124427 
-Q 116.533059 119.289189 82.004903 101.857056 
+    <path d="M 150.5282 136.45222 
+Q 115.868316 118.953582 82.006871 101.85805 
 " style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linecap: round"/>
-    <path d="M 84.540793 105.26576 
-L 82.004903 101.857056 
-L 86.2534 101.873566 
+    <path d="M 84.542761 105.266754 
+L 82.006871 101.85805 
+L 86.255368 101.87456 
 " style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linecap: round"/>
    </g>
    <g id="text_21">
+    <g id="patch_224">
+     <path d="M 117.382189 165.207987 
+L 243.009299 165.207987 
+Q 245.384299 165.207987 245.384299 162.832987 
+L 245.384299 140.027791 
+Q 245.384299 137.652791 243.009299 137.652791 
+L 117.382189 137.652791 
+Q 115.007189 137.652791 115.007189 140.027791 
+L 115.007189 162.832987 
+Q 115.007189 165.207987 117.382189 165.207987 
+z
+" style="fill: #ffffff; stroke: #888888; stroke-width: 0.6; stroke-linejoin: miter"/>
+    </g>
     <!-- lowest removal, weight 10 -->
     <g transform="translate(117.382189 148.197235) scale(0.095 -0.095)">
      <defs>
@@ -3101,7 +3114,7 @@ z
      <use xlink:href="#DejaVuSans-c" transform="translate(775.078125 0)"/>
     </g>
    </g>
-   <g id="patch_224">
+   <g id="patch_225">
     <path d="M 66.389861 34.354558 
 Q 57.637227 33.81327 49.777315 33.32719 
 " style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linecap: round"/>
@@ -3173,7 +3186,7 @@ z
      <use xlink:href="#DejaVuSans-c" transform="translate(711.453125 0)"/>
     </g>
    </g>
-   <g id="patch_225">
+   <g id="patch_226">
     <path d="M 415.527309 37.36461 
 Q 426.361579 40.468052 436.336002 43.325194 
 " style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linecap: round"/>
@@ -3229,7 +3242,7 @@ L 432.159712 44.105322
    </g>
   </g>
   <g id="axes_2">
-   <g id="patch_226">
+   <g id="patch_227">
     <path d="M 450.462352 217.077656 
 L 460.259708 217.077656 
 L 460.259708 21.13053 
@@ -3584,7 +3597,7 @@ L 2 0
     </g>
    </g>
    <g id="LineCollection_1"/>
-   <g id="patch_227">
+   <g id="patch_228">
     <path d="M 450.462352 217.077656 
 L 455.36103 217.077656 
 L 460.259708 217.077656 

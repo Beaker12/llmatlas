@@ -88,7 +88,7 @@ The training sets of the major models are reported, when they are reported at al
 The published mixtures of the table above. Numbers are percentages as published and rounded, so GPT-3's row sums to 101%. "Other" is what the five columns leave of 100%: The Pile's 5% are the components the table does not place in a column (OpenSubtitles, DM Mathematics, Ubuntu IRC, EuroParl, YouTube subtitles and Enron emails); Dolma places every source, so its 0.1% is rounding. Segments under 3% are too narrow to label inside the bar; their values are written to the right of the bar. GPT-3 and LLaMA 1 are shares of training tokens, The Pile of training bytes after upsampling, Dolma and FineWeb of corpus tokens.
 ```
 
-Three things stand out. The web is the bulk of every corpus, because nothing else is large enough. Curated sources are small in tokens but upweighted: Wikipedia is 3% of GPT-3's training tokens while being a tiny fraction of the raw data, and LLaMA samples it for more than two epochs. And the totals have grown fifty-fold in four years, from GPT-3's 300B tokens to the 15T of FineWeb and the roughly 15T used by Llama 3 {cite}`grattafiori2024llama`, which is why the question of whether the supply of human-written text is finite {cite}`villalobos2024run` is now taken seriously.
+Three things stand out. The web is the bulk of every corpus but The Pile, because nothing else is large enough; The Pile, built to be diverse, takes most of its bytes from papers and curated sources instead. Curated sources are small in tokens but upweighted: Wikipedia is 3% of GPT-3's training tokens while being a tiny fraction of the raw data, and LLaMA samples it for more than two epochs. And the totals have grown fifty-fold in four years, from GPT-3's 300B tokens to the 15T of FineWeb and the roughly 15T used by Llama 3 {cite}`grattafiori2024llama`, which is why the question of whether the supply of human-written text is finite {cite}`villalobos2024run` is now taken seriously.
 
 (sec-ch3-tokens-documents-bytes)=
 
@@ -288,7 +288,7 @@ print(FILENAME.rsplit("/", 1)[1], START, LENGTH)    # the three values the range
 CC-MAIN-20260908083825-20260908113825-00403.warc.gz 48374322 9882
 ```
 
-The block above was not captured live: on 12 November 2026 the index server refused every connection in six attempts spaced 35 seconds or more apart, for this crawl and for older ones. It shows what the documented JSON response format gives for this record, whose fields are those of the first index line above, so the `% output-shape` check compares only its shape. The range fetch takes the same three values.
+The block above shows the API's documented response format for this record (the first index line above) and was not captured from a live query.
 
 The second step fetches exactly those bytes. Because each record is its own gzip member, the slice decompresses on its own:
 
@@ -299,7 +299,9 @@ import os
 import urllib.request
 
 UA = os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")
-# The first index line above: the record is 9882 bytes at offset 48374322 of this file.
+# FILENAME, START and LENGTH are the values the index query above returns for the first index line (the record
+# is 9882 bytes at offset 48374322 of this file); they are restated so that this fetch runs even when the index
+# server is unreachable.
 FILENAME = "crawl-data/CC-MAIN-2026-39/segments/1788492699801.50/warc/CC-MAIN-20260908083825-20260908113825-00403.warc.gz"
 START, LENGTH = 48374322, 9882
 
@@ -374,7 +376,7 @@ Common Crawl covers the open, static, mostly English web as of a few weeks ago. 
 The Robots Exclusion Protocol (RFC 9309) {cite}`koster2022robots` lets a site state, in `/robots.txt`, which user agents may fetch which paths. It was a convention for thirty years and became a standard in 2022; it is not enforced by anything but the crawler's own code, which is why it has become the center of the consent question in {ref}`sec-ch3-rights-licenses-consent`. A crawler is expected to:
 
 - Fetch `/robots.txt` before anything else on a host and obey the `Disallow` and `Allow` rules for its own user agent, falling back to the `*` group. When several rules match a path, the most specific one (the longest match) wins.
-- Treat the answer to that fetch as RFC 9309 says: a 4xx status (the file is "unavailable") means no restrictions, while a 5xx status or a network failure ("unreachable") means the whole site is disallowed. A 3xx redirect is followed, "at least five consecutive redirects, even across authorities", and the file reached is applied to the original host; after more than five redirects the crawler may treat the file as unavailable. Use a cached copy for no more than 24 hours, and parse at least the first 500 KiB of the file.
+- Treat the answer to that fetch as RFC 9309 says: a 4xx status (the file is "unavailable") means no restrictions, while a 5xx status or a network failure ("unreachable") means the whole site is disallowed. On a 3xx redirect the crawler "SHOULD follow at least five consecutive redirects, even across authorities", and the file reached is applied to the original host; after more than five redirects the crawler may treat the file as unavailable. Use a cached copy for no more than 24 hours, and parse at least the first 500 KiB of the file.
 - Honor `Crawl-delay` where present (it is a widely used extension, not part of RFC 9309) and otherwise limit itself to a request every few seconds per host, with backoff on `429` and `503` responses.
 - Identify itself with a user agent string that names the crawler and links to a page explaining it, so that site operators can block it or write to its operator.
 - Use the `Sitemap:` entries, which list the URLs a site wants crawled, as the frontier for that site.
@@ -734,7 +736,7 @@ Consent in Crisis {cite}`longpre2024consent` measured, across C4, RefinedWeb and
 
 ```{figure} figures/consent-restrictions.*
 :name: fig-ch3-consent-restrictions
-:alt: Line plot from January 2016 to April 2024 of the percentage of tokens fully restricted by robots.txt. Three dashed red lines for head domains stay between 2 and 5 percent until August 2023, then rise steeply to between 19 and 32 percent by April 2024. Three solid blue lines for the full corpora stay near 1 to 2 percent and rise to between 5 and 7 percent.
+:alt: Line plot from January 2016 to April 2024 of the percentage of tokens fully restricted by robots.txt. Three dashed red lines for head domains stay between 2 and 5 percent until August 2023, then rise steeply to between 19 and 32 percent by April 2024. Three solid blue lines for the full corpora stay between about 1 and 4.5 percent until August 2023, highest in 2016 and 2017, and rise to between 5 and 7 percent.
 
 Share of tokens fully restricted to AI crawlers by robots.txt, by domain tier, monthly from January 2016 to April 2024; data read from Fig. 2 of {cite:t}`longpre2024consent`. Each tier has three lines, one for each of the three corpora the paper studied (C4, RefinedWeb and Dolma); the source figure does not label which line is which corpus, so they are drawn alike. Head domains are the most-used, most actively maintained sources in each corpus.
 ```
@@ -1134,9 +1136,9 @@ The notebook section {ref}`nb-acq-provenance` writes a provenance record for eve
 
 ## Summary
 
-- **Composition.** Every published mixture is mostly web crawl, because nothing else is large enough; curated sources are a few percent each in most mixtures (The Pile's papers, 37%, and Dolma's code, 13%, are the exceptions) and are upweighted. Training sets grew from GPT-3's 300B tokens to 15T in four years and are now within a factor of seven of the lower end (100T tokens) of the estimated stock of public text, and a factor of twenty below its central 300T ({ref}`sec-ch3-epochs`).
+- **Composition.** Most published mixtures are mostly web crawl, because nothing else is large enough; The Pile, at 18% web crawl, is the exception; curated sources are a few percent each in most mixtures (The Pile's papers, 37%, and Dolma's code, 13%, are the exceptions) and are upweighted. Training sets grew from GPT-3's 300B tokens to 15T in four years and are now within a factor of seven of the lower end (100T tokens) of the estimated stock of public text, and a factor of twenty below its central 300T ({ref}`sec-ch3-epochs`).
 - **Common Crawl.** A snapshot is 100 segments and 100,000 WARC files, about 90 TB compressed. Each record is its own gzip member, so an index line (file, offset, length) and one range request retrieve a single page ({ref}`sec-ch3-index-targeted-retrieval`).
-- **Crawling.** A crawler obeys robots.txt as RFC 9309 defines it (redirects followed up to five times, 4xx permits, 5xx forbids, longest match wins), spaces its requests per host, canonicalizes URLs and re-fetches with `ETag`s. Politeness, not bandwidth, sets its throughput ({ref}`sec-ch3-crawler-architecture`).
+- **Crawling.** A crawler obeys robots.txt as RFC 9309 defines it (redirects followed, at least five in a row, 4xx permits, 5xx forbids, longest match wins), spaces its requests per host, canonicalizes URLs and re-fetches with `ETag`s. Politeness, not bandwidth, sets its throughput ({ref}`sec-ch3-crawler-architecture`).
 - **Curated sources.** Wikipedia, books, papers, code, forums and public records each supply something the web lacks, and each comes with its own terms; the books lawsuits turned on how the copies were obtained ({ref}`sec-ch3-books`).
 - **Rights.** A dataset's license covers the compilation, not the documents. Opt-outs grew fastest on the best-maintained sites, and in the EU honoring them is a legal obligation. Personal data needs a lawful basis, and a provenance manifest turns an erasure request into a query over shards ({ref}`sec-ch3-personal-data-sensitive-sources`).
 - **Languages and synthetic data.** Language identification produces many false languages, and below the largest languages a human reader has to check the data; curated text in a small language is better used as reference than as volume ({ref}`sec-ch3-beyond-crawl`). Synthetic data fills gaps but loses the tail of the distribution when it replaces human text ({ref}`sec-ch3-failure-modes`).

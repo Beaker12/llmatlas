@@ -1,6 +1,6 @@
 digraph crawler_architecture {
-  graph [fontname="DejaVu Sans", fontsize=17, nodesep=0.25, ranksep=0.4, pad=0.15];
-  node [fontname="DejaVu Sans", fontsize=17, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=17, fontcolor="#1a202c", color="#4a5568", penwidth=1.3];
+  graph [fontname="DejaVu Sans", fontsize=19, nodesep=0.25, ranksep=0.4, pad=0.15];
+  node [fontname="DejaVu Sans", fontsize=19, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=19, fontcolor="#1a202c", color="#4a5568", penwidth=1.3];
   frontier [shape=plain, style="", label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#4a5568" BGCOLOR="#edf2f7"><TR><TD BORDER="0"><B>Frontier</B><BR/>one queue per host,<BR/>seeded from sitemaps</TD></TR><TR><TD BGCOLOR="#ffffff">host a: due now</TD></TR><TR><TD BGCOLOR="#ffffff">host b: in 2 s</TD></TR><TR><TD BGCOLOR="#ffffff">host c: …</TD></TR></TABLE>>];
   robots [label="robots.txt\ncache", fillcolor="#dbeafe"];
   sched [label="Scheduler\nhost due first;\n1 request per\nhost per 2 s", fillcolor="#dbeafe"];
@@ -14,7 +14,7 @@ digraph crawler_architecture {
   sched -> fetchers -> warc;
   fetchers -> dedup -> links;
   links -> back [style=dashed];
-  back -> frontier [style=dashed, constraint=false, label=" back into\n the frontier"];
+  frontier:s -> back:w [dir=back, style=dashed, label="back into the frontier"];
   {rank=same; sched; robots}
   {rank=same; warc; dedup; links; back}
 }

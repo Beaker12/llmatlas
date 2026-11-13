@@ -157,7 +157,8 @@ def rehydration(out):
     ax.text(120, 63.6, "global removal rate 62.4%", ha="center", va="bottom", fontsize=9.5, color="#c0392b")
     low = min(range(len(rates)), key=rates.__getitem__)
     ax.annotate(f"lowest removal, weight 10\n(size {sizes[low]}: {rates[low]:.1f}%)", (sizes[low], rates[low]),
-                xytext=(40, 22), textcoords="data", fontsize=9.5, arrowprops={"arrowstyle": "->", "lw": 0.8})
+                xytext=(40, 22), textcoords="data", fontsize=9.5, arrowprops={"arrowstyle": "->", "lw": 0.8},
+                bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "edgecolor": "#888888", "linewidth": 0.6})
     ax.annotate(f"unique pages\n(size 1: {rates[0]:.1f}%)", (1, rates[0]), xytext=(14, 69), textcoords="data",
                 fontsize=9.5, va="center", arrowprops={"arrowstyle": "->", "lw": 0.8})
     ax.annotate("last bar: the most-copied\n0.1% grouped", (sizes[-1], rates[-1]), xytext=(178, 71),
