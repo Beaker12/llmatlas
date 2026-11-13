@@ -519,7 +519,7 @@ meta = part.metadata
 keep = []
 for i in range(meta.num_row_groups):
     stats = meta.row_group(i).column(0).statistics  # column 0 is url_surtkey
-    if stats.min <= key + "￿" and stats.max >= key:
+    if stats.min <= key + "\uffff" and stats.max >= key:
         keep.append(i)
 print(meta.num_rows, "rows in", meta.num_row_groups, "row groups; read", keep)
 
