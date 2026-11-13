@@ -123,7 +123,8 @@ def execute(path, offline=True, timeout=CELL_TIMEOUT):
     other exception from the client is not raised: it is recorded (see aborted()) and the cells run so far are kept.
     """
     path = Path(path)
-    env = {"MPLBACKEND": "Agg", "PYTHONIOENCODING": "utf-8", "LLMATLAS_OFFLINE": "1" if offline else None}
+    # The inline backend, as in Jupyter: a plotting cell gets an image/png output (text outputs are unchanged).
+    env = {"MPLBACKEND": "module://matplotlib_inline.backend_inline", "PYTHONIOENCODING": "utf-8", "LLMATLAS_OFFLINE": "1" if offline else None}
     with tempfile.TemporaryDirectory() as tmp, kernel_environment(env):
         shutil.copy(path, tmp)
         if (path.parent / "data").is_dir():
@@ -142,6 +143,28 @@ def execute(path, offline=True, timeout=CELL_TIMEOUT):
             first = (str(e).strip().splitlines() or [""])[0]
             nb.metadata["aborted"] = f"cell {current['cell']}: {type(e).__name__}: {first}"
         return nb
+
+
+def has_image(cell):
+    return any("image/png" in out.get("data", {}) for out in cell.get("outputs", []))
+
+
+def image_failures(committed, executed=None):
+    """Failure strings for missing figures: a code cell that draws a figure in the fresh run (an image/png
+    output) without one in the committed notebook, and a cell tagged figure:<slug> without one. Cells are
+    matched by position; with no fresh run only the tags are checked."""
+    failures = []
+    index = {id(c): i for i, c in enumerate(committed.cells)}
+    old = [c for c in committed.cells if c.cell_type == "code"]
+    new = [c for c in executed.cells if c.cell_type == "code"] if executed is not None else []
+    for a, b in zip(old, new):
+        if has_image(b) and not has_image(a):
+            failures.append(f"cell {index[id(a)]}: the fresh run draws a figure; the committed cell has no image/png")
+    for cell in old:
+        tags = [t for t in cell.metadata.get("tags", []) if t.startswith("figure:")]
+        if tags and not has_image(cell):
+            failures.append(f"cell {index[id(cell)]}: tagged {tags[0]} but has no image/png output")
+    return list(dict.fromkeys(failures))
 
 
 def aborted(executed):

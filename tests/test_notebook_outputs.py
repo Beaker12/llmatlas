@@ -1,6 +1,8 @@
 """Each chapter notebook, executed offline in a temporary copy, reproduces its committed outputs.
 
-Only stream text and text/plain are compared (images and HTML are ignored). Text must match after the
+Stream text and text/plain are compared (HTML is ignored). Images are checked for presence only: a code cell
+that draws a figure when executed fresh (inline backend) must have an image/png output in the committed
+notebook, and so must every cell tagged figure:<slug>. Text must match after the
 MASKS below are applied; numbers must agree to within one unit in the last printed digit, or the absolute
 tolerance in the cell's "tol" metadata (which applies to numbers with a decimal point; integers stay exact); a cell with "compare": "shape" is compared by shape only. The
 committed kernel metadata must name Python 3.12. One test per chapter, check name `outputs`.
@@ -14,7 +16,8 @@ from pathlib import Path
 import pytest
 
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check
-from tests._notebooks import CELL_TIMEOUT, aborted, compare_cells, execute, kernel_failures, mask, notebooks, read
+from tests._notebooks import (CELL_TIMEOUT, aborted, compare_cells, execute, image_failures, kernel_failures, mask,
+                              notebooks, read)
 
 # Text that legitimately differs between runs or machines; replaced before comparing.
 MASKS = [
@@ -37,6 +40,7 @@ def check_notebook(path, executed=None, timeout=CELL_TIMEOUT):
     if aborted(executed):
         return failures + [f"{path.name}: execution aborted at {aborted(executed)}"]
     failures += [f"{path.name}: {m}" for m in compare_cells(committed, executed, MASKS)]
+    failures += [f"{path.name}: {m}" for m in image_failures(committed, executed)]
     return failures
 
 
@@ -195,3 +199,28 @@ def test_missing_committed_or_fresh_output_is_named(executed):
     fresh.cells[3].outputs = []
     assert compare_cells(committed, fresh, MASKS) == [
         "cell 3: no fresh output (committed output starts 'summary: mean 2.5000 from 4 items')"]
+
+
+PLOT = ("import matplotlib.pyplot as plt\nfig, ax = plt.subplots()\nax.plot([0, 1], [0, 1])\nprint('drawn')\nplt.show()")
+
+
+def test_a_plot_drawn_fresh_but_missing_from_the_committed_notebook_is_reported(tmp_path):
+    path = tiny_notebook(tmp_path, PLOT)
+    executed = execute(path)
+    assert any("image/png" in out.get("data", {}) for out in executed.cells[0].outputs)
+    committed = read(path)
+    committed.cells[0].outputs = [o for o in executed.cells[0].outputs if o["output_type"] == "stream"]
+    import nbformat
+    nbformat.write(committed, str(path))
+    assert check_notebook(path, executed) == [
+        "t.ipynb: cell 0: the fresh run draws a figure; the committed cell has no image/png"]
+    nbformat.write(executed, str(path))
+    assert check_notebook(path, executed) == []
+
+
+def test_a_cell_tagged_as_a_figure_without_an_image_is_reported(tmp_path):
+    path = tiny_notebook(tmp_path, "print('no plot')")
+    nb = read(path)
+    nb.cells[0].metadata["tags"] = ["figure:demo"]
+    nb.cells[0].outputs = [{"output_type": "stream", "name": "stdout", "text": "no plot\n"}]
+    assert image_failures(nb) == ["cell 0: tagged figure:demo but has no image/png output"]
