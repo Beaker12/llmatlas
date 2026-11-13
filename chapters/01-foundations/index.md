@@ -414,7 +414,7 @@ RMS of a sinusoidal encoding:    0.707
 
 #### Embedding Sharing and Tying
 
-Many architectures share the input embedding matrix with the output projection {cite}`press2017using` (GPT-2, T5 and Gemma do; Mistral 7B keeps them separate, and in the Llama family the larger models keep them separate while the 1B and 3B models of Llama 3.2 share them {cite}`meta2024llama32card`):
+Many architectures share the input embedding matrix with the output projection {cite}`press2017using` (GPT-2, T5 and Gemma do; Mistral 7B keeps them separate, and so does the original LLaMA, whose reference code builds the two as separate modules; by contrast, the Llama 3.2 model card marks "Shared Embeddings: Yes" for its 1B and 3B text models {cite}`meta2024llama32card`):
 
 ```python
 # pseudo-code: `TransformerStack` stands for the model body; illustrates weight tying only

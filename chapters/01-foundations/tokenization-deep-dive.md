@@ -425,7 +425,7 @@ Special tokens are vocabulary entries that never come from splitting text: the t
 | `[MASK]` | replaces each token a masked language model must predict | BERT |
 | `[PAD]`, `<PAD>` | fills short sequences up to the batch length; masked out of attention and of the loss | batched training |
 | `[UNK]`, `<UNK>` | stands for input the vocabulary cannot represent | WordPiece and word-level vocabularies |
-| `<\|im_start\|>`, `<\|im_end\|>` | start and end of one chat message, with the speaker's role after the start token | the ChatML chat format |
+| `<\|im_start\|>`, `<\|im_end\|>` | start and end of one chat message, with the speaker's role after the start token | the ChatML chat format of OpenAI's chat models {cite}`openai2023chatml` |
 
 The byte-level tokenizer of {ref}`sec-tdd-implementation-walkthrough` reserves ids 256 to 260 for `<PAD>`, `<UNK>`, `<BOS>`, `<EOS>` and `<MASK>`.
 
@@ -1410,7 +1410,7 @@ With the unigram probabilities of {ref}`sec-tdd-subword-listing`, compute the pr
 
 ```{admonition} Solution T2
 :class: dropdown
-$P(\text{un happiness}) = 0.08 \times 0.002 = 1.6 \times 10^{-4}$ and $P(\text{un happi ness}) = 0.08 \times 0.02 \times 0.06 = 9.6 \times 10^{-5}$, so the ratio is $5/3 = 1.667$. Their shares are $1.6 / 2.608 = 0.613$ and $0.96 / 2.608 = 0.368$, the values the listing prints. Viterbi always returns the first; sampling returns the second about 0.368 of the time, which is why subword regularization shows the model more than one segmentation of a frequent word.
+$p(\text{un happiness}) = 0.08 \times 0.002 = 1.6 \times 10^{-4}$ and $p(\text{un happi ness}) = 0.08 \times 0.02 \times 0.06 = 9.6 \times 10^{-5}$, so the ratio is $5/3 = 1.667$. Their shares are $1.6 / 2.608 = 0.613$ and $0.96 / 2.608 = 0.368$, the values the listing prints. Viterbi always returns the first; sampling returns the second about 0.368 of the time, which is why subword regularization shows the model more than one segmentation of a frequent word.
 ```
 
 (sec-tdd-exercise-3)=
