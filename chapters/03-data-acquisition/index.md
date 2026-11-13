@@ -2,33 +2,6 @@
 
 Every token a language model is trained on was written by someone, stored somewhere, and copied into the training set by a decision that a person or a pipeline made. This chapter is about those decisions: where the text that trains a modern model comes from, how it is obtained at the scale of trillions of tokens, what may legally and ethically be used, and how the pieces are combined into a corpus. Chapter 4 picks up where this one stops, with the cleaning that turns raw acquisitions into training-ready text, and Chapter 5 with keeping the result versioned and reproducible.
 
-(sec-ch3-learning-objectives)=
-
-## Learning Objectives
-
-By the end of this chapter, you will understand:
-
-- What the pretraining corpora of GPT-3, the LLaMA family, The Pile, Dolma and FineWeb are made of, and roughly in what proportions
-- How Common Crawl is organized (snapshots, segments, WARC/WET/WAT files, the index) and how to read a slice of it
-- How to crawl responsibly: robots.txt, rate limits, sitemaps, and the economics of fetching a billion pages
-- The main curated sources (Wikipedia, books, scientific papers, source code, forums and dialogue) and what each contributes
-- The copyright, licensing and consent questions around training data, and how the major open corpora answer them
-- How to turn a token budget into a mixture of sources, and how to document what was collected
-
-(sec-ch3-hands-on-learning)=
-
-## Hands-On Learning
-
-The accompanying notebook, [Data Acquisition Demo](examples/data_acquisition_demo.ipynb), fetches small samples from real public sources and checks every claim with an assertion:
-
-- Reading a Common Crawl snapshot's manifest and parsing records from a byte-range slice of a WARC file ({ref}`nb-acq-crawl`)
-- Checking robots.txt rules for search and AI crawler user agents on an encyclopedia and a news site ({ref}`nb-acq-robots`)
-- Sampling FineWeb, FineWeb-Edu, C4, Wikipedia and FineWeb-2 through the Hugging Face rows API and comparing document lengths, language scores and domain concentration ({ref}`nb-acq-sources`)
-- Turning a compute budget into a token budget and a source mixture with per-source epoch caps ({ref}`nb-acq-mixture`)
-- Writing a provenance manifest with content hashes for everything fetched ({ref}`nb-acq-provenance`)
-
-Everything runs on a CPU in about a minute. The network fetches total a few megabytes; if a source is unreachable, or if `LLMATLAS_OFFLINE=1` is set, the notebook falls back to committed samples under `examples/data/` so that the results, and the assertions, are reproducible.
-
 (sec-ch3-chapter-overview)=
 
 ## Chapter Overview
@@ -57,6 +30,36 @@ Acquisition is where a model's knowledge, its languages, its biases and its lega
 
 From sources to training data. Rights are decided at acquisition ({ref}`sec-ch3-rights-licenses-consent`), each kept document gets a manifest record ({ref}`sec-ch3-provenance-documentation`), and the mixture plan ({ref}`sec-ch3-mixture-design-token-budgeting`) fixes each source's weight $w_s$ and epochs $e_s \le e_{\max}$ before Chapter 5 samples the cleaned shards.
 ```
+
+(sec-ch3-learning-objectives)=
+
+## Learning Objectives
+
+By the end of this chapter, you will understand:
+
+- What the pretraining corpora of GPT-3, the LLaMA family, The Pile, Dolma and FineWeb are made of, and roughly in what proportions
+- How Common Crawl is organized (snapshots, segments, WARC/WET/WAT files, the index) and how to read a slice of it
+- How to crawl responsibly: robots.txt, rate limits, sitemaps, and the economics of fetching a billion pages
+- How a crawler's frontier, scheduler and fetchers fit together, with URL canonicalization and conditional re-fetching in code
+- The main curated sources (Wikipedia, books, scientific papers, source code, forums and dialogue) and what each contributes
+- The copyright, licensing, consent and personal-data questions around training data, and how the major open corpora answer them
+- Why multilingual corpora need human audits, and what sources exist beyond the crawl for low-resource languages
+- What synthetic data adds to a corpus and how it fails when it replaces human text
+- How to turn a token budget into a mixture of sources under an epoch cap, and how to document what was collected
+
+(sec-ch3-hands-on-learning)=
+
+## Hands-On Learning
+
+The accompanying notebook, [Data Acquisition Demo](examples/data_acquisition_demo.ipynb), fetches small samples from real public sources and checks every claim with an assertion:
+
+- Reading a Common Crawl snapshot's manifest and parsing records from a byte-range slice of a WARC file ({ref}`nb-acq-crawl`)
+- Checking robots.txt rules for search and AI crawler user agents on an encyclopedia and a news site ({ref}`nb-acq-robots`)
+- Sampling FineWeb, FineWeb-Edu, C4, Wikipedia and FineWeb-2 through the Hugging Face rows API and comparing document lengths, language scores and domain concentration ({ref}`nb-acq-sources`)
+- Turning a compute budget into a token budget and a source mixture with per-source epoch caps ({ref}`nb-acq-mixture`)
+- Writing a provenance manifest with content hashes for everything fetched ({ref}`nb-acq-provenance`)
+
+Everything runs on a CPU in about a minute. The network fetches total a few megabytes; if a source is unreachable, or if `LLMATLAS_OFFLINE=1` is set, the notebook falls back to committed samples under `examples/data/` so that the results, and the assertions, are reproducible.
 
 (sec-ch3-pretraining-corpus-composition)=
 
@@ -1091,6 +1094,19 @@ The output of acquisition is a set of raw shards plus a manifest: one provenance
 :class: tip
 The notebook section {ref}`nb-acq-provenance` writes a provenance record for every fetch made earlier in the notebook, checks every committed sample against the checksums recorded when it was collected, and prints the manifest that would accompany the samples into Chapter 4.
 ```
+
+(sec-ch3-summary)=
+
+## Summary
+
+- **Composition.** Every published mixture is mostly web crawl, because nothing else is large enough; curated sources are a few percent each and are upweighted. Training sets grew from GPT-3's 300B tokens to 15T in four years and are now within an order of magnitude of the estimated stock of public text ({ref}`sec-ch3-epochs`).
+- **Common Crawl.** A snapshot is 100 segments and 100,000 WARC files, about 90 TB compressed. Each record is its own gzip member, so an index line (file, offset, length) and one range request retrieve a single page ({ref}`sec-ch3-index-targeted-retrieval`).
+- **Crawling.** A crawler obeys robots.txt as RFC 9309 defines it (4xx permits, 5xx forbids, longest match wins), spaces its requests per host, canonicalizes URLs and re-fetches with `ETag`s. Politeness, not bandwidth, sets its throughput ({ref}`sec-ch3-crawler-architecture`).
+- **Curated sources.** Wikipedia, books, papers, code, forums and public records each supply something the web lacks, and each comes with its own terms; the books lawsuits turned on how the copies were obtained ({ref}`sec-ch3-books`).
+- **Rights.** A dataset's license covers the compilation, not the documents. Opt-outs grew fastest on the best-maintained sites, and in the EU honoring them is a legal obligation. Personal data needs a lawful basis, and a provenance manifest turns an erasure request into a query over shards ({ref}`sec-ch3-personal-data-sensitive-sources`).
+- **Languages and synthetic data.** Language identification produces many false languages, and below the largest languages a human reader has to check the data; curated text in a small language is better used as reference than as volume ({ref}`sec-ch3-beyond-crawl`). Synthetic data fills gaps but loses the tail of the distribution when it replaces human text ({ref}`sec-ch3-failure-modes`).
+- **Mixture.** With $e_s = w_s D / U_s \le e_{\max} \approx 4$, the small sources reach the cap first and the web absorbs the rest; a larger budget makes the mixture more web-heavy unless more unique data is acquired ({ref}`sec-ch3-budgeting-procedure`).
+- **Provenance.** One record per document (source, locator, fetch time, terms, robots decision, content hash, synthetic or not) is what makes a corpus auditable, rebuildable and correctable ({ref}`sec-ch3-record-contents`).
 
 (sec-ch3-exercises)=
 
