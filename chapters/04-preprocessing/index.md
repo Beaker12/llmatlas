@@ -605,6 +605,85 @@ assert np.all(np.diff(keep_rate) >= -0.02)  # monotone up to sampling noise
 
 Because the expected keep rate at classifier score $\hat{p}$ is $\Pr[\text{Pareto}(9) > 1 - \hat{p}]$, which is $(1 + 1 - \hat{p})^{-9}$, the curve is steep: a document at score 0.5 is kept with probability about $1.5^{-9} \approx 0.026$. Diversity comes from the sheer number of low-scoring documents, not from a generous acceptance rate.
 
+The classifier that produces $\hat{p}$ is small. GPT-3's was a logistic regression on hashed word features {cite}`brown2020language`: each word and word pair is hashed into one of a fixed number of buckets, so the feature vector has the same length however large the vocabulary, and no vocabulary has to be stored. The listing below builds the same thing in miniature. The positive class is a handful of curated sentences, the negative class is raw crawl cut into 20-word windows, and a document's score $\hat{p}$ is the mean predicted probability over its windows, which then feeds the Pareto rule.
+
+```python
+import hashlib
+import re
+
+import numpy as np
+
+N_BUCKETS = 2**12
+
+
+def hashed_features(text: str, n_buckets: int = N_BUCKETS) -> np.ndarray:
+    """Word unigrams and bigrams hashed into a fixed number of buckets (the hashing trick)."""
+    words = ["0" if w.isdigit() else w for w in re.findall(r"[a-z]+|\d+|[^\sa-z\d]", text.lower())]
+    x = np.zeros(n_buckets)
+    for gram in words + [a + " " + b for a, b in zip(words, words[1:])]:
+        x[int.from_bytes(hashlib.md5(gram.encode("utf-8")).digest()[:4], "little") % n_buckets] += 1.0
+    return x / max(1.0, np.linalg.norm(x))
+
+
+def windows(text: str, size: int = 20) -> list:
+    """Cut a document into windows of `size` words, so long and short documents weigh alike."""
+    words = text.split()
+    return [" ".join(words[i : i + size]) for i in range(0, max(1, len(words) - size + 1), size)]
+
+
+def train_logreg(X: np.ndarray, y: np.ndarray, steps: int = 500, lr: float = 1.0, l2: float = 1e-3):
+    """Logistic regression by full-batch gradient descent, each class weighted to half the loss."""
+    w, b = np.zeros(X.shape[1]), 0.0
+    weight = np.where(y == 1, 0.5 / y.sum(), 0.5 / (len(y) - y.sum()))
+    for _ in range(steps):
+        g = (1.0 / (1.0 + np.exp(-(X @ w + b))) - y) * weight
+        w -= lr * (X.T @ g + l2 * w)
+        b -= lr * float(g.sum())
+    return w, b
+
+
+def classifier_score(text: str, w: np.ndarray, b: float) -> float:
+    """Mean predicted probability of 'reference-like' over the document's windows."""
+    X = np.array([hashed_features(t) for t in windows(text)])
+    return float(np.mean(1.0 / (1.0 + np.exp(-(X @ w + b)))))
+
+
+# GPT-3's setup in miniature: curated text is the positive class, raw crawl the negative class.
+REFERENCE = [
+    "The river flows through the valley and into the sea near the old town.",
+    "The city was founded in the twelfth century and grew around its port and market.",
+    "Mathematics is the study of quantity, structure, space and change.",
+    "The council published its report on the state of the local economy and the budget.",
+    "A library is a collection of books and other materials made available to the public.",
+    "The building was designed by a local architect and opened to residents in the spring.",
+]
+CRAWL = [
+    "\n".join(f"- {item}" for item in ["Home", "About", "Products", "Contact", "Login"] * 12),
+    "buy cheap watches now " * 30,
+    " ".join(f"SKU-{i:05d} {i * 7 % 100}.99" for i in range(80)),
+    "\n".join(f"Member {i}: member{i}@example.org, +1 (555) 010-{i:04d}" for i in range(10)),
+]
+pos = [hashed_features(t) for t in REFERENCE]
+neg = [hashed_features(t) for doc in CRAWL for t in windows(doc)]
+w, b = train_logreg(np.array(pos + neg), np.array([1.0] * len(pos) + [0.0] * len(neg)))
+
+prose = "The harbor was quiet at dawn. A single trawler moved out past the breakwater, its lights still on."
+junk = "Home | Shop | Cart | Login | Sign up | Contact | FAQ | Terms | Privacy | Sitemap"
+for name, text in (("prose", prose), ("junk", junk)):
+    p_hat = classifier_score(text, w, b)
+    print(f"{name}: score {p_hat:.3f}, Pareto(9) keep probability {(2 - p_hat) ** -9:.4f}")
+assert classifier_score(prose, w, b) > 0.5 > classifier_score(junk, w, b)
+```
+
+% output
+
+```text
+prose: score 0.885, Pareto(9) keep probability 0.3749
+junk: score 0.463, Pareto(9) keep probability 0.0209
+```
+
+Neither test text was in the training data, and the prose shares only a few common words with the reference. The classifier generalizes because function words ("the", "was", "at") and their pairs are dense in prose and rare in navigation and listings. The same property is its weakness. The notebook section {ref}`nb-prep-classifier` trains this classifier on the notebook's sample, scoring each document with a model whose negatives exclude that document and its copies. It ranks the catalog, the contact list and the menu below every prose document, but it scores the boilerplate document, a repeated sentence built from common words, highest of all. A bag of hashed n-grams cannot see repetition, which is why the repetition filters of {ref}`sec-ch4-repetition-filters` run before the classifier.
+
 (sec-ch4-measuring-whether-filter-helps)=
 
 ### 4.5 Measuring whether a filter helps
