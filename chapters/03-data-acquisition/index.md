@@ -1,6 +1,6 @@
 # Data Acquisition and Sources
 
-Every token a language model is trained on was written by someone, stored somewhere, and copied into the training set by a decision that a person or a pipeline made. This chapter is about those decisions: where the text that trains a modern model comes from, how it is obtained at the scale of trillions of tokens, what may legally and ethically be used, and how the pieces are combined into a corpus. Chapter 4 picks up where this one stops, with the cleaning that turns raw acquisitions into training-ready text, and Chapter 5 with keeping the result versioned and reproducible.
+Every token a language model is trained on was written by someone, stored somewhere, and copied into the training set by a decision that a person or a pipeline made. This chapter is about those decisions: where the text that trains a modern model comes from, how it is obtained at the scale of trillions of tokens, what may legally and ethically be used, and how the pieces are combined into a corpus. {ref}`Chapter 4 <sec-ch4-chapter-overview>` picks up where this one stops, with the cleaning that turns raw acquisitions into training-ready text, and {ref}`Chapter 5 <sec-ch5-chapter-overview>` with keeping the result versioned and reproducible.
 
 (sec-ch3-chapter-overview)=
 
@@ -16,11 +16,11 @@ Imagine being asked to assemble a library for someone who will read every book i
 
 **Rights and consent** decide what may be kept. Copyright, dataset licenses, robots.txt and opt-out registries all apply, and the answer has changed quickly: robots.txt put more than a quarter of the tokens from the best-maintained web domains off limits to AI crawlers in a single year.
 
-**Mixture design** turns the pile of sources into a training set. The scaling laws of Chapter 2 say how many tokens a model should see; the mixture says which ones, how many times, and in what proportion.
+**Mixture design** turns the pile of sources into a training set. The scaling laws of {ref}`Chapter 2 <sec-ch2-chapter-overview>` say how many tokens a model should see; the mixture says which ones, how many times, and in what proportion.
 
 **Provenance** is the record that lets anyone, including you in a year's time, find out what is in the corpus and where it came from.
 
-Acquisition is where a model's knowledge, its languages, its biases and its legal exposure are all fixed. The cleaning in Chapter 4 can remove what should not have been collected; it cannot add what was never acquired.
+Acquisition is where a model's knowledge, its languages, its biases and its legal exposure are all fixed. The cleaning in {ref}`Chapter 4 <sec-ch4-chapter-overview>` can remove what should not have been collected; it cannot add what was never acquired.
 
 {numref}`fig-ch3-acquisition-flow` shows how the parts connect: every source passes the rights checks and is written to the provenance manifest, from which Chapter 4 cleans the text and Chapter 5 samples it by the mixture plan.
 
@@ -102,7 +102,7 @@ Corpus sizes are quoted in three units and the conversions are rough:
 - **Documents** are the unit of acquisition and deduplication. A snapshot holds two to three billion pages.
 - **Tokens** are what training cost and the scaling laws count. English prose runs about four characters per token with a GPT-style tokenizer, so one terabyte of UTF-8 text is roughly 250 billion tokens; code and non-Latin scripts tokenize less efficiently.
 
-The retention figures in Chapter 4 apply on top of this: of a snapshot's two to three billion pages, a cleaned English corpus keeps perhaps a tenth, some 250 million pages. FineWeb's 15T tokens came from 96 snapshots, about 156 billion tokens per cleaned snapshot (15T / 96), or about 600 tokens per kept page. Fifteen trillion tokens is therefore not one snapshot's worth but ninety-six snapshots' worth, each deduplicated on its own for the reason given in {ref}`sec-ch3-corpora-derived-common-crawl`.
+The retention figures in {ref}`Chapter 4 <sec-ch4-chapter-overview>` apply on top of this: of a snapshot's two to three billion pages, a cleaned English corpus keeps perhaps a tenth, some 250 million pages. FineWeb's 15T tokens came from 96 snapshots, about 156 billion tokens per cleaned snapshot (15T / 96), or about 600 tokens per kept page. Fifteen trillion tokens is therefore not one snapshot's worth but ninety-six snapshots' worth, each deduplicated on its own for the reason given in {ref}`sec-ch3-corpora-derived-common-crawl`.
 
 (sec-ch3-epochs)=
 
@@ -354,7 +354,7 @@ Most open web corpora are a choice of snapshots plus a choice of pipeline:
 | FineWeb-2 {cite}`penedo2025fineweb2`                | 96             | WARC + trafilatura | 1,000+ languages | Per-language filter thresholds derived automatically from reference-corpus statistics; duplicates "rehydrated" with cluster-size-dependent weights (1–10) derived from filter rates |
 | Dolma web {cite}`soldaini2024dolma`                 | 25             | WET (CCNet)     | English    | Part of a documented multi-source corpus with released tooling                    |
 
-Two trends run through the table. Later corpora re-extract from WARC with a boilerplate-aware extractor rather than trusting the WET text, and later corpora use far more snapshots, because one snapshot cleans down to about 150 billion tokens (FineWeb: 15T from 96 snapshots) and trillion-token corpora need dozens. FineWeb's ablations add a caution: deduplicating each snapshot separately gave better models than deduplicating across all of them, since global deduplication preferentially removed the good pages that every crawl re-captures and kept the junk that appears once. Chapter 4 covers where deduplication sits in the pipeline ({ref}`sec-ch4-dedup-scope`).
+Two trends run through the table. Later corpora re-extract from WARC with a boilerplate-aware extractor rather than trusting the WET text, and later corpora use far more snapshots, because one snapshot cleans down to about 150 billion tokens (FineWeb: 15T from 96 snapshots) and trillion-token corpora need dozens. FineWeb's ablations add a caution: deduplicating each snapshot separately gave better models than deduplicating across all of them, since global deduplication preferentially removed the good pages that every crawl re-captures and kept the junk that appears once. Chapter 4 compares the two scopes ({ref}`sec-ch4-dedup-scope`).
 
 ```{admonition} A Slice of the Crawl
 :class: tip
@@ -769,7 +769,7 @@ A corpus built today should record, per document, the robots.txt state at fetch 
 
 ### 5.5 Personal data and sensitive sources
 
-Data-protection law (the GDPR and its relatives) applies to personal data regardless of copyright, which is why acquisition should avoid sources that are mostly personal data (people directories, leaked databases, social profiles) rather than relying on the redaction in Chapter 4 to fix them later. Health records, children's content and content from regions with strict localization rules are usually excluded at the source level for the same reason.
+Data-protection law (the GDPR and its relatives) applies to personal data regardless of copyright, which is why acquisition should avoid sources that are mostly personal data (people directories, leaked databases, social profiles) rather than relying on the redaction in {ref}`Chapter 4 <sec-ch4-chapter-overview>` to fix them later. Health records, children's content and content from regions with strict localization rules are usually excluded at the source level for the same reason.
 
 In the European Union, processing personal data needs one of the lawful bases in Article 6 of the GDPR {cite}`gdpr2016`. The basis examined for model development is Article 6(1)(f), processing "necessary for the purposes of the legitimate interests pursued by the controller or by a third party, except where such interests are overridden by the interests or fundamental rights and freedoms of the data subject". The European Data Protection Board's Opinion 28/2024, adopted on 17 December 2024, considers "how controllers can demonstrate the appropriateness of legitimate interest as a legal basis" in the development and deployment of AI models. It recalls that "there is no hierarchy between the legal bases provided by the GDPR" {cite}`edpb2024opinion`, and it sets out the three-step test that "should be conducted when assessing the use of legitimate interest as a legal basis" {cite}`edpb2024opinion`: identify the legitimate interest pursued by the controller or a third party; show that the processing is necessary for that interest (the "necessity test"); and assess that the interest is not overridden by the interests or fundamental rights and freedoms of the data subjects (the "balancing test"). It also lists mitigating measures for the development phase, including for web scraping, while leaving their adequacy to the supervisory authorities case by case. Article 17 gives a person the right to obtain the erasure of their personal data "without undue delay", and Article 12(3) binds the controller to act on such a request "without undue delay and in any event within one month of receipt of the request", extendable by two further months for complex or numerous requests {cite}`gdpr2016`.
 
@@ -952,7 +952,7 @@ After ten generations the all-synthetic chain keeps 478 of the 1,000 types and t
 
 ### 8.1 From compute to tokens
 
-Chapter 2's relation $C \approx 6ND$ fixes the token count once the budget and the model size are chosen. For an 8B-parameter model and $10^{24}$ FLOPs that is about 20.8T tokens; for the Chinchilla optimum at the same budget, $N \approx \sqrt{C/120} \approx 91$B and $D \approx 1.8$T. Production practice sits between: a model sized for inference cost, trained on as many tokens as the data allows.
+{ref}`Chapter 2 <sec-ch2-chapter-overview>`'s relation $C \approx 6ND$ fixes the token count once the budget and the model size are chosen. For an 8B-parameter model and $10^{24}$ FLOPs that is about 20.8T tokens; for the Chinchilla optimum at the same budget, $N \approx \sqrt{C/120} \approx 91$B and $D \approx 1.8$T. Production practice sits between: a model sized for inference cost, trained on as many tokens as the data allows.
 
 (sec-ch3-epoch-cap-per-source)=
 
@@ -1068,7 +1068,7 @@ Epochs $e_s$ per source from the notebook's `plan_mixture` run ($D \approx 20.8$
 
 ### 9.1 What to record
 
-Every document that enters the corpus should carry, as metadata that travels with it through Chapter 4's pipeline and into Chapter 5's versioned dataset:
+Every document that enters the corpus should carry, as metadata that travels with it through {ref}`Chapter 4 <sec-ch4-chapter-overview>`'s pipeline and into {ref}`Chapter 5 <sec-ch5-chapter-overview>`'s versioned dataset:
 
 - **Source and locator**: the corpus or site, the URL or file path, and for Common Crawl the snapshot, WARC file and byte offset, which together are enough to re-fetch the exact bytes.
 - **Fetch time and crawl time**, because the page may have changed, been removed or opted out since.
@@ -1127,7 +1127,7 @@ Two other formats complement the datasheet. Data Statements {cite}`bender2018dat
 
 ### 9.3 Handing off
 
-The output of acquisition is a set of raw shards plus a manifest: one provenance record per document, the robots and license decisions, the source table with unique-token counts, and the mixture plan. Chapter 4 consumes the shards and must preserve the records through every filter; Chapter 5 versions the result so that the model, the corpus and the manifest can be matched up later.
+The output of acquisition is a set of raw shards plus a manifest: one provenance record per document, the robots and license decisions, the source table with unique-token counts, and the mixture plan. {ref}`Chapter 4 <sec-ch4-chapter-overview>` consumes the shards and must preserve the records through every filter; {ref}`Chapter 5 <sec-ch5-chapter-overview>` versions the result so that the model, the corpus and the manifest can be matched up later.
 
 ```{admonition} Provenance in Practice
 :class: tip
