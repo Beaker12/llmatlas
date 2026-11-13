@@ -21,7 +21,8 @@
 <title>q</title>
 <path fill="#ebf4ff" stroke="#2d3748" stroke-width="1.4" d="M146.01,-420.4C146.01,-420.4 64.67,-420.4 64.67,-420.4 58.67,-420.4 52.67,-414.4 52.67,-408.4 52.67,-408.4 52.67,-377.6 52.67,-377.6 52.67,-371.6 58.67,-365.6 64.67,-365.6 64.67,-365.6 146.01,-365.6 146.01,-365.6 152.01,-365.6 158.01,-371.6 158.01,-377.6 158.01,-377.6 158.01,-408.4 158.01,-408.4 158.01,-414.4 152.01,-420.4 146.01,-420.4"/>
 <text xml:space="preserve" text-anchor="start" x="74.27" y="-395.3" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Queries Q</text>
-<text xml:space="preserve" text-anchor="start" x="85.47" y="-382.3" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c">n × dₖ</text>
+<text xml:space="preserve" text-anchor="start" x="87.64" y="-382.3" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c">n × d</text>
+<text xml:space="preserve" text-anchor="start" x="116.55" y="-382.3" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="13.00" fill="#1a202c">k</text>
 </g>
 <!-- x&#45;&gt;q -->
 <g id="edge1" class="edge">
@@ -34,7 +35,8 @@
 <title>k</title>
 <path fill="#ebf4ff" stroke="#2d3748" stroke-width="1.4" d="M264.98,-420.4C264.98,-420.4 201.7,-420.4 201.7,-420.4 195.7,-420.4 189.7,-414.4 189.7,-408.4 189.7,-408.4 189.7,-377.6 189.7,-377.6 189.7,-371.6 195.7,-365.6 201.7,-365.6 201.7,-365.6 264.98,-365.6 264.98,-365.6 270.98,-365.6 276.98,-371.6 276.98,-377.6 276.98,-377.6 276.98,-408.4 276.98,-408.4 276.98,-414.4 270.98,-420.4 264.98,-420.4"/>
 <text xml:space="preserve" text-anchor="start" x="211.3" y="-395.3" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Keys K</text>
-<text xml:space="preserve" text-anchor="start" x="213.47" y="-382.3" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c">n × dₖ</text>
+<text xml:space="preserve" text-anchor="start" x="215.64" y="-382.3" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c">n × d</text>
+<text xml:space="preserve" text-anchor="start" x="244.55" y="-382.3" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="13.00" fill="#1a202c">k</text>
 </g>
 <!-- x&#45;&gt;k -->
 <g id="edge2" class="edge">
@@ -47,7 +49,8 @@
 <title>v</title>
 <path fill="#ebf4ff" stroke="#2d3748" stroke-width="1.4" d="M394.04,-420.4C394.04,-420.4 320.64,-420.4 320.64,-420.4 314.64,-420.4 308.64,-414.4 308.64,-408.4 308.64,-408.4 308.64,-377.6 308.64,-377.6 308.64,-371.6 314.64,-365.6 320.64,-365.6 320.64,-365.6 394.04,-365.6 394.04,-365.6 400.04,-365.6 406.04,-371.6 406.04,-377.6 406.04,-377.6 406.04,-408.4 406.04,-408.4 406.04,-414.4 400.04,-420.4 394.04,-420.4"/>
 <text xml:space="preserve" text-anchor="start" x="330.24" y="-395.3" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Values V</text>
-<text xml:space="preserve" text-anchor="start" x="337.47" y="-382.3" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c">n × dᵥ</text>
+<text xml:space="preserve" text-anchor="start" x="339.64" y="-382.3" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c">n × d</text>
+<text xml:space="preserve" text-anchor="start" x="368.55" y="-382.3" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="13.00" fill="#1a202c">v</text>
 </g>
 <!-- x&#45;&gt;v -->
 <g id="edge3" class="edge">
@@ -58,9 +61,12 @@
 <!-- s -->
 <g id="node5" class="node">
 <title>s</title>
-<path fill="#ebf4ff" stroke="#2d3748" stroke-width="1.4" d="M258.76,-318.6C258.76,-318.6 49.92,-318.6 49.92,-318.6 43.92,-318.6 37.92,-312.6 37.92,-306.6 37.92,-306.6 37.92,-286.2 37.92,-286.2 37.92,-280.2 43.92,-274.2 49.92,-274.2 49.92,-274.2 258.76,-274.2 258.76,-274.2 264.76,-274.2 270.76,-280.2 270.76,-286.2 270.76,-286.2 270.76,-306.6 270.76,-306.6 270.76,-312.6 264.76,-318.6 258.76,-318.6"/>
-<text xml:space="preserve" text-anchor="start" x="59.52" y="-293.5" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Scores S = QKᵀ / √dₖ</text>
-<text xml:space="preserve" text-anchor="start" x="200.76" y="-293.5" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"> &#160;&#160;(n × n)</text>
+<path fill="#ebf4ff" stroke="#2d3748" stroke-width="1.4" d="M255.51,-318.6C255.51,-318.6 53.17,-318.6 53.17,-318.6 47.17,-318.6 41.17,-312.6 41.17,-306.6 41.17,-306.6 41.17,-286.2 41.17,-286.2 41.17,-280.2 47.17,-274.2 53.17,-274.2 53.17,-274.2 255.51,-274.2 255.51,-274.2 261.51,-274.2 267.51,-280.2 267.51,-286.2 267.51,-286.2 267.51,-306.6 267.51,-306.6 267.51,-312.6 261.51,-318.6 255.51,-318.6"/>
+<text xml:space="preserve" text-anchor="start" x="62.77" y="-293.5" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Scores S = QK</text>
+<text xml:space="preserve" text-anchor="start" x="152.73" y="-293.5" font-family="Helvetica,sans-Serif" font-weight="bold" baseline-shift="super" font-size="13.00" fill="#1a202c">T</text>
+<text xml:space="preserve" text-anchor="start" x="160.67" y="-293.5" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c"> / √d</text>
+<text xml:space="preserve" text-anchor="start" x="190.28" y="-293.5" font-family="Helvetica,sans-Serif" font-weight="bold" baseline-shift="sub" font-size="13.00" fill="#1a202c">k</text>
+<text xml:space="preserve" text-anchor="start" x="197.51" y="-293.5" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"> &#160;&#160;(n × n)</text>
 </g>
 <!-- q&#45;&gt;s -->
 <g id="edge4" class="edge">
@@ -77,9 +83,11 @@
 <!-- o -->
 <g id="node8" class="node">
 <title>o</title>
-<path fill="#f0fff4" stroke="#276749" stroke-width="1.4" d="M339.16,-44.4C339.16,-44.4 171.53,-44.4 171.53,-44.4 165.53,-44.4 159.53,-38.4 159.53,-32.4 159.53,-32.4 159.53,-12 159.53,-12 159.53,-6 165.53,0 171.53,0 171.53,0 339.16,0 339.16,0 345.16,0 351.16,-6 351.16,-12 351.16,-12 351.16,-32.4 351.16,-32.4 351.16,-38.4 345.16,-44.4 339.16,-44.4"/>
-<text xml:space="preserve" text-anchor="start" x="181.13" y="-19.3" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Output O = AV</text>
-<text xml:space="preserve" text-anchor="start" x="270.32" y="-19.3" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"> &#160;&#160;(n × dᵥ)</text>
+<path fill="#f0fff4" stroke="#276749" stroke-width="1.4" d="M336.99,-44.4C336.99,-44.4 173.7,-44.4 173.7,-44.4 167.7,-44.4 161.7,-38.4 161.7,-32.4 161.7,-32.4 161.7,-12 161.7,-12 161.7,-6 167.7,0 173.7,0 173.7,0 336.99,0 336.99,0 342.99,0 348.99,-6 348.99,-12 348.99,-12 348.99,-32.4 348.99,-32.4 348.99,-38.4 342.99,-44.4 336.99,-44.4"/>
+<text xml:space="preserve" text-anchor="start" x="183.3" y="-19.3" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Output O = AV</text>
+<text xml:space="preserve" text-anchor="start" x="272.49" y="-19.3" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"> &#160;&#160;(n × d</text>
+<text xml:space="preserve" text-anchor="start" x="316.56" y="-19.3" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="13.00" fill="#1a202c">v</text>
+<text xml:space="preserve" text-anchor="start" x="323.06" y="-19.3" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c">)</text>
 </g>
 <!-- v&#45;&gt;o -->
 <g id="edge9" class="edge">

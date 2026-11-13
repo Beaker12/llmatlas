@@ -197,31 +197,32 @@ def attention_worked_example(out):
 
 def mask_panel(ax, allowed, rows, cols, title):
     ax.imshow(np.where(allowed, 1.0, 0.0), cmap="Blues", vmin=-0.4, vmax=1.6)
-    ax.set_xticks(range(len(cols)), cols, fontsize=9)
-    ax.set_yticks(range(len(rows)), rows, fontsize=9)
+    ax.set_xticks(range(len(cols)), cols, fontsize=11)
+    ax.set_yticks(range(len(rows)), rows, fontsize=11)
     ax.set_xticks(np.arange(-0.5, len(cols)), minor=True)
     ax.set_yticks(np.arange(-0.5, len(rows)), minor=True)
     ax.grid(which="minor", color="white", lw=1.5)
     ax.grid(which="major", visible=False)
     ax.tick_params(which="both", length=0)
-    ax.set_title(title, fontsize=10.5)
+    ax.set_title(title, fontsize=11.5)
     for spine in ax.spines.values():
         spine.set_visible(False)
 
 
-# Mask patterns of the three variants (sec-ch1-architectural-variants): 4 source and 3 target tokens.
+# Mask patterns of the three variants (sec-ch1-architectural-variants): 4 source and 3 target tokens. The decoder of an
+# encoder-decoder has two attention sublayers, each with its own softmax, so it gets two grids.
 def mask_patterns(out):
     src, tgt = ["s1", "s2", "s3", "s4"], ["t1", "t2", "t3"]
-    fig, axes = plt.subplots(1, 3, figsize=(7.2, 2.9), gridspec_kw={"width_ratios": [4, 4, 7]})
+    fig, axes = plt.subplots(1, 4, figsize=(8.4, 3.1), gridspec_kw={"width_ratios": [4, 4, 4, 3]})
     mask_panel(axes[0], np.ones((4, 4), bool), src, src, "Encoder-only:\nevery pair")
     mask_panel(axes[1], np.tril(np.ones((4, 4), bool)), src, src, "Decoder-only:\nearlier or equal")
-    cross = np.hstack([np.ones((3, 4), bool), np.tril(np.ones((3, 3), bool))])
-    mask_panel(axes[2], cross, tgt, src + tgt, "Decoder of encoder-decoder:\nall source, earlier target")
-    axes[2].axvline(3.5, color=RED, lw=1.5)
+    mask_panel(axes[2], np.ones((3, 4), bool), tgt, src, "Enc-dec cross-attn.:\nevery source key")
+    mask_panel(axes[3], np.tril(np.ones((3, 3), bool)), tgt, tgt, "Enc-dec self-attn.:\nearlier or equal")
     for ax in axes:
-        ax.set_xlabel("Key")
-    axes[0].set_ylabel("Query")
-    fig.tight_layout()
+        ax.set_xlabel("Key", fontsize=11)
+    axes[0].set_ylabel("Query", fontsize=11)
+    axes[2].set_ylabel("Query (target)", fontsize=11)
+    fig.tight_layout(w_pad=1.2)
     save(fig, out, "mask-patterns")
 
 
@@ -236,8 +237,8 @@ def causal_mask(out):
         for j in range(n):
             ax.text(j, i, "0" if allowed[i, j] else "−∞", ha="center", va="center", fontsize=11,
                     color="white" if allowed[i, j] else "black")
-    ax.set_xlabel("Key position")
-    ax.set_ylabel("Query position")
+    ax.set_xlabel("Key position", fontsize=11)
+    ax.set_ylabel("Query position", fontsize=11)
     save(fig, out, "causal-mask")
 
 
@@ -253,21 +254,21 @@ MILESTONES = [(1997, "LSTM"), (2003, "Neural language model (Bengio et al.)"), (
 
 
 def history_timeline(out):
-    fig, ax = plt.subplots(figsize=(6.4, 4.6))
+    fig, ax = plt.subplots(figsize=(6.4, 5.4))
     lo, hi = 1995, 2025
     rows = np.linspace(lo + 0.5, hi - 0.5, len(MILESTONES))
     ax.plot([0, 0], [lo, hi], color=GREY, lw=1.2)
     for year in range(lo, hi + 1, 5):
         ax.plot([-0.08, 0], [year, year], color=GREY, lw=1)
-        ax.text(-0.15, year, str(year), ha="right", va="center", fontsize=9.5)
+        ax.text(-0.15, year, str(year), ha="right", va="center", fontsize=11)
     for (year, label), row in zip(MILESTONES, rows):
         ax.plot(0, year, "o", color=BLUE, ms=4, zorder=3)
         ax.plot([0, 0.9, 1.1], [year, row, row], color=GREY, lw=0.7)
-        ax.text(1.18, row, f"{int(year)}  {label}", ha="left", va="center", fontsize=9.5)
-    ax.set_xlim(-0.9, 6.2)
+        ax.text(1.18, row, f"{int(year)}  {label}", ha="left", va="center", fontsize=11)
+    ax.set_xlim(-1.1, 6.2)
     ax.set_ylim(hi + 0.6, lo - 0.6)
     ax.set_axis_off()
-    ax.text(-0.15, lo - 1.4, "Year", ha="right", va="center", fontsize=10.5)
+    ax.text(-0.15, lo - 1.4, "Year", ha="right", va="center", fontsize=11.5)
     save(fig, out, "history-timeline")
 
 

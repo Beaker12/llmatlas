@@ -839,7 +839,7 @@ The pieces of the previous two sections, and the attention of the next, were not
 
 ```{figure} figures/history-timeline.*
 :name: fig-ch1-history-timeline
-:width: 69%
+:width: 86%
 :alt: A vertical year axis from 1995 to 2025 with a dot per milestone, each joined by a leader line to a row of text: LSTM in 1997 and the neural language model in 2003, then word2vec, seq2seq and attention in 2013 to 2014, the transformer in 2017, ELMo, GPT and BERT in 2018, GPT-2, T5 and BART in 2019, GPT-3 in 2020, InstructGPT and ChatGPT in 2022, LLaMA and Mistral 7B in 2023 and Llama 3 in 2024.
 
 The milestones this section discusses (sources in the text). Left, each milestone's year on a time axis to scale; right, one row per milestone. Fifteen of the seventeen fall after 2012.
@@ -957,7 +957,7 @@ The scaling factor $\sqrt{d_k}$, where $d_k$ is the per-head key dimension, keep
 
 ```{figure} figures/scaled_dot_product_attention.*
 :name: fig-ch1-scaled-dot-product-attention
-:width: 70%
+:width: 82%
 :alt: X feeds three projections Q, K and V; Q and K give the n by n scores divided by the square root of d_k, an optional mask adds minus infinity, the softmax gives weights A, and A times V gives the n by d_v output O.
 
 Scaled dot-product attention with the shape of every intermediate. The $n \times n$ score and weight matrices are what makes attention quadratic in $n$ ({ref}`sec-ch1-attention-complexity`).
@@ -1052,7 +1052,7 @@ with $d_k = d_v = d/n_h$, so the heads together cost as much as one head of widt
 
 ```{figure} figures/multi_head_attention.*
 :name: fig-ch1-multi-head-attention
-:width: 72%
+:width: 84%
 :alt: X is projected to Q, K and V of width d, the columns are split into n_h heads of width d_k, each head runs attention, the heads are concatenated back to width d and multiplied by W_O.
 
 Multi-head attention: one projection of width $d$, split into $n_h$ heads of $d_k = d/n_h$ columns, attention in each head, concatenation and the output projection $W_O$.
@@ -1402,7 +1402,7 @@ The decoder's output then goes through the same final normalization and unembedd
 
 ```{figure} figures/encoder_decoder.*
 :name: fig-ch1-encoder-decoder
-:width: 83%
+:width: 96%
 :alt: Left, the encoder: source tokens through self-attention and a feed-forward network, repeated block after block, giving the encoder output H_enc. Right, the decoder: target tokens through masked self-attention, cross-attention that takes keys and values from H_enc, and a feed-forward network, repeated block after block, then the next-token distribution.
 
 The encoder-decoder transformer of {cite:t}`vaswani2017attention`. $H_{enc}$ is computed once and feeds the cross-attention of every decoder block.
@@ -1423,9 +1423,9 @@ The three differ in which positions may attend to which, as {numref}`fig-ch1-mas
 ```{figure} figures/mask-patterns.*
 :name: fig-ch1-mask-patterns
 :width: 96%
-:alt: Three grids of allowed query-key pairs: encoder-only is fully dark; decoder-only is dark on and below the diagonal; the decoder of an encoder-decoder sees all four source columns and the target columns on and below the diagonal.
+:alt: Four grids of allowed query-key pairs: encoder-only is fully dark; decoder-only is dark on and below the diagonal; the encoder-decoder's cross-attention grid, three target queries by four source keys, is fully dark; its self-attention grid, three target queries by three target keys, is dark on and below the diagonal.
 
-Allowed (dark) and masked (light) query-key pairs for four source tokens s1 to s4 and three target tokens t1 to t3. The red line separates the cross-attention keys (source) from the decoder's own keys.
+Allowed (dark) and masked (light) query-key pairs for four source tokens s1 to s4 and three target tokens t1 to t3. The decoder of an encoder-decoder has two attention sublayers, each with its own softmax: cross-attention over the source keys, then masked self-attention over the target keys, so it gets two grids.
 ```
 
 (sec-ch1-masked-lm)=
@@ -1628,7 +1628,7 @@ For the four inputs of the next listing the mask is {numref}`fig-ch1-causal-mask
 
 ```{figure} figures/causal-mask.*
 :name: fig-ch1-causal-mask
-:width: 47%
+:width: 60%
 :alt: A 4 by 4 grid over the tokens bos, the, cat, sat: zeros on and below the diagonal, minus infinity above it.
 
 The causal mask as it is added to the scores: 0 where a query may attend, $-\infty$ where the key is later, so the softmax gives those keys weight 0. `create_causal_mask(4)` is `True` exactly where this grid shows 0.
@@ -1716,7 +1716,7 @@ Each pass of the loop runs the model on the whole sequence so far, but under the
 
 ```{figure} figures/autoregressive_loop.*
 :name: fig-ch1-autoregressive-loop
-:width: 63%
+:width: 76%
 :alt: The prompt goes into the model, which gives a next-token distribution; a token is chosen; if it is EOS or the length limit is reached generation stops, otherwise the token is appended and the model runs again.
 
 Generation: one forward pass per new token. Training does not loop, because teacher forcing supplies the true tokens ({ref}`sec-ch1-teacher-forcing`).

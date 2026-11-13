@@ -1034,11 +1034,11 @@ def analyze_token_frequency(corpus, tokenizer):
     ranks = range(1, len(frequencies) + 1)
     plt.loglog(ranks, frequencies, marker=".", linestyle="none", label="Observed")
     # Zipf's law: frequency proportional to 1 / rank, a line of slope -1 on log-log axes
-    plt.loglog(ranks, [frequencies[0] / r for r in ranks], linestyle="--", color="gray", label="Slope -1 (Zipf)")
+    plt.loglog(ranks, [frequencies[0] / r for r in ranks], linestyle="--", color="gray", label="Slope −1 (Zipf)")
     plt.legend(loc="upper right")
-    plt.xlabel("Token rank")
-    plt.ylabel("Frequency")
-    plt.title("Token frequency by rank, with a slope -1 reference line")
+    plt.xlabel("Word rank")
+    plt.ylabel("Occurrences")
+    plt.title("Word frequency by rank, with a slope −1 reference line")
     plt.grid(True)
     plt.show()
 
@@ -1213,7 +1213,7 @@ def compare_position_encodings():
     plt.ylabel("Extra parameters", fontsize=11.5)
     plt.title("Parameters spent on positions (log scale)", fontsize=12)
     plt.tick_params(labelsize=11)
-    plt.legend(fontsize=11, loc="center right")
+    plt.legend(fontsize=11, loc="lower right", bbox_to_anchor=(1.0, 0.1))
     plt.grid(True)
     plt.show()
 

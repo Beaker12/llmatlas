@@ -11,8 +11,8 @@ digraph EncoderDecoder {
     }
     subgraph cluster_dec {
         label=<<b>Decoder block, repeated</b>>; fontsize=13; style="rounded,filled"; fillcolor="#f7fafc"; color="#2d3748"; penwidth=1.2;
-        dsa [label=<<b>Masked self-attention</b><br/>earlier target tokens only> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
-        dca [label=<<b>Cross-attention</b><br/>queries from the decoder,<br/>keys and values from the encoder output> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+        dsa [label=<<b>Masked self-attention</b><br/>earlier and current target tokens> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+        dca [label=<<b>Cross-attention</b><br/>queries: decoder<br/>keys, values: encoder output> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
         dff [label=<<b>Feed-forward</b>> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     }
     h [label=<<b>Encoder output H<sub>enc</sub></b>  (n<sub>src</sub> × d)> shape=box style="rounded,filled" fillcolor="#f0fff4" color="#276749" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
