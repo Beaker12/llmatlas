@@ -1,5 +1,5 @@
 digraph merkle {
-  graph [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" COLOR="#4a5568"><TR><TD BGCOLOR="#fde7cf">changed when shard 6 is refiltered (v1 → v2)</TD></TR><TR><TD BGCOLOR="#dbeafe">inclusion proof for shard 6: 4 sibling hashes</TD></TR></TABLE>>, fontname="DejaVu Sans", fontsize=17, rankdir=LR, nodesep=0.12, ranksep=0.4, pad=0.2, labelloc=b];
+  graph [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" COLOR="#4a5568"><TR><TD BGCOLOR="#fde7cf">changed when one byte of shard 6 changes (v1 → v2)</TD></TR><TR><TD BGCOLOR="#dbeafe">inclusion proof for shard 6: 4 sibling hashes</TD></TR></TABLE>>, fontname="DejaVu Sans", fontsize=17, rankdir=LR, nodesep=0.12, ranksep=0.4, pad=0.2, labelloc=b];
   node [fontname="DejaVu Sans", fontsize=17, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=16, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
   L0 [label="shard 0", fillcolor="#ffffff"];
   L1 [label="shard 1", fillcolor="#ffffff"];
@@ -37,6 +37,6 @@ digraph merkle {
   N0_3 [label="hash of\nshards 0–3", fillcolor="#dbeafe"];
   N4_7 [label="hash of\nshards 4–7", fillcolor="#fde7cf"];
   N0_7 [label="hash of\nshards 0–7", fillcolor="#fde7cf"];
-  N0_9 [label="root\nv1: 56270bb6…\nv2: 667b16bc…", fillcolor="#fde7cf"];
+  N0_9 [label="root\nv1: f4471612…\nv2: 53619d80…", fillcolor="#fde7cf"];
   {rank=same; L0 -> L1 -> L2 -> L3 -> L4 -> L5 -> L6 -> L7 -> L8 -> L9 [style=invis];}
 }
