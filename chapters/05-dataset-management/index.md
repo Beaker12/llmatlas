@@ -2,34 +2,6 @@
 
 A pretraining corpus is not a file. It is tens of thousands of shards, produced by a pipeline from sources that change, consumed by training runs that must be reproducible, audited after the fact for what they contained, and edited when something has to come out. This chapter covers the engineering that makes that manageable: how the data is laid out on disk, how a version is named and verified, how documents are tokenized, packed and mixed into training batches, how a run resumes without repeating or skipping data, and how a dataset is documented and governed over its life. Chapter 3 acquired the text and Chapter 4 cleaned it; this chapter turns the result into an artifact that a training job can depend on.
 
-(sec-ch5-learning-objectives)=
-
-## Learning Objectives
-
-By the end of this chapter, you will understand:
-
-- The storage formats used for training data (JSON Lines, Parquet and Arrow, tokenized binaries), how each is written and read, and when each is the right choice; and to describe the streaming shard formats, WebDataset tar shards and Mosaic's MDS
-- How a dataset version is defined by content hashes and a manifest, and how to diff and verify versions
-- How documents are tokenized, packed into fixed-length sequences and masked so that unrelated documents do not attend to each other
-- How sources are mixed by weight and temperature, with epoch caps, and how a sampler is made deterministic and resumable
-- How data is sharded across many training processes without duplication, and why the global batch should not depend on the number of processes
-- What statistics, tests and documents accompany a dataset version, and how removal requests are handled
-
-(sec-ch5-hands-on-learning)=
-
-## Hands-On Learning
-
-The accompanying notebook, [Dataset Management Demo](examples/dataset_management_demo.ipynb), builds a small corpus into a versioned, tokenized training dataset and checks every step with an assertion:
-
-- Writing JSON Lines shards and a tokenized binary with a document index, and reading both back ({ref}`nb-dm-formats`)
-- Building a manifest of content hashes, computing a version root, and diffing two versions ({ref}`nb-dm-versioning`)
-- Packing documents into sequences, measuring truncation and padding, and building the document attention mask ({ref}`nb-dm-packing`)
-- A deterministic, resumable mixture sampler with temperature and epoch caps ({ref}`nb-dm-sampler`)
-- Sharding across ranks and showing that the global batch is independent of the world size ({ref}`nb-dm-distributed`)
-- Dataset statistics, a data contract, and a data card generated from the manifest ({ref}`nb-dm-governance`)
-
-Everything runs on a CPU in seconds and uses only the standard library, NumPy, PyArrow for the Parquet and Arrow files and, for the plots, Matplotlib.
-
 (sec-ch5-chapter-overview)=
 
 ## Chapter Overview
@@ -49,6 +21,34 @@ Think of a training dataset the way a software team thinks of a release. Source 
 **Monitoring and governance** keep the record: how many tokens from each source, what the tests checked, who may use the dataset, and how a document is found and removed when someone asks.
 
 The theme is that reproducibility is cheap when it is designed in and impossible to retrofit. A dataset built by hand in a notebook, shuffled with an unseeded call and written over an older copy, cannot be reproduced, diffed, or audited, and every experiment trained on it is uninterpretable.
+
+(sec-ch5-learning-objectives)=
+
+## Learning Objectives
+
+By the end of this chapter, you will understand:
+
+- The storage formats used for training data (JSON Lines, Parquet and Arrow, tokenized binaries), how each is written and read and when each is the right choice, and how the streaming formats, WebDataset tar shards and Mosaic's MDS, lay out a shard
+- How a dataset version is defined by content hashes, a manifest and a Merkle root, how versions are diffed and verified, and how a split survives a new version
+- How documents are tokenized, packed into fixed-length sequences and masked so that unrelated documents do not attend to each other
+- How sources are mixed by weight and temperature, with epoch caps, and how a sampler is made deterministic, resumable and seekable in constant work
+- How data is sharded across many training processes without duplication, why the global batch should not depend on the number of processes, and how loader workers keep up with the accelerators
+- What statistics, tests and documents accompany a dataset version, and how removal requests are handled
+
+(sec-ch5-hands-on-learning)=
+
+## Hands-On Learning
+
+The accompanying notebook, [Dataset Management Demo](examples/dataset_management_demo.ipynb), builds a small corpus into a versioned, tokenized training dataset and checks every step with an assertion:
+
+- Writing JSON Lines shards and a tokenized binary with a document index, and reading both back ({ref}`nb-dm-formats`)
+- Building a manifest of content hashes, computing a version root, and diffing two versions ({ref}`nb-dm-versioning`)
+- Packing documents into sequences, measuring truncation and padding, and building the document attention mask ({ref}`nb-dm-packing`)
+- A deterministic, resumable mixture sampler with temperature and epoch caps ({ref}`nb-dm-sampler`)
+- Sharding across ranks and showing that the global batch is independent of the world size ({ref}`nb-dm-distributed`)
+- Dataset statistics, a data contract, a canary, a drift check and a data card generated from the manifest ({ref}`nb-dm-governance`)
+
+Everything runs on a CPU in seconds and uses only the standard library, NumPy, PyArrow for the Parquet and Arrow files and, for the plots, Matplotlib.
 
 (sec-ch5-dataset-build-artifact)=
 
@@ -1478,7 +1478,7 @@ against a plan with books: books: missing from dataset
 Two monitoring practices borrowed from other fields:
 
 - **Canaries.** Insert a handful of unique, random strings into the corpus at known positions and with known repetition counts. After training, test whether the model can complete them. Canaries measure memorization directly {cite}`carlini2019secret`, and a canary that appears in a version where it should not have is proof that an upstream shard leaked.
-- **Drift.** Compare every statistic in Section 7.1 between consecutive versions and flag changes beyond a threshold. Most data bugs (an extractor update that drops tables, a language-identification model update that rejects more of one language, a source that silently went offline) show up as a drift in a per-source statistic before they show up in a loss curve.
+- **Drift.** Compare every statistic of {ref}`sec-ch5-statistics-per-version` between consecutive versions and flag changes beyond a threshold. Most data bugs (an extractor update that drops tables, a language-identification model update that rejects more of one language, a source that silently went offline) show up as a drift in a per-source statistic before they show up in a loss curve.
 
 A drift check needs a statistic and a threshold fixed before the comparison. For a length distribution, a good statistic is the two-sample Kolmogorov-Smirnov statistic D, the largest gap between the two empirical distribution functions. The threshold can come from the data themselves: pool the two versions' lengths, relabel them at random into groups of the original sizes many times, and take the value of D that only 1% of the relabelings exceed. That fixes the false-alarm rate: about one unchanged rebuild in a hundred is flagged. The listing compares a version with an unchanged rebuild and with a build in which an extractor update dropped the tables from 15% of documents: the first stays under the threshold and the second is flagged. On corpora of millions of documents the threshold becomes so small that real but harmless changes cross it, so in practice it is paired with a minimum effect size, such as a change in mean length of more than a few percent.
 
@@ -1556,7 +1556,7 @@ Croissant, a machine-readable metadata vocabulary built on schema.org, {cite}`ak
 
 A corpus mixes sources under different terms, and the terms travel with the data. The version's metadata records, per source, the license or terms under which it was obtained, the opt-out policy applied and the date, and any restrictions that propagate to models trained on it. {cite:t}`longpre2023data` traced the lineage and licenses of more than 1,800 text datasets and found that widely used hosting sites omitted the license in more than 70% of cases and gave a wrong one in more than 50%; the only remedy is to carry the record forward from acquisition (Chapter 3) through every version rather than reconstructing it later.
 
-Access control follows from the record. A corpus with a non-commercial source cannot be released under a commercial license as a whole, so either the source is separated into its own shards with their own terms, or the released version excludes it. Keeping sources in separate shards, which the naming convention in Section 2.2 already does, is what makes this a manifest operation rather than a rebuild.
+Access control follows from the record. A corpus with a non-commercial source cannot be released under a commercial license as a whole, so either the source is separated into its own shards with their own terms, or the released version excludes it. Keeping sources in separate shards, which the naming convention of {ref}`sec-ch5-sharding` already does, is what makes this a manifest operation rather than a rebuild.
 
 (sec-ch5-removal)=
 
@@ -1684,17 +1684,446 @@ The pieces exist as libraries, and most teams assemble rather than write them:
 
 What no tool supplies is the discipline: that every version is produced by the build, that no shard is edited in place, that every run names a tag, and that the statistics and the card are updated with the data rather than after it.
 
+(sec-ch5-summary)=
+
+## Summary
+
+- A training corpus is kept twice: as text shards (JSON Lines or Parquet) that are versioned, inspected and documented, and as tokenized binaries with a document index that training memory-maps. The binary names its tokenizer by hash, and its sidecar records the special-token policy.
+- A shard's identity is the SHA-256 of its uncompressed bytes. A version is a manifest of those hashes, named by a Merkle root, diffed shard by shard and never edited in place, and a split assigned by a hash of each document's key keeps validation documents in validation from one version to the next.
+- Documents are concatenated with end-of-document tokens and then either chunked, which splits documents at sequence boundaries, or packed best-fit, which keeps them whole for a little padding. The document mask stops attention across document boundaries inside a sequence.
+- Sources are mixed by weight, flattened by a temperature and capped in epochs. The sampler is a function of the seed and the step, so a run resumes exactly, and a keyed Feistel permutation with a stride schedule makes seeking to any step constant work.
+- Global indexing makes the global batch independent of the world size; per-rank shard assignment does not, and resuming it with a different world size repeats and skips data. Loader workers and prefetching keep the accelerators fed.
+- Each version carries statistics, a contract the build enforces, canaries and drift checks, a data card, and per-source license records. A document index and the lineage graph turn a removal request into one lookup, a new version and a list of affected models.
+
 (sec-ch5-exercises)=
 
 ## Exercises
 
-1. **Bytes per token.** Take a few thousand documents and store them as gzip JSON Lines, as a `uint16` token binary, and as a `uint32` token binary. Report bytes per token for each and the time to read every document back. At what point does the text format's inspectability stop being worth its cost?
-1. **Manifest diff.** Rebuild the notebook's corpus with the Chapter 4 repetition filter's thresholds changed by 10%. Diff the manifests. How many shards changed, and could you have predicted which ones from the shard naming scheme?
-1. **Packing efficiency.** For document length distributions with means of 100, 1,000 and 10,000 tokens and a sequence length of 4,096, measure the truncation rate of chunking and the padding rate of best-fit packing. When does packing stop being worth its complexity?
-1. **The mask's effect.** Train two small models on packed sequences with and without the document mask (the Chapter 1 notebook's transformer is enough). Compare the loss on the first tokens of each document, which are the ones the mask changes.
-1. **$\mathcal{O}(1)$ seeking.** Design a sampler whose state at step $t$ is computed without replaying: a fixed schedule of mixture phases, a hash of `(seed, t)` for the source draw, and per-source cursors from prefix counts. Its stream will differ from `MixtureSampler`'s, so verify it against itself: iterating to step $t$ and seeking to step $t$ must agree at a thousand random steps.
-1. **World-size invariance.** Implement a loader under both designs of Section 6.1 and resume a simulated run at step 500 with the world size changed from 8 to 4. Which design gives the same batches, and what does the other one skip or repeat?
-1. **A removal request.** Pick a document in the notebook's corpus and carry out the three steps of Section 8.3: locate it, cut a new version without it, and list the versions (and, hypothetically, the models) affected. How long did each step take, and which would have been impossible without the index?
+1. **Bytes per token.** Take 2,000 documents and store them as gzip JSON Lines, as a `uint16` token binary with the offsets array of {ref}`sec-ch5-tokenized-binaries-document-index`, and as a `uint32` token binary. Report bytes per token for each and the time to read every document back as token ids. At what point does the text format's inspectability stop being worth its cost?
+
+````{admonition} Solution 1
+:class: dropdown
+
+The listing draws documents averaging 300 tokens from a Zipf distribution over 5,000 pseudo-words, one token per word, and times reading each format back to token ids. Reading the text means decompressing, parsing JSON and tokenizing again; reading a binary is one slice per document.
+
+```python
+import gzip
+import json
+import time
+
+import numpy as np
+
+rng = np.random.default_rng(0)
+letters = list("abcdefghijklmnopqrstuvwxyz")
+vocab, seen = [], set()
+while len(vocab) < 5000:  # 5,000 distinct pseudo-words, one token each
+    word = "".join(rng.choice(letters, size=int(rng.integers(2, 10))))
+    if word not in seen:
+        seen.add(word)
+        vocab.append(word)
+word_id = {w: i for i, w in enumerate(vocab)}
+zipf = 1 / np.arange(1, len(vocab) + 1)
+docs = [rng.choice(len(vocab), size=int(n), p=zipf / zipf.sum()) for n in rng.geometric(1 / 300, size=2000)]
+n_tokens = sum(d.size for d in docs)
+offsets = np.cumsum([0] + [d.size for d in docs])
+
+lines = (json.dumps({"text": " ".join(vocab[i] for i in d)}).encode() + b"\n" for d in docs)
+jsonl = gzip.compress(b"".join(lines), mtime=0)
+binary = {dtype: np.concatenate(docs).astype(dtype).tobytes() for dtype in ("uint16", "uint32")}
+
+
+def read_jsonl():
+    """Text is decompressed, parsed and tokenized again before training can use it."""
+    rows = gzip.decompress(jsonl).splitlines()
+    return [[word_id[w] for w in json.loads(row)["text"].split()] for row in rows]
+
+
+def read_binary(dtype):
+    tokens = np.frombuffer(binary[dtype], dtype=dtype)
+    return [tokens[offsets[i] : offsets[i + 1]] for i in range(len(docs))]
+
+
+print(f"{n_tokens:,} tokens in {len(docs):,} documents")
+formats = [("gzip JSON Lines", read_jsonl, len(jsonl)),
+           ("uint16 binary", lambda: read_binary("uint16"), len(binary["uint16"])),
+           ("uint32 binary", lambda: read_binary("uint32"), len(binary["uint32"]))]
+for name, read, size in formats:
+    timings = []
+    for _ in range(3):  # the fastest of three reads, so that a cold first call does not decide the order
+        start = time.perf_counter()
+        back = read()
+        timings.append(time.perf_counter() - start)
+    ms = 1000 * min(timings)
+    assert all(np.array_equal(a, b) for a, b in zip(back, docs))
+    print(f"{name:16s} {size / n_tokens:.2f} bytes per token, every document read back in {ms:.0f} ms")
+assert len(binary["uint16"]) == 2 * n_tokens and len(binary["uint32"]) == 4 * n_tokens
+```
+
+% output-shape
+
+```text
+608,751 tokens in 2,000 documents
+gzip JSON Lines  2.31 bytes per token, every document read back in 223 ms
+uint16 binary    2.00 bytes per token, every document read back in 2 ms
+uint32 binary    4.00 bytes per token, every document read back in 2 ms
+```
+
+The binaries cost exactly 2 and 4 bytes per token, plus 8 bytes of offset per document. Compressed text lands close to the `uint16` binary, because gzip removes most of the redundancy of words and JSON. The sizes are therefore close, and the difference is the read: on the run shown the binary is read back about a hundred times faster, and the text pays its cost again on every epoch, because it is parsed and tokenized again on every pass. Inspectability stops being worth its cost as soon as the data is read more than once by a training loop. Keep the text as the versioned record and derive the binary from it, as {ref}`sec-ch5-formats-used` recommends. The `uint32` binary doubles the size for no gain unless the vocabulary exceeds 65,536 entries.
+````
+
+1. **Manifest diff.** Build 1,000 documents of ten lines each in which the last $k$ lines, for $k$ from 0 to 5 and with $k = 3$ in 1% of documents, repeat the first, so that the duplicate-line fraction computed by Chapter 4's `repetition_stats` is $k/10$. Keep the documents that pass that filter's threshold of 0.30, then tighten the threshold by 10% to 0.27. Write both versions in two layouts, 50 documents per shard in order and 64 buckets chosen by a hash of the document id, and diff the manifests. How many shards changed in each layout, and could you have predicted which ones?
+
+````{admonition} Solution 2
+:class: dropdown
+
+The duplicate-line fraction takes only the values 0, 0.1, ..., 0.5, so tightening the threshold from 0.30 to 0.27 removes exactly the documents with $k = 3$; a 10% looser threshold, 0.33, would have removed none. The listing reuses the statistic of Chapter 4's `repetition_stats` and hashes each shard's JSON Lines bytes as in {ref}`sec-ch5-sharding`.
+
+```python
+import hashlib
+import json
+
+import numpy as np
+
+rng = np.random.default_rng(0)
+docs = []
+for i in range(1000):
+    lines = [f"doc {i} line {j}: " + " ".join(rng.choice(list("abcdefgh"), size=6)) for j in range(10)]
+    k = int(rng.choice(6, p=[0.5, 0.2, 0.15, 0.01, 0.07, 0.07]))  # the last k of the ten lines repeat the first
+    lines[10 - k :] = [lines[0]] * k
+    docs.append({"id": f"doc{i:04d}", "text": "\n".join(lines)})
+
+
+def dup_line_frac(text: str) -> float:
+    """The duplicate-line statistic of Chapter 4's repetition_stats."""
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    return (len(lines) - len(set(lines))) / len(lines)
+
+
+def bucket(doc_id: str, n_buckets: int = 64) -> int:
+    return int(hashlib.sha256(doc_id.encode()).hexdigest(), 16) % n_buckets
+
+
+def manifest(kept, layout: str) -> dict:
+    """Shard name -> SHA-256 of the shard's JSON Lines bytes."""
+    shards = {}
+    for n, d in enumerate(kept):
+        name = f"shard_{n // 50:05d}" if layout == "count" else f"bucket_{bucket(d['id']):05d}"
+        shards.setdefault(name, []).append(d)
+    return {name: hashlib.sha256("".join(json.dumps(d) + "\n" for d in ds).encode()).hexdigest()
+            for name, ds in shards.items()}
+
+
+def diff(old: dict, new: dict) -> list:
+    return sorted(name for name in old.keys() | new.keys() if old.get(name) != new.get(name))
+
+
+v1 = [d for d in docs if dup_line_frac(d["text"]) <= 0.30]  # Chapter 4's threshold
+v2 = [d for d in docs if dup_line_frac(d["text"]) <= 0.27]  # 10% stricter
+removed = [d for d in v1 if d not in v2]
+print(f"kept {len(v1)} at 0.30 and {len(v2)} at 0.27: {len(removed)} documents removed")
+for layout in ("count", "hash"):
+    a, b = manifest(v1, layout), manifest(v2, layout)
+    changed = diff(a, b)
+    print(f"{layout:5s} layout: {len(changed)} of {len(a | b)} shards changed, first {changed[0]}")
+first_removed = v1.index(removed[0])
+assert diff(manifest(v1, "count"), manifest(v2, "count"))[0] == f"shard_{first_removed // 50:05d}"
+assert diff(manifest(v1, "hash"), manifest(v2, "hash")) == sorted({f"bucket_{bucket(d['id']):05d}" for d in removed})
+```
+
+% output
+
+```text
+kept 850 at 0.30 and 838 at 0.27: 12 documents removed
+count layout: 16 of 17 shards changed, first shard_00001
+hash  layout: 12 of 64 shards changed, first bucket_00004
+```
+
+Twelve documents are removed. With shards of 50 documents in order, every shard from the one holding the first removed document onward changes, because each removal moves every later document back by one place: 16 of the 17 shards. The first changed shard is predictable from the removed document's position, but nothing after it survives. With hash buckets a removal touches only the bucket that held the document, so the 12 removals change 12 of the 64 buckets, and which ones is known from the removed ids before any shard is written. Bucketing by a hash of a stable key is what keeps the diff of an edited version small.
+````
+
+1. **Packing efficiency.** For document length distributions with means of 100, 1,000 and 10,000 tokens and a sequence length of 4,096, measure the share of documents that concatenate-and-chunk splits and the padding rate of best-fit packing. When does packing stop being worth its complexity?
+
+````{admonition} Solution 3
+:class: dropdown
+
+The listing draws geometric lengths, two million tokens for each mean, and packs them with best-fit decreasing as in {ref}`sec-ch5-documents-sequences`. A document longer than the sequence is cut into full sequences first, so packing splits those too.
+
+```python
+import bisect
+
+import numpy as np
+
+SEQ_LEN = 4096
+
+
+def chunking_split_rate(lengths) -> float:
+    """Concatenate and cut every SEQ_LEN tokens: the share of documents that straddle a cut."""
+    ends = np.cumsum(lengths)
+    starts = ends - lengths
+    return float(np.mean(starts // SEQ_LEN != (ends - 1) // SEQ_LEN))
+
+
+def best_fit_padding(lengths) -> float:
+    """Best-fit decreasing: each piece goes into the open sequence with the least room that holds it.
+    A document longer than SEQ_LEN is cut into full sequences first. Returns the share of padding."""
+    pieces = sorted((p for n in lengths for p in [SEQ_LEN] * (n // SEQ_LEN) + [n % SEQ_LEN] if p), reverse=True)
+    room, n_seq = [], 0  # sorted free space of the open sequences
+    for p in pieces:
+        i = bisect.bisect_left(room, p)
+        if i < len(room):
+            left = room.pop(i) - p
+        else:
+            left, n_seq = SEQ_LEN - p, n_seq + 1
+        if left:
+            bisect.insort(room, left)
+    return 1 - int(np.sum(lengths)) / (n_seq * SEQ_LEN)
+
+
+rng = np.random.default_rng(0)
+for mean in (100, 1_000, 10_000):
+    lengths = rng.geometric(1 / mean, size=2_000_000 // mean)
+    longer = float(np.mean(lengths > SEQ_LEN))
+    print(f"mean {mean:>6,}: chunking splits {chunking_split_rate(lengths):.1%} of documents; "
+          f"best-fit pads {best_fit_padding(lengths):.2%} and splits {longer:.1%} (those longer than {SEQ_LEN:,})")
+```
+
+% output
+
+```text
+mean    100: chunking splits 2.4% of documents; best-fit pads 0.04% and splits 0.0% (those longer than 4,096)
+mean  1,000: chunking splits 23.2% of documents; best-fit pads 0.03% and splits 1.6% (those longer than 4,096)
+mean 10,000: chunking splits 84.0% of documents; best-fit pads 0.48% and splits 66.5% (those longer than 4,096)
+```
+
+At a mean of 100 tokens, chunking splits only 2.4% of documents, so packing buys little. At 1,000 it splits 23.2%, while best-fit splits only the 1.6% of documents longer than the sequence, for 0.03% padding: this is where packing pays. At 10,000 most documents are longer than the sequence and are split by either method, 84.0% against 66.5%, and the gain shrinks again. Packing stops being worth its complexity when documents are either much shorter than the sequence or mostly longer than it.
+````
+
+1. **The mask's effect.** Count how much of the causal attention the document mask removes when documents averaging 1,000 tokens are concatenated and cut into 4,096-token sequences, and how many tokens have a different context with the mask than without it. Then train two small models on those sequences, with and without the mask, using the `TinyLM` model and the `train` loop of the [Chapter 6 notebook](../06-architectures/examples/architecture_demo.ipynb), and compare the loss on the first tokens of each document, which are the ones the mask changes.
+
+````{admonition} Solution 4
+:class: dropdown
+
+In a sequence cut into pieces of lengths $\ell_1, \dots, \ell_m$, causal attention has $n(n+1)/2$ allowed pairs for sequence length $n$ and the document mask keeps $\sum_i \ell_i(\ell_i + 1)/2$ of them, the triangles of {ref}`sec-ch5-cross-document-attention`. Every token outside the sequence's first piece loses context.
+
+```python
+import numpy as np
+
+SEQ_LEN = 4096
+rng = np.random.default_rng(0)
+ends = np.cumsum(rng.geometric(1 / 1000, size=4000))
+causal_pairs = SEQ_LEN * (SEQ_LEN + 1) // 2
+kept, changed, n_seq = 0, 0, int(ends[-1] // SEQ_LEN)
+for k in range(n_seq):
+    inside = ends[(ends > k * SEQ_LEN) & (ends < (k + 1) * SEQ_LEN)] - k * SEQ_LEN
+    pieces = np.diff(np.concatenate([[0], inside, [SEQ_LEN]]))
+    kept += int(np.sum(pieces * (pieces + 1) // 2))
+    changed += SEQ_LEN - int(pieces[0])  # every token after the first document boundary
+print(f"{n_seq} sequences: the mask removes {1 - kept / (n_seq * causal_pairs):.1%} of the causal attention pairs")
+print(f"and changes the context of {changed / (n_seq * SEQ_LEN):.1%} of the tokens")
+```
+
+% output
+
+```text
+995 sequences: the mask removes 62.0% of the causal attention pairs
+and changes the context of 75.6% of the tokens
+```
+
+The mask removes 62.0% of the causal attention pairs and changes the context of 75.6% of the tokens: every token after the first document boundary of its sequence. The change is largest for a document's first tokens, which without the mask see up to several thousand tokens of an unrelated document and with it see only the document's own tokens. For the training comparison, replace the causal mask in `TinyLM`'s attention by the document mask built from the end-of-document positions, train both models with the same seed and number of steps, and average the held-out loss at each position within a document: position 0, 1, 2 and so on. The two curves can differ only where the contexts differ, so any difference is concentrated in the first positions and shrinks with the position, because a token far into a document has most of its useful context inside the document either way.
+````
+
+1. **Seeking across mixture phases.** The `StrideSampler` of {ref}`sec-ch5-determinism-resumption` seeks in constant work for one fixed mixture, but runs often change the mixture partway through. Extend its cursors $\operatorname{drawn}_s(t)$ to a schedule of two phases: weights 0.7, 0.15 and 0.15 for web, wiki and code until step 5,000, then 0.5, 0.25 and 0.25. Verify the closed form against iteration: seeking to step $t$ and iterating to it must agree at a thousand random steps.
+
+````{admonition} Solution 5
+:class: dropdown
+
+Each phase is a stride schedule of its own, started at the phase's first step. The cursor at step $t$ is the sum, over the phases that have begun, of the closed form for the steps spent in each: whole periods times the source's slots per period, plus a prefix count. The work is one term per phase, still independent of $t$.
+
+```python
+import numpy as np
+
+
+def stride_schedule(weights: dict, period: int):
+    """A fixed pattern of `period` slots, round(w * period) per source, spread out by smooth
+    weighted round-robin, and for each source the prefix counts of its slots in the pattern."""
+    counts = {s: round(w * period) for s, w in sorted(weights.items())}
+    assert sum(counts.values()) == period
+    credit = dict.fromkeys(counts, 0)
+    pattern = []
+    for _ in range(period):
+        for s in counts:
+            credit[s] += counts[s]
+        chosen = max(counts, key=lambda s: credit[s])
+        credit[chosen] -= period
+        pattern.append(chosen)
+    prefix = {s: [0] for s in counts}
+    for slot in pattern:
+        for s in counts:
+            prefix[s].append(prefix[s][-1] + (slot == s))
+    return pattern, prefix
+
+
+# Two mixture phases: the second, from step 5,000, raises the share of wiki and code
+PHASES = [(0, {"web": 0.7, "wiki": 0.15, "code": 0.15}), (5_000, {"web": 0.5, "wiki": 0.25, "code": 0.25})]
+SCHEDULES = [(start, *stride_schedule(weights, 20)) for start, weights in PHASES]
+ENDS = [start for start, _ in PHASES[1:]] + [None]
+
+
+def drawn(s: str, t: int) -> int:
+    """Documents of source s drawn before step t: the closed form per phase, summed over the phases begun."""
+    total = 0
+    for (start, pattern, prefix), end in zip(SCHEDULES, ENDS):
+        if t <= start:
+            break
+        periods, r = divmod((t if end is None else min(t, end)) - start, len(pattern))
+        total += periods * prefix[s][-1] + prefix[s][r]
+    return total
+
+
+def source_at(t: int) -> str:
+    start, pattern, _ = [schedule for schedule in SCHEDULES if schedule[0] <= t][-1]
+    return pattern[(t - start) % len(pattern)]
+
+
+steps = 20_000
+checks = set(np.random.default_rng(0).choice(steps, size=1000, replace=False).tolist())
+counts = dict.fromkeys(["code", "web", "wiki"], 0)
+for t in range(steps):  # iterate, and compare with seeking at a thousand random steps
+    if t in checks:
+        assert all(drawn(s, t) == counts[s] for s in counts)
+    counts[source_at(t)] += 1
+print("seeking agrees with iterating at", len(checks), "random steps")
+for t in (5_000, 12_345):
+    print(f"cursors at step {t:,}:", {s: drawn(s, t) for s in sorted(counts)})
+```
+
+% output
+
+```text
+seeking agrees with iterating at 1000 random steps
+cursors at step 5,000: {'code': 750, 'web': 3500, 'wiki': 750}
+cursors at step 12,345: {'code': 2586, 'web': 7173, 'wiki': 2586}
+```
+
+The closed form agrees with iteration at all 1,000 checked steps. At step 5,000, the end of the first phase, the cursors are the first phase's weights times 5,000: 3,500 web, 750 wiki and 750 code. By step 12,345 the second phase has run 7,345 steps and added 3,673 web, 1,836 wiki and 1,836 code documents, for 7,173, 2,586 and 2,586. The document at step $t$ is then found as in `StrideSampler`, with $\Pi$ keyed by the seed, the source and the epoch of $\operatorname{drawn}_s(t)$.
+````
+
+1. **World-size invariance.** Implement a loader under both designs of {ref}`sec-ch5-sharding-across-ranks` and run one epoch of 64,000 samples in 64 shards with a global batch of 64, restarting at step 500 with the world size changed from 8 to 4. Which design gives the same batches, and how many samples does the other one repeat or skip?
+
+````{admonition} Solution 6
+:class: dropdown
+
+Under global indexing every rank computes the step's global batch from the seed and the step and takes its slice, so the world size only decides who reads which sample. Under shard assignment a rank reads its own shards in a seeded order, and its position in that stream is all the step number can restore.
+
+```python
+import numpy as np
+
+N, B, N_SHARDS = 64_000, 64, 64  # samples, global batch, shards: one epoch is 1,000 steps
+STEPS, RESUME = N // B, 500
+PERM = np.random.default_rng(0).permutation(N)
+
+
+def global_indexing(n_ranks: int, step: int):
+    """Every rank computes the same global batch and takes its slice."""
+    batch = PERM[step * B : (step + 1) * B]
+    return [batch[r::n_ranks] for r in range(n_ranks)]
+
+
+def shard_assignment(n_ranks: int, step: int):
+    """Rank r owns shards r, r + n_ranks, ... and reads them in a seeded order, B / n_ranks samples per step."""
+    per_rank = B // n_ranks
+    out = []
+    for r in range(n_ranks):
+        shards = np.random.default_rng(r).permutation(np.arange(r, N_SHARDS, n_ranks))
+        stream = (shards[:, None] * (N // N_SHARDS) + np.arange(N // N_SHARDS)).ravel()
+        out.append(stream[step * per_rank : (step + 1) * per_rank])
+    return out
+
+
+for name, loader in (("global indexing", global_indexing), ("shard assignment", shard_assignment)):
+    seen = np.zeros(N, dtype=int)
+    for step in range(STEPS):  # 8 ranks until the restart at step 500, then 4
+        for part in loader(8 if step < RESUME else 4, step):
+            np.add.at(seen, part, 1)
+    repeated, skipped = int(np.sum(seen > 1)), int(np.sum(seen == 0))
+    print(f"{name:16s}: {repeated:,} samples seen twice, {skipped:,} never seen in the epoch")
+    if loader is global_indexing:
+        assert repeated == skipped == 0
+```
+
+% output
+
+```text
+global indexing : 0 samples seen twice, 0 never seen in the epoch
+shard assignment: 16,000 samples seen twice, 16,000 never seen in the epoch
+```
+
+Global indexing gives the same batches: across the restart the epoch reads every sample exactly once. Shard assignment reads 16,000 samples twice and never reads another 16,000. After the restart, each of the four ranks owns the shards that two of the eight ranks owned (rank 0 those of ranks 0 and 4, and so on), in a new order, and the step number puts it at position 8,000 of that new stream. Some samples before that position were never read and some after it already were: the step restores a position in a per-rank stream that the new world size has replaced.
+````
+
+1. **A removal request.** Build three versions of a corpus with 100 documents per shard: v1.0 holding documents 0 to 799, v1.1 documents 0 to 999 and v1.2 documents 100 to 1,199, and one model trained on each. Carry out the three steps of {ref}`sec-ch5-removal` for document 150: locate it, cut v1.3 without it, and list the models affected. How many documents does locating it read with the index and without it, and which step needs a record other than the index?
+
+````{admonition} Solution 7
+:class: dropdown
+
+```python
+import hashlib
+
+
+def document_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def build(first: int, last: int, per_shard: int = 100) -> dict:
+    """Documents first..last - 1, in shards s0, s1, ... of per_shard consecutive document numbers."""
+    shards = {}
+    for i in range(first, last):
+        shards.setdefault(f"s{i // per_shard}", []).append(f"document {i}")
+    return shards
+
+
+def manifest(contents: dict) -> dict:
+    return {shard: hashlib.sha256("\n".join(docs).encode()).hexdigest() for shard, docs in contents.items()}
+
+
+versions = {"v1.0": build(0, 800), "v1.1": build(0, 1000), "v1.2": build(100, 1200)}
+trained_on = {"model-a": "v1.0", "model-b": "v1.1", "model-c": "v1.2"}  # the lineage graph, one edge each
+target = "document 150"
+
+# Step 1, locate: one lookup in an index the build filled with one hash per document
+index = {}
+for version, contents in versions.items():
+    for shard, docs in contents.items():
+        for text in docs:
+            index.setdefault(document_hash(text), []).append((version, shard))
+where = index[document_hash(target)]
+scanned = sum(len(docs) for contents in versions.values() for docs in contents.values())
+print(f"located in {where} by one lookup; without the index, {scanned:,} documents are read and hashed")
+
+# Step 2, cut v1.3 without it; the manifest diff names the one shard that changed
+latest = versions["v1.2"]
+v13 = {shard: [d for d in docs if d != target] for shard, docs in latest.items()}
+old, new = manifest(latest), manifest(v13)
+changed = sorted(s for s in old if old[s] != new[s])
+print("v1.3 differs from v1.2 in", changed)
+
+# Step 3, from the lineage record: the models trained on any version that held it
+held = {version for version, _ in where}
+affected = sorted(m for m, v in trained_on.items() if v in held)
+print("models affected:", affected)
+assert where == [("v1.0", "s1"), ("v1.1", "s1"), ("v1.2", "s1")] and changed == ["s1"] and len(affected) == 3
+```
+
+% output
+
+```text
+located in [('v1.0', 's1'), ('v1.1', 's1'), ('v1.2', 's1')] by one lookup; without the index, 2,900 documents are read and hashed
+v1.3 differs from v1.2 in ['s1']
+models affected: ['model-a', 'model-b', 'model-c']
+```
+
+Document 150 is in shard s1 of all three versions. The index finds it in one lookup; without it, every document of every version, 2,900 in all, is read and hashed. Cutting v1.3 changes only s1, and the manifest diff says so. The third step needs the lineage record, here `trained_on`: the index says where the document is, not which models saw it, and all three models are affected. Without the index the first step is slow but possible; without the lineage record the third step is impossible.
+````
 
 (sec-ch5-further-reading)=
 
