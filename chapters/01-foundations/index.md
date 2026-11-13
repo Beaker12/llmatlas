@@ -361,33 +361,40 @@ The embedding dimension $d$ is a crucial hyperparameter that affects:
 
 #### Embedding Initialization Strategies
 
-Different initialization schemes affect training dynamics:
+The initialization and any scaling in the forward pass have to be chosen together. The original transformer multiplies the embedding by $\sqrt{d}$ before adding the sinusoidal encoding {cite}`vaswani2017attention`. If the table is drawn from $\mathcal{N}(0, 1/d)$, each coordinate of the scaled embedding has variance $1/d \cdot d = 1$, the same order as the sinusoidal encoding, whose coordinates average $\sin^2 = \cos^2 = 1/2$. Drawing the table with Xavier's rule instead, whose variance $2/(|\mathcal{V}| + d)$ is tiny for a 50,000-row table, would leave the position signal about 25 times stronger than the token signal; drawing it from $\mathcal{N}(0, 1)$ and then scaling would make the token signal over a hundred times stronger.
 
 ```python
+import math
+
 import torch
 import torch.nn as nn
-import math
 
 
 class TokenEmbedding(nn.Module):
-    def __init__(self, vocab_size, d_model, init_strategy="xavier"):
+    def __init__(self, vocab_size, d_model):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, d_model)
         self.d_model = d_model
-
-        # Initialize embeddings
-        if init_strategy == "xavier":
-            nn.init.xavier_uniform_(self.embedding.weight)
-        elif init_strategy == "normal":
-            nn.init.normal_(self.embedding.weight, mean=0.0, std=0.02)
-        elif init_strategy == "scaled_normal":
-            nn.init.normal_(
-                self.embedding.weight, mean=0.0, std=1.0 / math.sqrt(d_model)
-            )
+        # N(0, 1/d): after the sqrt(d) scaling below, every coordinate has unit variance
+        nn.init.normal_(self.embedding.weight, mean=0.0, std=d_model**-0.5)
 
     def forward(self, x):
-        # Scale embeddings by sqrt(d_model) following original transformer
+        # Scale embeddings by sqrt(d_model) following the original transformer
         return self.embedding(x) * math.sqrt(self.d_model)
+
+
+torch.manual_seed(0)
+emb = TokenEmbedding(vocab_size=50_000, d_model=512)
+token_rms = emb(torch.arange(50_000)).pow(2).mean().sqrt()
+print(f"RMS of a scaled token embedding: {token_rms:.3f}")
+print(f"RMS of a sinusoidal encoding:    {0.5 ** 0.5:.3f}")
+```
+
+% output
+
+```text
+RMS of a scaled token embedding: 1.000
+RMS of a sinusoidal encoding:    0.707
 ```
 
 (sec-ch1-embedding-sharing-tying)=
@@ -509,20 +516,16 @@ for group in semantic_groups:
     visualize_embeddings(model.embeddings.weight, tokenizer.token_to_id, group)
 ```
 
-(sec-ch1-rope)=
-
-(sec-ch1-relative-bias)=
+(sec-ch1-positional-encodings)=
 
 #### Positional Encodings
 
-Since transformers lack inherent sequence ordering, positional information must be explicitly encoded. This is crucial because language is inherently sequential—word order fundamentally affects meaning.
-
-**The Position Problem**: Consider these sentences:
+Attention by itself does not see the order of its inputs, so positional information must be supplied. Word order matters in language:
 
 - "The cat sat on the mat"
 - "The mat sat on the cat"
 
-Without positional information, a transformer would see these as identical sets of tokens.
+Without positional information and without a mask, self-attention treats each sentence as a multiset of tokens: permuting the inputs permutes the outputs in the same way and changes nothing else, so these two sentences, which hold the same tokens, get the same set of output vectors. A causal decoder is not completely order-blind even without positions, because its mask lets position $m$ attend to exactly $m$ earlier-or-equal tokens; but that is a weak signal, and every model below supplies positions explicitly.
 
 ##### Sinusoidal Positional Encoding
 
@@ -627,42 +630,114 @@ class LearnedPositionalEmbedding(nn.Module):
 | Used by        | Original transformer | BERT, GPT-2, GPT-3 |
 | Flexibility    | Fixed pattern | Adaptive to data            |
 
-##### Advanced Positional Encodings
+(sec-ch1-relative-bias)=
 
-**Relative Positional Encoding**: instead of adding absolute positions to the input, make attention depend on the offset $m - m'$ between the query position $m$ and the key position $m'$. Shaw et al. {cite}`shaw2018self` add learned relative-position *vectors* to the keys and values; T5 {cite}`raffel2019exploring` simplifies this to one learned scalar bias $\operatorname{rb}(\operatorname{bucket}(m - m'))$ per head and per bucket of offsets, added to the scores, which is what the module below implements:
+#### Relative Position Bias (T5)
+
+Instead of adding absolute positions to the input, a relative scheme makes attention depend on the offset $m - m'$ between the query position $m$ and the key position $m'$. {cite:t}`shaw2018self` add learned relative-position *vectors* to the keys and values. T5 {cite}`raffel2019exploring` simplifies this to one learned scalar per head, added to the attention score of every query-key pair:
+
+$$S_{mm'} = \frac{q_m \cdot k_{m'}}{\sqrt{d_k}} + \operatorname{rb}(\operatorname{bucket}(m - m'))$$
+
+The function $\operatorname{bucket}$ maps an offset to one of 32 buckets. Small offsets get a bucket each; larger ones share buckets whose width grows logarithmically, up to an offset of 128, beyond which all offsets share the last bucket. In the encoder, which attends in both directions, half of the buckets are for keys before or at the query and half for keys after it. For keys at or before the query, offsets 0 to 7 have their own buckets, and an offset $8 \le m - m' < 128$ goes to bucket
+
+$$8 + \left\lfloor 8 \, \frac{\ln\big((m - m')/8\big)}{\ln 16} \right\rfloor,$$
+
+so offset 12 lands in bucket $8 + \lfloor 8 \times 0.146 \rfloor = 9$, offset 16 in bucket 10, offset 64 in bucket 14, and every offset from 128 on in bucket 15. A key after the query uses the same rule on $m' - m$ plus 16. A causal decoder never sees keys after the query, so it spends all 32 buckets on the past: offsets 0 to 15 exactly, then 16 log-spaced buckets up to 128. The table $\operatorname{rb}$ holds one scalar per bucket and head, and it is *shared across all layers*: T5 computes the bias once, in the first layer, and adds the same $n_h \times n \times n$ tensor in every layer {cite}`raffel2019exploring`. With $n_h = 8$ heads the whole model spends $32 \times 8 = 256$ parameters on position.
 
 ```python
+import math
+
 import torch
 import torch.nn as nn
 
 
-class RelativePositionBias(nn.Module):
-    """Learned scalar bias b[i-j] per head, added to the attention scores (T5-style).
+def relative_position_bucket(offset, bidirectional=True, num_buckets=32, max_distance=128):
+    """T5's bucket for the offset m - m' between query position m and key position m'."""
+    buckets = torch.zeros_like(offset)
+    n = offset
+    if bidirectional:
+        num_buckets //= 2
+        buckets = buckets + (n < 0).long() * num_buckets  # keys after the query use the upper half
+        n = n.abs()
+    else:
+        n = n.clamp(min=0)  # a causal model only sees keys at or before the query
+    max_exact = num_buckets // 2
+    is_small = n < max_exact
+    log_spaced = max_exact + (
+        torch.log(n.float() / max_exact) / math.log(max_distance / max_exact) * (num_buckets - max_exact)
+    ).long()
+    log_spaced = log_spaced.clamp(max=num_buckets - 1)
+    return buckets + torch.where(is_small, n, log_spaced)
 
-    One scalar per (head, clipped offset). The table is a module parameter, so it is
-    learned; building a fresh nn.Embedding on every call would give random, unlearnable values.
+
+class RelativePositionBias(nn.Module):
+    """T5 relative position bias: one learned scalar per (bucket, head), added to the attention scores.
+
+    T5-style scalar bias (Shaw et al. use vectors). A model builds one instance and passes its output to
+    every layer, so the table is shared across layers.
     """
 
-    def __init__(self, num_heads, max_relative_distance=128):
+    def __init__(self, num_heads, num_buckets=32, max_distance=128, bidirectional=True):
         super().__init__()
-        self.max_relative_distance = max_relative_distance
-        self.table = nn.Embedding(2 * max_relative_distance + 1, num_heads)
+        self.num_buckets = num_buckets
+        self.max_distance = max_distance
+        self.bidirectional = bidirectional
+        self.table = nn.Embedding(num_buckets, num_heads)
 
     def forward(self, seq_len):
         positions = torch.arange(seq_len)
-        relative = positions.unsqueeze(1) - positions.unsqueeze(0)           # [seq, seq], entry (i, j) = i - j
-        relative = relative.clamp(-self.max_relative_distance, self.max_relative_distance)
-        bias = self.table(relative + self.max_relative_distance)             # [seq, seq, heads]
-        return bias.permute(2, 0, 1)                                         # [heads, seq, seq]
+        offset = positions[:, None] - positions[None, :]  # [seq, seq], entry (m, m') = m - m'
+        buckets = relative_position_bucket(offset, self.bidirectional, self.num_buckets, self.max_distance)
+        return self.table(buckets).permute(2, 0, 1)  # [heads, seq, seq]
 
 
-# Inside attention: scores = Q @ K.transpose(-2, -1) / sqrt(d_k) + bias
-bias = RelativePositionBias(num_heads=8)(seq_len=16)
-print(bias.shape)  # torch.Size([8, 16, 16])
+offsets = torch.tensor([0, 1, 7, 8, 12, 16, 64, 127, 128, 1000, -1, -12])
+print("offset m - m':      ", offsets.tolist())
+print("encoder bucket:     ", relative_position_bucket(offsets).tolist())
+print("decoder bucket:     ", relative_position_bucket(offsets, bidirectional=False).tolist())
+rpb = RelativePositionBias(num_heads=8)
+bias = rpb(seq_len=16)  # inside attention: scores = Q @ K.transpose(-2, -1) / sqrt(d_k) + bias
+print("bias shape:", tuple(bias.shape), "| parameters:", rpb.table.weight.numel())
 ```
 
+% output
 
-**Rotary Position Embedding (RoPE)** {cite}`su2021roformer`: used by LLaMA, Mistral, Qwen and Gemma. It is applied to the queries and keys *inside* attention, not to the input embeddings:
+```text
+offset m - m':       [0, 1, 7, 8, 12, 16, 64, 127, 128, 1000, -1, -12]
+encoder bucket:      [0, 1, 7, 8, 9, 10, 14, 15, 15, 15, 17, 25]
+decoder bucket:      [0, 1, 7, 8, 12, 16, 26, 31, 31, 31, 0, 0]
+bias shape: (8, 16, 16) | parameters: 256
+```
+
+(sec-ch1-rope)=
+
+#### Rotary Position Embedding (RoPE)
+
+Rotary position embedding {cite}`su2021roformer` is used by LLaMA, Mistral, Qwen and Gemma. It has no parameters, and like the relative bias it acts *inside* attention: it rotates the queries and keys, never the values or the input embeddings. Split a query or key row vector of width $d_k$ into $d_k/2$ consecutive pairs $(x_{2i}, x_{2i+1})$, $0 \le i < d_k/2$, and rotate pair $i$ at position $m$ by the angle $m\,\omega_i$, with the frequencies $\omega_i = b^{-2i/d_k}$ of the sinusoidal encoding and base $b = 10000$. As a matrix, the rotation at position $m$ is block diagonal:
+
+```{math}
+:label: eq-ch1-rope
+\mathcal{R}_m = \begin{pmatrix}
+\cos m\omega_0 & -\sin m\omega_0 & & & \\
+\sin m\omega_0 & \cos m\omega_0 & & & \\
+& & \ddots & & \\
+& & & \cos m\omega_{d_k/2-1} & -\sin m\omega_{d_k/2-1} \\
+& & & \sin m\omega_{d_k/2-1} & \cos m\omega_{d_k/2-1}
+\end{pmatrix},
+\qquad \tilde{q}_m = q_m \mathcal{R}_m^\top, \quad \tilde{k}_{m'} = k_{m'} \mathcal{R}_{m'}^\top
+```
+
+The score between the rotated query and key is $\tilde{q}_m \tilde{k}_{m'}^\top = q_m \mathcal{R}_m^\top \mathcal{R}_{m'} k_{m'}^\top$. Block-diagonal matrices multiply block by block, so it is enough to look at one $2 \times 2$ block. Write $\varphi = m\omega_i$ and $\varphi' = m'\omega_i$. The transpose of a rotation by $\varphi$ is the rotation by $-\varphi$, and the angle-difference formulas $\cos\varphi\cos\varphi' + \sin\varphi\sin\varphi' = \cos(\varphi' - \varphi)$ and $\cos\varphi\sin\varphi' - \sin\varphi\cos\varphi' = \sin(\varphi' - \varphi)$ give
+
+$$\begin{pmatrix} \cos\varphi & \sin\varphi \\ -\sin\varphi & \cos\varphi \end{pmatrix}
+\begin{pmatrix} \cos\varphi' & -\sin\varphi' \\ \sin\varphi' & \cos\varphi' \end{pmatrix}
+= \begin{pmatrix} \cos(\varphi' - \varphi) & -\sin(\varphi' - \varphi) \\ \sin(\varphi' - \varphi) & \cos(\varphi' - \varphi) \end{pmatrix}.$$
+
+Since $\varphi' - \varphi = (m' - m)\,\omega_i$, every block of $\mathcal{R}_m^\top \mathcal{R}_{m'}$ is the corresponding block of $\mathcal{R}_{m' - m}$, and
+
+$$\tilde{q}_m \tilde{k}_{m'}^\top = q_m \, \mathcal{R}_{m' - m} \, k_{m'}^\top .$$
+
+The score depends on the two positions only through the offset $m' - m$: shifting the query and the key by the same amount leaves it unchanged. Taking $m' = m$ gives a rotation by angle zero, $\mathcal{R}_m^\top \mathcal{R}_m = I$, so each $\mathcal{R}_m$ is orthogonal and the rotation preserves the norms of the queries and keys {cite}`su2021roformer`. For a worked number, take $d_k = 2$, so the single pair has frequency $b^0 = 1$, and $q_m = k_{m'} = (1, 0)$: the rotated score is $\cos(m' - m)$, which is $\cos 2 = -0.416$ both for $m = 3, m' = 5$ and for $m = 10, m' = 12$. The function below applies {eq}`eq-ch1-rope` without forming the matrix, pair by pair:
 
 ```python
 import torch
@@ -688,13 +763,32 @@ def apply_rope(x: torch.Tensor, positions: torch.Tensor, base: float = 10000.0) 
 
 
 # Usage inside attention: rotate q and k, never v, then take the dot products as usual
-q = torch.randn(16, 64)
-k = torch.randn(16, 64)
-positions = torch.arange(16)
-scores = apply_rope(q, positions) @ apply_rope(k, positions).T / 64**0.5
+torch.manual_seed(0)
+q, k = torch.randn(64), torch.randn(64)
+
+
+def rotated_score(m, m_prime):
+    return (apply_rope(q[None], torch.tensor([m])) @ apply_rope(k[None], torch.tensor([m_prime])).T).item()
+
+
+print(f"score at (3, 5):   {rotated_score(3, 5):.2f}")
+print(f"score at (10, 12): {rotated_score(10, 12):.2f}")
+print(f"score at (3, 6):   {rotated_score(3, 6):.2f}")
+print(f"norm before and after rotation: {q.norm():.3f} {apply_rope(q[None], torch.tensor([7])).norm():.3f}")
 ```
 
-##### Position Encoding Trade-offs
+% output
+
+```text
+score at (3, 5):   -10.28
+score at (10, 12): -10.28
+score at (3, 6):   -10.75
+norm before and after rotation: 8.371 8.371
+```
+
+(sec-ch1-position-encoding-trade-offs)=
+
+#### Position Encoding Trade-offs
 
 ```python
 import matplotlib.pyplot as plt
@@ -703,12 +797,12 @@ import matplotlib.pyplot as plt
 def compare_position_encodings():
     """Extra parameters each positional scheme adds, as a function of maximum length."""
     seq_lens = [128, 512, 1024, 2048, 4096]
-    d_model, num_heads, max_relative_distance = 512, 8, 128
+    d_model, num_heads, num_buckets = 512, 8, 32
 
     results = {
         "Sinusoidal": [0 for _ in seq_lens],                                        # no parameters
         "Learned absolute": [n * d_model for n in seq_lens],                        # one vector per position
-        "Relative bias": [(2 * max_relative_distance + 1) * num_heads for _ in seq_lens],  # per (offset, head)
+        "Relative bias (T5)": [num_buckets * num_heads for _ in seq_lens],  # per (bucket, head), all layers
         "RoPE": [0 for _ in seq_lens],                                              # no parameters
     }
 
@@ -727,7 +821,7 @@ compare_position_encodings()
 ```
 
 
-Models since 2022 almost all use RoPE {cite}`su2021roformer` or ALiBi {cite}`press2022train`, both of which encode relative position inside attention without per-position parameters; learned absolute embeddings are now mostly found in BERT- and GPT-2-era models.
+Most open-weight models since 2022 use RoPE {cite}`su2021roformer`; a few use ALiBi {cite}`press2022train`. Both encode relative position inside attention without per-position parameters; learned absolute embeddings are now mostly found in BERT- and GPT-2-era models.
 
 ```{admonition} Embeddings and Positional Encoding
 :class: note
@@ -822,8 +916,8 @@ class TokenEmbeddingLayer(nn.Module):
         self._init_embeddings()
 
     def _init_embeddings(self):
-        """Initialize embeddings with Xavier uniform."""
-        nn.init.xavier_uniform_(self.token_embeddings.weight)
+        """N(0, 1/d), so the sqrt(d)-scaled embedding has unit variance, like the positional encoding."""
+        nn.init.normal_(self.token_embeddings.weight, mean=0.0, std=self.d_model**-0.5)
 
     def forward(self, input_ids, position_ids=None):
         # Get token embeddings
@@ -901,7 +995,7 @@ Self-attention computes a weighted representation of the input sequence, where w
 
    $$Q = XW_Q, \quad K = XW_K, \quad V = XW_V$$
 
-2. **Attention scores**:
+2. **Attention output**:
 
    $$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right)V$$
 
@@ -913,11 +1007,13 @@ The scaling factor $\sqrt{d_k}$, where $d_k$ is the per-head key dimension, keep
 
 Multi-head attention runs multiple attention mechanisms in parallel, allowing the model to attend to different types of relationships:
 
-$$\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, \dots, \text{head}_{n_h})W_O$$
+$$\text{MultiHead}(X) = \text{Concat}(\text{head}_1, \dots, \text{head}_{n_h})W_O, \qquad W_O \in \mathbb{R}^{n_h d_v \times d}$$
 
-where each head is:
+where each head projects the input $X$ with its own matrices:
 
-$$\text{head}_i = \text{Attention}(QW_Q^{(i)}, KW_K^{(i)}, VW_V^{(i)}), \quad 1 \le i \le n_h$$
+$$\text{head}_i = \text{Attention}(XW_Q^{(i)}, XW_K^{(i)}, XW_V^{(i)}), \qquad W_Q^{(i)}, W_K^{(i)} \in \mathbb{R}^{d \times d_k}, \quad W_V^{(i)} \in \mathbb{R}^{d \times d_v}, \quad 1 \le i \le n_h$$
+
+with $d_k = d_v = d/n_h$, so the heads together cost as much as one head of width $d$. The single projection $W_Q$ of the previous equations is the $n_h$ matrices $W_Q^{(i)}$ placed side by side, $W_Q = [W_Q^{(1)} \cdots W_Q^{(n_h)}] \in \mathbb{R}^{d \times d}$, and likewise for $W_K$ and $W_V$; that is how the code below computes all heads with one matrix product and then splits the columns into heads. For cross-attention the queries come from one sequence and the keys and values from another, so the key length may differ from the query length; the listing below shows both cases.
 
 (sec-ch1-attention-patterns-interpretability)=
 
@@ -933,12 +1029,60 @@ Visualization tools like attention maps provide insights into model behavior, th
 
 ```python
 import math
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
+
+class ScaledDotProductAttention(nn.Module):
+    """Scaled Dot-Product Attention mechanism."""
+    
+    def __init__(self, dropout: float = 0.1):
+        super().__init__()
+        self.dropout = nn.Dropout(dropout)
+        
+    def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, 
+                mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            query: [batch_size, seq_len, d_k]
+            key: [batch_size, seq_len, d_k]  
+            value: [batch_size, seq_len, d_v]
+            mask: [batch_size, seq_len, seq_len] or None
+            
+        Returns:
+            output: [batch_size, seq_len, d_v]
+            attention_weights: [batch_size, seq_len, seq_len]
+        """
+        d_k = query.size(-1)
+        
+        # Compute attention scores
+        scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
+        
+        # Apply mask if provided (for causal attention)
+        if mask is not None:
+            scores = scores.masked_fill(mask == 0, torch.finfo(scores.dtype).min)
+        
+        # Apply softmax to get attention weights
+        attention_weights = F.softmax(scores, dim=-1)
+        attention_weights = self.dropout(attention_weights)
+        
+        # Apply attention to values
+        output = torch.matmul(attention_weights, value)
+        
+        return output, attention_weights
+
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, d_model, num_heads):
+    """Multi-head attention with n_h heads of width d_k = d_model / n_h.
+
+    w_q holds the per-head matrices W_Q^(i) side by side as its columns (likewise w_k and w_v), so
+    splitting X W_Q into n_h blocks of d_k columns gives X W_Q^(i) for every head at once.
+    """
+
+    def __init__(self, d_model: int, num_heads: int, dropout: float = 0.1):
         super().__init__()
         assert d_model % num_heads == 0
 
@@ -946,44 +1090,51 @@ class MultiHeadAttention(nn.Module):
         self.num_heads = num_heads
         self.d_k = d_model // num_heads
 
-        self.W_q = nn.Linear(d_model, d_model)
-        self.W_k = nn.Linear(d_model, d_model)
-        self.W_v = nn.Linear(d_model, d_model)
-        self.W_o = nn.Linear(d_model, d_model)
+        # Linear projections for Q, K, V (all heads at once) and the output projection W_O
+        self.w_q = nn.Linear(d_model, d_model)
+        self.w_k = nn.Linear(d_model, d_model)
+        self.w_v = nn.Linear(d_model, d_model)
+        self.w_o = nn.Linear(d_model, d_model)
 
-    def scaled_dot_product_attention(self, Q, K, V, mask=None):
-        scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self.d_k)
+        self.attention = ScaledDotProductAttention(dropout)
 
-        if mask is not None:
-            scores.masked_fill_(mask == 0, torch.finfo(scores.dtype).min)
+    def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor,
+                mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
+        """query: [batch, n_q, d_model]; key and value: [batch, n_k, d_model].
 
-        attention_weights = torch.softmax(scores, dim=-1)
-        output = torch.matmul(attention_weights, V)
+        mask: True where attention is allowed, broadcastable to [batch, heads, n_q, n_k]; a causal
+        mask is [n_q, n_k], a padding mask [batch, 1, 1, n_k].
+        Returns the output [batch, n_q, d_model] and the weights [batch, heads, n_q, n_k].
+        """
+        batch_size, n_q, n_k = query.size(0), query.size(1), key.size(1)
 
-        return output, attention_weights
+        # 1. Project, then split the d_model columns into heads: [batch, heads, length, d_k]
+        Q = self.w_q(query).view(batch_size, n_q, self.num_heads, self.d_k).transpose(1, 2)
+        K = self.w_k(key).view(batch_size, n_k, self.num_heads, self.d_k).transpose(1, 2)
+        V = self.w_v(value).view(batch_size, n_k, self.num_heads, self.d_k).transpose(1, 2)
 
-    def forward(self, query, key, value, mask=None):
-        batch_size = query.size(0)
+        # 2. Attention in every head at once
+        attn_output, attn_weights = self.attention(Q, K, V, mask)
 
-        # Linear projections
-        Q = self.W_q(query)
-        K = self.W_k(key)
-        V = self.W_v(value)
+        # 3. Concatenate the heads and apply W_O
+        attn_output = attn_output.transpose(1, 2).contiguous().view(batch_size, n_q, self.d_model)
+        return self.w_o(attn_output), attn_weights
 
-        # Reshape for multi-head attention
-        Q = Q.view(batch_size, -1, self.num_heads, self.d_k).transpose(1, 2)
-        K = K.view(batch_size, -1, self.num_heads, self.d_k).transpose(1, 2)
-        V = V.view(batch_size, -1, self.num_heads, self.d_k).transpose(1, 2)
 
-        # Apply attention
-        attn_output, attn_weights = self.scaled_dot_product_attention(Q, K, V, mask)
+torch.manual_seed(0)
+mha = MultiHeadAttention(d_model=64, num_heads=8).eval()
+x, memory = torch.randn(2, 5, 64), torch.randn(2, 7, 64)
+out, weights = mha(x, x, x)  # self-attention
+print("self-attention: ", tuple(out.shape), tuple(weights.shape))
+out, weights = mha(x, memory, memory)  # queries from x, keys and values from a longer sequence
+print("cross-attention:", tuple(out.shape), tuple(weights.shape))
+```
 
-        # Concatenate heads
-        attn_output = (
-            attn_output.transpose(1, 2).contiguous().view(batch_size, -1, self.d_model)
-        )
+% output
 
-        return self.W_o(attn_output)
+```text
+self-attention:  (2, 5, 64) (2, 8, 5, 5)
+cross-attention: (2, 5, 64) (2, 8, 5, 7)
 ```
 
 (sec-ch1-transformer-architecture)=
@@ -1035,30 +1186,41 @@ While the original transformer was designed for machine translation, different v
 - **T5** {cite}`raffel2019exploring`: Encoder-decoder architecture treating all tasks as text-to-text
 
 ```python
-# pseudo-code: uses MultiHeadAttention from Section 2.2
+# pseudo-code: uses MultiHeadAttention from the attention listing above
+from typing import Optional
+
+import torch
 import torch.nn as nn
+
+
 class TransformerBlock(nn.Module):
-    def __init__(self, d_model, num_heads, d_ff, dropout=0.1):
+    """Complete transformer block with attention and feed-forward layers."""
+    
+    def __init__(self, d_model: int, num_heads: int, d_ff: int, dropout: float = 0.1):
         super().__init__()
-        self.attention = MultiHeadAttention(d_model, num_heads)
+        self.attention = MultiHeadAttention(d_model, num_heads, dropout)
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
-
+        
+        # Feed-forward network
         self.feed_forward = nn.Sequential(
-            nn.Linear(d_model, d_ff), nn.ReLU(), nn.Linear(d_ff, d_model)
+            nn.Linear(d_model, d_ff),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_ff, d_model)
         )
-
+        
         self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x, mask=None):
-        # Multi-head attention with residual connection
-        attn_output = self.attention(x, x, x, mask)
+        
+    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        # Multi-head attention with residual connection and layer norm
+        attn_output, _ = self.attention(x, x, x, mask)
         x = self.norm1(x + self.dropout(attn_output))
-
-        # Feed-forward with residual connection
+        
+        # Feed-forward with residual connection and layer norm
         ff_output = self.feed_forward(x)
         x = self.norm2(x + self.dropout(ff_output))
-
+        
         return x
 ```
 

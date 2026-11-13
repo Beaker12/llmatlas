@@ -29,15 +29,7 @@ CH01_DIR = Path(__file__).resolve().parents[1] / "chapters" / "01-foundations"
 #                   chapters link to. Example: {"sec-ch2-flops": "Training Complexity"}
 # A NOT_A_RESULT or NOTATION_OK entry that matches nothing is a failure: remove it with the sentence it was for.
 # The chapter's checker reads every exemption with `python tools/list_exemptions.py chapters/<dir>`.
-SYNC_EXEMPT: dict[str, str] = {  # name -> reason it may differ between the chapter and its notebook
-    "MultiHeadAttention": "the notebook version delegates to ScaledDotProductAttention, which is frozen in both "
-    "notebooks during Phase 1, and returns the attention weights its heatmaps plot; the chapter fence is "
-    "self-contained and returns only the output",
-    "TransformerBlock": "calls MultiHeadAttention, whose notebook version returns (output, weights) and the "
-    "chapter version only the output (see MultiHeadAttention)",
-    "RelativePositionBias": "the notebook keeps a short clipping distance (10) so its bias heatmap is readable "
-    "at the demo's sequence length; the chapter uses the T5-scale 128. The offset sign is settled with C1-12",
-}
+SYNC_EXEMPT: dict[str, str] = {}  # name -> reason it may differ between the chapter and its notebook
 
 # (chapter regex, notebook-output regex, comparator); each regex has exactly one capture group.
 # Comparator: eq, gt, lt or approx:<rel>, applied as `chapter_value <op> notebook_value`.
@@ -55,8 +47,8 @@ INTERFACE_LABELS: dict[str, str] = {
     "sec-ch1-perplexity": "4.3 Evaluation Metrics",
     "sec-ch1-layernorm": "Layer Normalization",
     "sec-ch1-modern-block": "3.3 What Changed Since 2017",
-    "sec-ch1-rope": "Positional Encodings",
-    "sec-ch1-relative-bias": "Positional Encodings",
+    "sec-ch1-rope": "Rotary Position Embedding (RoPE)",
+    "sec-ch1-relative-bias": "Relative Position Bias (T5)",
 }
 
 
@@ -106,6 +98,102 @@ def test_apply_rope_preserves_norm_and_depends_only_on_relative_offset():
     assert not torch.allclose(qr[1:], q[1:], atol=1e-3)
     # and position 0 (angle 0) must be untouched
     assert torch.allclose(qr[0], q[0], atol=1e-6)
+
+
+def t5_reference_bucket(relative_position, bidirectional=True, num_buckets=32, max_distance=128):
+    """T5Attention._relative_position_bucket from Hugging Face transformers 4.46.3, transcribed.
+
+    Its argument is HF's relative_position = key position - query position, i.e. m' - m.
+    """
+    relative_buckets = 0
+    if bidirectional:
+        num_buckets //= 2
+        relative_buckets += (relative_position > 0).to(torch.long) * num_buckets
+        relative_position = torch.abs(relative_position)
+    else:
+        relative_position = -torch.min(relative_position, torch.zeros_like(relative_position))
+    max_exact = num_buckets // 2
+    is_small = relative_position < max_exact
+    relative_position_if_large = max_exact + (
+        torch.log(relative_position.float() / max_exact) / math.log(max_distance / max_exact) * (num_buckets - max_exact)
+    ).to(torch.long)
+    relative_position_if_large = torch.min(relative_position_if_large, torch.full_like(relative_position_if_large,
+                                                                                        num_buckets - 1))
+    return relative_buckets + torch.where(is_small, relative_position, relative_position_if_large)
+
+
+def test_relative_position_bias_is_t5_bucketing_with_the_page_sign():
+    ns = {"torch": torch, "math": math}
+    exec(ch01_fence("class RelativePositionBias"), ns)  # noqa: S102
+    bucket = ns["relative_position_bucket"]
+    offsets = torch.arange(-1000, 1001)  # m - m'
+    for bidirectional in (True, False):
+        assert torch.equal(bucket(offsets, bidirectional), t5_reference_bucket(-offsets, bidirectional))
+    # known values, bidirectional (encoder): exact up to 7, log-spaced to 15 at 128, keys after the query in 16..31
+    known = {0: 0, 1: 1, 7: 7, 8: 8, 12: 9, 16: 10, 64: 14, 127: 15, 128: 15, 1000: 15, -1: 17, -8: 24, -128: 31}
+    assert {o: int(bucket(torch.tensor(o), True)) for o in known} == known
+    # causal (decoder): every key at or after the query shares bucket 0; exact up to 15, then log-spaced to 31
+    known_causal = {-5: 0, 0: 0, 1: 1, 15: 15, 16: 16, 32: 21, 127: 31, 128: 31, 1000: 31}
+    assert {o: int(bucket(torch.tensor(o), False)) for o in known_causal} == known_causal
+    rpb = ns["RelativePositionBias"](num_heads=8)
+    assert rpb.table.weight.shape == (32, 8)  # one scalar per (bucket, head), for the whole model
+    bias = rpb(seq_len=16)
+    assert bias.shape == (8, 16, 16)
+    # entry (m, m') is rb(bucket(m - m')): query 5 looking back at key 2 uses bucket 3, not the future-key bucket 19
+    assert torch.equal(bias[:, 5, 2], rpb.table.weight[3])
+    assert torch.equal(bias[:, 2, 5], rpb.table.weight[16 + 3])
+
+
+def test_multi_head_attention_handles_cross_attention_and_padding_masks():
+    ns = {}
+    exec(ch01_fence("class MultiHeadAttention"), ns)  # noqa: S102
+    torch.manual_seed(0)
+    mha = ns["MultiHeadAttention"](d_model=32, num_heads=4).eval()
+    x, memory = torch.randn(2, 5, 32), torch.randn(2, 7, 32)
+    out, weights = mha(x, memory, memory)  # keys and values longer than the queries (C1-18)
+    assert out.shape == (2, 5, 32) and weights.shape == (2, 4, 5, 7)
+    padding = torch.ones(2, 1, 1, 7, dtype=torch.bool)
+    padding[1, ..., 5:] = False  # the last two keys of the second sequence are padding
+    _, weights = mha(x, memory, memory, padding)
+    assert torch.all(weights[1, ..., 5:] == 0)
+    assert torch.allclose(weights.sum(-1), torch.ones(2, 4, 5), atol=1e-6)
+
+
+def test_token_embedding_scaled_by_sqrt_d_has_unit_variance():
+    ns = {}
+    exec(ch01_fence("class TokenEmbeddingLayer"), ns)  # noqa: S102
+    torch.manual_seed(0)
+    layer = ns["TokenEmbeddingLayer"](vocab_size=5000, d_model=512, layer_norm=False, dropout=0.0)
+    token_rms = (layer.token_embeddings.weight * math.sqrt(512)).pow(2).mean().sqrt().item()
+    position_rms = layer.position_encoding.pe.pow(2).mean().sqrt().item()
+    assert abs(token_rms - 1.0) < 0.01  # N(0, 1/d) times sqrt(d): unit variance (C1-03)
+    assert abs(position_rms - 0.5 ** 0.5) < 0.01  # sin^2 and cos^2 average 1/2
+    assert 1.5 < token_rms**2 / position_rms**2 < 2.5  # comparable power, not 24.7x the other way
+    ns = {}
+    exec(ch01_fence("class TokenEmbedding("), ns)  # noqa: S102
+    emb = ns["TokenEmbedding"](5000, 512)
+    assert abs(emb(torch.arange(5000)).pow(2).mean().sqrt().item() - 1.0) < 0.01
+
+
+def test_rope_equals_the_block_diagonal_rotation_of_the_derivation():
+    ns = {"torch": torch, "math": math}
+    exec(ch01_fence("def apply_rope"), ns)  # noqa: S102
+    d, b = 8, 10000.0
+
+    def rotation(m):  # R_m of eq-ch1-rope: 2x2 blocks [[cos, -sin], [sin, cos]] at angle m * b^(-2i/d)
+        r = torch.zeros(d, d, dtype=torch.float64)
+        for i in range(d // 2):
+            a = m * b ** (-2 * i / d)
+            r[2 * i:2 * i + 2, 2 * i:2 * i + 2] = torch.tensor([[math.cos(a), -math.sin(a)], [math.sin(a), math.cos(a)]])
+        return r
+
+    torch.manual_seed(0)
+    x = torch.randn(1, d, dtype=torch.float64)
+    for m in (0, 1, 5, 37):
+        rotated = ns["apply_rope"](x.float(), torch.tensor([m])).double()
+        assert torch.allclose(rotated[0], rotation(m) @ x[0], atol=1e-5)
+    # the identity the proof rests on: R_m^T R_m' = R_{m'-m}
+    assert torch.allclose(rotation(3).T @ rotation(11), rotation(8), atol=1e-12)
 
 
 def test_evaluate_tokenization_quality_reports_only_measured_metrics():
