@@ -1,0 +1,14 @@
+{
+  "source": "Penedo et al. (2023), The RefinedWeb dataset for Falcon LLM, arXiv:2306.01116, Figure 2",
+  "note": "kept: percent of the original Common Crawl kept after the stage; removed: percent removed by the stage relative to the previous stage. Documents for the first three stages, tokens afterwards.",
+  "stages": [
+    {"stage": "URL filtering", "group": "Document preparation", "kept": 97.76, "removed": 2.24},
+    {"stage": "Text extraction", "group": "Document preparation", "kept": 96.31, "removed": 1.49},
+    {"stage": "Language identification", "group": "Document preparation", "kept": 47.51, "removed": 50.66},
+    {"stage": "Repetition removal", "group": "Filtering", "kept": 35.97, "removed": 24.28},
+    {"stage": "Document-wise filtering", "group": "Filtering", "kept": 30.15, "removed": 16.19},
+    {"stage": "Line-wise corrections", "group": "Filtering", "kept": 23.34, "removed": 22.59},
+    {"stage": "Fuzzy deduplication", "group": "Deduplication", "kept": 14.50, "removed": 37.88},
+    {"stage": "Exact deduplication", "group": "Deduplication", "kept": 11.67, "removed": 18.47}
+  ]
+}
