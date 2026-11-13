@@ -134,7 +134,7 @@ A boilerplate remover works from the structure of the page rather than its words
 
 The output of extraction is plain text with paragraph breaks preserved. Whether to keep anything else (headings as Markdown, tables as rows, lists as bullets) is a choice that propagates all the way to the model's output format. Pipelines that aim at code or mathematics keep more structure than pipelines that aim at prose.
 
-Boilerplate detection from shallow text features {cite}`kohlschutter2010boilerplate` works with signals like these, measured per block of the page. The listing below compares a WET-style extraction, which keeps every visible text node, with an extractor that keeps only blocks of at least 15 words whose link density is at most 0.3, on one small news page.
+{cite:t}`kohlschutter2010boilerplate` study boilerplate detection from shallow text features, that is, from cheap statistics of the text rather than from the page's layout or a model of its content. The listing below uses two such statistics, measured per block: it compares a WET-style extraction, which keeps every visible text node, with an extractor that keeps only blocks of at least 15 words whose link density is at most 0.3, on one small news page.
 
 ```python
 from html.parser import HTMLParser
