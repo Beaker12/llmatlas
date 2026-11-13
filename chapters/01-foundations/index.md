@@ -1712,8 +1712,6 @@ top-p, p = 0.9  the=0.455 a=0.276 cat=0.167 dog=0.102 pizza=0.000
 
 Halving the temperature raises the top token from 0.445 to 0.643. Top-k with $k_{top} = 2$ keeps "the" and "a" and rescales them by $1/(0.445 + 0.270)$. Top-p with $p_{top} = 0.9$ needs four tokens, because the first three hold only $0.445 + 0.270 + 0.164 = 0.879$; on a more confident distribution the same $p_{top}$ would keep fewer. In practice temperature is combined with top-k or top-p, and the chosen token is then drawn from the result.
 
-(sec-ch1-beam-search)=
-
 **Beam search** keeps the best few prefixes instead of one. With beam width $b_{beam}$ it extends each of the $b_{beam}$ kept prefixes by every token, scores each extension by its summed log-probability, keeps the best $b_{beam}$ and repeats; greedy decoding is beam width 1. A sum of log-probabilities falls with every token added, so finished hypotheses of different lengths are compared with a **length penalty** that divides the sum by a term growing with the length. The original transformer translated with "beam search with a beam size of 4 and length penalty α = 0.6", using the penalty of {cite:t}`wu2016google` {cite}`vaswani2017attention`. The listing runs two steps of a toy model in which the most probable first token leads to a weak continuation:
 
 ```python

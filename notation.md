@@ -184,7 +184,7 @@ layer computes $xW$.
 | $\omega_0$ | highest RoPE frequency | {ref}`sec-ch1-rope` |
 | $\omega_{d_k/2-1}$ | lowest RoPE frequency | {ref}`sec-ch1-rope` |
 | $\mathcal{R}_1$ | RoPE rotation for a position offset of 1 | {ref}`sec-ch1-exercise-9` |
-| $b_{beam}$ | beam width of beam search | {ref}`sec-ch1-beam-search` |
+| $b_{beam}$ | beam width of beam search | {ref}`sec-ch1-decoding` |
 | $p_{drop}$ | dropout probability | {ref}`sec-ch1-assembling-block` |
 
 ### Chapter 2: Mathematical Foundations

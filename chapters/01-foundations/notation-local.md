@@ -23,5 +23,5 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\omega_0$ | highest RoPE frequency | index.md:L745, `sec-ch1-rope` |  |  |
 | $\omega_{d_k/2-1}$ | lowest RoPE frequency | index.md:L748, `sec-ch1-rope` |  |  |
 | $\mathcal{R}_1$ | RoPE rotation for a position offset of 1 | index.md:L1914, `sec-ch1-exercise-9` |  |  |
-| $b_{beam}$ | beam width of beam search | rescore R1-01, `sec-ch1-beam-search` |  |  |
+| $b_{beam}$ | beam width of beam search | rescore R1-01, `sec-ch1-decoding` |  |  |
 | $p_{drop}$ | dropout probability | rescore R1-02, `sec-ch1-assembling-block` |  |  |
