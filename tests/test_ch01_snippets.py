@@ -44,9 +44,9 @@ MIN_FIGURES: int = 15
 NOTATION_OK: dict[str, str] = {}
 # Section labels other chapters link to: label -> the text of the heading it sits directly above.
 INTERFACE_LABELS: dict[str, str] = {
-    "sec-ch1-perplexity": "4.3 Evaluation Metrics",
+    "sec-ch1-perplexity": "6.3 Evaluation Metrics",
     "sec-ch1-layernorm": "Layer Normalization",
-    "sec-ch1-modern-block": "3.3 What Changed Since 2017",
+    "sec-ch1-modern-block": "5.3 What Changed Since 2017",
     "sec-ch1-rope": "Rotary Position Embedding (RoPE)",
     "sec-ch1-relative-bias": "Relative Position Bias (T5)",
 }
@@ -165,7 +165,11 @@ def test_token_embedding_scaled_by_sqrt_d_has_unit_variance():
     torch.manual_seed(0)
     layer = ns["TokenEmbeddingLayer"](vocab_size=5000, d_model=512, layer_norm=False, dropout=0.0)
     token_rms = (layer.token_embeddings.weight * math.sqrt(512)).pow(2).mean().sqrt().item()
-    position_rms = layer.position_encoding.pe.pow(2).mean().sqrt().item()
+    # the layer's sinusoidal copy was deleted (D8); the chapter's one sinusoidal table is the reference
+    sinusoid_ns = {}
+    exec(ch01_fence("def create_sinusoidal_encoding").split("def visualize_positional_encoding")[0], sinusoid_ns)  # noqa: S102
+    position_rms = sinusoid_ns["create_sinusoidal_encoding"](5000, 512).pow(2).mean().sqrt().item()
+    assert layer.position_encoding.position_embeddings.num_embeddings == 5000  # learned positions by default
     assert abs(token_rms - 1.0) < 0.01  # N(0, 1/d) times sqrt(d): unit variance (C1-03)
     assert abs(position_rms - 0.5 ** 0.5) < 0.01  # sin^2 and cos^2 average 1/2
     assert 1.5 < token_rms**2 / position_rms**2 < 2.5  # comparable power, not 24.7x the other way

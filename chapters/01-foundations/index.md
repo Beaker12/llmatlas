@@ -46,9 +46,9 @@ Large Language Models (LLMs) like ChatGPT work by understanding and generating t
 
 These components work together to create models that can understand context, maintain coherent conversations, and generate human-like text by learning statistical patterns from enormous amounts of text data.
 
-(sec-ch1-tokenization-embeddings)=
+(sec-ch1-tokenization)=
 
-## 1. Tokenization and Embeddings
+## 1. Tokenization
 
 (sec-ch1-understanding-tokenization)=
 
@@ -324,38 +324,19 @@ The notebook's tokenization section ({ref}`nb-attn-tokenization`) builds a tiny 
 
 (sec-ch1-embeddings-positional-encoding)=
 
-### 1.3 Embeddings and Positional Encoding
+## 2. Embeddings and Positional Encoding
 
-For vocabulary construction, special tokens, cross-lingual issues and a full tokenizer implementation, see {doc}`tokenization-deep-dive`.
+For vocabulary construction, special tokens, cross-lingual issues and a full tokenizer implementation, see {doc}`tokenization-deep-dive`. How the embedding width is chosen, how to inspect a trained embedding table, what each positional scheme costs and a complete embedding layer are in {ref}`sec-tdd-embeddings-in-practice`.
 
 (sec-ch1-embedding-spaces)=
 
-#### Embedding Spaces
+### 2.1 Embedding Spaces
 
 Once tokenized, each token is mapped to a high-dimensional vector through an **embedding matrix** $W_E \in \mathbb{R}^{|\mathcal{V}| \times d}$, where $\mathcal{V}$ is the vocabulary, $|\mathcal{V}|$ its size and $d$ the embedding dimension. The vector for token $x_i$ is row $x_i$ of $W_E$:
 
 $$W_E[x_i] \in \mathbb{R}^{d}$$
 
 These embeddings are learned during training to capture semantic relationships. Similar tokens develop similar vector representations, enabling the model to generalize across related concepts {cite}`mikolov2013efficient`.
-
-(sec-ch1-understanding-embedding-dimensions)=
-
-#### Understanding Embedding Dimensions
-
-The embedding dimension $d$ is a crucial hyperparameter that affects:
-
-**Representational Capacity**: Higher dimensions can encode more information
-
-- 128-256d: Small models, limited expressiveness
-- 512-1024d: Medium models, good balance
-- 2048-4096d: Large models, rich representations
-- 8192d+: Very large models, potential diminishing returns
-
-**Computational Cost**: Embedding operations scale with dimension
-
-- Matrix multiplications: the cost of each projection grows linearly with $d$ when its other dimension is fixed
-- Memory usage: $|\mathcal{V}| \times d$ parameters just for embeddings
-- Attention computation: Affects all transformer operations
 
 (sec-ch1-embedding-initialization-strategies)=
 
@@ -458,67 +439,9 @@ token_embeddings = [embedding_matrix[token_to_id[t]] for t in tokens]  # 3 vecto
 # This happens through attention and context
 ```
 
-(sec-ch1-embedding-visualization-analysis)=
-
-#### Embedding Visualization and Analysis
-
-```python
-# pseudo-code: needs a trained `model`, its `tokenizer`, and scikit-learn
-import numpy as np
-from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
-
-
-def visualize_embeddings(embedding_matrix, token_to_id, tokens_to_plot):
-    """Visualize token embeddings in 2D using PCA."""
-
-    # Extract embeddings for specified tokens
-    embeddings = []
-    labels = []
-
-    for token in tokens_to_plot:
-        if token in token_to_id:
-            token_id = token_to_id[token]
-            embedding = embedding_matrix[token_id].detach().numpy()
-            embeddings.append(embedding)
-            labels.append(token)
-
-    embeddings = np.array(embeddings)
-
-    # Reduce to 2D using PCA
-    pca = PCA(n_components=2)
-    embeddings_2d = pca.fit_transform(embeddings)
-
-    # Plot
-    plt.figure(figsize=(10, 8))
-    plt.scatter(embeddings_2d[:, 0], embeddings_2d[:, 1])
-
-    for i, label in enumerate(labels):
-        plt.annotate(label, (embeddings_2d[i, 0], embeddings_2d[i, 1]))
-
-    plt.title("Token Embeddings Visualization (PCA)")
-    plt.xlabel(f"PC1 ({pca.explained_variance_ratio_[0]:.2%} variance)")
-    plt.ylabel(f"PC2 ({pca.explained_variance_ratio_[1]:.2%} variance)")
-    plt.show()
-
-
-# Example usage
-semantic_groups = [
-    # Colors
-    ["red", "blue", "green", "yellow", "orange"],
-    # Animals
-    ["cat", "dog", "bird", "fish", "horse"],
-    # Numbers
-    ["one", "two", "three", "four", "five"],
-]
-
-for group in semantic_groups:
-    visualize_embeddings(model.embeddings.weight, tokenizer.token_to_id, group)
-```
-
 (sec-ch1-positional-encodings)=
 
-#### Positional Encodings
+### 2.2 Positional Encodings
 
 Attention by itself does not see the order of its inputs, so positional information must be supplied. Word order matters in language:
 
@@ -527,7 +450,9 @@ Attention by itself does not see the order of its inputs, so positional informat
 
 Without positional information and without a mask, self-attention treats each sentence as a multiset of tokens: permuting the inputs permutes the outputs in the same way and changes nothing else, so these two sentences, which hold the same tokens, get the same set of output vectors. A causal decoder is not completely order-blind even without positions, because its mask lets position $m$ attend to exactly $m$ earlier-or-equal tokens; but that is a weak signal, and every model below supplies positions explicitly.
 
-##### Sinusoidal Positional Encoding
+(sec-ch1-sinusoidal-positions)=
+
+#### Sinusoidal Positional Encoding
 
 The original transformer uses sinusoidal positional encodings {cite}`vaswani2017attention`:
 
@@ -598,7 +523,9 @@ def visualize_positional_encoding(max_seq_len=100, d_model=64):
 visualize_positional_encoding()
 ```
 
-##### Learned Positional Embeddings
+(sec-ch1-learned-positions)=
+
+#### Learned Positional Embeddings
 
 Many models use learned positional embeddings instead:
 
@@ -786,183 +713,15 @@ score at (3, 6):   -10.75
 norm before and after rotation: 8.371 8.371
 ```
 
-(sec-ch1-position-encoding-trade-offs)=
+(sec-ch1-position-scheme-choice)=
 
-#### Position Encoding Trade-offs
+#### Which Scheme Models Use
 
-```python
-import matplotlib.pyplot as plt
-
-
-def compare_position_encodings():
-    """Extra parameters each positional scheme adds, as a function of maximum length."""
-    seq_lens = [128, 512, 1024, 2048, 4096]
-    d_model, num_heads, num_buckets = 512, 8, 32
-
-    results = {
-        "Sinusoidal": [0 for _ in seq_lens],                                        # no parameters
-        "Learned absolute": [n * d_model for n in seq_lens],                        # one vector per position
-        "Relative bias (T5)": [num_buckets * num_heads for _ in seq_lens],  # per (bucket, head), all layers
-        "RoPE": [0 for _ in seq_lens],                                              # no parameters
-    }
-
-    plt.figure(figsize=(10, 6))
-    for method, params in results.items():
-        plt.plot(seq_lens, params, marker="o", label=method)
-    plt.xlabel("Maximum sequence length")
-    plt.ylabel("Additional parameters")
-    plt.title("Positional encoding parameter cost (sinusoidal and RoPE add none)")
-    plt.legend()
-    plt.grid(True)
-    plt.show()
-
-
-compare_position_encodings()
-```
-
-
-Most open-weight models since 2022 use RoPE {cite}`su2021roformer`; a few use ALiBi {cite}`press2022train`. Both encode relative position inside attention without per-position parameters; learned absolute embeddings are now mostly found in BERT- and GPT-2-era models.
+Most open-weight models since 2022 use RoPE {cite}`su2021roformer`; a few use ALiBi {cite}`press2022train`. Both encode relative position inside attention without per-position parameters; learned absolute embeddings are now mostly found in BERT- and GPT-2-era models. The parameters each scheme adds are plotted in {ref}`sec-tdd-position-encoding-trade-offs`.
 
 ```{admonition} Embeddings and Positional Encoding
 :class: note
 The notebook ({ref}`nb-attn-positional`) visualises sinusoidal and learned encodings, implements a learned relative-position bias and a rotary (RoPE) transform, and asserts RoPE's two defining properties: rotation preserves vector norms, and query-key dot products depend only on the relative offset.
-```
-
-(sec-ch1-advanced-embedding-implementation)=
-
-#### Advanced Embedding Implementation
-
-```python
-import math
-
-import torch
-import torch.nn as nn
-
-class PositionalEncoding(nn.Module):
-    """Enhanced positional encoding with multiple strategies."""
-
-    def __init__(self, d_model, max_seq_length=5000, encoding_type="sinusoidal"):
-        super().__init__()
-        self.d_model = d_model
-        self.encoding_type = encoding_type
-
-        if encoding_type == "sinusoidal":
-            pe = torch.zeros(max_seq_length, d_model)
-            position = torch.arange(0, max_seq_length).unsqueeze(1).float()
-
-            div_term = torch.exp(
-                torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model)
-            )
-
-            pe[:, 0::2] = torch.sin(position * div_term)
-            pe[:, 1::2] = torch.cos(position * div_term)
-
-            self.register_buffer("pe", pe.unsqueeze(0))
-
-        elif encoding_type == "learned":
-            self.position_embeddings = nn.Embedding(max_seq_length, d_model)
-
-        elif encoding_type == "relative":
-            raise ValueError(
-                "relative position bias is added to the attention scores, not to the input; "
-                "see RelativePositionBias above"
-            )
-
-    def forward(self, x, position_ids=None):
-        if self.encoding_type == "sinusoidal":
-            return x + self.pe[:, : x.size(1)]
-
-        elif self.encoding_type == "learned":
-            if position_ids is None:
-                position_ids = torch.arange(x.size(1), device=x.device)
-            return x + self.position_embeddings(position_ids)
-
-        return x
-
-
-class TokenEmbeddingLayer(nn.Module):
-    """Complete token embedding layer with multiple features."""
-
-    def __init__(
-        self,
-        vocab_size,
-        d_model,
-        max_seq_length=5000,
-        dropout=0.1,
-        position_encoding="sinusoidal",
-        layer_norm=True,
-        scale_embeddings=True,
-    ):
-        super().__init__()
-
-        self.d_model = d_model
-        self.scale_embeddings = scale_embeddings
-
-        # Token embeddings
-        self.token_embeddings = nn.Embedding(vocab_size, d_model)
-
-        # Positional encoding
-        self.position_encoding = PositionalEncoding(
-            d_model, max_seq_length, position_encoding
-        )
-
-        # Optional layer normalization
-        self.layer_norm = nn.LayerNorm(d_model) if layer_norm else None
-
-        # Dropout
-        self.dropout = nn.Dropout(dropout)
-
-        # Initialize embeddings
-        self._init_embeddings()
-
-    def _init_embeddings(self):
-        """N(0, 1/d), so the sqrt(d)-scaled embedding has unit variance, like the positional encoding."""
-        nn.init.normal_(self.token_embeddings.weight, mean=0.0, std=self.d_model**-0.5)
-
-    def forward(self, input_ids, position_ids=None):
-        # Get token embeddings
-        token_embeds = self.token_embeddings(input_ids)
-
-        # Scale embeddings (following original transformer)
-        if self.scale_embeddings:
-            token_embeds = token_embeds * math.sqrt(self.d_model)
-
-        # Add positional encoding
-        embeddings = self.position_encoding(token_embeds, position_ids)
-
-        # Apply layer normalization
-        if self.layer_norm:
-            embeddings = self.layer_norm(embeddings)
-
-        # Apply dropout
-        embeddings = self.dropout(embeddings)
-
-        return embeddings
-
-
-# Example usage
-vocab_size = 50000
-d_model = 512
-max_seq_length = 2048
-
-embedding_layer = TokenEmbeddingLayer(
-    vocab_size=vocab_size,
-    d_model=d_model,
-    max_seq_length=max_seq_length,
-    position_encoding="sinusoidal",
-    layer_norm=True,
-    scale_embeddings=True,
-)
-
-# Test with sample input
-batch_size = 4
-seq_length = 256
-input_ids = torch.randint(0, vocab_size, (batch_size, seq_length))
-
-embeddings = embedding_layer(input_ids)
-print(f"Input shape: {input_ids.shape}")
-print(f"Output shape: {embeddings.shape}")
-print(f"Embedding norm: {embeddings.norm(dim=-1).mean():.3f}")
 ```
 
 ```{admonition} Hands-On Practice
@@ -970,13 +729,56 @@ print(f"Embedding norm: {embeddings.norm(dim=-1).mean():.3f}")
 For runnable versions of the ideas in this section, see the accompanying notebook: [Attention Mechanisms Demo](examples/attention_mechanisms_demo.ipynb). Its sections are linked from each part of this chapter.
 ```
 
+(sec-ch1-historical-context)=
+
+## 3. Historical Context
+
+(sec-ch1-evolution-rnns)=
+
+### 3.1 Evolution from RNNs
+
+The path to transformers involved several key developments:
+
+**Recurrent Neural Networks** initially dominated sequence modeling but suffered from:
+
+- Vanishing gradient problems in long sequences
+- Sequential processing preventing parallelization
+- Limited ability to capture long-range dependencies
+
+**Long Short-Term Memory (LSTM)** {cite}`hochreiter1997long` networks addressed vanishing gradients but remained sequential.
+
+**Attention mechanisms** {cite}`bahdanau2014neural` first appeared in machine translation, allowing models to focus on relevant source positions when generating target words.
+
+(sec-ch1-transformer-breakthrough)=
+
+### 3.2 The Transformer Breakthrough
+
+"Attention Is All You Need" {cite}`vaswani2017attention` demonstrated that attention alone could achieve state-of-the-art results without recurrence or convolution. Key innovations included:
+
+- Self-attention for capturing dependencies regardless of distance
+- Parallel processing enabling efficient training
+- Multi-head attention for capturing diverse relationships
+
+(sec-ch1-scaling-language-models)=
+
+### 3.3 Scaling to Language Models
+
+The transformer's success in machine translation led to its adoption for language modeling:
+
+- **GPT** (2018) showed the power of unsupervised pre-training
+- **BERT** (2018) demonstrated bidirectional representations
+- **GPT-2** (2019) showed zero-shot transfer to many tasks from language modeling alone {cite}`radford2019language`
+- **GPT-3** (2020) achieved few-shot learning with 175B parameters {cite}`brown2020language`
+
+This progression established the foundation for today's LLMs and their remarkable capabilities.
+
 (sec-ch1-attention-mechanisms)=
 
-## 2. Attention Mechanisms
+## 4. Attention Mechanisms
 
 (sec-ch1-attention-revolution)=
 
-### 2.1 The Attention Revolution
+### 4.1 The Attention Revolution
 
 Attention mechanisms revolutionized sequence modeling by allowing models to focus on relevant parts of the input when making predictions. Unlike RNNs that process sequences sequentially, attention enables parallel computation and direct connections between any two positions.
 
@@ -1014,18 +816,6 @@ where each head projects the input $X$ with its own matrices:
 $$\text{head}_i = \text{Attention}(XW_Q^{(i)}, XW_K^{(i)}, XW_V^{(i)}), \qquad W_Q^{(i)}, W_K^{(i)} \in \mathbb{R}^{d \times d_k}, \quad W_V^{(i)} \in \mathbb{R}^{d \times d_v}, \quad 1 \le i \le n_h$$
 
 with $d_k = d_v = d/n_h$, so the heads together cost as much as one head of width $d$. The single projection $W_Q$ of the previous equations is the $n_h$ matrices $W_Q^{(i)}$ placed side by side, $W_Q = [W_Q^{(1)} \cdots W_Q^{(n_h)}] \in \mathbb{R}^{d \times d}$, and likewise for $W_K$ and $W_V$; that is how the code below computes all heads with one matrix product and then splits the columns into heads. For cross-attention the queries come from one sequence and the keys and values from another, so the key length may differ from the query length; the listing below shows both cases.
-
-(sec-ch1-attention-patterns-interpretability)=
-
-### 2.2 Attention Patterns and Interpretability
-
-Different attention heads learn to capture various linguistic phenomena:
-
-- **Syntactic heads**: Focus on grammatical relationships (subject-verb, modifier-noun)
-- **Semantic heads**: Capture semantic similarity and coreference
-- **Positional heads**: Attend to specific relative positions
-
-Visualization tools like attention maps provide insights into model behavior, though interpreting attention patterns requires caution {cite}`jain2019attention`.
 
 ```python
 import math
@@ -1137,13 +927,25 @@ self-attention:  (2, 5, 64) (2, 8, 5, 5)
 cross-attention: (2, 5, 64) (2, 8, 5, 7)
 ```
 
+(sec-ch1-attention-patterns-interpretability)=
+
+### 4.2 Attention Patterns and Interpretability
+
+Different attention heads learn to capture various linguistic phenomena:
+
+- **Syntactic heads**: Focus on grammatical relationships (subject-verb, modifier-noun)
+- **Semantic heads**: Capture semantic similarity and coreference
+- **Positional heads**: Attend to specific relative positions
+
+Visualization tools like attention maps provide insights into model behavior, though interpreting attention patterns requires caution {cite}`jain2019attention`.
+
 (sec-ch1-transformer-architecture)=
 
-## 3. Transformer Architecture
+## 5. Transformer Architecture
 
-(sec-ch1-complete-architecture)=
+(sec-ch1-building-blocks)=
 
-### 3.1 The Complete Architecture
+### 5.1 Building Blocks
 
 The transformer architecture {cite}`vaswani2017attention` combines attention mechanisms with several key components to create a powerful sequence-to-sequence model.
 
@@ -1175,15 +977,11 @@ $$\text{FFN}(x) = \max(0, xW_{\text{up}})W_{\text{down}}$$
 
 with $W_{\text{up}} \in \mathbb{R}^{d \times d_{\text{ff}}}$ and $W_{\text{down}} \in \mathbb{R}^{d_{\text{ff}} \times d}$. Bias terms are left out of the formulas in this chapter. The network provides non-linear transformations, and the original transformer sets the hidden width $d_{\text{ff}} = 4d$.
 
-(sec-ch1-architectural-variants)=
+(sec-ch1-assembling-block)=
 
-### 3.2 Architectural Variants
+#### Assembling a Block
 
-While the original transformer was designed for machine translation, different variants emerged for language modeling:
-
-- **GPT** {cite}`radford2018improving`: Decoder-only architecture with causal masking
-- **BERT** {cite}`devlin2018bert`: Encoder-only architecture with bidirectional attention
-- **T5** {cite}`raffel2019exploring`: Encoder-decoder architecture treating all tasks as text-to-text
+The original block applies multi-head attention and then the feed-forward network, each followed by a residual connection and layer normalization (post-LN, the formula above):
 
 ```python
 # pseudo-code: uses MultiHeadAttention from the attention listing above
@@ -1229,18 +1027,83 @@ class TransformerBlock(nn.Module):
 The notebook ({ref}`nb-attn-transformer`) assembles one post-LN transformer block from multi-head attention, a position-wise feed-forward network, layer normalization and residual connections, and shows what layer normalization does to activations of different scales. It does not train a model; that is left as an exercise.
 ```
 
+(sec-ch1-end-to-end)=
+
+#### The Model End to End
+
+A decoder-only language model is these pieces in a fixed order. For a batch of $B$ sequences of $n$ token ids each:
+
+1. **Token ids**, shape $B \times n$, integers below $|\mathcal{V}|$.
+2. **Embedding**: each id selects its row of $W_E$, and the positional encoding of {ref}`sec-ch1-positional-encodings` is added (or, with RoPE, applied later inside attention). Shape $B \times n \times d$.
+3. **$L$ blocks**, each attention followed by the feed-forward network, each with its residual connection and normalization. The causal mask of {ref}`sec-ch1-causal-masking` keeps position $i$ from seeing later positions. Every block maps $B \times n \times d$ to $B \times n \times d$, so blocks can be stacked to any depth.
+4. **Final normalization** of the last block's output (pre-LN models need it, because their residual stream is never normalized inside a block). Shape still $B \times n \times d$.
+5. **Unembedding**: multiplying by $W_{\text{out}} \in \mathbb{R}^{d \times |\mathcal{V}|}$ gives one score per vocabulary entry, shape $B \times n \times |\mathcal{V}|$. The softmax of row $i$ is the model's distribution over the token at position $i + 1$ ({ref}`sec-ch1-training-process`).
+
+GPT-2 small, for example, has $|\mathcal{V}| = 50{,}257$, $d = 768$ and $L = 12$ blocks of 12 heads {cite}`radford2019language`, so a batch of 8 sequences of 1,024 tokens goes from an $8 \times 1024$ array of ids to $8 \times 1024 \times 768$ hidden states and finally to $8 \times 1024 \times 50{,}257$ scores, about 412 million numbers. The listing runs the same path at toy size, with PyTorch's own pre-LN block standing in for the block above:
+
+```python
+import torch
+import torch.nn as nn
+
+torch.manual_seed(0)
+vocab_size, d_model, num_heads, num_layers, max_len = 1000, 64, 4, 2, 16
+
+embed = nn.Embedding(vocab_size, d_model)  # W_E
+positions = nn.Embedding(max_len, d_model)  # learned absolute positions
+blocks = nn.ModuleList(
+    nn.TransformerEncoderLayer(d_model, num_heads, 4 * d_model, dropout=0.0, batch_first=True, norm_first=True)
+    for _ in range(num_layers)
+)
+final_norm = nn.LayerNorm(d_model)
+unembed = nn.Linear(d_model, vocab_size, bias=False)  # W_out
+
+ids = torch.randint(0, vocab_size, (2, 10))  # B = 2 sequences of n = 10 tokens
+n = ids.size(1)
+causal = nn.Transformer.generate_square_subsequent_mask(n)
+x = embed(ids) + positions(torch.arange(n))
+print("token ids:   ", tuple(ids.shape))
+print("embedded:    ", tuple(x.shape))
+for block in blocks:
+    x = block(x, src_mask=causal, is_causal=True)
+print("after blocks:", tuple(x.shape))
+logits = unembed(final_norm(x))
+print("logits:      ", tuple(logits.shape))
+modules = [embed, positions, blocks, final_norm, unembed]
+print("parameters:  ", f"{sum(p.numel() for m in modules for p in m.parameters()):,}")
+```
+
+% output
+
+```text
+token ids:    (2, 10)
+embedded:     (2, 10, 64)
+after blocks: (2, 10, 64)
+logits:       (2, 10, 1000)
+parameters:   229,120
+```
+
+(sec-ch1-architectural-variants)=
+
+### 5.2 Architectural Variants
+
+While the original transformer was designed for machine translation, different variants emerged for language modeling:
+
+- **GPT** {cite}`radford2018improving`: Decoder-only architecture with causal masking
+- **BERT** {cite}`devlin2018bert`: Encoder-only architecture with bidirectional attention
+- **T5** {cite}`raffel2019exploring`: Encoder-decoder architecture treating all tasks as text-to-text
+
 (sec-ch1-modern-block)=
 
-### 3.3 What Changed Since 2017
+### 5.3 What Changed Since 2017
 
 The block above is the 2017 design. Every widely used LLM since GPT-2 differs from it in a handful of ways, all aimed at training stability or inference cost:
 
 - **Pre-LN instead of post-LN.** Normalization is applied *before* each sublayer, so the residual stream is never normalized: $x \leftarrow x + \mathrm{MHA}(\mathrm{Norm}(x))$. Post-LN transformers have large gradients at initialization and need learning-rate warm-up to train at all; pre-LN removes most of that sensitivity {cite}`xiong2020layer`.
 - **RMSNorm instead of LayerNorm.** Dropping the mean subtraction and the bias, $\mathrm{RMSNorm}(x) = \gamma \odot x / \sqrt{\lVert x \rVert_2^2 / d + \epsilon}$, is cheaper and trains just as well {cite}`zhang2019root`. LLaMA, Mistral, Qwen and Gemma all use it.
 - **Gated activations.** The feed-forward network becomes $\mathrm{FFN}(x) = (\mathrm{SiLU}(xW_{\text{gate}}) \odot xW_{\text{up}})W_{\text{down}}$ (SwiGLU), with the hidden width reduced to about $\tfrac{8}{3}d$ to keep the parameter count unchanged {cite}`shazeer2020glu`.
-- **Rotary position embeddings.** Positions enter through RoPE on the queries and keys (Section 1.3), not through vectors added to the input {cite}`su2021roformer`.
+- **Rotary position embeddings.** Positions enter through RoPE on the queries and keys ({ref}`sec-ch1-rope`), not through vectors added to the input {cite}`su2021roformer`.
 - **Grouped-query attention.** Several query heads share one key/value head, shrinking the KV cache that dominates inference memory at long context {cite}`ainslie2023gqa`.
-- **No biases, tied or untied embeddings, larger vocabularies.** Linear layers usually drop their bias terms; vocabularies grew from 32k to 128k-256k (see {doc}`tokenization-deep-dive`, T.4).
+- **No biases, tied or untied embeddings, larger vocabularies.** Linear layers usually drop their bias terms; vocabularies grew from 32k to 128k-256k (see {ref}`sec-tdd-choosing-vocabulary-size`).
 
 Chapter 6 ({doc}`../06-architectures/index`) takes each of these in turn, adds multi-head latent attention, sliding-window attention and mixture-of-experts layers, and counts the parameters and cache of real models.
 
@@ -1292,11 +1155,11 @@ class PreLNBlock(nn.Module):
 
 (sec-ch1-language-modeling-objective)=
 
-## 4. Language Modeling Objective
+## 6. Language Modeling Objective
 
 (sec-ch1-next-token-prediction)=
 
-### 4.1 Next-Token Prediction
+### 6.1 Next-Token Prediction
 
 Modern LLMs are trained on the **causal language modeling** objective, predicting the next token given previous tokens:
 
@@ -1321,7 +1184,7 @@ def create_causal_mask(seq_length: int) -> torch.Tensor:
 
 (sec-ch1-training-process)=
 
-### 4.2 Training Process
+### 6.2 Training Process
 
 Training maximizes the likelihood of the training data, which is the same as minimizing the mean negative log-likelihood per token over the $T$ tokens of the data, in nats:
 
@@ -1335,7 +1198,7 @@ where $h^{(L)}_{i-1}$ is the hidden state of the last layer $L$ at position $i-1
 
 (sec-ch1-perplexity)=
 
-### 4.3 Evaluation Metrics
+### 6.3 Evaluation Metrics
 
 **Perplexity** measures how well the model predicts the test data:
 
@@ -1347,49 +1210,6 @@ Perplexity was introduced as the effective branching factor of a language model 
 :class: note
 The notebook ({ref}`nb-attn-lm`) builds the causal mask, applies it inside attention, adds a language-model head, and computes cross-entropy and perplexity for an untrained model so you can see what "no better than guessing" looks like. Optimization, schedules and gradient flow are in the Chapter 2 notebook ({ref}`nb-math-optimizers`, {ref}`nb-math-backprop`).
 ```
-
-(sec-ch1-historical-context)=
-
-## 5. Historical Context
-
-(sec-ch1-evolution-rnns)=
-
-### 5.1 Evolution from RNNs
-
-The path to transformers involved several key developments:
-
-**Recurrent Neural Networks** initially dominated sequence modeling but suffered from:
-
-- Vanishing gradient problems in long sequences
-- Sequential processing preventing parallelization
-- Limited ability to capture long-range dependencies
-
-**Long Short-Term Memory (LSTM)** {cite}`hochreiter1997long` networks addressed vanishing gradients but remained sequential.
-
-**Attention mechanisms** {cite}`bahdanau2014neural` first appeared in machine translation, allowing models to focus on relevant source positions when generating target words.
-
-(sec-ch1-transformer-breakthrough)=
-
-### 5.2 The Transformer Breakthrough
-
-"Attention Is All You Need" {cite}`vaswani2017attention` demonstrated that attention alone could achieve state-of-the-art results without recurrence or convolution. Key innovations included:
-
-- Self-attention for capturing dependencies regardless of distance
-- Parallel processing enabling efficient training
-- Multi-head attention for capturing diverse relationships
-
-(sec-ch1-scaling-language-models)=
-
-### 5.3 Scaling to Language Models
-
-The transformer's success in machine translation led to its adoption for language modeling:
-
-- **GPT** (2018) showed the power of unsupervised pre-training
-- **BERT** (2018) demonstrated bidirectional representations
-- **GPT-2** (2019) showed zero-shot transfer to many tasks from language modeling alone {cite}`radford2019language`
-- **GPT-3** (2020) achieved few-shot learning with 175B parameters {cite}`brown2020language`
-
-This progression established the foundation for today's LLMs and their remarkable capabilities.
 
 (sec-ch1-exercises)=
 

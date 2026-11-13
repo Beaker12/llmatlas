@@ -522,6 +522,12 @@ legal_text = "The aforementioned clause notwithstanding the heretofore provision
 # Need specialized vocabulary for legal corpus
 ```
 
+(sec-tdd-tokenization-quality-practice)=
+
+## T.6 Measuring and Improving Tokenization
+
+The challenges above call for a way to tell a good tokenizer from a poor one. This section gives the measurements and then the practices they support.
+
 (sec-tdd-quality-metrics-tokenization)=
 
 ### Quality Metrics for Tokenization
@@ -700,7 +706,7 @@ def create_multi_domain_tokenizer(domain_corpora, vocab_size=32000):
 
 (sec-tdd-implementation-walkthrough)=
 
-## T.6 Practical Implementation
+## T.7 Practical Implementation
 
 This section implements a tokenizer end to end. It is byte-level BPE, the scheme GPT-2 introduced: the base vocabulary is the 256 byte values, so any UTF-8 text can be encoded without an unknown token; whitespace stays inside the tokens (a token can start with a space, and runs of spaces or newlines are tokens of their own), so decoding returns the input exactly; and every chunk of the training text counts, however rare. With only 39 merges on a five-sentence corpus, frequent words such as `The` become one token while an unseen word falls back to short pieces.
 
@@ -876,3 +882,246 @@ analysis_results = analyze_tokenization_efficiency(tokenizer, sample_corpus)
 
 This practical implementation provides a complete foundation for understanding and working with tokenization and embeddings in transformer models.
 
+(sec-tdd-embeddings-in-practice)=
+
+## T.8 Embeddings in Practice
+
+This section extends the chapter's {ref}`sec-ch1-embeddings-positional-encoding`: how the embedding width is chosen, how to inspect a trained embedding table, what each positional scheme costs in parameters, and a complete embedding layer.
+
+(sec-tdd-embedding-dimensions)=
+
+### Understanding Embedding Dimensions
+
+The embedding dimension $d$ is a crucial hyperparameter that affects:
+
+**Representational Capacity**: Higher dimensions can encode more information
+
+- 128-256d: Small models, limited expressiveness
+- 512-1024d: Medium models, good balance
+- 2048-4096d: Large models, rich representations
+- 8192d+: Very large models, potential diminishing returns
+
+**Computational Cost**: Embedding operations scale with dimension
+
+- Matrix multiplications: the cost of each projection grows linearly with $d$ when its other dimension is fixed
+- Memory usage: $|\mathcal{V}| \times d$ parameters just for embeddings
+- Attention computation: Affects all transformer operations
+
+(sec-tdd-embedding-visualization)=
+
+### Embedding Visualization and Analysis
+
+To see whether related tokens sit close together, project their rows of a trained embedding table to two dimensions:
+
+```python
+# pseudo-code: needs a trained `model`, its `tokenizer`, and scikit-learn
+import numpy as np
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+
+
+def visualize_embeddings(embedding_matrix, token_to_id, tokens_to_plot):
+    """Visualize token embeddings in 2D using PCA."""
+
+    # Extract embeddings for specified tokens
+    embeddings = []
+    labels = []
+
+    for token in tokens_to_plot:
+        if token in token_to_id:
+            token_id = token_to_id[token]
+            embedding = embedding_matrix[token_id].detach().numpy()
+            embeddings.append(embedding)
+            labels.append(token)
+
+    embeddings = np.array(embeddings)
+
+    # Reduce to 2D using PCA
+    pca = PCA(n_components=2)
+    embeddings_2d = pca.fit_transform(embeddings)
+
+    # Plot
+    plt.figure(figsize=(10, 8))
+    plt.scatter(embeddings_2d[:, 0], embeddings_2d[:, 1])
+
+    for i, label in enumerate(labels):
+        plt.annotate(label, (embeddings_2d[i, 0], embeddings_2d[i, 1]))
+
+    plt.title("Token Embeddings Visualization (PCA)")
+    plt.xlabel(f"PC1 ({pca.explained_variance_ratio_[0]:.2%} variance)")
+    plt.ylabel(f"PC2 ({pca.explained_variance_ratio_[1]:.2%} variance)")
+    plt.show()
+
+
+# Example usage
+semantic_groups = [
+    # Colors
+    ["red", "blue", "green", "yellow", "orange"],
+    # Animals
+    ["cat", "dog", "bird", "fish", "horse"],
+    # Numbers
+    ["one", "two", "three", "four", "five"],
+]
+
+for group in semantic_groups:
+    visualize_embeddings(model.embeddings.weight, tokenizer.token_to_id, group)
+```
+
+(sec-tdd-position-encoding-trade-offs)=
+
+### Position Encoding Trade-offs
+
+The listing plots the extra parameters each scheme of {ref}`sec-ch1-positional-encodings` adds as the maximum length grows:
+
+```python
+import matplotlib.pyplot as plt
+
+
+def compare_position_encodings():
+    """Extra parameters each positional scheme adds, as a function of maximum length."""
+    seq_lens = [128, 512, 1024, 2048, 4096]
+    d_model, num_heads, num_buckets = 512, 8, 32
+
+    results = {
+        "Sinusoidal": [0 for _ in seq_lens],                                        # no parameters
+        "Learned absolute": [n * d_model for n in seq_lens],                        # one vector per position
+        "Relative bias (T5)": [num_buckets * num_heads for _ in seq_lens],  # per (bucket, head), all layers
+        "RoPE": [0 for _ in seq_lens],                                              # no parameters
+    }
+
+    plt.figure(figsize=(10, 6))
+    for method, params in results.items():
+        plt.plot(seq_lens, params, marker="o", label=method)
+    plt.xlabel("Maximum sequence length")
+    plt.ylabel("Additional parameters")
+    plt.title("Positional encoding parameter cost (sinusoidal and RoPE add none)")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+
+compare_position_encodings()
+```
+
+(sec-tdd-advanced-embedding-implementation)=
+
+### Advanced Embedding Implementation
+
+The layer below combines the scaled token embedding of {ref}`sec-ch1-embedding-initialization-strategies` with learned absolute positions, an optional layer normalization and dropout. For sinusoidal positions, add the table of `create_sinusoidal_encoding` from {ref}`sec-ch1-sinusoidal-positions` instead; relative schemes act on the attention scores and are not part of this layer.
+
+```python
+import math
+
+import torch
+import torch.nn as nn
+
+class PositionalEncoding(nn.Module):
+    """Enhanced positional encoding with multiple strategies."""
+
+    def __init__(self, d_model, max_seq_length=5000, encoding_type="learned"):
+        super().__init__()
+        self.d_model = d_model
+        self.encoding_type = encoding_type
+
+        if encoding_type == "learned":
+            self.position_embeddings = nn.Embedding(max_seq_length, d_model)
+
+        elif encoding_type == "relative":
+            raise ValueError(
+                "relative position bias is added to the attention scores, not to the input; "
+                "see RelativePositionBias in the chapter"
+            )
+
+    def forward(self, x, position_ids=None):
+        if self.encoding_type == "learned":
+            if position_ids is None:
+                position_ids = torch.arange(x.size(1), device=x.device)
+            return x + self.position_embeddings(position_ids)
+
+        return x
+
+
+class TokenEmbeddingLayer(nn.Module):
+    """Complete token embedding layer with multiple features."""
+
+    def __init__(
+        self,
+        vocab_size,
+        d_model,
+        max_seq_length=5000,
+        dropout=0.1,
+        position_encoding="learned",
+        layer_norm=True,
+        scale_embeddings=True,
+    ):
+        super().__init__()
+
+        self.d_model = d_model
+        self.scale_embeddings = scale_embeddings
+
+        # Token embeddings
+        self.token_embeddings = nn.Embedding(vocab_size, d_model)
+
+        # Positional encoding
+        self.position_encoding = PositionalEncoding(
+            d_model, max_seq_length, position_encoding
+        )
+
+        # Optional layer normalization
+        self.layer_norm = nn.LayerNorm(d_model) if layer_norm else None
+
+        # Dropout
+        self.dropout = nn.Dropout(dropout)
+
+        # Initialize embeddings
+        self._init_embeddings()
+
+    def _init_embeddings(self):
+        """N(0, 1/d), so the sqrt(d)-scaled embedding has unit variance, like the positional encoding."""
+        nn.init.normal_(self.token_embeddings.weight, mean=0.0, std=self.d_model**-0.5)
+
+    def forward(self, input_ids, position_ids=None):
+        # Get token embeddings
+        token_embeds = self.token_embeddings(input_ids)
+
+        # Scale embeddings (following original transformer)
+        if self.scale_embeddings:
+            token_embeds = token_embeds * math.sqrt(self.d_model)
+
+        # Add positional encoding
+        embeddings = self.position_encoding(token_embeds, position_ids)
+
+        # Apply layer normalization
+        if self.layer_norm:
+            embeddings = self.layer_norm(embeddings)
+
+        # Apply dropout
+        embeddings = self.dropout(embeddings)
+
+        return embeddings
+
+
+# Example usage
+vocab_size = 50000
+d_model = 512
+max_seq_length = 2048
+
+embedding_layer = TokenEmbeddingLayer(
+    vocab_size=vocab_size,
+    d_model=d_model,
+    max_seq_length=max_seq_length,
+    position_encoding="learned",
+    layer_norm=True,
+    scale_embeddings=True,
+)
+
+# Test with sample input
+batch_size = 4
+seq_length = 256
+input_ids = torch.randint(0, vocab_size, (batch_size, seq_length))
+
+embeddings = embedding_layer(input_ids)
+print(f"Input shape: {input_ids.shape}")
+print(f"Output shape: {embeddings.shape}")
+print(f"Embedding norm: {embeddings.norm(dim=-1).mean():.3f}")
+```
