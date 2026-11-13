@@ -38,7 +38,7 @@ NOT_A_RESULT: dict[str, str] = {
     r"and diffing two versions": "names the two inputs of the diff (an old and a new version), not a measured result",
     r"checks resumption at a hundred random steps": "the number of resumption points the notebook tests, an "
                                                     "experiment setting it asserts over, not a result",
-    r"simulates world sizes from one to sixteen ranks": "the simulated world sizes, an experiment setting, not a result",
+    r"simulates shard assignment for one, two, four and eight ranks": "the simulated world sizes and shard count, experiment settings, not results",
 }
 
 MIN_FIGURES: int = 13
@@ -96,3 +96,22 @@ def test_exercise_answer(n):
         assert number in prose, f"solution {n}'s answer no longer states {number}"
         printed = number.replace(" of the ", " of ")
         assert printed in run.stdout or printed.replace(",", "") in run.stdout, f"solution {n} states {number} but the listing prints\n{run.stdout}"
+
+
+# --- Committed notebook keeps its plots ------------------------------------------------------------------------
+# The notebook is published without execution (_config.yml: execute_notebooks "off"), so its plots exist only as
+# committed outputs. Executing it with a non-interactive MPLBACKEND (Agg) silently drops them.
+NOTEBOOK = ROOT / "chapters" / "05-dataset-management" / "examples" / "dataset_management_demo.ipynb"
+MIN_NOTEBOOK_IMAGES = 3  # packing histogram, document mask, temperature
+
+
+def test_committed_notebook_has_its_plots():
+    import json
+
+    cells = [c for c in json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"] if c["cell_type"] == "code"]
+    has_image = [any("image/png" in o.get("data", {}) for o in c.get("outputs", [])) for c in cells]
+    assert sum(has_image) >= MIN_NOTEBOOK_IMAGES, "the committed notebook lost its plots; re-execute without MPLBACKEND"
+    tagged = [(t, img) for c, img in zip(cells, has_image) for t in c["metadata"].get("tags", []) if t.startswith("figure:")]
+    assert len(tagged) >= MIN_NOTEBOOK_IMAGES
+    missing = [t for t, img in tagged if not img]
+    assert not missing, f"figure cells without an image output: {missing}"

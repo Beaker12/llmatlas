@@ -109,7 +109,7 @@ The two streaming formats differ in how a reader finds a sample, as {numref}`fig
 :name: fig-ch5-wds-mds
 :alt: Top: a WebDataset tar shard whose members are 000000.txt, 000000.json, 000001.txt, 000001.json in order, grouped into samples by their shared key. Bottom: an MDS directory in which index.json lists the shards, and each shard.00000.mds file begins with a sample count, an offsets array and a JSON config, followed by the samples.
 
-Shard layouts of the two streaming formats. A WebDataset shard is an ordinary tar file. A sample is the run of consecutive members that share a key, so the shard is read from front to back. An MDS shard starts with a header: the sample count $n$, $n + 1$ byte offsets and the column config. The reader can therefore seek to any sample. `index.json` lists every shard with its sample count, columns and hashes, following the writer in the `mosaicml/streaming` repository.
+Shard layouts of the two streaming formats. A WebDataset shard is an ordinary tar file. A sample is the run of consecutive members that share a key, so the shard is read from front to back. An MDS shard starts with a header: the number of samples, one byte offset per sample plus one for the end of the last sample, and the column config. The reader can therefore seek to any sample. `index.json` lists every shard with its sample count, columns and hashes, following the writer in the `mosaicml/streaming` repository.
 ```
 
 A Parquet file is a sequence of row groups, each holding one compressed chunk per column, followed by a footer with the schema, the location of every column chunk and per-chunk statistics such as each column's minimum and maximum; the footer is written last so that the file can be written in one pass {cite}`apache2026parquet`. A reader opens the footer first, and two savings follow. Column projection reads only the chunks of the columns asked for, so a query over `num_tokens` never decompresses `text`. Predicate push-down skips any row group whose statistics show it cannot match. The listing writes 1,000 documents in four row groups and reads the long ones back: the footer rules out three of the four row groups before any data is read. The same table written as an Arrow IPC file is the layout Hugging Face `datasets` caches on disk: memory-mapping it gives typed columns with no decoding step {cite}`apache2026arrow`.
@@ -427,7 +427,7 @@ The notebook section {ref}`nb-dm-formats` writes a corpus as JSON Lines shards a
 
 ### 2.4 Choosing a codec
 
-Training data is written once and read many times, so a codec's decompression speed matters more than its compression speed, and its ratio matters through storage and network cost. gzip (DEFLATE) is readable by every tool; Zstandard {cite}`collet2021zstd`, LZ4 and Brotli are the usual alternatives, and Zstandard and Brotli offer a range of levels that trade compression time for size. The listing compresses 3.4 MB of synthetic text, Zipf-distributed words from a 20,000-word vocabulary, with each codec PyArrow ships. Ratios depend only on the codec and its version; throughputs depend on the machine, so the output below shows the shape of one run. On that run Zstandard at level 3 matched gzip's ratio within 3% while compressing 20 times as fast and decompressing twice as fast, and level 19 gave the best ratio at a decompression speed no worse than level 3. That is the case for `.jsonl.zst` in the shard names of {ref}`sec-ch5-sharding`: a build compresses once at a high level, and every later read pays only the fast decode.
+Training data is written once and read many times, so a codec's decompression speed matters more than its compression speed, and its ratio matters through storage and network cost. gzip (DEFLATE) is readable by every tool; Zstandard {cite}`collet2021zstd`, LZ4 and Brotli are the usual alternatives, and gzip, Zstandard and Brotli all offer levels that trade compression time for size (the listing runs gzip at level 6 and Zstandard at levels 3 and 19). The listing compresses 3.4 MB of synthetic text, Zipf-distributed words from a 20,000-word vocabulary, with each codec PyArrow ships. Ratios depend only on the codec and its version; throughputs depend on the machine, so the output below shows the shape of one run. On that run Zstandard at level 3 matched gzip's ratio within 3% while compressing 20 times as fast and decompressing twice as fast, and level 19 gave the best ratio at a decompression speed no worse than level 3. That is the case for `.jsonl.zst` in the shard names of {ref}`sec-ch5-sharding`: a build compresses once at a high level, and every later read pays only the fast decode.
 
 ```python
 import time
@@ -476,7 +476,7 @@ brotli-9  ratio 3.02, compress 4 MB/s, decompress 214 MB/s
 
 Git works for source code because a commit is a hash of a tree of hashes of file contents. The same structure works for datasets at any scale, and the tools that do it well expose the same model, whether they store the objects themselves by content hash (DVC {cite}`iterative2026dvc`, Git LFS, the Hugging Face hub's storage layer) or keep Git-like commits and branches as metadata over ordinary object storage (lakeFS {cite}`treeverse2026lakefs`):
 
-- Each shard is content-addressed: its identity is the hash of its bytes, and it is stored under that hash. Publishing the hashes is also the defense {cite:t}`carlini2024poisoning` propose against split-view poisoning, in which the content behind a dataset's URLs changes after the dataset was indexed: a client that checks the hashes sees the data the maintainers saw.
+- Each shard is content-addressed: its identity is the hash of its uncompressed content (as in {ref}`sec-ch5-sharding`), and it is stored and looked up under that hash. Publishing the hashes is also the defense {cite:t}`carlini2024poisoning` propose against split-view poisoning, in which the content behind a dataset's URLs changes after the dataset was indexed: a client that checks the hashes sees the data the maintainers saw.
 - A **manifest** lists the shards of a version by path, hash and size. The manifest is small enough to keep in Git.
 - The **version root** is the hash of the manifest, or a Merkle root over the shard hashes, so that one short string identifies the whole dataset.
 
@@ -557,7 +557,7 @@ after editing shard 6: 667b16bc86d691d8..., old proof valid: False
 :name: fig-ch5-merkle
 :alt: A binary hash tree over shards 0 to 9. Shard 6 and its path, hash of shards 6–7, 4–7, 0–7 and the root, are orange. The four sibling hashes, shard 7, hash of 4–5, hash of 0–3 and hash of 8–9, are blue. The hash of shards 8–9 joins the root directly. The root reads v1 56270bb6 and v2 667b16bc.
 
-The Merkle tree of the listing's ten shards. Refiltering shard 6 (v1 to v2) changes only the four orange hashes on its path, and with them the root, from `56270bb6…` to `667b16bc…`. The four blue hashes are the inclusion proof for shard 6. With them and the root, a reader can check shard 6 without the other nine shard hashes. The hash of shards 8–9 has no partner on two levels, so it is carried up unchanged and joins the root directly.
+The Merkle tree of the listing's ten shards. Refiltering shard 6 (v1 to v2) changes only the four hashes on its path and the root (orange), the root from `56270bb6…` to `667b16bc…`. The four blue hashes are the inclusion proof for shard 6. With them and the root, a reader can check shard 6 without the other nine shard hashes. The hash of shards 8–9 has no partner on two levels, so it is carried up unchanged and joins the root directly.
 ```
 
 Because shards are stored by hash, two versions that share most of their shards share the storage, and the diff between them is the diff between their manifests. A corpus rebuilt with one filter changed differs in the shards that filter touched and nowhere else, and the manifest diff says exactly which. This holds only if shard membership is stable: a document must land in the same shard in both builds. Shards cut by running count do not have that property, since removing one document shifts every later shard by one; shards cut by source and by a hash of the document identifier do, which is why pipelines bucket by key rather than by count.
@@ -775,14 +775,19 @@ print(f"v1 validation documents in v2 training: random split {leak_random:.1%}, 
 assert leak_random > 0.9 and leak_hash == 0.0
 
 # Near-duplicates must share a split: key the hash on the duplicate cluster, not the document
-cluster = {"doc7": "c42", "doc7-mirror": "c42"}
-assert split_of(cluster["doc7"]) == split_of(cluster["doc7-mirror"])
+pairs = [(f"page{i}", f"page{i}-mirror") for i in range(20_000)]  # each page and a near-copy of it
+cluster_of = {doc: f"cluster{i}" for i, pair in enumerate(pairs) for doc in pair}  # from near-duplicate detection
+split_by_doc = sum(split_of(a) != split_of(b) for a, b in pairs)
+split_by_cluster = sum(split_of(cluster_of[a]) != split_of(cluster_of[b]) for a, b in pairs)
+print(f"near-duplicate pairs split across train and validation: keyed by document {split_by_doc}, by cluster {split_by_cluster}")
+assert split_by_doc > 0 and split_by_cluster == 0
 ```
 
 % output
 
 ```text
 v1 validation documents in v2 training: random split 94.2%, hash split 0.0%
+near-duplicate pairs split across train and validation: keyed by document 383, by cluster 0
 ```
 
 (sec-ch5-tokenization-packing)=
@@ -793,7 +798,7 @@ v1 validation documents in v2 training: random split 94.2%, hash split 0.0%
 
 ### 4.1 From documents to sequences
 
-A transformer trains on sequences of a fixed length $n$ (2,048 to 128,000 tokens in current models), and documents are whatever length they are. Three ways to reconcile them:
+A transformer trains on sequences of a fixed length $n$, and documents are whatever length they are. Pretraining lengths are a few thousand tokens: 2,048 for GPT-3 {cite}`brown2020language` and 8,192 for Llama 3, whose 128,000-token context comes from a later continued-pretraining stage on longer sequences {cite}`grattafiori2024llama`. Three ways to reconcile them:
 
 - **Concatenate and chunk.** Join all documents with an end-of-document token between them into one stream, and cut it into consecutive windows of length $n$. No padding, no waste apart from the final partial window, which is dropped, and the method the GPT-3 paper describes {cite}`brown2020language`: full 2,048-token sequences of packed documents separated by an end-of-text token, with no special masking. Most pretraining codebases default to it. The cost: a document is split across windows wherever the cut falls, and a window usually contains the tail of one document and the head of the next.
 - **Pad.** One document per sequence, padded to $n$. No cross-document contamination, but with a long-tailed length distribution most of each sequence is padding, which is compute spent on nothing. Used for fine-tuning on short examples, rarely for pretraining.
@@ -882,7 +887,7 @@ best-fit packing: 108 sequences, 0.86% padding
 The same six documents (11, 7, 5, 9, 3 and 13 tokens, each counting its end-of-document token) at sequence length $n = 16$. Each colored cell is one token and gray cells are padding. Hatching marks the document that chunking splits. Padding needs twice as many sequences as the other two methods. Best-fit packing places the longest document first and each later one in the fullest sequence that still has room for it.
 ```
 
-On a real corpus, packing leaves most sequences holding only a few documents, while short documents collect in a few crowded sequences. {numref}`fig-ch5-packing-histogram` shows this for the notebook's corpus.
+{numref}`fig-ch5-packing-histogram` shows the result of packing on the notebook's synthetic corpus: most sequences hold only a few documents, while short documents collect in a few crowded sequences.
 
 ```{figure} figures/packing-histogram.*
 :name: fig-ch5-packing-histogram
@@ -954,7 +959,7 @@ The notebook section {ref}`nb-dm-packing` packs the same corpus by chunking and 
 
 ### 4.3 Length bucketing for fine-tuning
 
-Fine-tuning data is the case where padding is the norm: examples are short, of very different lengths, and often kept one per sequence so that the loss can be masked to the response. A batch is padded to its longest example, so a batch drawn at random from a long-tailed length distribution is mostly padding. Length bucketing groups examples of similar length into the same batch and then shuffles the batches, so that the order across steps stays random while the padding within a batch shrinks; the Hugging Face Trainer offers it as `group_by_length`, which groups "samples of roughly the same length together (to minimize padding and be more efficient)" {cite}`huggingface2026trainer`. The listing draws 32,000 example lengths with a median of 147 tokens, batches them 32 at a time, and sorts within pools of 50 batches: padding falls from 75.7% of the batch to 13.0%. The cost is a weak correlation between length and step within a pool, which is why the pool is shuffled before it is cut and the batches after.
+Fine-tuning data is the case where padding is the norm: examples are short, of very different lengths, and often kept one per sequence so that the loss can be masked to the response. A batch is padded to its longest example, so a batch drawn at random from a long-tailed length distribution is mostly padding. Length bucketing groups examples of similar length into the same batch and then shuffles the batches, so that the order across steps stays random while the padding within a batch shrinks; the Hugging Face Trainer offers it as `group_by_length`, which groups "samples of roughly the same length together (to minimize padding and be more efficient)" {cite}`huggingface2026trainer`. The listing draws 32,000 example lengths with a median of 147 tokens, batches them 32 at a time, and sorts within pools of 50 batches: padding falls from 75.7% of the batch to 13.0%. Each shuffle has a job. The permutation before pooling makes every pool a random sample of the data, so the pools are alike. The shuffle of all batches afterwards undoes the sort, so that batch length does not rise across a pool and steps do not run from short to long examples. What remains is the cost: every batch holds examples of nearly the same length, so a step's gradient comes from one length range instead of a mix of short and long examples.
 
 ```python
 import numpy as np
@@ -1017,10 +1022,41 @@ The fraction of 600 draws from each source (bars) against the tempered target $p
 :name: fig-ch5-epoch-cap
 :alt: Cumulative documents drawn from web, wiki and code over 3,000 draws. The wiki line rises until it reaches its cap of 480 at step 1,901 and then stays flat, while web and code keep rising. Dotted lines mark the wiki cap at 480 and the code cap at 800.
 
-Cumulative draws per source in the notebook's capped sampler: web has 600 documents, wiki 120 and code 200, with a cap of four epochs. Wiki uses up its 4 × 120 = 480 draws at step 1,901 (dashed line). From then on its line is flat, and the remaining draws are split between web and code in proportion to their weights. Web's cap of 2,400 is off the top of the plot.
+Cumulative draws per source in the notebook's capped sampler: weights 0.6, 0.25 and 0.15 for web, wiki and code, which have 600, 120 and 200 documents, and a cap of four epochs. At weight 0.25 wiki's 480 draws are expected after about 480 / 0.25 = 1,920 steps. Wiki uses up its 4 × 120 = 480 draws at step 1,901 (dashed line). From then on its line is flat, and the remaining draws are split between web and code in proportion to their weights. Web's cap of 2,400 is off the top of the plot.
 ```
 
 Learned weights (DoReMi {cite}`xie2023doremi`, which sets static $w_s$ by training a small proxy model with group distributionally robust optimization over the domains) and curricula that change the mixture over training are both consumed by the same sampler, the latter with $w_s$ a function of the step. The cap is stated in tokens; the sampler below counts documents, which production samplers replace with token counts from the index.
+
+The difference matters whenever the sources' documents differ in mean length. The listing takes the notebook's three sources and weights and gives them mean lengths of 500, 2,000 and 800 tokens, assumed for the example. Used as document probabilities, the weights hand wiki more than half of the training tokens, and wiki's four epochs are the first cap to bind. Meant as token shares, they require drawing each source with probability proportional to $w_s$ divided by its mean document length; wiki is then drawn rarely, and web's cap binds first, after 2.00M training tokens instead of wiki's at 1.77M.
+
+```python
+import numpy as np
+
+names = ["web", "wiki", "code"]
+docs = np.array([600, 120, 200])  # documents per source, as in the notebook
+mean_len = np.array([500, 2000, 800])  # mean tokens per document, assumed for the example
+w = np.array([0.6, 0.25, 0.15])  # target weights
+doc_prob = (w / mean_len) / (w / mean_len).sum()  # document probabilities that make w the token shares
+
+for label, p in (("weights as document probabilities", w), ("weights as token shares", doc_prob)):
+    share = p * mean_len / (p * mean_len).sum()  # each source's share of the training tokens
+    draws_to_cap = 4 * docs / p  # expected draws until each source has had four epochs
+    first = int(np.argmin(draws_to_cap))
+    tokens = draws_to_cap[first] * (p * mean_len).sum()
+    print(f"{label}: token shares {dict(zip(names, share.round(3).tolist()))}")
+    print(f"  first cap to bind: {names[first]}, after {draws_to_cap[first]:,.0f} documents and {tokens / 1e6:.2f}M tokens")
+    if label == "weights as token shares":
+        assert np.allclose(share, w)
+```
+
+% output
+
+```text
+weights as document probabilities: token shares {'web': 0.326, 'wiki': 0.543, 'code': 0.13}
+  first cap to bind: wiki, after 1,920 documents and 1.77M tokens
+weights as token shares: token shares {'web': 0.6, 'wiki': 0.25, 'code': 0.15}
+  first cap to bind: web, after 3,025 documents and 2.00M tokens
+```
 
 (sec-ch5-determinism-resumption)=
 
@@ -1105,6 +1141,19 @@ assert flat.probs[flat.names.index("wiki")] > a.probs[a.names.index("wiki")]
 print("wiki draws in 500 steps:", len(wiki_docs))
 print("probabilities at temperature 1:", dict(zip(a.names, a.probs.round(4).tolist())))
 print("probabilities at temperature 3:", dict(zip(flat.names, flat.probs.round(4).tolist())))
+
+# A checkpoint holds the generator state with the cursors; the cursors alone do not resume the stream
+ckpt = MixtureSampler(sizes, weights, seed=1).seek(300)
+saved = {"step": ckpt.step, "cursor": ckpt.cursor.copy(), "rng": ckpt.rng.bit_generator.state}
+restored = MixtureSampler(sizes, weights, seed=1)
+restored.step, restored.cursor = saved["step"], saved["cursor"].copy()
+cursors_only = [next(restored) for _ in range(200)]
+restored.step, restored.cursor = saved["step"], saved["cursor"].copy()
+restored.rng.bit_generator.state = saved["rng"]
+assert [next(restored) for _ in range(200)] == stream[300:]
+differ = sum(x != y for x, y in zip(cursors_only, stream[300:]))
+assert differ > 0
+print(f"restored at step 300 from the cursors alone: {differ} of the next 200 draws differ; with the generator state: 0")
 ```
 
 % output
@@ -1113,14 +1162,15 @@ print("probabilities at temperature 3:", dict(zip(flat.names, flat.probs.round(4
 wiki draws in 500 steps: 66
 probabilities at temperature 1: {'code': 0.15, 'web': 0.7, 'wiki': 0.15}
 probabilities at temperature 3: {'code': 0.2724, 'web': 0.4552, 'wiki': 0.2724}
+restored at step 300 from the cursors alone: 176 of the next 200 draws differ; with the generator state: 0
 ```
 
 The `seek` method replays draws, which is fine for millions of steps and a few sources. Constant work per step needs two further constructions, and it is worth seeing why seeding alone does not give it. Seeding each permutation by `(seed, source, epoch)`, as `_permutation` does, makes an epoch's order reproducible without replay, but `permutation` still builds the whole array, $\mathcal{O}(n_{\text{ex}})$ work and memory for a source of $n_{\text{ex}}$ documents, to read one element of it. And the cursor, $\operatorname{drawn}_s(t)$, the number of documents of source $s$ drawn before step $t$, is a sum over $t$ independent source draws: hashing each slot fixes every term, but it does not give the sum without adding up the terms.
 
-- **Within-epoch order: a keyed bijection.** Replace the stored array by a function $\Pi$ on $\{0, \dots, n_{\text{ex}} - 1\}$ that can be evaluated at one point. A Feistel network does this. It splits an integer of an even number of bits into a left and a right half and, in each round, replaces (left, right) by (right, left XOR F(right)) with a keyed hash F. A round is undone from its output whatever F is, so the network is a bijection on its domain for any key. Taking the smallest even bit width that covers $n_{\text{ex}}$ gives a domain of fewer than $4 n_{\text{ex}}$ integers; a value that lands outside the range is encrypted again until it falls back in (cycle-walking). This is still a bijection, because each cycle of the network visits the in-range values in a fixed order and the walk moves each one to the next. Summed over all $n_{\text{ex}}$ starting points the walks touch each point of the domain at most once, so the mean cost is at most the domain size over $n_{\text{ex}}$: below four encryptions per index, and 1.024 for $n_{\text{ex}} = 1{,}000$ with its 1,024-point domain.
+- **Within-epoch order: a keyed bijection.** Replace the stored array by a function $\Pi$ on $\{0, \dots, n_{\text{ex}} - 1\}$ that can be evaluated at one point. A Feistel network does this. It splits an integer of an even number of bits into a left and a right half and, in each round, replaces (left, right) by (right, left XOR F(right)) with a keyed hash F. A round is undone from its output whatever F is, so the network is a bijection on its domain for any key. Taking the smallest even bit width that covers $n_{\text{ex}}$ gives a domain of fewer than $4 n_{\text{ex}}$ integers when $n_{\text{ex}} > 1$ (and of 4 for a single document); a value that lands outside the range is encrypted again until it falls back in (cycle-walking). This is still a bijection, because each cycle of the network visits the in-range values in a fixed order and the walk moves each one to the next. Summed over all $n_{\text{ex}}$ starting points the walks touch each point of the domain at most once, so the mean cost is at most the domain size over $n_{\text{ex}}$: below four encryptions per index for $n_{\text{ex}} > 1$, and 1.024 for $n_{\text{ex}} = 1{,}000$ with its 1,024-point domain.
 - **Cursors: a stride schedule.** Fix the mixture in advance as a repeating pattern of slots, here 20 slots in which each source holds its weight times 20, spread out by weighted round-robin. Then $\operatorname{drawn}_s(t)$ is the number of whole periods before $t$ times the source's slots per period, plus the source's count among the first $t \bmod 20$ slots, read from a table of 21 prefix counts. The document at step $t$ is $\Pi(\operatorname{drawn}_s(t) \bmod n_{\text{ex}})$, with $\Pi$ keyed by the seed, the source and the epoch $\lfloor \operatorname{drawn}_s(t) / n_{\text{ex}} \rfloor$.
 
-Each step is then a table lookup, a division and a few hash evaluations, whatever $t$ is. The price is that the mixture is fixed when the schedule is computed: epoch caps and changes of weight between phases are applied there, and a change of weights mid-run starts a new schedule at a recorded step. A sampler that draws sources at random, like the one above, reaches constant work per step differently: it stores the cursors with each checkpoint and replays only the steps since the last one.
+Each step is then a table lookup, a division and a few hash evaluations, whatever $t$ is. The price is that the mixture is fixed when the schedule is computed: epoch caps and changes of weight between phases are applied there, and a change of weights mid-run starts a new schedule at a recorded step. A sampler that draws sources at random, like the one above, cannot seek in constant work, but it need not replay from step 0 either. A checkpoint that stores its step, its cursors and the state of its random generator lets it resume exactly at the checkpoint, so reaching a step between two checkpoints replays at most one checkpoint interval. The cursors alone are not enough: the next source draw comes from `self.rng`, whose state depends on every draw before it, which is why the end of the `MixtureSampler` listing restores the generator state as well and shows that a restore from the cursors alone continues with a different stream.
 
 ```python
 import hashlib
@@ -1131,7 +1181,7 @@ class FeistelPermutation:
 
     def __init__(self, n: int, key: bytes, rounds: int = 4):
         self.n, self.key, self.rounds = n, key, rounds
-        self.half = max(1, ((n - 1).bit_length() + 1) // 2)  # 4**half >= n, and 4**half < 4 * n
+        self.half = max(1, ((n - 1).bit_length() + 1) // 2)  # 4**half >= n, and 4**half < 4 * n for n > 1 (n = 1 gives 4)
         self.mask = (1 << self.half) - 1
         self.evaluations = 0
 
@@ -1235,7 +1285,69 @@ Three levels of shuffling exist and they are not interchangeable:
 - **Within a shard**: the order of documents inside it. Needed because shards are often written in crawl or alphabetical order, which correlates documents.
 - **Across the whole corpus**: a global permutation, which is what the sampler above does with per-source permutations. Ideal, but requires random access to any document, which object storage and sequential formats do not give cheaply.
 
-Streaming loaders compromise with a shuffle buffer: read shards in a seeded order, hold a few thousand documents in memory, and emit from the buffer at random. The quality of the mix depends on the buffer size relative to the shard size, and a buffer smaller than a shard barely shuffles at all. Mosaic's streaming format and WebDataset both document their shuffle schemes precisely because an insufficiently shuffled stream shows up as a periodic loss curve, which is hard to diagnose after the fact.
+Streaming loaders compromise with a shuffle buffer: read shards in a seeded order, hold a few thousand documents in memory, and emit from the buffer at random. The quality of the mix depends on the buffer size relative to the shard size, and a buffer smaller than a shard barely shuffles at all. Mosaic's streaming documentation describes several shuffle algorithms and the parameters that control them {cite}`mosaicml2026streamingdocs`. A stream that is shuffled too little feeds the model runs of related documents, and the effect on training is hard to trace after the fact, so the shuffle settings belong in the run's configuration.
+
+A loader that must resume mid-epoch therefore checkpoints more than its step. For the sampler of {ref}`sec-ch5-determinism-resumption` the checkpoint is the cursors and the generator state. For a streaming loader it is the read position in the shard order, the documents in the shuffle buffer (or their indices, which keeps the checkpoint small) and the buffer's generator state. The listing checkpoints a 1,000-document buffer after it has emitted 4,000 documents, when it holds 999: restoring all three continues the stream exactly, while restoring only the read position loses every buffered document for the rest of the epoch.
+
+```python
+import numpy as np
+
+
+class ShuffleBuffer:
+    """Emit a sequential stream in random order, holding `size` documents at a time."""
+
+    def __init__(self, stream, size: int, seed: int):
+        self.stream, self.size = stream, size
+        self.position = 0  # next document to read from the stream
+        self.buffer = []
+        self.rng = np.random.default_rng(seed)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        while len(self.buffer) < self.size and self.position < len(self.stream):
+            self.buffer.append(self.stream[self.position])
+            self.position += 1
+        if not self.buffer:
+            raise StopIteration
+        i = int(self.rng.integers(len(self.buffer)))
+        self.buffer[i], self.buffer[-1] = self.buffer[-1], self.buffer[i]
+        return self.buffer.pop()
+
+    def state_dict(self) -> dict:
+        return {"position": self.position, "buffer": list(self.buffer), "rng": self.rng.bit_generator.state}
+
+    def load_state_dict(self, state: dict):
+        self.position, self.buffer = state["position"], list(state["buffer"])
+        self.rng.bit_generator.state = state["rng"]
+
+
+docs = list(range(10_000))
+run = ShuffleBuffer(docs, size=1000, seed=3)
+seen = [next(run) for _ in range(4000)]
+state = run.state_dict()
+rest = list(run)
+assert sorted(seen + rest) == docs  # one epoch: every document once
+
+resumed = ShuffleBuffer(docs, size=1000, seed=3)
+resumed.load_state_dict(state)
+assert list(resumed) == rest  # position, buffer and generator state: exact
+
+position_only = ShuffleBuffer(docs, size=1000, seed=3)
+position_only.position = state["position"]
+lost = set(docs) - set(seen) - set(position_only)
+print(f"checkpoint after {len(seen):,} documents: read position {state['position']:,}, {len(state['buffer']):,} buffered")
+print(f"restoring the read position alone loses {len(lost):,} documents for the rest of the epoch")
+assert lost == set(state["buffer"])
+```
+
+% output
+
+```text
+checkpoint after 4,000 documents: read position 4,999, 999 buffered
+restoring the read position alone loses 999 documents for the rest of the epoch
+```
 
 {numref}`fig-ch5-shuffle` puts the three levels and the buffer in the order a streaming loader applies them.
 
@@ -1261,7 +1373,7 @@ The notebook section {ref}`nb-dm-sampler` runs the mixture sampler, plots the re
 
 A training job with $n_{\text{ranks}}$ processes (data-parallel ranks) needs each step's global batch of $B$ sequences split into $n_{\text{ranks}}$ micro-batches of $B / n_{\text{ranks}}$, with every rank reading different data and no rank reading what another reads. Two designs:
 
-- **Shard assignment.** Shards are partitioned among ranks, each rank gets every $n_{\text{ranks}}$-th shard, and each rank samples within its own shards. Simple, and what a WebDataset-style loader does. The drawback is that the global batch at step $t$ depends on $n_{\text{ranks}}$: change the number of GPUs and the data order changes, so a run resumed on a different cluster size is not the same run.
+- **Shard assignment.** Shards are partitioned among ranks, each rank gets every $n_{\text{ranks}}$-th shard, and each rank samples within its own shards. Simple, and what a WebDataset-style loader does. The drawback is that the global batch at step $t$ depends on $n_{\text{ranks}}$: change the number of GPUs and the data order changes, so a run resumed on a different cluster size is not the same run. Resumed mid-epoch, it also repeats samples that it trained on before and never reaches others, because each rank's position in its shards no longer matches what was consumed; Exercise 6 of {ref}`sec-ch5-exercises` counts them.
 - **Global indexing.** The sampler produces a single global sequence of samples; the sample at global position $t B + i$ goes to rank $i \bmod n_{\text{ranks}}$ (or rank $\lfloor i\, n_{\text{ranks}} / B \rfloor$). Every rank runs the same sampler and takes its slice. The global batch is then independent of $n_{\text{ranks}}$, and a run can be resumed with a different number of ranks and see the same data in the same order.
 
 The second property, that the stream is a function of `(seed, step)` and nothing else, is what makes a large run reproducible across hardware changes, and it costs nothing beyond requiring that every rank can read any shard. Mosaic Streaming {cite}`mosaicml2022streaming` is built around it: its sample order is fixed by the seed and the number of canonical nodes, so with `num_canonical_nodes` pinned it does not change with the number of GPUs. The default is not pinned: it is derived from the number of physical nodes of the initial run (64 times that number for the `py1s` and `py2s` shuffles) {cite}`mosaicml2026streamingdocs`.
@@ -1336,7 +1448,7 @@ The remaining ingredients are standard: a few worker processes per rank that pre
 
 ```{admonition} Sharding Across Ranks
 :class: tip
-The notebook section {ref}`nb-dm-distributed` simulates world sizes from one to sixteen ranks under both designs, checks that each covers the corpus exactly once, and shows the global batch at a fixed step staying identical as the world size changes under global indexing and changing under shard assignment.
+The notebook section {ref}`nb-dm-distributed` simulates shard assignment for one, two, four and eight ranks (its ten shards cannot be spread over sixteen) and global indexing for one to sixteen ranks, checks that each covers the corpus exactly once, and shows the global batch at a fixed step staying identical as the world size changes under global indexing and changing under shard assignment.
 ```
 
 (sec-ch5-loader-workers)=
@@ -1480,7 +1592,7 @@ Two monitoring practices borrowed from other fields:
 - **Canaries.** Insert a handful of unique, random strings into the corpus at known positions and with known repetition counts. After training, test whether the model can complete them. Canaries measure memorization directly {cite}`carlini2019secret`, and a canary that appears in a version where it should not have is proof that an upstream shard leaked.
 - **Drift.** Compare every statistic of {ref}`sec-ch5-statistics-per-version` between consecutive versions and flag changes beyond a threshold. Most data bugs (an extractor update that drops tables, a language-identification model update that rejects more of one language, a source that silently went offline) show up as a drift in a per-source statistic before they show up in a loss curve.
 
-A drift check needs a statistic and a threshold fixed before the comparison. For a length distribution, a good statistic is the two-sample Kolmogorov-Smirnov statistic D, the largest gap between the two empirical distribution functions. The threshold can come from the data themselves: pool the two versions' lengths, relabel them at random into groups of the original sizes many times, and take the value of D that only 1% of the relabelings exceed. That fixes the false-alarm rate: about one unchanged rebuild in a hundred is flagged. The listing compares a version with an unchanged rebuild and with a build in which an extractor update dropped the tables from 15% of documents: the first stays under the threshold and the second is flagged. On corpora of millions of documents the threshold becomes so small that real but harmless changes cross it, so in practice it is paired with a minimum effect size, such as a change in mean length of more than a few percent.
+A drift check needs a statistic and a threshold fixed before the comparison. For a length distribution, a good statistic is the two-sample Kolmogorov-Smirnov statistic D, the largest gap between the two empirical distribution functions. The threshold can come from the data themselves: pool the two versions' lengths, relabel them at random into groups of the original sizes many times, and take the value of D that only 1% of the relabelings exceed. That fixes the false-alarm rate: about one comparison in a hundred between two versions whose lengths come from the same distribution is flagged. (A deterministic rebuild with nothing changed is byte-identical and gives D = 0.) The listing compares a version with a second draw from the same length distribution and with a build in which an extractor update dropped the tables from 15% of documents: the first stays under the threshold and the second is flagged. On corpora of millions of documents the threshold becomes so small that real but harmless changes cross it, so in practice it is paired with a minimum effect size, such as a change in mean length of more than a few percent.
 
 ```python
 import numpy as np
@@ -1507,12 +1619,12 @@ def permutation_threshold(a, b, false_alarm: float = 0.01, trials: int = 200, se
 
 rng = np.random.default_rng(7)
 v1 = rng.lognormal(mean=6.0, sigma=1.0, size=20_000).astype(int) + 1   # document lengths in tokens, version 1
-v2_same = rng.lognormal(mean=6.0, sigma=1.0, size=20_000).astype(int) + 1  # a rebuild with nothing changed
+v2_same = rng.lognormal(mean=6.0, sigma=1.0, size=20_000).astype(int) + 1  # same distribution, new draw
 v2_bug = v2_same.copy()
 tables = rng.random(v2_bug.size) < 0.15   # an extractor update drops the tables from 15% of documents ...
 v2_bug[tables] = (v2_bug[tables] * 0.6).astype(int) + 1  # ... which removes 40% of their tokens
 
-for name, v2 in (("unchanged rebuild", v2_same), ("tables dropped", v2_bug)):
+for name, v2 in (("same distribution", v2_same), ("tables dropped", v2_bug)):
     d, limit = ks_statistic(v1, v2), permutation_threshold(v1, v2)
     print(f"{name:17s}: D = {d:.4f}, threshold {limit:.4f}, flagged {d > limit}")
 print(f"mean length {v1.mean():.4g} -> {v2_bug.mean():.4g} tokens")
@@ -1523,7 +1635,7 @@ assert ks_statistic(v1, v2_bug) > permutation_threshold(v1, v2_bug)
 % output
 
 ```text
-unchanged rebuild: D = 0.0049, threshold 0.0170, flagged False
+same distribution: D = 0.0049, threshold 0.0170, flagged False
 tables dropped   : D = 0.0356, threshold 0.0171, flagged True
 mean length 656.2 -> 617.9 tokens
 ```
@@ -1574,7 +1686,7 @@ Requests to remove content arrive after release: an opt-out, a takedown, a disco
 :name: fig-ch5-removal
 :alt: A flow from a removal request for document alpha to step 1, locate via the document index at (v1.0, s0) and (v1.1, s0), step 2, cut v1.2 without alpha with a manifest diff naming s0 and the reason recorded, and step 3, record every model trained on v1.0 or v1.1 from the lineage graph. The flow ends at a policy decision outside the data system, with three outcomes: retrain, machine unlearning, or disclose.
 
-The removal workflow for the document `alpha` of the listing below. The data system answers the first three steps exactly: where the document is, which shards a new version changes, and which models saw it. The choice between retraining, unlearning and disclosure is policy. Under SISA-style unlearning, only the constituent models whose shards held the document are retrained.
+The removal workflow for the document `alpha` of the listing below. The data system answers the three steps exactly: where the document is, which shards a new version changes, and which models saw it. The choice between retraining, unlearning and disclosure is policy. Under SISA-style unlearning, only the constituent models whose shards held the document are retrained.
 ```
 
 ```python
@@ -1677,8 +1789,8 @@ The pieces exist as libraries, and most teams assemble rather than write them:
 
 - **Hugging Face `datasets`** {cite}`lhoest2021datasets` for Parquet and Arrow handling, streaming from the hub, and memory-mapped local caches; the hub itself for hosting versioned datasets with per-commit manifests.
 - **Mosaic Streaming (MDS)** for a shard format that streams from object storage {cite}`mosaicml2022streaming` with a deterministic, resumable sample order that does not depend on the number of ranks once `num_canonical_nodes` is pinned; **WebDataset** {cite}`aizman2020high` for tar shards streamed sequentially with a seeded shard order and a shuffle buffer.
-- **Megatron-LM, GPT-NeoX and their derivatives** for the indexed tokenized binary and the blended-dataset sampler that implements weighted mixing; epoch caps are set when the blend is planned.
-- **DVC** {cite}`iterative2026dvc` and **lakeFS** {cite}`treeverse2026lakefs` for content-addressed versioning with lineage, in a Git-like workflow; **Git LFS** when the data is small enough.
+- **Megatron-LM, GPT-NeoX and their derivatives** for the indexed tokenized binary and weighted mixing. Megatron-LM's `BlendedDataset` takes "the weights that determine the dataset blend ratios" and the number of samples to draw from the blend, so how often each source is repeated is fixed when the blend is built ([`megatron/core/datasets/blended_dataset.py`](https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/datasets/blended_dataset.py)).
+- **DVC** {cite}`iterative2026dvc`, which keeps data in a content-addressed cache, and **lakeFS** {cite}`treeverse2026lakefs`, which keeps Git-like commits and branches over ordinary object storage, for versioning in a Git-like workflow; **Git LFS** when the data is small enough.
 - **Great Expectations** and similar for data contracts, though a few hundred lines of assertions in the build script are usually enough.
 - **Croissant** {cite}`akhtar2024croissant` for machine-readable dataset metadata.
 
@@ -1776,7 +1888,7 @@ The binaries cost exactly 2 and 4 bytes per token, plus 8 bytes of offset per do
 ````{admonition} Solution 2
 :class: dropdown
 
-The duplicate-line fraction takes only the values 0, 0.1, ..., 0.5, so tightening the threshold from 0.30 to 0.27 removes exactly the documents with $k = 3$; a 10% looser threshold, 0.33, would have removed none. The listing reuses the statistic of Chapter 4's `repetition_stats` and hashes each shard's JSON Lines bytes as in {ref}`sec-ch5-sharding`.
+The duplicate-line fraction takes only the values 0, 0.1, ..., 0.5, so tightening the threshold from 0.30 to 0.27 removes exactly the documents with $k = 3$; a 10% looser threshold, 0.33, keeps exactly the documents that 0.30 keeps, because no document's fraction lies between the two. The listing reuses the statistic of Chapter 4's `repetition_stats` and hashes each shard's JSON Lines bytes as in {ref}`sec-ch5-sharding`.
 
 ```python
 import hashlib
@@ -1838,7 +1950,7 @@ count layout: 16 of 17 shards changed, first shard_00001
 hash  layout: 12 of 64 shards changed, first bucket_00004
 ```
 
-Twelve documents are removed. With shards of 50 documents in order, every shard from the one holding the first removed document onward changes, because each removal moves every later document back by one place: 16 of the 17 shards. The first changed shard is predictable from the removed document's position, but nothing after it survives. With hash buckets a removal touches only the bucket that held the document, so the 12 removals change 12 of the 64 buckets, and which ones is known from the removed ids before any shard is written. Bucketing by a hash of a stable key is what keeps the diff of an edited version small.
+Twelve documents are removed. With shards of 50 documents in order, every shard from the one holding the first removed document onward changes, because each removal moves every later document back by one place: 16 of the 17 shards. The first changed shard is predictable from the removed document's position, but nothing after it survives. With hash buckets a removal touches only the bucket that held the document, so the 12 removals change at most 12 of the 64 buckets (here all 12, because no two removed documents share a bucket), and which ones is known from the removed ids before any shard is written. Bucketing by a hash of a stable key is what keeps the diff of an edited version small.
 ````
 
 1. **Packing efficiency.** For document length distributions with means of 100, 1,000 and 10,000 tokens and a sequence length of 4,096, measure the share of documents that concatenate-and-chunk splits and the padding rate of best-fit packing. When does packing stop being worth its complexity?
@@ -1903,7 +2015,7 @@ At a mean of 100 tokens, chunking splits only 2.4% of documents, so packing buys
 ````{admonition} Solution 4
 :class: dropdown
 
-In a sequence cut into pieces of lengths $\ell_1, \dots, \ell_m$, causal attention has $n(n+1)/2$ allowed pairs for sequence length $n$ and the document mask keeps $\sum_i \ell_i(\ell_i + 1)/2$ of them, the triangles of {ref}`sec-ch5-cross-document-attention`. Every token outside the sequence's first piece loses context.
+Causal attention over a sequence of length $n$ has $n(n+1)/2$ allowed pairs. Document boundaries cut the sequence into pieces, and the document mask keeps only the pairs inside a piece: a triangle per piece, `pieces * (pieces + 1) // 2` pairs in the listing, as in {ref}`sec-ch5-cross-document-attention`. Every token outside the sequence's first piece loses context.
 
 ```python
 import numpy as np
@@ -2134,7 +2246,7 @@ Document 150 is in shard s1 of all three versions. The index finds it in one loo
 ### Formats, loaders and packing
 
 - [Datasets: A Community Library for Natural Language Processing](https://arxiv.org/abs/2109.02846) {cite}`lhoest2021datasets` - the Arrow-backed library and hub conventions
-- [Megatron-LM](https://arxiv.org/abs/1909.08053) {cite}`shoeybi2019megatron` - the indexed binary dataset and blended sampler used by many training codebases
+- [Megatron-LM repository](https://github.com/NVIDIA/Megatron-LM) - `megatron/core/datasets` holds the indexed binary dataset (`indexed_dataset.py`) and the blended dataset (`blended_dataset.py`) used by many training codebases; the paper {cite}`shoeybi2019megatron` is about model parallelism
 - [Fewer Truncations Improve Language Modeling](https://arxiv.org/abs/2404.10830) {cite}`ding2024fewer` - best-fit packing and its measured effects
 - [In-Context Pretraining](https://arxiv.org/abs/2310.10638) {cite}`shi2024incontext` - choosing which documents share a sequence
 - [Scaling Data-Constrained Language Models](https://arxiv.org/abs/2305.16264) {cite}`muennighoff2023scaling` - epoch caps
@@ -2160,7 +2272,7 @@ Document 150 is in shard s1 of all three versions. The index finds it in one loo
 - [Hugging Face Hub datasets](https://huggingface.co/docs/hub/datasets) - versioned hosting with Parquet conversion and the dataset viewer
 - [Mosaic Streaming](https://github.com/mosaicml/streaming) - MDS shards with deterministic resumable shuffling
 - [WebDataset](https://github.com/webdataset/webdataset) - tar-shard streaming
-- [DVC](https://dvc.org/) and [lakeFS](https://lakefs.io/) - content-addressed data versioning with lineage
+- [DVC](https://dvc.org/) - data versioning through a content-addressed cache; [lakeFS](https://lakefs.io/) - Git-like commits and branches over object storage
 - [Croissant](https://github.com/mlcommons/croissant) - machine-readable dataset metadata
 - [Great Expectations](https://greatexpectations.io/) - data contracts as tests
 
