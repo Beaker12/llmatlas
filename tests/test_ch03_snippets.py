@@ -202,7 +202,7 @@ def test_make_figures_twice_gives_identical_files(tmp_path):
         out = tmp_path / run
         subprocess.run([sys.executable, str(FIGURE_SCRIPT), str(out)], check=True, capture_output=True, env=env)
         outputs.append({p.name: p.read_bytes() for p in sorted(out.glob("*.svg"))})
-    assert len(outputs[0]) == 5, sorted(outputs[0])
+    assert len(outputs[0]) == 6, sorted(outputs[0])
     assert outputs[0] == outputs[1]
 
 
