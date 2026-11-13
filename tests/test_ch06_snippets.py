@@ -102,7 +102,7 @@ PAPER_CONFIGS = {
     "google/gemma-2-9b": {
         "model_type": "gemma2", "hidden_size": 3584, "num_hidden_layers": 42,
         "num_attention_heads": 16, "num_key_value_heads": 8, "head_dim": 256,
-        "intermediate_size": 14336, "vocab_size": 256000, "tie_word_embeddings": True},
+        "intermediate_size": 14336, "vocab_size": 256000, "tie_word_embeddings": True},  # vocabulary: hub, not paper
 }
 
 
@@ -149,3 +149,23 @@ def test_kv_cache_function_matches_the_chapter_table():
     assert 2 * kv(config("deepseek-ai/DeepSeek-V3")) == 70272
     assert 2 * kv(PAPER_CONFIGS["meta-llama/Llama-3.1-8B"]) == 131072
     assert 2 * kv(config("allenai/OLMo-2-1124-7B")) == 524288
+
+
+def test_gemma2_paper_vocabulary_and_parameter_split():
+    """C6-01: the Gemma 2 paper's Table 1 vocabulary (256,128) gives its Table 2 counts; the checkpoint has 256,000."""
+    cfg = PAPER_CONFIGS["google/gemma-2-9b"]
+    d = cfg["hidden_size"]
+    assert 256_128 * d == 917_962_752  # paper, Table 2, embedding parameters (9B)
+    assert cfg["vocab_size"] * d == 917_504_000  # released checkpoint
+    non_embedding = COUNT(cfg)["total"] - cfg["vocab_size"] * d  # tied embeddings: one table
+    assert non_embedding == 8_324_201_984  # paper, Table 2, non-embedding parameters (9B)
+    paper_total = COUNT({**cfg, "vocab_size": 256_128})["total"]
+    assert paper_total == 9_242_164_736 != HUB_TOTALS["google/gemma-2-9b"]["elements_total"]
+
+
+def test_yarn_attention_factor_grows_so_temperature_falls():
+    """C6-02: sqrt(1/tau) = 0.1 ln s + 1 (YaRN, arXiv v3, Eq. 15) grows with s, so tau falls."""
+    import math
+    taus = [1 / (0.1 * math.log(s) + 1) ** 2 for s in (1, 2, 8, 40)]
+    assert taus[0] == 1 and all(a > b for a, b in zip(taus, taus[1:]))
+    assert round(0.1 * math.log(8) + 1, 3) == 1.208  # the paper's worked value for s = 8

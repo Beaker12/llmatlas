@@ -138,7 +138,7 @@ for repo, source in SOURCES.items():
 ''')
 
 md(r"""
-The three gated models, transcribed from their papers. Gemma 2's head dimension (256) is larger than $d/n_h$, and its embeddings are tied.
+The three gated models, transcribed from their papers, except Gemma 2's vocabulary: the paper's Table 1 lists 256,128 entries, the released checkpoint has 256,000 rows, and the hub's total is reproduced with 256,000. Gemma 2's head dimension (256) is larger than $d/n_h$, and its embeddings are tied.
 """)
 code(r'''
 PAPER_CONFIGS = {
@@ -153,7 +153,7 @@ PAPER_CONFIGS = {
     "google/gemma-2-9b": {
         "model_type": "gemma2", "hidden_size": 3584, "num_hidden_layers": 42,
         "num_attention_heads": 16, "num_key_value_heads": 8, "head_dim": 256,
-        "intermediate_size": 14336, "vocab_size": 256000, "tie_word_embeddings": True},
+        "intermediate_size": 14336, "vocab_size": 256000, "tie_word_embeddings": True},  # vocabulary: hub, not paper
 }
 ALL_CONFIGS = {**CONFIGS, **PAPER_CONFIGS}
 ''')
