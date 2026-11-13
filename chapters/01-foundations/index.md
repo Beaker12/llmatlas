@@ -872,7 +872,7 @@ depend only on the relative offset.
 
 ## 3. Historical Context
 
-The pieces of the previous two sections, and the attention of the next, were not designed at once. This section follows them from counting word sequences to the open-weight models of 2024.
+The pieces of the previous two sections, and the attention of the next, were not designed at once: they accumulated, from counting word sequences to the open-weight models of 2024.
 
 {numref}`fig-ch1-history-timeline` places the milestones on one time axis.
 
