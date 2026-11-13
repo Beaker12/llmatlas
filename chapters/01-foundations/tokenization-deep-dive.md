@@ -455,6 +455,42 @@ SPECIAL_TOKENS = {
 }
 ```
 
+(sec-tdd-chat-templates)=
+
+### Chat Templates
+
+A model fine-tuned for conversation does not see a list of messages; it sees one string, in which special tokens or markers say where each turn begins and ends and who is speaking. The rule that turns messages into that string is the model's **chat template**. It is fixed by the fine-tuning data, so a prompt in another model's format looks to the model like ordinary text, and as the Hugging Face documentation warns, "different models may use different formats or control tokens, even if they were fine-tuned from the same base model". The `transformers` library stores each model's template with its tokenizer and applies it with `apply_chat_template`. The listing reproduces, by hand, the format of a Mistral instruction-tuned model, which wraps each user turn in `[INST]` and `[/INST]` and ends each assistant turn with the end-of-sequence token `</s>`:
+
+```python
+messages = [
+    {"role": "user", "content": "Hello, how are you?"},
+    {"role": "assistant", "content": "I'm doing great. How can I help you today?"},
+    {"role": "user", "content": "I'd like to show off how chat templating works!"},
+]
+
+
+def mistral_template(messages):
+    """The format Mistral's instruction-tuned models expect: [INST] ... [/INST] around user turns."""
+    text = "<s>"
+    for m in messages:
+        if m["role"] == "user":
+            text += f"[INST] {m['content']} [/INST]"
+        else:
+            text += f"{m['content']}</s> "
+    return text
+
+
+print(mistral_template(messages))
+```
+
+% output
+
+```text
+<s>[INST] Hello, how are you? [/INST]I'm doing great. How can I help you today?</s> [INST] I'd like to show off how chat templating works! [/INST]
+```
+
+The output is the string the [chat templating documentation](https://huggingface.co/docs/transformers/main/en/chat_templating) shows for this conversation. The model's reply is generated after the final `[/INST]`, and generation stops when the model emits `</s>`.
+
 (sec-tdd-token-ids-embeddings)=
 
 ### Token IDs and Embeddings
@@ -543,6 +579,34 @@ def test_reversibility(tokenizer, texts):
 
     return failures
 ```
+
+(sec-tdd-unicode-normalization)=
+
+### Unicode Normalization
+
+The same visible text can be stored as different code points. "café" may end in the single code point U+00E9 or in "e" followed by the combining accent U+0301; a tokenizer that sees only code points or bytes would give the two spellings different tokens. **Normalization** maps such variants to one form before tokenization. Unicode defines two kinds. The canonical forms (NFC composes, NFD decomposes) only merge sequences that are the same character, so they lose nothing a reader could see. The compatibility forms (NFKC, NFKD) also fold characters that merely look alike or play the same role: the ligature "ﬁ" becomes "fi", fullwidth letters become ASCII, a superscript 2 becomes a plain 2. The listing applies NFC and NFKC to a few strings, written as escapes so the output stays in ASCII:
+
+```python
+import unicodedata
+
+for text in ["caf\u00e9", "cafe\u0301", "\ufb01le", "\uff21\uff22\uff23", "x\u00b2", "\u2460"]:
+    nfc = unicodedata.normalize("NFC", text)
+    nfkc = unicodedata.normalize("NFKC", text)
+    print(f"{ascii(text):<22} {len(text)} code points | NFC {ascii(nfc):<16} | NFKC {ascii(nfkc)}")
+```
+
+% output
+
+```text
+'caf\xe9'              4 code points | NFC 'caf\xe9'        | NFKC 'caf\xe9'
+'cafe\u0301'           5 code points | NFC 'caf\xe9'        | NFKC 'caf\xe9'
+'\ufb01le'             3 code points | NFC '\ufb01le'       | NFKC 'file'
+'\uff21\uff22\uff23'   3 code points | NFC '\uff21\uff22\uff23' | NFKC 'ABC'
+'x\xb2'                2 code points | NFC 'x\xb2'          | NFKC 'x2'
+'\u2460'               1 code points | NFC '\u2460'         | NFKC '1'
+```
+
+Both spellings of "café" become the same four code points under either form. NFKC goes further, and that is the trade-off: "x²" and "x2" become the same text, so a tokenizer that applies NFKC is not reversible in the sense of the test above. SentencePiece applies an NFKC-based normalization by default ({ref}`sec-tdd-sentencepiece-library`); GPT-2's byte-level BPE works on the bytes as given, so it never merges variants but always decodes back to the exact input ({ref}`sec-tdd-byte-level-bpe`).
 
 (sec-tdd-tokenization-challenges-solutions)=
 
@@ -705,6 +769,29 @@ legal_text = "The aforementioned clause notwithstanding the heretofore provision
 # Legal language has specific terminology patterns
 # Need specialized vocabulary for legal corpus
 ```
+
+(sec-tdd-tokenizer-free)=
+
+### Tokenizer-Free Models
+
+Every problem in this section comes from the tokenizer, so one answer is to drop it. **Tokenizer-free** (or token-free) models read raw UTF-8 bytes, a vocabulary of 256 values plus a few special ids (ByT5 reserves three: padding, end of sequence and an unused unknown token), with no merges to learn and no text that cannot be encoded. ByT5 is such a model: its authors list the benefits that such models "can process text in any language out of the box, they are more robust to noise, and they minimize technical debt by removing complex and error-prone text preprocessing pipelines" {cite}`xue2022byt5`. The cost is length. "The main drawback of byte-level models is that byte sequences tend to be significantly longer than token sequences", and attention's cost grows with the square of the length ({ref}`sec-ch1-attention-complexity`). The listing counts bytes per character:
+
+```python
+for text in ["Hello world", "caf\u00e9", "\u3053\u3093\u306b\u3061\u306f\u4e16\u754c", "\u0645\u0631\u062d\u0628\u0627"]:
+    n_chars, n_bytes = len(text), len(text.encode("utf-8"))
+    print(f"{n_chars:>2} characters -> {n_bytes:>2} UTF-8 bytes ({n_bytes / n_chars:.2f} per character)")
+```
+
+% output
+
+```text
+11 characters -> 11 UTF-8 bytes (1.00 per character)
+ 4 characters ->  5 UTF-8 bytes (1.25 per character)
+ 7 characters -> 21 UTF-8 bytes (3.00 per character)
+ 5 characters -> 10 UTF-8 bytes (2.00 per character)
+```
+
+English costs one byte per character, Arabic two and Japanese three. The Japanese greeting in the third line is 21 bytes, where GPT-2's tokenizer needs 10 tokens and `o200k_base` needs 2 ({ref}`sec-tdd-linguistic-bias`), so a byte-level model processes about ten times as many positions as a model with a large modern vocabulary for the same text. ByT5 shifts capacity to an encoder three times as deep as its decoder and is, in its authors' words, "competitive with a subword-level baseline" {cite}`xue2022byt5`; the widely used LLMs of this chapter still use subword tokenizers.
 
 (sec-tdd-tokenization-quality-practice)=
 
