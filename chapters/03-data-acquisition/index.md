@@ -1096,13 +1096,105 @@ The notebook section {ref}`nb-acq-provenance` writes a provenance record for eve
 
 ## Exercises
 
-1. **Read a snapshot.** Using the manifest and range-request code from Section 2, estimate the size of a current Common Crawl snapshot from the number of WARC files and the sizes reported by a `HEAD` request on ten of them. Compare with Common Crawl's published figure.
-1. **Who is blocked.** Fetch robots.txt from the fifty most-linked news sites you can list and tabulate which of `CCBot`, `GPTBot`, `ClaudeBot`, `Google-Extended` and `*` each disallows. How many block Common Crawl, and did they likely intend to leave the open corpora?
-1. **Source comparison.** Extend the notebook's source comparison to a sixth source of your choosing from the Hugging Face hub. Which of the statistics in the notebook separates it from the others most clearly?
-1. **License tracing.** Pick three popular datasets on the hub, read their stated license, then trace each to its original sources and read those terms. Record every discrepancy, in the style of the Data Provenance Initiative audit.
-1. **Budget sensitivity.** Using `plan_mixture`, hold the mixture preferences fixed and sweep the total budget from 0.5T to 20T tokens. At what budget does each source hit the epoch cap, and what does the mixture look like at 20T?
-1. **Low-resource audit.** Take fifty documents labeled as a language you read from mC4 or OSCAR and classify each by hand as genuine text, boilerplate, mislabeled or machine-translated. Compare your rate with the MADLAD-400 audit for that language.
-1. **A datasheet.** Write the collection-process section of a datasheet for the samples the notebook fetched, answering every question in the Datasheets template that applies.
+1. **Read a snapshot.** Using the manifest and range-request code of {ref}`sec-ch3-snapshots-segments-files`, estimate the size of a current Common Crawl snapshot from the number of WARC files and the sizes reported by a `HEAD` request on ten of them. Compare with Common Crawl's published figure.
+
+```{admonition} Solution 1
+:class: dropdown
+A `HEAD` request returns a file's headers without its body, and `Content-Length` is the file's size in bytes. The manifest of `CC-MAIN-2026-39` lists 100,000 WARC files. Ten of them, drawn with `random.Random(0).sample(paths, 10)` and measured on 12 November 2026, were 910,707,757, 966,719,339, 903,957,552, 915,750,155, 911,469,743, 933,101,733, 896,086,136, 935,203,619, 918,424,076 and 939,744,129 bytes long.
+
+- Mean size: 923,116,424 bytes, with a sample standard deviation of 20.8 MB.
+- Estimate: $100{,}000 \times 923{,}116{,}424 \approx 9.231 \times 10^{13}$ bytes, which is 92.3 TB or 83.96 TiB ($1\ \text{TiB} = 2^{40}$ bytes).
+- Uncertainty: the standard error of a ten-file mean is $20.8 / \sqrt{10} \approx 6.6$ MB, 0.71% of the mean.
+
+Common Crawl's announcement of the crawl gives the WARC files as 82.79 TiB {cite}`commoncrawl2026september`. The estimate is 1.4% high, about two standard errors, which a sample of ten can produce; a hundred files would cut the standard error to about 0.2%. Note the units: the announcement's 82.79 TiB is 91.0 TB, the "about 90 TB" of the table in {ref}`sec-ch3-snapshots-segments-files`.
+```
+
+2. **Who is blocked.** Fetch robots.txt from the fifty most-linked news sites you can list and tabulate which of `CCBot`, `GPTBot`, `ClaudeBot`, `Google-Extended` and `*` each disallows. How many block Common Crawl, and did they likely intend to leave the open corpora?
+
+```{admonition} Solution 2
+:class: dropdown
+For each site, fetch `https://<host>/robots.txt` with a named user agent, as in the listing of {ref}`sec-ch3-robots-txt-politeness-conventions`, and record the status code first: a 4xx answer means no restrictions and a 5xx answer means everything is disallowed, so neither is parsed. For a 2xx answer, ask whether each agent may fetch the home page and one article URL. An agent the file does not name falls back to the `*` group, so record for each cell whether the answer came from a named group or from `*`; only the named answers show intent. Use an RFC 9309 parser such as `protego` if any file uses wildcards, since the standard-library parser ignores them.
+
+The table has one row per site and five columns. The count asked for is the number of rows in which `CCBot` may not fetch the article. The count depends on the list and the date, so report both with the result.
+
+Intent can be read from how the block is written. A site that disallows `CCBot` in the same group as `GPTBot`, `ClaudeBot` and other AI crawlers has usually copied a list of AI crawlers, and it is unlikely to have weighed the fact that the same line removes it from every open research corpus derived from Common Crawl. A site that disallows only `CCBot`, or that disallows `*` and admits search engines by name, made a broader choice. The news site in the notebook ({ref}`nb-acq-robots`) is of the first kind: one `Disallow` line for each AI crawler, including `CCBot`, and a long separate group for Googlebot. Terms of service often state restrictions that the robots file does not express ({ref}`sec-ch3-robots-txt-opt-outs-commons`), so the robots table is a lower bound on what the sites forbid.
+```
+
+3. **Source comparison.** Extend the notebook's source comparison to a sixth source of your choosing from the Hugging Face hub. Which of the statistics in the notebook separates it from the others most clearly?
+
+```{admonition} Solution 3
+:class: dropdown
+Add one line to the `SOURCES` table of the notebook section {ref}`nb-acq-sources`, giving the dataset id, the configuration and the number of rows to fetch, and map the dataset's text column to the field the statistics read. Then rerun the length table and, if the rows carry a URL, the host count.
+
+Choose a source that differs from the five in a way you can predict, and check the prediction. For a source of long documents, such as public-domain books, the median and 90th-percentile word counts separate it at once: a book runs to tens of thousands of words, against a few hundred for the median web page in the notebook's table. For a source of short documents, such as forum posts or question-and-answer pairs, the lengths separate it in the other direction. Language scores and educational scores exist only for datasets that ship them as columns (the FineWeb family), so they do not apply to most new sources. The host count applies only when the rows carry URLs. Length is the one statistic every source supports, and for most choices it is the clearest.
+
+Report the sample size beside every number: with fifty or a hundred rows a median is a rough figure, and the chapter's caution about Wikipedia and C4 applies.
+```
+
+4. **License tracing.** Pick three popular datasets on the hub, read their stated license, then trace each to its original sources and read those terms. Record every discrepancy, in the style of the Data Provenance Initiative audit.
+
+```{admonition} Solution 4
+:class: dropdown
+For each dataset, record four things in a table: the license on the hub card, the sources the card or paper names, the terms of each source, and whether the two agree. A worked case from the chapter shows the shape of an entry.
+
+- **FineWeb.** The card states ODC-BY. ODC-BY covers the compilation, and the card itself says that Common Crawl's terms of use apply to the pages. The pages keep their authors' copyright. The entry records ODC-BY for the compilation and the pages' own rights for the content, which is not a contradiction but is often misread as one ({ref}`sec-ch3-dataset-licenses-not-content-licenses`).
+- **A Stack Exchange dataset.** A hub copy of the Stack Exchange dump typically carries CC BY-SA, the license of the posts. Since July 2024 the official download requires a login and an agreement that the file is for projects that do not train a large language model ({ref}`sec-ch3-forums-dialogue-question-answering`). A copy made from a later dump therefore carries a restriction the card does not show. Record which dump the copy was made from.
+- **An instruction dataset generated by a model.** The card's license covers the released text; the terms of the model that generated it may restrict using its outputs to train competing models. Record the generating model and its terms.
+
+The discrepancies the audit of {cite:t}`longpre2023data` found most often are the ones to look for: no license on the card, a license more permissive than the sources allow, and a commercial-use restriction in a source that the card omits.
+```
+
+5. **Budget sensitivity.** Using `plan_mixture`, hold the mixture preferences fixed and sweep the total budget from 0.5T to 20T tokens. At what budget does each source hit the epoch cap, and what does the mixture look like at 20T?
+
+```{admonition} Solution 5
+:class: dropdown
+Use the source table of {ref}`sec-ch3-budgeting-procedure`. A source $s$ reaches the cap when its weight $w_s$ reaches $e_{\max} U_s / D$. Before any source is clipped the weights are the preferred ones, so Wikipedia (preferred 0.03, $U_s = 6.5$B) is the first to reach the cap, at
+
+$$D = \frac{4 \times 6.5\text{B}}{0.03} \approx 0.867\text{T}.$$
+
+From then on Wikipedia contributes a fixed 26B tokens, and the other sources share the rest in proportion to their preferences. Books (preferred 0.03 of the remaining 0.97, $U_s = 30$B) reach the cap when $0.03\,(D - 26\text{B}) / 0.97 = 4 \times 30\text{B}$, that is at $D \approx 3.906$T. Papers (0.04 of the remaining 0.94, $U_s = 150$B) reach it when $0.04\,(D - 26\text{B} - 120\text{B}) / 0.94 = 600\text{B}$, at $D \approx 14.25$T. Web and code never reach it in the sweep.
+
+At 20T the plan is:
+
+| Source | Weight | Tokens | Epochs |
+| --- | --- | --- | --- |
+| web | 0.877 | 17.54T | 1.46 |
+| code | 0.086 | 1.71T | 1.71 |
+| papers | 0.030 | 0.60T | 4.00 |
+| wikipedia | 0.0013 | 0.026T | 4.00 |
+| books | 0.006 | 0.12T | 4.00 |
+
+The three small sources are pinned at four epochs and together supply 3.7% of the tokens instead of the preferred 10%; the web absorbs almost all of the difference. A larger budget makes the mixture more web-heavy, not more diverse, unless more unique data is acquired.
+```
+
+6. **Low-resource audit.** Take fifty documents labeled as a language you read from mC4 or OSCAR and classify each by hand as genuine text, boilerplate, mislabeled or machine-translated. Compare your rate with the MADLAD-400 audit for that language.
+
+```{admonition} Solution 6
+:class: dropdown
+Draw the fifty documents at random offsets, not from the start of the split, for the reason the notebook gives for Wikipedia. Decide the rules before reading: a document is genuine if most of its sentences are fluent text in the labeled language; boilerplate if it is mostly navigation, lists or templates; mislabeled if most of it is another language; machine-translated if it shows the signs of translation (calques, untranslated named entities, sentences that read as a word-by-word rendering of English).
+
+The result is a proportion with a wide interval at this sample size. Suppose 12 of the 50 are not genuine. The rate is 24%, and the 95% Wilson interval is
+
+$$\frac{\hat p + \frac{z^2}{2n} \pm z\sqrt{\frac{\hat p(1-\hat p)}{n} + \frac{z^2}{4n^2}}}{1 + \frac{z^2}{n}}, \qquad \hat p = 0.24,\ n = 50,\ z = 1.96,$$
+
+which is 14.3% to 37.4%. A comparison with the audit of {cite:t}`kudugunta2023madlad` is meaningful only if its figure for the language lies outside such an interval. The audits of {cite:t}`kreutzer2022quality` and MADLAD-400 found the problem concentrated in the smaller languages, so expect a high-resource language to come out mostly genuine and a low-resource one to show far more mislabeled text and boilerplate.
+```
+
+7. **A datasheet.** Write the collection-process section of a datasheet for the samples the notebook fetched, answering every question in the Datasheets template that applies.
+
+```{admonition} Solution 7
+:class: dropdown
+The collection-process questions of {cite:t}`gebru2021datasheets`, answered for the notebook's samples:
+
+- **How was the data acquired?** Directly from public services: the Common Crawl manifest and a byte range of one WARC file over HTTPS, two robots.txt files, and rows of five datasets from the Hugging Face dataset-viewer rows API. Nothing was inferred or derived at collection time.
+- **What mechanisms were used?** Python's `urllib` with a named user agent, a fixed seed for every random offset, and a fallback to the committed copies under `examples/data/` when a source is unreachable. The checksums in `examples/data/checksums.json` validate the committed copies.
+- **What was the sampling strategy?** The first rows of FineWeb, FineWeb-Edu, C4 and FineWeb-2 French, Wikipedia articles at seeded random offsets, and C4 host names from seeded random offsets within the rows the API serves. The samples are small, are not representative of any corpus, and are meant to illustrate.
+- **Who collected the data, and over what time frame?** The person who ran the notebook, on the dates in the manifest's fetch times. The committed copies record when they were first collected.
+- **Were the people the data is about notified or asked for consent?** No. The documents are public web pages and dataset rows. Their consent is expressed only through robots.txt and the hosting datasets' terms, which the manifest records.
+- **Was an ethical review conducted?** No; the samples are small and used only for illustration.
+
+The answer that most datasheets leave blank is the one that matters here: what was deliberately excluded. For these samples, nothing was filtered at collection; the content is whatever the first rows or the seeded offsets returned, including any personal data they hold.
+```
 
 (sec-ch3-further-reading)=
 
