@@ -191,53 +191,70 @@ Large responses are not stored whole. Common Crawl's crawler stops reading a res
 
 Common Crawl also publishes a URL index for each snapshot, queryable through the CDX API (`index.commoncrawl.org/<crawl-id>-index?url=…&output=json`), which returns the WARC filename, byte offset and length of every capture of a URL or URL prefix. Combined with a range request this retrieves a single page from a 90 TB snapshot in one round trip. It is how researchers study a particular site's history across snapshots, and how a corpus builder can pull every capture of a chosen list of domains without scanning the whole snapshot. The index server is shared and rate limited, so bulk use goes through the columnar index files (`cc-index-table`, in Parquet on S3) and a query engine rather than the HTTP API.
 
-A worked query: ask the index for the captures of one URL, then fetch exactly the bytes of the first capture's record. Because each record is its own gzip member, the slice decompresses on its own.
+A worked lookup in two steps. An index entry gives, for one capture, the WARC file, the byte offset and the compressed length of its record. The three entries below are real lines of the CC-MAIN-2026-39 index, taken from the start of its first index file (the files under `cc-index/collections/<crawl-id>/indexes/` are themselves blocks of gzip members, located through `cluster.idx`, so they too can be read by range request). Turning an entry into the request that retrieves the record is arithmetic:
+
+```python
+import json
+
+# Three lines of the CC-MAIN-2026-39 URL index (cdx-00000.gz), copied verbatim. Each is a SURT key
+# (the host reversed, so that one site's pages sort together), a 14-digit capture time and a JSON record.
+INDEX_LINES = """\
+0,11,214,3)/galleries/garys-gallery/yazyk 20260908100030 {"url": "https://3.214.11.0/galleries/garys-gallery/yazyk/", "mime": "text/html", "mime-detected": "text/html", "status": "200", "digest": "4FPPZ452ITDX4GHJQJ354OVFUQJCBZVS", "length": "9882", "offset": "48374322", "filename": "crawl-data/CC-MAIN-2026-39/segments/1788492699801.50/warc/CC-MAIN-20260908083825-20260908113825-00403.warc.gz", "charset": "UTF-8", "languages": "eng", "recordid": "01a08076-484a-783b-8b87-4cc051e242c1"}
+0,131,250,3)/ 20260917030102 {"url": "http://3.250.131.0/", "mime": "text/html", "mime-detected": "text/html", "status": "200", "digest": "Q2UDGWTKF2JOTDPWVJ7K45VJFAEWOL5C", "length": "8698", "offset": "272424", "filename": "crawl-data/CC-MAIN-2026-39/segments/1788493000724.71/warc/CC-MAIN-20260917025921-20260917055921-00427.warc.gz", "charset": "UTF-8", "languages": "por,eng", "recordid": "01a0ad4f-7be6-719d-a7fd-693aa3f9997c"}
+0,135,199,18)/stocks/johnson-johnson 20260910132650 {"url": "http://18.199.135.0/stocks/johnson-johnson", "mime": "text/html", "mime-detected": "text/html", "status": "200", "digest": "DKTNPR2H7QQVQGQ2XB2MKEBDXBJKLXDL", "length": "13816", "offset": "111752", "filename": "crawl-data/CC-MAIN-2026-39/segments/1788492699937.26/warc/CC-MAIN-20260910122853-20260910152853-00300.warc.gz", "charset": "UTF-8", "languages": "eng", "recordid": "01a08b7f-e621-764c-9a9a-02e3eabace87"}
+"""
+
+for line in INDEX_LINES.splitlines():
+    surt, timestamp, fields = line.split(" ", 2)
+    hit = json.loads(fields)
+    start, length = int(hit["offset"]), int(hit["length"])
+    print(hit["url"], timestamp[:8], hit["status"])
+    print(f"  GET {hit['filename'][-25:]}  Range: bytes={start}-{start + length - 1}")
+```
+
+% output
+
+```text
+https://3.214.11.0/galleries/garys-gallery/yazyk/ 20260908 200
+  GET 60908113825-00403.warc.gz  Range: bytes=48374322-48384203
+http://3.250.131.0/ 20260917 200
+  GET 60917055921-00427.warc.gz  Range: bytes=272424-281121
+http://18.199.135.0/stocks/johnson-johnson 20260910 200
+  GET 60910152853-00300.warc.gz  Range: bytes=111752-125567
+```
+
+The second step fetches exactly those bytes. Because each record is its own gzip member, the slice decompresses on its own:
 
 ```python
 # network
 import gzip
-import json
 import os
-import time
-import urllib.parse
 import urllib.request
 
 UA = os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")
+# The first index line above: the record is 9882 bytes at offset 48374322 of this file.
+FILENAME = "crawl-data/CC-MAIN-2026-39/segments/1788492699801.50/warc/CC-MAIN-20260908083825-20260908113825-00403.warc.gz"
+START, LENGTH = 48374322, 9882
 
-
-def get(url, headers=None, tries=4):
-    req = urllib.request.Request(url, headers={"User-Agent": UA, **(headers or {})})
-    for attempt in range(tries):
-        try:
-            return urllib.request.urlopen(req, timeout=60).read()
-        except urllib.error.HTTPError as e:   # back off on a busy server, give up on anything else
-            if e.code not in (429, 502, 503, 504) or attempt == tries - 1:
-                raise
-            time.sleep(5 * 2**attempt)
-
-
-query = urllib.parse.urlencode({"url": "commoncrawl.org/", "output": "json", "filter": "=status:200"})
-captures = [json.loads(line) for line in get(f"https://index.commoncrawl.org/CC-MAIN-2026-39-index?{query}").splitlines()]
-hit = captures[0]
-start, length = int(hit["offset"]), int(hit["length"])
-time.sleep(2)
-record = gzip.decompress(get("https://data.commoncrawl.org/" + hit["filename"],
-                             {"Range": f"bytes={start}-{start + length - 1}"}))
+req = urllib.request.Request("https://data.commoncrawl.org/" + FILENAME,
+                             headers={"User-Agent": UA, "Range": f"bytes={START}-{START + LENGTH - 1}"})
+record = gzip.decompress(urllib.request.urlopen(req, timeout=60).read())   # one gzip member, one record
 warc_head, http_head, html = record.split(b"\r\n\r\n", 2)
-print(len(captures), "captures; the first is", length, "compressed bytes at offset", start)
-print(warc_head.split(b"\r\n")[0].decode(), "|", http_head.split(b"\r\n")[0].decode())
+target = [l for l in warc_head.split(b"\r\n") if l.startswith(b"WARC-Target-URI")][0]
+print(warc_head.split(b"\r\n")[0].decode(), "|", target.decode())
+print(http_head.split(b"\r\n")[0].decode())
 print(len(html), "bytes of HTML; truncated:", b"WARC-Truncated" in warc_head)
 ```
 
 % output-shape
 
 ```text
-1 captures; the first is 18342 compressed bytes at offset 412345678
-WARC/1.0 | HTTP/1.1 200 OK
-71208 bytes of HTML; truncated: False
+WARC/1.0 | WARC-Target-URI: https://3.214.11.0/galleries/garys-gallery/yazyk/
+HTTP/1.1 200 OK
+34357 bytes of HTML; truncated: False
 ```
 
-The `length` and `offset` fields of the index entry are all a range request needs, so a corpus builder with a list of a hundred thousand URLs makes a hundred thousand small requests instead of reading whole files. The index server answers slowly or with a gateway error when it is busy, which is why the fence retries with a growing delay, and why bulk lookups belong in the columnar index.
+The CDX API returns the same JSON for a URL you name (`index.commoncrawl.org/<crawl-id>-index?url=…&output=json`), so a corpus builder with a list of a hundred thousand URLs makes a hundred thousand small requests instead of reading whole files. The API server is shared and can be slow or unavailable when it is busy, which is another reason bulk lookups belong in the columnar index.
 
 (sec-ch3-corpora-derived-common-crawl)=
 
@@ -640,7 +657,7 @@ A corpus built today should record, per document, the robots.txt state at fetch 
 
 Data-protection law (the GDPR and its relatives) applies to personal data regardless of copyright, which is why acquisition should avoid sources that are mostly personal data (people directories, leaked databases, social profiles) rather than relying on the redaction in Chapter 4 to fix them later. Health records, children's content and content from regions with strict localization rules are usually excluded at the source level for the same reason.
 
-In the European Union, processing personal data needs one of the lawful bases in Article 6 of the GDPR {cite}`gdpr2016`. The basis examined for model development is Article 6(1)(f), processing "necessary for the purposes of the legitimate interests pursued by the controller or by a third party, except where such interests are overridden by the interests or fundamental rights and freedoms of the data subject". The European Data Protection Board's Opinion 28/2024 of 18 December 2024 considers "how controllers can demonstrate the appropriateness of legitimate interest as a legal basis" in the development and deployment of AI models. It recalls that "there is no hierarchy between the legal bases provided by the GDPR" and recalls the three-step test that "should be conducted when assessing the use of legitimate interest as a legal basis": "(1) identifying the legitimate interest pursued by the controller or a third party; (2) analysing the necessity of the processing for the purposes of the legitimate interest(s) pursued (also referred to as 'necessity test'); and (3) assessing that the legitimate interest(s) is (are) not overridden by the interests or fundamental rights and freedoms of the data subjects (also referred to as 'balancing test')" {cite}`edpb2024opinion`. It also lists mitigating measures for the development phase, including for web scraping, while leaving their adequacy to the supervisory authorities case by case. Article 17 gives a person the right to obtain the erasure of their personal data "without undue delay", and the regulation's recitals ask controllers to answer such requests within one month at the latest.
+In the European Union, processing personal data needs one of the lawful bases in Article 6 of the GDPR {cite}`gdpr2016`. The basis examined for model development is Article 6(1)(f), processing "necessary for the purposes of the legitimate interests pursued by the controller or by a third party, except where such interests are overridden by the interests or fundamental rights and freedoms of the data subject". The European Data Protection Board's Opinion 28/2024 of 18 December 2024 considers "how controllers can demonstrate the appropriateness of legitimate interest as a legal basis" in the development and deployment of AI models. It recalls that "there is no hierarchy between the legal bases provided by the GDPR" {cite}`edpb2024opinion`, and it sets out the three-step test that "should be conducted when assessing the use of legitimate interest as a legal basis" {cite}`edpb2024opinion`: identify the legitimate interest pursued by the controller or a third party; show that the processing is necessary for that interest (the "necessity test"); and assess that the interest is not overridden by the interests or fundamental rights and freedoms of the data subjects (the "balancing test"). It also lists mitigating measures for the development phase, including for web scraping, while leaving their adequacy to the supervisory authorities case by case. Article 17 gives a person the right to obtain the erasure of their personal data "without undue delay", and the regulation's recitals ask controllers to answer such requests within one month at the latest.
 
 Erasure is where acquisition decisions come back. A request names a person, an address or a page; answering it means finding every document that matches, removing those documents from the shards, and making sure that the next rebuild does not bring them back. The provenance manifest of {ref}`sec-ch3-record-contents` turns that into a query:
 
