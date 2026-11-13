@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 
 from tests._pages import pages
@@ -479,3 +480,72 @@ def test_rescore_r1_numbers():
         assert np.allclose(np.array([math.sin(m * w), math.cos(m * w)]) @ rot, [math.sin(m2 * w), math.cos(m2 * w)])
     # beam search toy: greedy 0.5 * 0.4, width 2 finds 0.4 * 0.9
     assert round(0.5 * 0.4, 2) == 0.20 and round(0.4 * 0.9, 2) == 0.36
+
+
+def test_transformer_block_shape_and_parameter_count():
+    """TransformerBlock (run after the attention listing) keeps the shape and has 12 d^2 + 13 d parameters."""
+    ns: dict = {}
+    exec(ch01_fence("class MultiHeadAttention"), ns)
+    exec(ch01_fence("class TransformerBlock"), ns)
+    block = ns["TransformerBlock"](64, 8, 256).eval()
+    assert block(torch.randn(2, 5, 64)).shape == (2, 5, 64)
+    counts = {
+        "attention": sum(p.numel() for p in block.attention.parameters()),
+        "ffn": sum(p.numel() for p in block.feed_forward.parameters()),
+        "norms": sum(p.numel() for m in (block.norm1, block.norm2) for p in m.parameters()),
+    }
+    assert counts == {"attention": 16_640, "ffn": 33_088, "norms": 256}
+    assert sum(counts.values()) == 49_984 == 12 * 64 * 64 + 13 * 64
+
+
+def test_padding_listing_mask_reaches_multi_head_attention():
+    """The padding mask of the teacher-forcing section is accepted by MultiHeadAttention and hides padding."""
+    ns: dict = {}
+    exec(ch01_fence("class MultiHeadAttention"), ns)
+    exec(ch01_fence("real keys per query"), ns)
+    mha = ns["MultiHeadAttention"](d_model=16, num_heads=2).eval()
+    x = torch.randn(2, 5, 16)
+    _, w = mha(x, x, x, ns["mask"])
+    assert w.shape == (2, 2, 5, 5)
+    assert w[1, :, :, 3:].abs().sum() == 0 and torch.allclose(w.sum(-1), torch.ones(2, 2, 5))
+    assert (ns["targets"] != ns["pad_id"]).sum().item() == 6
+
+
+@pytest.mark.live
+def test_sentencepiece_wikitext_vocabulary_limits(tmp_path):
+    """The three limits in the SentencePiece subsection, from the raw WikiText-103 training split.
+
+    Data: Hugging Face dataset Salesforce/wikitext, config wikitext-103-raw-v1, train shard 0 of 2; the
+    first 5,000 rows are concatenated and cut to the first N bytes. sentencepiece 0.2.x defaults except
+    vocab_size=32000, model_type and num_threads=1.
+    """
+    import urllib.request
+
+    import pyarrow.parquet as pq
+    import sentencepiece as spm
+
+    url = ("https://huggingface.co/api/datasets/Salesforce/wikitext/parquet/"
+           "wikitext-103-raw-v1/train/0.parquet")
+    shard = tmp_path / "train0.parquet"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; reader)"})
+    with urllib.request.urlopen(req) as r, open(shard, "wb") as out:
+        out.write(r.read())
+    rows = next(pq.ParquetFile(shard).iter_batches(batch_size=5000, columns=["text"]))
+    raw = "".join(rows.to_pydict()["text"]).encode("utf-8")
+    assert len(raw) > 1_000_000
+
+    def limit(nbytes, model_type):
+        path = tmp_path / f"c{nbytes}.txt"
+        path.write_text(raw[:nbytes].decode("utf-8", "ignore"), encoding="utf-8")
+        try:
+            spm.SentencePieceTrainer.train(
+                input=str(path), model_prefix=str(tmp_path / f"m{nbytes}{model_type}"),
+                vocab_size=32000, model_type=model_type, num_threads=1, minloglevel=2)
+        except RuntimeError as e:
+            return int(re.search(r"value <= (\d+)", str(e)).group(1))
+        return None  # trained without complaint
+
+    assert limit(100_000, "bpe") == 14_602
+    assert limit(100_000, "unigram") == 2_743
+    assert limit(1_000_000, "bpe") is None
+    assert limit(1_000_000, "unigram") == 10_599

@@ -9,7 +9,7 @@ Large language models are transformer networks trained on very large text corpor
 A language model reads text as a sequence of integer token ids and outputs, at every position, a probability distribution over the next token. The chapter follows that path in order:
 
 - **Tokenization** ({ref}`sec-ch1-tokenization`) cuts text into pieces from a fixed vocabulary, such as "un", "happ" and "iness", and maps each to an id. Subword pieces keep the vocabulary to tens or hundreds of thousands of entries while still spelling out any word.
-- **Embeddings and positions** ({ref}`sec-ch1-embeddings-positional-encoding`) turn each id into a vector and give the model a way to tell positions apart.
+- **Embeddings and positions** ({ref}`sec-ch1-embeddings-positional-encoding`) turn each id into a vector and give the model a way to tell positions apart. The relative schemes among them act on attention scores, so their subsection defines the few terms it needs and points ahead to the attention section.
 - **Historical context** ({ref}`sec-ch1-historical-context`) traces language modeling from n-gram counts and recurrent networks to the transformer and the pretrained models built on it.
 - **Attention** ({ref}`sec-ch1-attention-mechanisms`) lets every position compute a weighted average of the others, with weights that depend on how well their vectors match.
 - **The transformer** ({ref}`sec-ch1-transformer-architecture`) stacks blocks of attention and feed-forward layers on a residual stream, and its parameters can be counted from four numbers.
@@ -355,7 +355,7 @@ Pieces: ['▁He', 'llo', ',', '▁w', 'orld', '!', '▁', '<0xE4>', '<0xBD>', '<
 19 ids; decoded text equals the input: True
 ```
 
-With byte fallback, the four Chinese characters, absent from the learned pieces, become twelve UTF-8 byte pieces instead of `<unk>`, and decoding returns the input. Without it, the same model would map them to the unknown id. SentencePiece refuses a vocabulary size larger than the corpus can fill. The toy corpus supports a few hundred pieces; for the common 32,000, the first 100 kB of the training text of WikiText-103 (English Wikipedia articles) is refused by both model types (the error asks for at most 14,759 pieces with `bpe`, 2,778 with `unigram`), the first 1 MB is enough for `bpe` and still refused for `unigram` (at most 10,634), although production tokenizers train on far more text so that the pieces reflect real frequencies.
+With byte fallback, the four Chinese characters, absent from the learned pieces, become twelve UTF-8 byte pieces instead of `<unk>`, and decoding returns the input. Without it, the same model would map them to the unknown id. SentencePiece refuses a vocabulary size larger than the corpus can fill. The toy corpus supports a few hundred pieces. For the common 32,000, the first 100,000 bytes of the raw WikiText-103 training split (English Wikipedia articles; Hugging Face dataset `Salesforce/wikitext`, configuration `wikitext-103-raw-v1`, rows of the first shard concatenated) are refused by both model types. With SentencePiece 0.2.3, `vocab_size=32000` and every other setting at its default, the error asks for at most 14,602 pieces with `bpe` and 2,743 with `unigram`. The first 1,000,000 bytes are enough for `bpe` and still refused for `unigram` (at most 10,599). These limits depend on the file variant, the cut and the trainer settings, so other choices give somewhat different values; the live test `test_sentencepiece_wikitext_vocabulary_limits` in `tests/test_ch01_snippets.py` repeats the four runs and asserts the numbers. Production tokenizers train on far more text, so that the pieces reflect real frequencies.
 
 **Key advantages**:
 
@@ -504,7 +504,7 @@ Attention by itself does not see the order of its inputs, so positional informat
 - "The cat sat on the mat"
 - "The mat sat on the cat"
 
-Without positional information and without a mask, self-attention treats each sentence as a multiset of tokens: permuting the inputs permutes the outputs in the same way and changes nothing else, so these two sentences, which hold the same tokens, get the same set of output vectors. A causal decoder is not completely order-blind even without positions, because its mask lets position $m$ attend to exactly $m + 1$ tokens, positions $0$ to $m$; but that is a weak signal, and every model below supplies positions explicitly.
+Without positional information and without a mask, self-attention treats each sentence as a multiset of tokens: permuting the inputs permutes the outputs in the same way and changes nothing else, so these two sentences, which hold the same tokens, get the same set of output vectors. A causal decoder is not completely order-blind even without positions, because its causal mask ({ref}`sec-ch1-causal-masking`) lets position $m$ attend to exactly $m + 1$ tokens, positions $0$ to $m$; but that is a weak signal, and every model below supplies positions explicitly.
 
 The sinusoidal and learned schemes below both add a position vector to each token vector, as in {numref}`fig-ch1-embedding-composition`.
 
@@ -687,6 +687,8 @@ a sequence of 1,025: IndexError
 (sec-ch1-relative-bias)=
 
 #### Relative Position Bias (T5)
+
+The relative schemes of this subsection and the next two act on attention scores, which {ref}`sec-ch1-self-attention-fundamentals` defines in full. Three facts suffice here. Each token position $m$ has a query row $q_m$ and a key row $k_m$ of width $d_k$, and a value row $v_m$, all computed from that token's vector by learned linear maps. The attention score of query position $m$ for key position $m'$ is the dot product $q_m \cdot k_{m'}$, divided by $\sqrt{d_k}$ in the standard form, and a softmax over $m'$ turns the scores of one query into weights that sum to 1; the output is the weighted average of the value rows. A head is one such set of queries, keys, values and scores, and a layer runs $n_h$ heads side by side ({ref}`sec-ch1-multi-head-attention`), each with its own $n \times n$ score matrix for $n$ tokens.
 
 Instead of adding absolute positions to the input, a relative scheme makes attention depend on the offset $m - m'$ between the query position $m$ and the key position $m'$. {cite:t}`shaw2018self` add learned relative-position *vectors* to the keys and values. T5 {cite}`raffel2019exploring` simplifies this to one learned scalar per head, added to the attention score of every query-key pair:
 
@@ -1140,15 +1142,15 @@ class ScaledDotProductAttention(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
-            query: [batch_size, seq_len, d_k]
-            key: [batch_size, seq_len, d_k]
-            value: [batch_size, seq_len, d_v]
+            query: [..., n_q, d_k], e.g. [batch, heads, n_q, d_k]
+            key: [..., n_k, d_k]
+            value: [..., n_k, d_v]
             mask: True where attention is allowed, broadcastable to the scores
                 (e.g. [batch, heads, n_q, n_k]), or None
 
         Returns:
-            output: [batch_size, seq_len, d_v]
-            attention_weights: [batch_size, seq_len, seq_len]
+            output: [..., n_q, d_v]
+            attention_weights: [..., n_q, n_k]
         """
         d_k = query.size(-1)
 
@@ -1307,7 +1309,8 @@ The original block applies multi-head attention and then the feed-forward networ
 The `dropout` arguments in this and the attention listing are **dropout**: during training each component of its input is set to 0 with probability $p_{drop}$ and the others are multiplied by $1/(1 - p_{drop})$, so the expected value is unchanged; in evaluation mode (`model.eval()`) it passes its input through unchanged. The original transformer applies it "to the output of each sub-layer, before it is added to the sub-layer input and normalized" and to the sums of the token embeddings and positional encodings, and its base model uses $p_{drop} = 0.1$ {cite}`vaswani2017attention`. The listings use the same rate and also apply it to the attention weights:
 
 ```python
-# pseudo-code: uses MultiHeadAttention from the attention listing above
+# pseudo-code: continues the attention listing of Section 4.1, which defines
+# MultiHeadAttention; run after it in the same session
 from typing import Optional
 
 import torch
@@ -1346,6 +1349,8 @@ class TransformerBlock(nn.Module):
 
         return x
 ```
+
+Run after the attention listing with $d = 64$, $n_h = 8$ and $d_{ff} = 256 = 4d$, `TransformerBlock` maps a $2 \times 5 \times 64$ input to a $2 \times 5 \times 64$ output and has 49,984 parameters: 16,640 in attention, 33,088 in the feed-forward network and 256 in the two LayerNorms, which is $12d^2 + 13d$ of {ref}`sec-ch1-parameter-count`. The test `test_transformer_block_shape_and_parameter_count` asserts these numbers.
 
 ```{admonition} Transformer Architecture Implementation
 :class: tip
@@ -1698,9 +1703,9 @@ SwiGLU has three weight matrices where the original feed-forward layer has two, 
 
 Modern LLMs are trained on the **causal language modeling** objective, predicting the next token given previous tokens:
 
-$$p_\theta(x_i \mid x_1, x_2, \dots, x_{i-1}) = p_\theta(x_i \mid x_{<i})$$
+$$p_\theta(x) = \prod_{i=1}^{n} p_\theta(x_i \mid x_1, x_2, \dots, x_{i-1}) = \prod_{i=1}^{n} p_\theta(x_i \mid x_{<i})$$
 
-The factorization is the chain rule of probability, so it is exact, and it gives a generation procedure: draw $x_i$ from $p_\theta(\cdot \mid x_{<i})$, append it and repeat ({ref}`sec-ch1-decoding`).
+where $x_{<i}$ abbreviates $x_1, \dots, x_{i-1}$ and the model supplies each factor. The product is the chain rule of probability, so the factorization is exact (a model may still fit its factors badly), and it gives a generation procedure: draw $x_i$ from $p_\theta(\cdot \mid x_{<i})$, append it and repeat ({ref}`sec-ch1-decoding`).
 
 (sec-ch1-causal-masking)=
 
@@ -1766,6 +1771,52 @@ position 1: sees ['<bos>', 'the'] -> predicts 'cat'
 position 2: sees ['<bos>', 'the', 'cat'] -> predicts 'sat'
 position 3: sees ['<bos>', 'the', 'cat', 'sat'] -> predicts '<eos>'
 ```
+
+Real batches hold sequences of different lengths, so the shorter ones are filled up to the longest with a padding token (`[PAD]` or `<pad>`, id `pad_id` below) that must change nothing. Two things enforce that. The attention mask allows a key only if the causal mask allows it *and* the key is a real token, so no query gives weight to padding. The loss skips every target equal to `pad_id` (`ignore_index`), so padded positions add no loss terms and the mean runs over real targets only. The mask below has the shape `[B, 1, n, n]` that `MultiHeadAttention` accepts:
+
+```python
+import torch
+import torch.nn.functional as F
+
+pad_id = 0
+# two sequences of different length, padded on the right to n = 5 tokens
+ids = torch.tensor([[1, 2, 3, 4, 5],
+                    [1, 2, 3, pad_id, pad_id]])
+keep = ids != pad_id  # [B, n]: True for real tokens
+n = ids.size(1)
+causal = torch.tril(torch.ones(n, n, dtype=torch.bool))
+# allowed = causal AND the key is a real token; broadcastable to [B, heads, n_q, n_k]
+mask = causal[None, None] & keep[:, None, None, :]
+print("real keys per query, sequence 2:", mask[1, 0].sum(dim=1).tolist())
+
+torch.manual_seed(0)
+scores = torch.randn(2, 1, n, n)
+weights = scores.masked_fill(~mask, torch.finfo(scores.dtype).min).softmax(-1)
+print("weight on pad keys, sequence 2:", weights[1, 0, :, 3:].sum().item())
+
+vocab = 10
+logits = torch.randn(2, n, vocab)
+targets = ids[:, 1:]  # shifted by one; padded targets are skipped
+loss = F.cross_entropy(
+    logits[:, :-1].reshape(-1, vocab), targets.reshape(-1), ignore_index=pad_id
+)
+terms = (targets != pad_id).sum().item()
+print(f"loss terms: {terms} of {targets.numel()}; mean loss {loss.item():.4f}")
+per_token = F.cross_entropy(
+    logits[:, :-1].reshape(-1, vocab), targets.reshape(-1), reduction="none"
+)
+assert torch.allclose(loss, per_token[targets.reshape(-1) != pad_id].mean())
+```
+
+% output
+
+```text
+real keys per query, sequence 2: [1, 2, 3, 3, 3]
+weight on pad keys, sequence 2: 0.0
+loss terms: 6 of 8; mean loss 3.6028
+```
+
+The second sequence has three real tokens, so each of its queries sees at most three keys and the two padded keys get weight exactly 0. Of the eight shifted targets, two are padding, leaving six loss terms; the assertion shows that the loss is the plain mean over those six. With right padding the padded positions are the last ones, so the causal mask alone already hides them from every real query, but the combined mask is what keeps left-padded batches correct too.
 
 (sec-ch1-decoding)=
 
