@@ -17,9 +17,8 @@ direction (keep the one the committed SVG shows: `TB` for a top-to-bottom flow, 
 2. Merge sub- and superscript runs so each subscript is in the same text run as its letter:
    `python merge_text_runs.py <figures>/<name>.svg`
    It changes only lines that contain a sub- or superscript, so it is safe on every schematic. In this round it was
-   applied to `scaled_dot_product_attention.svg` (and run on `autoregressive_loop.svg`, which has no subscripts).
-   `encoder_decoder.svg` and `multi_head_attention.svg` were rendered before the script existed and have not been
-   re-rendered since; apply it when they next change.
+   applied to `scaled_dot_product_attention.svg`, `encoder_decoder.svg` and `multi_head_attention.svg` (and run on
+   `autoregressive_loop.svg`, which has no subscripts).
 3. Convert to the PDF the LaTeX build uses:
    `rsvg-convert -f pdf -o <figures>/<name>.pdf <figures>/<name>.svg`
 4. Update the source hash: replace the `<name>.dot` line of `SOURCES.sha256` with the output of

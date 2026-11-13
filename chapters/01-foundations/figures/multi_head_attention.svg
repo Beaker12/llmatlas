@@ -103,8 +103,8 @@
 <!-- o -->
 <g id="node8" class="node">
 <title>o</title>
-<path fill="#f0fff4" stroke="#276749" stroke-width="1.4" d="M313.23,-44.4C313.23,-44.4 110.6,-44.4 110.6,-44.4 104.6,-44.4 98.6,-38.4 98.6,-32.4 98.6,-32.4 98.6,-12 98.6,-12 98.6,-6 104.6,0 110.6,0 110.6,0 313.23,0 313.23,0 319.23,0 325.23,-6 325.23,-12 325.23,-12 325.23,-32.4 325.23,-32.4 325.23,-38.4 319.23,-44.4 313.23,-44.4"/>
-<text xml:space="preserve" text-anchor="start" x="120.2" y="-19.3" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"><tspan font-weight="bold">Output projection W</tspan><tspan font-weight="bold" baseline-shift="sub" font-size="9.75">O</tspan><tspan> &#160;&#160;(n × d)</tspan></text>
+<path fill="#f0fff4" stroke="#276749" stroke-width="1.4" d="M359.47,-44.4C359.47,-44.4 64.36,-44.4 64.36,-44.4 58.36,-44.4 52.36,-38.4 52.36,-32.4 52.36,-32.4 52.36,-12 52.36,-12 52.36,-6 58.36,0 64.36,0 64.36,0 359.47,0 359.47,0 365.47,0 371.47,-6 371.47,-12 371.47,-12 371.47,-32.4 371.47,-32.4 371.47,-38.4 365.47,-44.4 359.47,-44.4"/>
+<text xml:space="preserve" text-anchor="start" x="73.96" y="-19.3" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"><tspan font-weight="bold">Output projection:</tspan><tspan> multiply by W</tspan><tspan baseline-shift="sub" font-size="9.75">O</tspan><tspan>, result n × d</tspan></text>
 </g>
 <!-- cat&#45;&gt;o -->
 <g id="edge10" class="edge">

@@ -5,12 +5,16 @@ digraph EncoderDecoder {
     tgt [label=<<b>Target so far</b> (n)<br/>BOS first, + position> shape=box style="rounded,filled" fillcolor="#fffaf0" color="#975a16" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     { rank=same; src; tgt; }
     subgraph cluster_enc {
-        label=<<b>Encoder block, repeated</b>>; fontsize=13; style="rounded,filled"; fillcolor="#f7fafc"; color="#2d3748"; penwidth=1.2;
+        label=""; fontsize=13; style="rounded,filled"; fillcolor="#f7fafc"; color="#2d3748"; penwidth=1.2;
+        tenc [label=<<b>Encoder block,</b><br/><b>repeated</b>> shape=plaintext style=filled fillcolor="#f7fafc" fontsize=13 fontcolor="#1a202c"];
+        tenc -> esa [style=invis];
         esa [label=<<b>Self-attention</b><br/>unmasked: every source token> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
         eff [label=<<b>Feed-forward</b>> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     }
     subgraph cluster_dec {
-        label=<<b>Decoder block, repeated</b>>; fontsize=13; style="rounded,filled"; fillcolor="#f7fafc"; color="#2d3748"; penwidth=1.2;
+        label=""; fontsize=13; style="rounded,filled"; fillcolor="#f7fafc"; color="#2d3748"; penwidth=1.2;
+        tdec [label=<<b>Decoder block,</b><br/><b>repeated</b>> shape=plaintext style=filled fillcolor="#f7fafc" fontsize=13 fontcolor="#1a202c"];
+        tdec -> dsa [style=invis];
         dsa [label=<<b>Masked self-attention</b><br/>earlier and current target tokens> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
         dca [label=<<b>Cross-attention</b><br/>queries: decoder<br/>keys, values: encoder output> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
         dff [label=<<b>Feed-forward</b>> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
