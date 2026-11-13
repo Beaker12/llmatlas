@@ -72,9 +72,16 @@ Reproducing a model means reproducing the third from the second, which means the
 
 ```{figure} figures/lineage.*
 :name: fig-ch5-lineage
-:alt: A flow from Sources to Processed corpus v1.0 (both blue, versioned and stored), then to Tokenized build (green, derived), which also takes the tokenizer by hash, then to Training stream (orange, recomputed), which also takes the packing method, mixture weights, data seed and steps, then to the model checkpoint.
+:alt: A flow from Sources to Processed corpus v1.0 (both blue, versioned and stored),
+  then to Tokenized build (green, derived), which also takes the tokenizer by hash, then
+  to Training stream (orange, recomputed), which also takes the packing method, mixture
+  weights, data seed and steps, then to the model checkpoint.
 
-The lineage of a model's data. Only the sources and the processed corpus are stored and versioned. The tokenized build can be rebuilt from the corpus and the tokenizer. The training stream is never stored: it is recomputed from the build and the run's packing, mixture, seed and step count, which is why the run configuration has to name all of them.
+The lineage of a model's data. Only the sources and the processed corpus are stored and
+versioned. The tokenized build can be rebuilt from the corpus and the tokenizer. The
+training stream is never stored: it is recomputed from the build and the run's packing,
+mixture, seed and step count, which is why the run configuration has to name all of
+them.
 ```
 
 (sec-ch5-scale-problem)=
@@ -110,9 +117,17 @@ The two streaming formats differ in how a reader finds a sample, as {numref}`fig
 ```{figure} figures/wds-mds.*
 :width: 75%
 :name: fig-ch5-wds-mds
-:alt: Top: a WebDataset tar shard whose members are 000000.txt, 000000.json, 000001.txt, 000001.json in order, grouped into samples by their shared key. Bottom: an MDS directory in which index.json lists the shards, and each shard.00000.mds file begins with a sample count, an offsets array and a JSON config, followed by the samples.
+:alt: Top: a WebDataset tar shard whose members are 000000.txt, 000000.json, 000001.txt,
+  000001.json in order, grouped into samples by their shared key. Bottom: an MDS
+  directory in which index.json lists the shards, and each shard.00000.mds file begins
+  with a sample count, an offsets array and a JSON config, followed by the samples.
 
-Shard layouts of the two streaming formats. A WebDataset shard is an ordinary tar file. A sample is the run of consecutive members that share a key, so the shard is read from front to back. An MDS shard starts with a header: the number of samples, one byte offset per sample plus one for the end of the last sample, and the column config. The reader can therefore seek to any sample. `index.json` lists every shard with its sample count, columns and hashes, following the writer in the `mosaicml/streaming` repository.
+Shard layouts of the two streaming formats. A WebDataset shard is an ordinary tar file.
+A sample is the run of consecutive members that share a key, so the shard is read from
+front to back. An MDS shard starts with a header: the number of samples, one byte offset
+per sample plus one for the end of the last sample, and the column config. The reader
+can therefore seek to any sample. `index.json` lists every shard with its sample count,
+columns and hashes, following the writer in the `mosaicml/streaming` repository.
 ```
 
 A Parquet file is a sequence of row groups, each holding one compressed chunk per column, followed by a footer with the schema, the location of every column chunk and per-chunk statistics such as each column's minimum and maximum; the footer is written last so that the file can be written in one pass {cite}`apache2026parquet`. A reader opens the footer first, and two savings follow. Column projection reads only the chunks of the columns asked for, so a query over `num_tokens` never decompresses `text`. Predicate push-down skips any row group whose statistics show it cannot match. The listing writes 1,000 documents in four row groups and reads the long ones back: the footer rules out three of the four row groups before any data is read. The same table written as an Arrow IPC file is the layout Hugging Face `datasets` caches on disk: memory-mapping it gives typed columns with no decoding step {cite}`apache2026arrow`.
@@ -124,7 +139,8 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-# 1,000 documents written in order of length, as a build that sorts by length would write them
+# 1,000 documents written in order of length, as a build that sorts by length would
+# write them
 n = 1000
 table = pa.table({
     "id": [f"doc{i:04d}" for i in range(n)],
@@ -137,33 +153,56 @@ with tempfile.TemporaryDirectory() as tmp:
     path = Path(tmp) / "part-00000.parquet"
     pq.write_table(table, path, row_group_size=250, compression="zstd")
 
-    # The footer alone: schema, row groups, and per-column min and max for every row group
+    # The footer alone: schema, row groups, and per-column min and max for every row
+    # group
     pf = pq.ParquetFile(path)
     meta = pf.metadata
     col = pf.schema_arrow.get_field_index("num_tokens")
-    bounds = [(meta.row_group(g).column(col).statistics.min, meta.row_group(g).column(col).statistics.max)
-              for g in range(meta.num_row_groups)]
-    print(f"{meta.num_rows} rows, {meta.num_row_groups} row groups, {meta.num_columns} columns")
+    bounds = [
+        (
+            meta.row_group(g).column(col).statistics.min,
+            meta.row_group(g).column(col).statistics.max,
+        )
+        for g in range(meta.num_row_groups)
+    ]
+    print(
+        f"{meta.num_rows} rows, {meta.num_row_groups} row groups, {meta.num_columns} "
+        "columns"
+    )
     print("num_tokens min and max per row group:", bounds)
 
-    # Predicate push-down by hand: only row groups whose range can hold num_tokens >= 900 are read,
+    # Predicate push-down by hand: only row groups whose range can hold num_tokens >=
+    # 900 are read,
     # and only two of the four columns (column projection)
     wanted = [g for g, (lo, hi) in enumerate(bounds) if hi >= 900]
     long_docs = pf.read_row_groups(wanted, columns=["id", "num_tokens"])
     long_docs = long_docs.filter(pa.compute.greater_equal(long_docs["num_tokens"], 900))
-    print(f"row groups read: {wanted}, columns read: {long_docs.column_names}, rows kept: {long_docs.num_rows}")
+    print(
+        f"row groups read: {wanted}, columns read: {long_docs.column_names}, rows "
+        f"kept: {long_docs.num_rows}"
+    )
     assert wanted == [3] and long_docs.num_rows == 110
     # The library does the same from a filter expression
-    assert pq.read_table(path, columns=["id"], filters=[("num_tokens", ">=", 900)]).num_rows == 110
+    assert (
+        pq.read_table(
+            path, columns=["id"], filters=[("num_tokens", ">=", 900)]
+        ).num_rows
+        == 110
+    )
 
     # Arrow IPC file: memory-mapped, read without decoding or copying the column buffers
     arrow_path = Path(tmp) / "cache.arrow"
-    with pa.OSFile(str(arrow_path), "wb") as sink, pa.ipc.new_file(sink, table.schema) as writer:
+    with pa.OSFile(str(arrow_path), "wb") as sink, pa.ipc.new_file(
+        sink, table.schema
+    ) as writer:
         writer.write_table(table)
     with pa.memory_map(str(arrow_path), "r") as source:
         cached = pa.ipc.open_file(source).read_all()
         assert cached.equals(table)
-        print(f"Arrow cache: {cached.num_rows} rows, {cached.nbytes:,} bytes of buffers mapped from disk")
+        print(
+            f"Arrow cache: {cached.num_rows} rows, {cached.nbytes:,} bytes of buffers "
+            "mapped from disk"
+        )
 ```
 
 % output
@@ -210,9 +249,14 @@ def write_jsonl_shards(docs, out_dir: Path, docs_per_shard: int, prefix: str = "
             return
         path = out_dir / f"{prefix}_{shard_idx:05d}.jsonl.gz"
         tmp = path.with_suffix(".tmp")
-        raw = b"".join(json.dumps(d, ensure_ascii=False).encode("utf-8") + b"\n" for d in batch)
-        # filename="" and mtime=0 keep the temporary file name and the time of writing out of the gzip header
-        with open(tmp, "wb") as out, gzip.GzipFile(filename="", fileobj=out, mode="wb", compresslevel=6, mtime=0) as f:
+        raw = b"".join(
+            json.dumps(d, ensure_ascii=False).encode("utf-8") + b"\n" for d in batch
+        )
+        # filename="" and mtime=0 keep the temporary file name and the time of writing
+        # out of the gzip header
+        with open(tmp, "wb") as out, gzip.GzipFile(
+            filename="", fileobj=out, mode="wb", compresslevel=6, mtime=0
+        ) as f:
             f.write(raw)
         tmp.rename(path)  # a shard exists only once it is complete
         manifest.append(
@@ -221,7 +265,9 @@ def write_jsonl_shards(docs, out_dir: Path, docs_per_shard: int, prefix: str = "
                 "records": len(batch),
                 "bytes_uncompressed": len(raw),
                 "bytes_compressed": path.stat().st_size,
-                "sha256": hashlib.sha256(raw).hexdigest(),  # content identity: the uncompressed bytes
+                "sha256": hashlib.sha256(
+                    raw
+                ).hexdigest(),  # content identity: the uncompressed bytes
             }
         )
         batch, shard_idx = [], shard_idx + 1
@@ -245,19 +291,33 @@ def read_jsonl_shards(out_dir: Path, manifest):
 
 import tempfile
 
-docs = [{"id": f"doc{i}", "source": "demo", "text": f"Document number {i}. " * (i + 1)} for i in range(10)]
+docs = [
+    {"id": f"doc{i}", "source": "demo", "text": f"Document number {i}. " * (i + 1)}
+    for i in range(10)
+]
 with tempfile.TemporaryDirectory() as tmp:
     manifest = write_jsonl_shards(docs, Path(tmp), docs_per_shard=4)
     assert [m["records"] for m in manifest] == [4, 4, 2]
-    assert [d["id"] for d in read_jsonl_shards(Path(tmp), manifest)] == [d["id"] for d in docs]
+    assert [d["id"] for d in read_jsonl_shards(Path(tmp), manifest)] == [
+        d["id"] for d in docs
+    ]
     assert not list(Path(tmp).glob("*.tmp"))
-    # The same documents under another name: same content identity and, with the header fixed, the same bytes
-    renamed = write_jsonl_shards(docs, Path(tmp) / "renamed", docs_per_shard=4, prefix="part")
+    # The same documents under another name: same content identity and, with the header
+    # fixed, the same bytes
+    renamed = write_jsonl_shards(
+        docs, Path(tmp) / "renamed", docs_per_shard=4, prefix="part"
+    )
     assert [m["sha256"] for m in renamed] == [m["sha256"] for m in manifest]
-    assert (Path(tmp) / "renamed" / "part_00000.jsonl.gz").read_bytes() == (Path(tmp) / "shard_00000.jsonl.gz").read_bytes()
+    assert (Path(tmp) / "renamed" / "part_00000.jsonl.gz").read_bytes() == (
+        Path(tmp) / "shard_00000.jsonl.gz"
+    ).read_bytes()
     print("records per shard:", [m["records"] for m in manifest])
     print("uncompressed bytes per shard:", [m["bytes_uncompressed"] for m in manifest])
-    print("content hash of shard 0:", manifest[0]["sha256"][:16], "(same under the other name)")
+    print(
+        "content hash of shard 0:",
+        manifest[0]["sha256"][:16],
+        "(same under the other name)",
+    )
 ```
 
 % output
@@ -299,7 +359,10 @@ class TokenShard:
         self.path = path
         meta = json.loads(path.with_suffix(".json").read_text())
         if meta["tokenizer_hash"] != tokenizer_hash:
-            raise ValueError(f"{path.name} was built with tokenizer {meta['tokenizer_hash']}, not {tokenizer_hash}")
+            raise ValueError(
+                f"{path.name} was built with tokenizer {meta['tokenizer_hash']}, not "
+                f"{tokenizer_hash}"
+            )
         self.dtype = np.dtype(meta["dtype"])
         self.tokenizer_hash = meta["tokenizer_hash"]
         self.offsets = np.load(path.with_suffix(".idx.npy"))
@@ -334,7 +397,9 @@ class TokenShard:
 
 def toy_tokenize(text: str):
     """Deterministic stand-in for a real tokenizer: one id per word, 1..9999."""
-    return [1 + (int(hashlib.md5(w.encode()).hexdigest(), 16) % 9999) for w in text.split()]
+    return [
+        1 + (int(hashlib.md5(w.encode()).hexdigest(), 16) % 9999) for w in text.split()
+    ]
 
 
 import tempfile
@@ -346,14 +411,21 @@ with tempfile.TemporaryDirectory() as tmp:
     assert len(shard) == 3
     assert shard.document(0).tolist() == toy_tokenize("the cat sat") + [EOD]
     assert shard.offsets.tolist() == [0, 4, 10, 12]
-    assert shard.window(2, 4).tolist() == [toy_tokenize("the cat sat")[2], EOD] + toy_tokenize("on the mat and slept")[:2]
+    assert (
+        shard.window(2, 4).tolist()
+        == [toy_tokenize("the cat sat")[2], EOD]
+        + toy_tokenize("on the mat and slept")[:2]
+    )
     assert shard.tokens.dtype == np.uint16
     try:
         TokenShard(Path(tmp) / "demo.bin", tokenizer_hash="toy-v2")
         raise AssertionError("a binary was opened with the wrong tokenizer")
     except ValueError:
         pass
-    print(f"{len(shard)} documents, offsets {shard.offsets.tolist()}, dtype {shard.tokens.dtype}")
+    print(
+        f"{len(shard)} documents, offsets {shard.offsets.tolist()}, dtype "
+        f"{shard.tokens.dtype}"
+    )
     print("document 1:", shard.document(1).tolist())
 ```
 
@@ -368,9 +440,18 @@ document 1: [7552, 5001, 8441, 9177, 8494, 0]
 
 ```{figure} figures/token-layout.*
 :name: fig-ch5-token-layout
-:alt: A table with four rows. The offsets row marks positions 0, 4, 10 and 12. The token row holds twelve uint16 ids: 5001, 4854, 9514, 0 for "the cat sat"; 7552, 5001, 8441, 9177, 8494, 0 for "on the mat and slept"; 7977, 0 for "fin". Below it, the JSON sidecar records dtype uint16, tokenizer hash toy-v1 and three documents, and a box reads document 1 as tokens[4 : 10].
+:alt: A table with four rows. The offsets row marks positions 0, 4, 10 and 12. The token
+  row holds twelve uint16 ids: 5001, 4854, 9514, 0 for "the cat sat"; 7552, 5001, 8441,
+  9177, 8494, 0 for "on the mat and slept"; 7977, 0 for "fin". Below it, the JSON
+  sidecar records dtype uint16, tokenizer hash toy-v1 and three documents, and a box
+  reads document 1 as tokens[4 : 10].
 
-The listing's three documents on disk. `demo.bin` is the flat token array, with EOD id 0 ending each document. `demo.idx.npy` holds the offsets [0, 4, 10, 12], one more than the number of documents. `demo.json` names the dtype and the tokenizer hash, and opening the shard with another tokenizer raises an error. Reading document 1 is the slice from `offsets[1]` to `offsets[2]`. The word "the" is id 5001 in both of the first two documents.
+The listing's three documents on disk. `demo.bin` is the flat token array, with EOD id 0
+ending each document. `demo.idx.npy` holds the offsets [0, 4, 10, 12], one more than the
+number of documents. `demo.json` names the dtype and the tokenizer hash, and opening the
+shard with another tokenizer raises an error. Reading document 1 is the slice from
+`offsets[1]` to `offsets[2]`. The word "the" is id 5001 in both of the first two
+documents.
 ```
 
 The tokenizer hash is the part people skip and regret. Two tokenizers with the same name and vocabulary size but different normalization or merge order produce different id streams, and a model evaluated with the wrong one is silently broken. Hash the tokenizer's serialized files and store the hash with every binary that depends on it.
@@ -384,8 +465,8 @@ BOS, EOD = 1, 0
 
 
 def with_special_tokens(token_docs, policy: str) -> np.ndarray:
-    """Concatenate documents under a special-token policy: "eod" puts EOD after each document,
-    "bos+eod" also puts BOS before each one."""
+    """Concatenate documents under a special-token policy: "eod" puts EOD after each
+    document, "bos+eod" also puts BOS before each one."""
     stream = []
     for doc in token_docs:
         if policy == "bos+eod":
@@ -396,8 +477,8 @@ def with_special_tokens(token_docs, policy: str) -> np.ndarray:
 
 
 def loss_mask(stream: np.ndarray) -> np.ndarray:
-    """One flag per next-token target stream[1:]: BOS is never a prediction target, since it
-    follows EOD by rule and carries nothing to learn."""
+    """One flag per next-token target stream[1:]: BOS is never a prediction target,
+    since it follows EOD by rule and carries nothing to learn."""
     return stream[1:] != BOS
 
 
@@ -407,11 +488,18 @@ content = sum(len(d) for d in docs)
 for policy in ("eod", "bos+eod"):
     stream = with_special_tokens(docs, policy)
     special = 1 - content / stream.size
-    print(f"{policy:8s} {stream.size:,} tokens, {special:.2%} special, {int(loss_mask(stream).sum()):,} trained targets")
+    print(
+        f"{policy:8s} {stream.size:,} tokens, {special:.2%} special, "
+        f"{int(loss_mask(stream).sum()):,} trained targets"
+    )
 stream = with_special_tokens(docs, "bos+eod")
 starts = np.flatnonzero(stream == BOS)
-assert starts.size == len(docs) and np.all(stream[starts[1:] - 1] == EOD)  # every BOS follows an EOD
-assert not loss_mask(stream)[starts[1:] - 1].any()  # and is never trained on as a target
+assert starts.size == len(docs) and np.all(
+    stream[starts[1:] - 1] == EOD
+)  # every BOS follows an EOD
+assert not loss_mask(stream)[
+    starts[1:] - 1
+].any()  # and is never trained on as a target
 ```
 
 % output
@@ -423,7 +511,9 @@ bos+eod  125,439 tokens, 3.19% special, 123,439 trained targets
 
 ```{admonition} Formats on Disk
 :class: tip
-The notebook section {ref}`nb-dm-formats` writes a corpus as JSON Lines shards and as a tokenized binary with offsets, verifies both against their manifests, and compares the bytes per token of each layout.
+The notebook section {ref}`nb-dm-formats` writes a corpus as JSON Lines shards and as a
+tokenized binary with offsets, verifies both against their manifests, and compares the
+bytes per token of each layout.
 ```
 
 (sec-ch5-codecs)=
@@ -438,13 +528,21 @@ import time
 import numpy as np
 import pyarrow as pa
 
-# Sizes and timings depend on the machine and the library builds; the order of the codecs is the result
+# Sizes and timings depend on the machine and the library builds; the order of the
+# codecs is the result
 rng = np.random.default_rng(0)
 vocab = [f"w{i}" for i in range(20_000)]
 zipf = rng.zipf(1.2, size=800_000)
 text = " ".join(vocab[(z - 1) % len(vocab)] for z in zipf).encode()
 results = {}
-for name, level in [("lz4", None), ("zstd", 1), ("zstd", 3), ("zstd", 19), ("gzip", 6), ("brotli", 9)]:
+for name, level in [
+    ("lz4", None),
+    ("zstd", 1),
+    ("zstd", 3),
+    ("zstd", 19),
+    ("gzip", 6),
+    ("brotli", 9),
+]:
     codec = pa.Codec(name, compression_level=level)
     t0 = time.perf_counter()
     packed = codec.compress(text, asbytes=True)
@@ -453,8 +551,11 @@ for name, level in [("lz4", None), ("zstd", 1), ("zstd", 3), ("zstd", 19), ("gzi
     t2 = time.perf_counter()
     label = name if level is None else f"{name}-{level}"
     results[label] = len(text) / len(packed)
-    print(f"{label:9s} ratio {len(text) / len(packed):.3g}, compress {len(text) / (t1 - t0) / 1e6:.0f} MB/s, "
-          f"decompress {len(text) / (t2 - t1) / 1e6:.0f} MB/s")
+    print(
+        f"{label:9s} ratio {len(text) / len(packed):.3g}, compress "
+        f"{len(text) / (t1 - t0) / 1e6:.0f} MB/s, "
+        f"decompress {len(text) / (t2 - t1) / 1e6:.0f} MB/s"
+    )
 assert results["zstd-19"] > results["zstd-3"] > results["lz4"]
 ```
 
@@ -549,13 +650,17 @@ def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-content = {f"shard_{i:03d}": f"shard {i}".encode() for i in range(10)}  # uncompressed bytes
+content = {
+    f"shard_{i:03d}": f"shard {i}".encode() for i in range(10)
+}  # uncompressed bytes
 manifest = [{"path": path, "sha256": sha(data)} for path, data in content.items()]
 root = merkle_root(manifest)
 proof = inclusion_proof(manifest, "shard_006")
 print(f"root of 10 shards: {root[:16]}..., proof for shard_006: {len(proof)} hashes")
 assert verify_inclusion("shard_006", sha(content["shard_006"]), proof, root)
-assert not verify_inclusion("shard_007", sha(content["shard_007"]), proof, root)  # shard_006 only
+assert not verify_inclusion(
+    "shard_007", sha(content["shard_007"]), proof, root
+)  # shard_006 only
 
 # The order of the listing is not part of the version: the root sorts by path
 assert merkle_root(manifest[::-1]) == root
@@ -563,16 +668,27 @@ assert merkle_root(manifest[::-1]) == root
 renamed = [dict(m, path=m["path"].replace("shard", "part")) for m in manifest]
 assert merkle_root(renamed) != root
 swapped = [dict(m) for m in manifest]
-swapped[2]["sha256"], swapped[3]["sha256"] = manifest[3]["sha256"], manifest[2]["sha256"]
+swapped[2]["sha256"], swapped[3]["sha256"] = (
+    manifest[3]["sha256"],
+    manifest[2]["sha256"],
+)
 assert merkle_root(swapped) != root
 # And so is every byte: change one byte of shard_006 and the root changes
 edited = bytearray(content["shard_006"])
 edited[0] ^= 1
-v2 = [dict(m, sha256=sha(bytes(edited))) if m["path"] == "shard_006" else m for m in manifest]
+v2 = [
+    dict(m, sha256=sha(bytes(edited))) if m["path"] == "shard_006" else m
+    for m in manifest
+]
 root_v2 = merkle_root(v2)
-old_proof_valid = verify_inclusion("shard_006", sha(content["shard_006"]), proof, root_v2)
+old_proof_valid = verify_inclusion(
+    "shard_006", sha(content["shard_006"]), proof, root_v2
+)
 assert root_v2 != root and not old_proof_valid
-print(f"one byte of shard_006 changed: {root_v2[:16]}..., old proof valid: {old_proof_valid}")
+print(
+    f"one byte of shard_006 changed: {root_v2[:16]}..., old proof valid: "
+    f"{old_proof_valid}"
+)
 ```
 
 % output
@@ -586,9 +702,17 @@ one byte of shard_006 changed: 53619d808ca6a9e0..., old proof valid: False
 
 ```{figure} figures/merkle.*
 :name: fig-ch5-merkle
-:alt: A binary hash tree over shards 0 to 9 in path order. Shard 6 and its path, hash of shards 6–7, 4–7, 0–7 and the root, are orange. The four sibling hashes, shard 7, hash of 4–5, hash of 0–3 and hash of 8–9, are blue. The hash of shards 8–9 joins the root directly. The root reads v1 f4471612 and v2 53619d80.
+:alt: A binary hash tree over shards 0 to 9 in path order. Shard 6 and its path, hash of
+  shards 6–7, 4–7, 0–7 and the root, are orange. The four sibling hashes, shard 7, hash
+  of 4–5, hash of 0–3 and hash of 8–9, are blue. The hash of shards 8–9 joins the root
+  directly. The root reads v1 f4471612 and v2 53619d80.
 
-The Merkle tree of the listing's ten shards, in path order. Changing one byte of shard 6 (v1 to v2) changes only its leaf, the hashes on its path and the root (orange), the root from `f4471612…` to `53619d80…`. The four blue hashes are the inclusion proof for shard 6. With them and the root, a reader can check shard 6 without the other nine shard hashes. The hash of shards 8–9 has no partner on two levels, so it is carried up unchanged and joins the root directly.
+The Merkle tree of the listing's ten shards, in path order. Changing one byte of shard 6
+(v1 to v2) changes only its leaf, the hashes on its path and the root (orange), the root
+from `f4471612…` to `53619d80…`. The four blue hashes are the inclusion proof for
+shard 6. With them and the root, a reader can check shard 6 without the other nine shard
+hashes. The hash of shards 8–9 has no partner on two levels, so it is carried up
+unchanged and joins the root directly.
 ```
 
 Because shards are stored by hash, two versions that share most of their shards share the storage, and the diff between them is the diff between their manifests. A corpus rebuilt with one filter changed differs in the shards that filter touched and nowhere else, and the manifest diff says exactly which. This holds only if shard membership is stable: a document must land in the same shard in both builds. Shards cut by running count do not have that property, since removing one document shifts every later shard by one; shards cut by source and by a hash of the document identifier do, which is why pipelines bucket by key rather than by count.
@@ -598,14 +722,21 @@ Because shards are stored by hash, two versions that share most of their shards 
 ```{figure} figures/sharding-deletion.*
 :width: 75%
 :name: fig-ch5-sharding-deletion
-:alt: Two panels, each showing three v1 shards above three v2 shards after document d1 is deleted. Cut by running count, all three v2 shards differ from v1 because every later document moves up by one. Bucketed by hash of the document id, only shard 1, the one that held d1, differs.
+:alt: Two panels, each showing three v1 shards above three v2 shards after document d1
+  is deleted. Cut by running count, all three v2 shards differ from v1 because every
+  later document moves up by one. Bucketed by hash of the document id, only shard 1, the
+  one that held d1, differs.
 
-Deleting document d1 from twelve. Cut by count, four per shard: every later document moves up one place, so all three shards get new hashes and the manifest diff says nothing useful. Bucketed by SHA-256 of the document id mod 3: only shard 1, which held d1, changes. The other two shards keep their hashes and their storage.
+Deleting document d1 from twelve. Cut by count, four per shard: every later document
+moves up one place, so all three shards get new hashes and the manifest diff says
+nothing useful. Bucketed by SHA-256 of the document id mod 3: only shard 1, which held
+d1, changes. The other two shards keep their hashes and their storage.
 ```
 
 ```python
 import hashlib
 import json
+from pprint import pprint
 
 
 def diff_manifests(old, new):
@@ -614,8 +745,16 @@ def diff_manifests(old, new):
     return {
         "added": sorted(set(new_by_path) - set(old_by_path)),
         "removed": sorted(set(old_by_path) - set(new_by_path)),
-        "changed": sorted(p for p in old_by_path.keys() & new_by_path.keys() if old_by_path[p] != new_by_path[p]),
-        "unchanged": sum(1 for p in old_by_path.keys() & new_by_path.keys() if old_by_path[p] == new_by_path[p]),
+        "changed": sorted(
+            p
+            for p in old_by_path.keys() & new_by_path.keys()
+            if old_by_path[p] != new_by_path[p]
+        ),
+        "unchanged": sum(
+            1
+            for p in old_by_path.keys() & new_by_path.keys()
+            if old_by_path[p] == new_by_path[p]
+        ),
     }
 
 
@@ -631,13 +770,16 @@ assert diff_manifests(v1, v2) == {
     "changed": ["shard_002"],
     "unchanged": 3,
 }
-print(diff_manifests(v1, v2))
+pprint(diff_manifests(v1, v2), width=88, sort_dicts=False)
 ```
 
 % output
 
 ```text
-{'added': ['shard_005'], 'removed': ['shard_000'], 'changed': ['shard_002'], 'unchanged': 3}
+{'added': ['shard_005'],
+ 'removed': ['shard_000'],
+ 'changed': ['shard_002'],
+ 'unchanged': 3}
 ```
 
 (sec-ch5-immutability-naming)=
@@ -660,24 +802,32 @@ FULL_COMMIT = re.compile(r"[0-9a-f]{40}")
 
 
 def check_data_pin(config: dict) -> list:
-    """Problems with a run configuration's data reference: the revision must be a full commit hash."""
+    """Problems with a run configuration's data reference: the revision must be a
+    full commit hash."""
     revision = config.get("revision", "main")
     if FULL_COMMIT.fullmatch(revision):
         return []
     if re.fullmatch(r"[0-9a-f]{7,39}", revision):
         return [f"{revision!r} is an abbreviated hash; the Hub needs all 40 characters"]
-    return [f"{revision!r} is a branch or tag, which can move; pin the commit it points to"]
+    return [
+        f"{revision!r} is a branch or tag, which can move; pin the commit it points to"
+    ]
 
 
 configs = {
-    "pinned": {"repo_id": "org/corpus", "revision": "877b84a8f93f2d619faa2a6e514a32beef88ab0a"},
+    "pinned": {
+        "repo_id": "org/corpus",
+        "revision": "877b84a8f93f2d619faa2a6e514a32beef88ab0a",
+    },
     "branch": {"repo_id": "org/corpus", "revision": "main"},
     "short": {"repo_id": "org/corpus", "revision": "877b84a"},
     "unset": {"repo_id": "org/corpus"},
 }
 for name, cfg in configs.items():
     print(f"{name:6s} -> {check_data_pin(cfg) or 'ok'}")
-assert check_data_pin(configs["pinned"]) == [] and all(check_data_pin(configs[n]) for n in ("branch", "short", "unset"))
+assert check_data_pin(configs["pinned"]) == [] and all(
+    check_data_pin(configs[n]) for n in ("branch", "short", "unset")
+)
 ```
 
 % output
@@ -702,22 +852,45 @@ import hashlib
 import json
 
 
-def lineage_record(output_root: str, inputs: dict, code_commit: str, config: dict, tokenizer_hash=None) -> dict:
-    """How a version was made; the record hash covers every field, so an edited record is detected."""
-    record = {"output": output_root, "inputs": dict(sorted(inputs.items())), "code": code_commit,
-              "config": config, "tokenizer": tokenizer_hash}
+def lineage_record(
+    output_root: str, inputs: dict, code_commit: str, config: dict, tokenizer_hash=None
+) -> dict:
+    """How a version was made; the record hash covers every field, so an edited
+    record is detected."""
+    record = {
+        "output": output_root,
+        "inputs": dict(sorted(inputs.items())),
+        "code": code_commit,
+        "config": config,
+        "tokenizer": tokenizer_hash,
+    }
     body = json.dumps(record, sort_keys=True, separators=(",", ":"))
     return {**record, "record_hash": hashlib.sha256(body.encode()).hexdigest()}
 
 
 def verify_record(record: dict, known_roots: set) -> list:
-    """Problems with a record: a hash that does not match its fields, or an input that is not a known version."""
+    """Problems with a record: a hash that does not match its fields, or an input
+    that is not a known version."""
     fields = {k: v for k, v in record.items() if k != "record_hash"}
     problems = []
-    if lineage_record(**{"output_root": fields["output"], "inputs": fields["inputs"], "code_commit": fields["code"],
-                         "config": fields["config"], "tokenizer_hash": fields["tokenizer"]})["record_hash"] != record["record_hash"]:
+    if (
+        lineage_record(
+            **{
+                "output_root": fields["output"],
+                "inputs": fields["inputs"],
+                "code_commit": fields["code"],
+                "config": fields["config"],
+                "tokenizer_hash": fields["tokenizer"],
+            }
+        )["record_hash"]
+        != record["record_hash"]
+    ):
         problems.append("record hash does not match its contents")
-    problems += [f"unknown input {name}={root}" for name, root in record["inputs"].items() if root not in known_roots]
+    problems += [
+        f"unknown input {name}={root}"
+        for name, root in record["inputs"].items()
+        if root not in known_roots
+    ]
     return problems
 
 
@@ -725,16 +898,27 @@ def descendants(records, root: str) -> set:
     """Every version built, directly or indirectly, from `root`."""
     found, frontier = set(), {root}
     while frontier:
-        frontier = {r["output"] for r in records if set(r["inputs"].values()) & frontier} - found
+        frontier = {
+            r["output"] for r in records if set(r["inputs"].values()) & frontier
+        } - found
         found |= frontier
     return found
 
 
 raw = {"cc-2024-10": "r-cc10", "wiki-2024-03": "r-wiki"}
-cleaned = lineage_record("c-v1.2.0", raw, code_commit="9f3c2e1", config={"min_words": 50, "lang": "en"})
-tokens = lineage_record("t-v1.2.0", {"corpus": "c-v1.2.0"}, code_commit="9f3c2e1", config={"seq_len": 4096},
-                        tokenizer_hash="tok-5d41")
-model = lineage_record("m-run17", {"data": "t-v1.2.0"}, code_commit="a77b0c4", config={"seed": 17})
+cleaned = lineage_record(
+    "c-v1.2.0", raw, code_commit="9f3c2e1", config={"min_words": 50, "lang": "en"}
+)
+tokens = lineage_record(
+    "t-v1.2.0",
+    {"corpus": "c-v1.2.0"},
+    code_commit="9f3c2e1",
+    config={"seq_len": 4096},
+    tokenizer_hash="tok-5d41",
+)
+model = lineage_record(
+    "m-run17", {"data": "t-v1.2.0"}, code_commit="a77b0c4", config={"seed": 17}
+)
 records = [cleaned, tokens, model]
 known = {"r-cc10", "r-wiki", "c-v1.2.0", "t-v1.2.0"}
 
@@ -742,7 +926,8 @@ assert all(verify_record(r, known) == [] for r in records)
 tampered = {**tokens, "config": {"seq_len": 8192}}
 assert verify_record(tampered, known) == ["record hash does not match its contents"]
 affected = descendants(records, "r-wiki")
-print("record for t-v1.2.0:", json.dumps({k: tokens[k] for k in ("inputs", "code", "tokenizer")}))
+print("record for t-v1.2.0:")
+print(json.dumps({k: tokens[k] for k in ("inputs", "code", "tokenizer")}))
 print("versions built from wiki-2024-03:", sorted(affected))
 assert affected == {"c-v1.2.0", "t-v1.2.0", "m-run17"}
 ```
@@ -750,13 +935,17 @@ assert affected == {"c-v1.2.0", "t-v1.2.0", "m-run17"}
 % output
 
 ```text
-record for t-v1.2.0: {"inputs": {"corpus": "c-v1.2.0"}, "code": "9f3c2e1", "tokenizer": "tok-5d41"}
+record for t-v1.2.0:
+{"inputs": {"corpus": "c-v1.2.0"}, "code": "9f3c2e1", "tokenizer": "tok-5d41"}
 versions built from wiki-2024-03: ['c-v1.2.0', 'm-run17', 't-v1.2.0']
 ```
 
 ```{admonition} Versions and Diffs
 :class: note
-The notebook section {ref}`nb-dm-versioning` builds a manifest for the corpus written earlier, rebuilds it with one document changed and one removed, and shows that the version root changes while the diff names exactly the affected shards. It then verifies a downloaded copy against the manifest and detects a corrupted shard.
+The notebook section {ref}`nb-dm-versioning` builds a manifest for the corpus written
+earlier, rebuilds it with one document changed and one removed, and shows that the
+version root changes while the diff names exactly the affected shards. It then verifies
+a downloaded copy against the manifest and detects a corrupted shard.
 ```
 
 (sec-ch5-splits-leakage)=
@@ -774,16 +963,20 @@ import numpy as np
 
 
 def split_of(key: str, salt: str = "split-v1", validation: float = 0.01) -> str:
-    """Stable split by a hash of the key: the same key lands in the same split in every version."""
+    """Stable split by a hash of the key: the same key lands in the same split in
+    every version."""
     u = int(hashlib.sha256(f"{salt}:{key}".encode()).hexdigest()[:15], 16) / 16**15
     return "validation" if u < validation else "train"
 
 
 rng = np.random.default_rng(1)
 v1 = [f"doc{i}" for i in range(100_000)]
-v2 = [d for d in v1 if rng.random() > 0.05] + [f"new{i}" for i in range(8000)]  # 5% removed, 8,000 added
+v2 = [d for d in v1 if rng.random() > 0.05] + [
+    f"new{i}" for i in range(8000)
+]  # 5% removed, 8,000 added
 
-# A fresh random 1% split per version puts most of v1's validation set into v2's training set
+# A fresh random 1% split per version puts most of v1's validation set into v2's
+# training set
 val_v1 = set(rng.choice(v1, size=len(v1) // 100, replace=False))
 val_v2 = set(rng.choice(v2, size=len(v2) // 100, replace=False))
 train_v2_random = set(v2) - val_v2
@@ -793,15 +986,26 @@ leak_random = len(val_v1 & train_v2_random) / len(val_v1)
 val_v1_hash = {d for d in v1 if split_of(d) == "validation"}
 train_v2_hash = {d for d in v2 if split_of(d) == "train"}
 leak_hash = len(val_v1_hash & train_v2_hash) / len(val_v1_hash)
-print(f"v1 validation documents in v2 training: random split {leak_random:.1%}, hash split {leak_hash:.1%}")
+print(
+    f"v1 validation documents in v2 training: random split {leak_random:.1%}, hash "
+    f"split {leak_hash:.1%}"
+)
 assert leak_random > 0.9 and leak_hash == 0.0
 
-# Near-duplicates must share a split: key the hash on the duplicate cluster, not the document
-pairs = [(f"page{i}", f"page{i}-mirror") for i in range(20_000)]  # each page and a near-copy of it
-cluster_of = {doc: f"cluster{i}" for i, pair in enumerate(pairs) for doc in pair}  # from near-duplicate detection
+# Near-duplicates must share a split: key the hash on the duplicate cluster, not the
+# document
+pairs = [
+    (f"page{i}", f"page{i}-mirror") for i in range(20_000)
+]  # each page and a near-copy of it
+cluster_of = {
+    doc: f"cluster{i}" for i, pair in enumerate(pairs) for doc in pair
+}  # from near-duplicate detection
 split_by_doc = sum(split_of(a) != split_of(b) for a, b in pairs)
-split_by_cluster = sum(split_of(cluster_of[a]) != split_of(cluster_of[b]) for a, b in pairs)
-print(f"near-duplicate pairs split across train and validation: keyed by document {split_by_doc}, by cluster {split_by_cluster}")
+split_by_cluster = sum(
+    split_of(cluster_of[a]) != split_of(cluster_of[b]) for a, b in pairs
+)
+print("near-duplicate pairs split across train and validation:")
+print(f"  keyed by document {split_by_doc}, by cluster {split_by_cluster}")
 assert split_by_doc > 0 and split_by_cluster == 0
 ```
 
@@ -809,7 +1013,8 @@ assert split_by_doc > 0 and split_by_cluster == 0
 
 ```text
 v1 validation documents in v2 training: random split 94.2%, hash split 0.0%
-near-duplicate pairs split across train and validation: keyed by document 383, by cluster 0
+near-duplicate pairs split across train and validation:
+  keyed by document 383, by cluster 0
 ```
 
 (sec-ch5-tokenization-packing)=
@@ -841,7 +1046,9 @@ def concat_and_chunk(token_docs, seq_len: int, eod: int = 0):
         pos += len(doc) + 1
     n_seq = len(stream) // seq_len
     sequences = np.asarray(stream[: n_seq * seq_len]).reshape(n_seq, seq_len)
-    split = sum((start // seq_len) != ((end - 1) // seq_len) for start, end in boundaries)
+    split = sum(
+        (start // seq_len) != ((end - 1) // seq_len) for start, end in boundaries
+    )
     return sequences, split / len(boundaries)
 
 
@@ -883,11 +1090,16 @@ packed, pad_frac = best_fit_pack(docs, seq_len=256)
 assert split_frac > 0.1  # chunking splits many documents
 assert pad_frac < 0.05  # packing wastes little
 assert packed.shape[1] == 256 and chunked.shape[1] == 256
-# Packing needs more sequences than chunking, by about the padding fraction (nothing is dropped)
+# Packing needs more sequences than chunking, by about the padding fraction (nothing is
+# dropped)
 assert chunked.shape[0] <= packed.shape[0] <= chunked.shape[0] * 1.1
-assert (packed != -1).sum() == sum(len(d) + 1 for d in docs)  # every token kept, one EOD per document
+assert (packed != -1).sum() == sum(
+    len(d) + 1 for d in docs
+)  # every token kept, one EOD per document
 assert (packed == 0).sum() == len(docs)
-long_doc, _ = best_fit_pack([list(range(1, 601))], seq_len=256)  # a 600-token document: three pieces, one EOD
+long_doc, _ = best_fit_pack(
+    [list(range(1, 601))], seq_len=256
+)  # a 600-token document: three pieces, one EOD
 assert long_doc.shape[0] == 3 and (long_doc == 0).sum() == 1
 print(f"chunking: {chunked.shape[0]} sequences, {split_frac:.1%} of documents split")
 print(f"best-fit packing: {packed.shape[0]} sequences, {pad_frac:.2%} padding")
@@ -904,18 +1116,31 @@ best-fit packing: 108 sequences, 0.86% padding
 
 ```{figure} figures/packing-schematic.*
 :name: fig-ch5-packing-schematic
-:alt: Three stacks of token grids, each sixteen cells wide. Concatenate and chunk fills three rows with documents D1 to D6 in order and cuts D2 across the first and second rows. Pad gives each of the six documents its own row, with 48 gray padding cells in total. Best-fit pack fills three rows exactly, D6 with D5, D1 with D3, and D4 with D2.
+:alt: Three stacks of token grids, each sixteen cells wide. Concatenate and chunk fills
+  three rows with documents D1 to D6 in order and cuts D2 across the first and second
+  rows. Pad gives each of the six documents its own row, with 48 gray padding cells in
+  total. Best-fit pack fills three rows exactly, D6 with D5, D1 with D3, and D4 with D2.
 
-The same six documents (11, 7, 5, 9, 3 and 13 tokens, each counting its end-of-document token) at sequence length $n = 16$. Each colored cell is one token and gray cells are padding. Hatching marks the document that chunking splits. Padding needs twice as many sequences as the other two methods. Best-fit packing places the longest document first and each later one in the fullest sequence that still has room for it.
+The same six documents (11, 7, 5, 9, 3 and 13 tokens, each counting its end-of-document
+token) at sequence length $n = 16$. Each colored cell is one token and gray cells are
+padding. Hatching marks the document that chunking splits. Padding needs twice as many
+sequences as the other two methods. Best-fit packing places the longest document first
+and each later one in the fullest sequence that still has room for it.
 ```
 
 {numref}`fig-ch5-packing-histogram` shows the result of packing on the notebook's synthetic corpus: most sequences hold only a few documents, while short documents collect in a few crowded sequences.
 
 ```{figure} figures/packing-histogram.*
 :name: fig-ch5-packing-histogram
-:alt: A histogram of documents ending in each packed sequence. Most of the 177 sequences hold two to six documents, a handful hold none, and a long tail runs out to one sequence holding 68 documents.
+:alt: A histogram of documents ending in each packed sequence. Most of the 177 sequences
+  hold two to six documents, a handful hold none, and a long tail runs out to one
+  sequence holding 68 documents.
 
-The number of documents that end in each of the notebook's 177 best-fit packed sequences, at sequence length 512. This is a different corpus from the listing above. A sequence with zero documents holds a full 512-token piece of a longer document, a piece that does not contain the document's end. The tail comes from many short documents filling the gaps left by long ones.
+The number of documents that end in each of the notebook's 177 best-fit packed
+sequences, at sequence length 512. This is a different corpus from the listing above. A
+sequence with zero documents holds a full 512-token piece of a longer document, a piece
+that does not contain the document's end. The tail comes from many short documents
+filling the gaps left by long ones.
 ```
 
 (sec-ch5-cross-document-attention)=
@@ -929,7 +1154,8 @@ import numpy as np
 
 
 def segment_ids(sequence, eod: int = 0) -> np.ndarray:
-    """Document index of each position; the EOD token belongs to the document it ends."""
+    """Document index of each position; the EOD token belongs to the document it
+    ends."""
     ends = np.asarray(sequence) == eod
     return np.concatenate([[0], np.cumsum(ends)[:-1]])
 
@@ -938,7 +1164,9 @@ def document_causal_mask(sequence, eod: int = 0, pad: int = -1) -> np.ndarray:
     seg = segment_ids(sequence, eod)
     causal = np.tril(np.ones((len(seg), len(seg)), dtype=bool))
     same_doc = seg[:, None] == seg[None, :]
-    valid = np.asarray(sequence) != pad  # padding attends to nothing and is attended by nothing
+    valid = (
+        np.asarray(sequence) != pad
+    )  # padding attends to nothing and is attended by nothing
     return causal & same_doc & valid[:, None] & valid[None, :]
 
 
@@ -949,9 +1177,17 @@ assert mask[4, 3] and mask[4, 4]  # within document 1, causal
 assert not mask[4, 1]  # document 1 cannot see document 0
 assert not mask[3, 4]  # and not the future
 assert mask.sum() == 3 + 2 + 1 + 4 + 3 + 2 + 1 + 1
-assert document_causal_mask(seq + [-1, -1]).sum() == mask.sum()  # padding adds no allowed pairs
+assert (
+    document_causal_mask(seq + [-1, -1]).sum() == mask.sum()
+)  # padding adds no allowed pairs
 print("segment ids:", segment_ids(seq).tolist())
-print("allowed pairs:", int(mask.sum()), "of", len(seq) * (len(seq) + 1) // 2, "causal pairs")
+print(
+    "allowed pairs:",
+    int(mask.sum()),
+    "of",
+    len(seq) * (len(seq) + 1) // 2,
+    "causal pairs",
+)
 ```
 
 % output
@@ -965,16 +1201,24 @@ On a full packed sequence the mask becomes a staircase of small triangles along 
 
 ```{figure} figures/document-mask.*
 :name: fig-ch5-document-mask
-:alt: Two black-and-white mask images. On the left is the full 512 by 512 mask, a thin staircase of black triangles along the diagonal with a red box around the first 64 positions. On the right is a zoom of that box, showing six triangles, one per document, with white everywhere between them.
+:alt: Two black-and-white mask images. On the left is the full 512 by 512 mask, a thin
+  staircase of black triangles along the diagonal with a red box around the first 64
+  positions. On the right is a zoom of that box, showing six triangles, one per
+  document, with white everywhere between them.
 
-The document-causal mask for the notebook's fullest packed sequence: 68 documents in 512 positions. Black means the query position may attend to the key position. Plain causal attention would fill the whole lower triangle. The document mask keeps only the triangle of each document, and the padding at the end of the sequence takes no part.
+The document-causal mask for the notebook's fullest packed sequence: 68 documents in 512
+positions. Black means the query position may attend to the key position. Plain causal
+attention would fill the whole lower triangle. The document mask keeps only the triangle
+of each document, and the padding at the end of the sequence takes no part.
 ```
 
 Whether to mask is a choice. Many pretraining runs did not, on the grounds that the kernel was simpler and the effect small; recent ones increasingly do. Llama 3 masks attention between documents in the same sequence and reports that this had limited impact in standard pretraining but was important in continued pretraining on very long sequences {cite}`grattafiori2024llama`. Fine-tuning with packed examples should always mask, because the examples are short and the leakage between them is large.
 
 ```{admonition} Packing and Masking
 :class: tip
-The notebook section {ref}`nb-dm-packing` packs the same corpus by chunking and by best-fit, reports the split and padding rates, plots the distribution of documents per sequence, and renders the document-causal mask for the fullest packed sequence.
+The notebook section {ref}`nb-dm-packing` packs the same corpus by chunking and by
+best-fit, reports the split and padding rates, plots the distribution of documents per
+sequence, and renders the document-causal mask for the fullest packed sequence.
 ```
 
 (sec-ch5-length-bucketing)=
@@ -988,11 +1232,19 @@ import numpy as np
 
 
 def padding_fraction(lengths, batch_size: int, bucketed: bool, rng) -> float:
-    """Fraction of a padded batch that is padding, each batch padded to its longest example."""
+    """Fraction of a padded batch that is padding, each batch padded to its longest
+    example."""
     order = rng.permutation(len(lengths))
-    if bucketed:  # sort a pool of 50 batches by length, cut it into batches, shuffle the batches
+    if (
+        bucketed
+    ):  # sort a pool of 50 batches by length, cut it into batches, shuffle the batches
         pool = batch_size * 50
-        order = np.concatenate([chunk[np.argsort(lengths[chunk])] for chunk in np.array_split(order, max(1, len(order) // pool))])
+        order = np.concatenate(
+            [
+                chunk[np.argsort(lengths[chunk])]
+                for chunk in np.array_split(order, max(1, len(order) // pool))
+            ]
+        )
     batches = [order[i : i + batch_size] for i in range(0, len(order), batch_size)]
     if bucketed:
         rng.shuffle(batches)
@@ -1001,7 +1253,9 @@ def padding_fraction(lengths, batch_size: int, bucketed: bool, rng) -> float:
 
 
 rng = np.random.default_rng(0)
-lengths = np.clip(rng.lognormal(mean=5.0, sigma=0.8, size=32_000).astype(int), 8, 4096)  # fine-tuning examples
+lengths = np.clip(
+    rng.lognormal(mean=5.0, sigma=0.8, size=32_000).astype(int), 8, 4096
+)  # fine-tuning examples
 random_pad = padding_fraction(lengths, 32, bucketed=False, rng=np.random.default_rng(1))
 bucket_pad = padding_fraction(lengths, 32, bucketed=True, rng=np.random.default_rng(1))
 print(f"median length {np.median(lengths):.0f}, longest {lengths.max()}")
@@ -1035,16 +1289,31 @@ Given weights $w_s$ that sum to one, the sampler draws each document's source wi
 
 ```{figure} figures/temperature.*
 :name: fig-ch5-temperature
-:alt: A grouped bar chart with one group each for code, web and wiki and four bars per group for temperatures 0.5, 1, 2 and 4. As temperature rises, web falls from about 0.82 to 0.40 while code and wiki rise. A black tick over each bar marks its target. With 600 draws per group the bars lie within a few hundredths of their ticks.
+:alt: A grouped bar chart with one group each for code, web and wiki and four bars per
+  group for temperatures 0.5, 1, 2 and 4. As temperature rises, web falls from about
+  0.82 to 0.40 while code and wiki rise. A black tick over each bar marks its target.
+  With 600 draws per group the bars lie within a few hundredths of their ticks.
 
-The fraction of 600 draws from each source (bars) against the tempered target $p_s$ (black ticks). The weights are web 0.6, wiki 0.25 and code 0.15. At $\tau = 0.5$ the largest weight is sharpened to about 0.8. At $\tau = 4$ the three sources move toward equal shares. Each bar is a fraction of 600 draws, so it differs from its tick by sampling noise of up to a few hundredths (a standard error of about 0.016 for the web bar at $\tau = 0.5$).
+The fraction of 600 draws from each source (bars) against the tempered target $p_s$
+(black ticks). The weights are web 0.6, wiki 0.25 and code 0.15. At $\tau = 0.5$ the
+largest weight is sharpened to about 0.8. At $\tau = 4$ the three sources move toward
+equal shares. Each bar is a fraction of 600 draws, so it differs from its tick by
+sampling noise of up to a few hundredths (a standard error of about 0.016 for the web
+bar at $\tau = 0.5$).
 ```
 
 ```{figure} figures/epoch-cap.*
 :name: fig-ch5-epoch-cap
-:alt: Cumulative documents drawn from web, wiki and code over 3,000 draws. The wiki line rises until it reaches its cap of 480 at step 1,901 and then stays flat, while web and code keep rising. Dotted lines mark the wiki cap at 480 and the code cap at 800.
+:alt: Cumulative documents drawn from web, wiki and code over 3,000 draws. The wiki line
+  rises until it reaches its cap of 480 at step 1,901 and then stays flat, while web and
+  code keep rising. Dotted lines mark the wiki cap at 480 and the code cap at 800.
 
-Cumulative draws per source in the notebook's capped sampler: weights 0.6, 0.25 and 0.15 for web, wiki and code, which have 600, 120 and 200 documents, and a cap of four epochs. At weight 0.25 wiki's 480 draws are expected after about 480 / 0.25 = 1,920 steps. Wiki uses up its 4 × 120 = 480 draws at step 1,901 (dashed line). From then on its line is flat, and the remaining draws are split between web and code in proportion to their weights. Web's cap of 2,400 is off the top of the plot.
+Cumulative draws per source in the notebook's capped sampler: weights 0.6, 0.25 and 0.15
+for web, wiki and code, which have 600, 120 and 200 documents, and a cap of four epochs.
+At weight 0.25 wiki's 480 draws are expected after about 480 / 0.25 = 1,920 steps. Wiki
+uses up its 4 × 120 = 480 draws at step 1,901 (dashed line). From then on its line is
+flat, and the remaining draws are split between web and code in proportion to their
+weights. Web's cap of 2,400 is off the top of the plot.
 ```
 
 Learned weights (DoReMi {cite}`xie2023doremi`, which sets static $w_s$ by training a small proxy model with group distributionally robust optimization over the domains) and curricula that change the mixture over training are both consumed by the same sampler, the latter with $w_s$ a function of the step. The cap is stated in tokens; the sampler below counts documents, which production samplers replace with token counts from the index.
@@ -1056,17 +1325,30 @@ import numpy as np
 
 names = ["web", "wiki", "code"]
 docs = np.array([600, 120, 200])  # documents per source, as in the notebook
-mean_len = np.array([500, 2000, 800])  # mean tokens per document, assumed for the example
+mean_len = np.array(
+    [500, 2000, 800]
+)  # mean tokens per document, assumed for the example
 w = np.array([0.6, 0.25, 0.15])  # target weights
-doc_prob = (w / mean_len) / (w / mean_len).sum()  # document probabilities that make w the token shares
+doc_prob = (w / mean_len) / (
+    w / mean_len
+).sum()  # document probabilities that make w the token shares
 
-for label, p in (("weights as document probabilities", w), ("weights as token shares", doc_prob)):
-    share = p * mean_len / (p * mean_len).sum()  # each source's share of the training tokens
+for label, p in (
+    ("weights as document probabilities", w),
+    ("weights as token shares", doc_prob),
+):
+    share = (
+        p * mean_len / (p * mean_len).sum()
+    )  # each source's share of the training tokens
     draws_to_cap = 4 * docs / p  # expected draws until each source has had four epochs
     first = int(np.argmin(draws_to_cap))
     tokens = draws_to_cap[first] * (p * mean_len).sum()
-    print(f"{label}: token shares {dict(zip(names, share.round(3).tolist()))}")
-    print(f"  first cap to bind: {names[first]}, after {draws_to_cap[first]:,.0f} documents and {tokens / 1e6:.2f}M tokens")
+    print(f"{label}:")
+    print(f"  token shares {dict(zip(names, share.round(3).tolist()))}")
+    print(
+        f"  first cap to bind: {names[first]}, after {draws_to_cap[first]:,.0f} "
+        f"documents and {tokens / 1e6:.2f}M tokens"
+    )
     if label == "weights as token shares":
         assert np.allclose(share, w)
 ```
@@ -1074,9 +1356,11 @@ for label, p in (("weights as document probabilities", w), ("weights as token sh
 % output
 
 ```text
-weights as document probabilities: token shares {'web': 0.326, 'wiki': 0.543, 'code': 0.13}
+weights as document probabilities:
+  token shares {'web': 0.326, 'wiki': 0.543, 'code': 0.13}
   first cap to bind: wiki, after 1,920 documents and 1.77M tokens
-weights as token shares: token shares {'web': 0.6, 'wiki': 0.25, 'code': 0.15}
+weights as token shares:
+  token shares {'web': 0.6, 'wiki': 0.25, 'code': 0.15}
   first cap to bind: web, after 3,025 documents and 2.00M tokens
 ```
 
@@ -1100,10 +1384,19 @@ class MixtureSampler:
     State is (seed, step). Restarting at any step reproduces the same stream.
     """
 
-    def __init__(self, sizes: dict, weights: dict, seed: int, temperature: float = 1.0, max_epochs: float = 4.0):
+    def __init__(
+        self,
+        sizes: dict,
+        weights: dict,
+        seed: int,
+        temperature: float = 1.0,
+        max_epochs: float = 4.0,
+    ):
         self.names = sorted(sizes)
         self.sizes = np.array([sizes[n] for n in self.names], dtype=np.int64)
-        w = np.array([weights[n] for n in self.names], dtype=np.float64) ** (1.0 / temperature)
+        w = np.array([weights[n] for n in self.names], dtype=np.float64) ** (
+            1.0 / temperature
+        )
         self.probs = w / w.sum()
         self.seed = seed
         self.max_epochs = max_epochs
@@ -1111,13 +1404,17 @@ class MixtureSampler:
 
     def reset(self):
         self.step = 0
-        self.cursor = np.zeros(len(self.names), dtype=np.int64)  # documents consumed per source
+        self.cursor = np.zeros(
+            len(self.names), dtype=np.int64
+        )  # documents consumed per source
         self.rng = np.random.default_rng(self.seed)
         self._perm = [None] * len(self.names)
 
     def _permutation(self, s: int, epoch: int):
         if self._perm[s] is None or self._perm[s][0] != epoch:
-            prng = np.random.default_rng([self.seed, s, epoch])  # keyed by (seed, source, epoch)
+            prng = np.random.default_rng(
+                [self.seed, s, epoch]
+            )  # keyed by (seed, source, epoch)
             self._perm[s] = (epoch, prng.permutation(self.sizes[s]))
         return self._perm[s][1]
 
@@ -1162,11 +1459,19 @@ flat = MixtureSampler(sizes, weights, seed=1, temperature=3.0)
 assert flat.probs[flat.names.index("wiki")] > a.probs[a.names.index("wiki")]
 print("wiki draws in 500 steps:", len(wiki_docs))
 print("probabilities at temperature 1:", dict(zip(a.names, a.probs.round(4).tolist())))
-print("probabilities at temperature 3:", dict(zip(flat.names, flat.probs.round(4).tolist())))
+print(
+    "probabilities at temperature 3:",
+    dict(zip(flat.names, flat.probs.round(4).tolist())),
+)
 
-# A checkpoint holds the generator state with the cursors; the cursors alone do not resume the stream
+# A checkpoint holds the generator state with the cursors; the cursors alone do not
+# resume the stream
 ckpt = MixtureSampler(sizes, weights, seed=1).seek(300)
-saved = {"step": ckpt.step, "cursor": ckpt.cursor.copy(), "rng": ckpt.rng.bit_generator.state}
+saved = {
+    "step": ckpt.step,
+    "cursor": ckpt.cursor.copy(),
+    "rng": ckpt.rng.bit_generator.state,
+}
 restored = MixtureSampler(sizes, weights, seed=1)
 restored.step, restored.cursor = saved["step"], saved["cursor"].copy()
 cursors_only = [next(restored) for _ in range(200)]
@@ -1175,7 +1480,8 @@ restored.rng.bit_generator.state = saved["rng"]
 assert [next(restored) for _ in range(200)] == stream[300:]
 differ = sum(x != y for x, y in zip(cursors_only, stream[300:]))
 assert differ > 0
-print(f"restored at step 300 from the cursors alone: {differ} of the next 200 draws differ; with the generator state: 0")
+print(f"restored at step 300 from the cursors alone: {differ} of the next 200 differ")
+print("restored with the generator state as well: 0 differ")
 ```
 
 % output
@@ -1184,7 +1490,8 @@ print(f"restored at step 300 from the cursors alone: {differ} of the next 200 dr
 wiki draws in 500 steps: 66
 probabilities at temperature 1: {'code': 0.15, 'web': 0.7, 'wiki': 0.15}
 probabilities at temperature 3: {'code': 0.2724, 'web': 0.4552, 'wiki': 0.2724}
-restored at step 300 from the cursors alone: 176 of the next 200 draws differ; with the generator state: 0
+restored at step 300 from the cursors alone: 176 of the next 200 differ
+restored with the generator state as well: 0 differ
 ```
 
 The `seek` method replays draws, which is fine for millions of steps and a few sources. Constant work per step needs two further constructions, and it is worth seeing why seeding alone does not give it. Seeding each permutation by `(seed, source, epoch)`, as `_permutation` does, makes an epoch's order reproducible without replay, but `permutation` still builds the whole array, $\mathcal{O}(n_{ex})$ work and memory for a source of $n_{ex}$ documents, to read one element of it. And the cursor, $\operatorname{drawn}_s(t)$, the number of documents of source $s$ drawn before step $t$, is a sum over $t$ independent source draws: hashing each slot fixes every term, but it does not give the sum without adding up the terms.
@@ -1199,11 +1506,14 @@ import hashlib
 
 
 class FeistelPermutation:
-    """Keyed bijection on range(n): a balanced Feistel network on 2 * half bits, with cycle-walking."""
+    """Keyed bijection on range(n): a balanced Feistel network on 2 * half bits,
+    with cycle-walking."""
 
     def __init__(self, n: int, key: bytes, rounds: int = 4):
         self.n, self.key, self.rounds = n, key, rounds
-        self.half = max(1, ((n - 1).bit_length() + 1) // 2)  # 4**half >= n, and 4**half < 4 * n for n > 1 (n = 1 gives 4)
+        self.half = max(
+            1, ((n - 1).bit_length() + 1) // 2
+        )  # 4**half >= n, and 4**half < 4 * n for n > 1 (n = 1 gives 4)
         self.mask = (1 << self.half) - 1
         self.evaluations = 0
 
@@ -1211,15 +1521,21 @@ class FeistelPermutation:
         self.evaluations += 1
         left, right = x >> self.half, x & self.mask
         for r in range(self.rounds):
-            f = hashlib.blake2b(bytes([r]) + right.to_bytes(8, "little"), key=self.key, digest_size=8)
-            left, right = right, left ^ (int.from_bytes(f.digest(), "little") & self.mask)
+            f = hashlib.blake2b(
+                bytes([r]) + right.to_bytes(8, "little"), key=self.key, digest_size=8
+            )
+            left, right = right, left ^ (
+                int.from_bytes(f.digest(), "little") & self.mask
+            )
         return (left << self.half) | right
 
     def __call__(self, i: int) -> int:
         if not 0 <= i < self.n:
             raise IndexError(i)
         x = self._encrypt(i)
-        while x >= self.n:  # cycle-walking: re-encrypt until the value falls back into range(n)
+        while (
+            x >= self.n
+        ):  # cycle-walking: re-encrypt until the value falls back into range(n)
             x = self._encrypt(x)
         return x
 
@@ -1232,7 +1548,9 @@ def stride_schedule(weights: dict, period: int, exact: bool = False):
     w_s * period is whole; exact=True refuses to round. The slots are spread out by
     smooth weighted round-robin."""
     if period < 1 or min(weights.values()) < 0 or abs(sum(weights.values()) - 1) > 1e-9:
-        raise ValueError(f"need weights >= 0 summing to 1 and a period >= 1: {weights}, {period}")
+        raise ValueError(
+            f"need weights >= 0 summing to 1 and a period >= 1: {weights}, {period}"
+        )
     ideal = {s: w * period for s, w in sorted(weights.items())}
     counts = {s: int(x) for s, x in ideal.items()}
     by_remainder = sorted(ideal, key=lambda s: counts[s] - ideal[s])
@@ -1240,7 +1558,9 @@ def stride_schedule(weights: dict, period: int, exact: bool = False):
         counts[s] += 1
     if exact and max(abs(counts[s] - ideal[s]) for s in ideal) > 1e-9:
         nearest = {s: c / period for s, c in counts.items()}
-        raise ValueError(f"not whole multiples of 1/{period}: {weights}; nearest {nearest}")
+        raise ValueError(
+            f"not whole multiples of 1/{period}: {weights}; nearest {nearest}"
+        )
     credit = dict.fromkeys(counts, 0)
     pattern = []
     for _ in range(period):
@@ -1259,19 +1579,23 @@ def stride_schedule(weights: dict, period: int, exact: bool = False):
 
 
 class StrideSampler:
-    """Random access to the stream: sample t is computed from (seed, t) alone, with no replay."""
+    """Random access to the stream: sample t is computed from (seed, t) alone, with
+    no replay."""
 
     def __init__(self, sizes: dict, weights: dict, seed: int, period: int = 20):
         self.sizes, self.seed = sizes, seed
         self.pattern, self.prefix = stride_schedule(weights, period)
 
     def drawn(self, s: str, t: int) -> int:
-        """Documents of source s drawn before step t: whole periods plus a prefix count."""
+        """Documents of source s drawn before step t: whole periods plus a
+        prefix count."""
         periods, r = divmod(t, len(self.pattern))
         return periods * self.prefix[s][-1] + self.prefix[s][r]
 
     def permutation(self, s: str, epoch: int) -> FeistelPermutation:
-        key = hashlib.blake2b(f"{self.seed}/{s}/{epoch}".encode(), digest_size=16).digest()
+        key = hashlib.blake2b(
+            f"{self.seed}/{s}/{epoch}".encode(), digest_size=16
+        ).digest()
         return FeistelPermutation(self.sizes[s], key)
 
     def __getitem__(self, t: int):
@@ -1289,18 +1613,31 @@ assert sorted(order) == list(range(1000))  # a bijection on range(1000)
 assert order[:20] != list(range(20))  # and not the identity
 walk = perm.evaluations / 1000
 assert walk < 4  # 4**half / n bounds the expected walk length; here 1024 / 1000
-print(f"Feistel on range(1000): permutation {sorted(order) == list(range(1000))}, {walk:.3f} encryptions per index")
+print(
+    f"Feistel on range(1000): permutation {sorted(order) == list(range(1000))}, "
+    f"{walk:.3f} encryptions per index"
+)
 
 sampler = StrideSampler(sizes, weights, seed=1)
 stream = [sampler[t] for t in range(2000)]
 for s in sizes:  # the closed-form count agrees with counting the stream
-    assert all(sampler.drawn(s, t) == sum(1 for x, _ in stream[:t] if x == s) for t in (0, 7, 333, 1999))
-resumed = StrideSampler(sizes, weights, seed=1)  # a fresh process that knows only the step counter
+    assert all(
+        sampler.drawn(s, t) == sum(1 for x, _ in stream[:t] if x == s)
+        for t in (0, 7, 333, 1999)
+    )
+resumed = StrideSampler(
+    sizes, weights, seed=1
+)  # a fresh process that knows only the step counter
 assert [resumed[t] for t in range(1234, 1300)] == stream[1234:1300]
 wiki = [d for s, d in stream if s == "wiki"]
-assert sorted(wiki[:50]) == list(range(50)) and sorted(wiki[50:100]) == list(range(50))  # each epoch is a permutation
+assert sorted(wiki[:50]) == list(range(50)) and sorted(wiki[50:100]) == list(
+    range(50)
+)  # each epoch is a permutation
 print("drawn by step 2000:", {s: sampler.drawn(s, 2000) for s in sorted(sizes)})
-print("sample at step 1,000,000,007:", StrideSampler(sizes, weights, seed=1)[1_000_000_007])
+print(
+    "sample at step 1,000,000,007:",
+    StrideSampler(sizes, weights, seed=1)[1_000_000_007],
+)
 
 thirds = dict.fromkeys(["web", "wiki", "code"], 1 / 3)
 for period in (20, 21):
@@ -1366,7 +1703,11 @@ class ShuffleBuffer:
         return self.buffer.pop()
 
     def state_dict(self) -> dict:
-        return {"position": self.position, "buffer": list(self.buffer), "rng": self.rng.bit_generator.state}
+        return {
+            "position": self.position,
+            "buffer": list(self.buffer),
+            "rng": self.rng.bit_generator.state,
+        }
 
     def load_state_dict(self, state: dict):
         self.position, self.buffer = state["position"], list(state["buffer"])
@@ -1387,15 +1728,23 @@ assert list(resumed) == rest  # position, buffer and generator state: exact
 position_only = ShuffleBuffer(docs, size=1000, seed=3)
 position_only.position = state["position"]
 lost = set(docs) - set(seen) - set(position_only)
-print(f"checkpoint after {len(seen):,} documents: read position {state['position']:,}, {len(state['buffer']):,} buffered")
-print(f"restoring the read position alone loses {len(lost):,} documents for the rest of the epoch")
+print(
+    f"checkpoint after {len(seen):,} documents: read position {state['position']:,}, "
+    f"{len(state['buffer']):,} buffered"
+)
+print(
+    f"restoring the read position alone loses {len(lost):,} documents for the rest of "
+    "the epoch"
+)
 assert lost == set(state["buffer"])
 
 # How much a buffer mixes: 20 shards of 1,000 documents read in order, batches of 64
 shard_of = np.repeat(np.arange(20), 1000)
 for size in (100, 1_000, 5_000, 20_000):
     order = np.fromiter(ShuffleBuffer(range(20_000), size, seed=0), dtype=int)
-    per_batch = [len(set(shard_of[order[k : k + 64]])) for k in range(0, 20_000 - 63, 64)]
+    per_batch = [
+        len(set(shard_of[order[k : k + 64]])) for k in range(0, 20_000 - 63, 64)
+    ]
     print(f"buffer {size:>6,}: {np.mean(per_batch):5.2f} shards in a batch of 64")
 ```
 
@@ -1414,14 +1763,25 @@ buffer 20,000: 19.34 shards in a batch of 64
 
 ```{figure} figures/shuffle.*
 :name: fig-ch5-shuffle
-:alt: Four shards feed step 1, visiting shards in a seeded order (2, 0, 3, 1), then step 2, permuting documents within each shard, then a shuffle buffer of a few thousand documents that emits a random slot and refills it, then the training batches. Beside the buffer, a dashed box for step 3, a global permutation that needs random access, connects to the batches as the ideal the buffer approximates.
+:alt: Four shards feed step 1, visiting shards in a seeded order (2, 0, 3, 1), then step
+  2, permuting documents within each shard, then a shuffle buffer of a few thousand
+  documents that emits a random slot and refills it, then the training batches. Beside
+  the buffer, a dashed box for step 3, a global permutation that needs random access,
+  connects to the batches as the ideal the buffer approximates.
 
-Three granularities of shuffling in a streaming loader. Shard order and within-shard order are cheap. The shuffle buffer then mixes documents from neighboring shards. A global permutation over the whole corpus is what the buffer approximates. It needs random access to any document, which the indexed sampler has and a sequential stream does not.
+Three granularities of shuffling in a streaming loader. Shard order and within-shard
+order are cheap. The shuffle buffer then mixes documents from neighboring shards. A
+global permutation over the whole corpus is what the buffer approximates. It needs
+random access to any document, which the indexed sampler has and a sequential stream
+does not.
 ```
 
 ```{admonition} The Sampler
 :class: note
-The notebook section {ref}`nb-dm-sampler` runs the mixture sampler, plots the realized source fractions at several temperatures with the tempered target weights marked, shows the epoch cap re-normalizing the mixture once the smallest source is exhausted, and checks resumption at a hundred random steps.
+The notebook section {ref}`nb-dm-sampler` runs the mixture sampler, plots the realized
+source fractions at several temperatures with the tempered target weights marked, shows
+the epoch cap re-normalizing the mixture once the smallest source is exhausted, and
+checks resumption at a hundred random steps.
 ```
 
 (sec-ch5-sampler-to-ranks)=
@@ -1484,7 +1844,8 @@ def sample(t: int, seed: int, index: dict):
 
 
 def rank_batch(step, rank, n_ranks, batch, seed, index) -> np.ndarray:
-    """The rows a rank reads at `step`: positions step * batch + i, i = rank mod n_ranks."""
+    """The rows a rank reads at `step`: positions step * batch + i, i = rank mod
+    n_ranks."""
     drawn = [sample(step * batch + i, seed, index) for i in range(rank, batch, n_ranks)]
     return np.stack([index[s][j] for s, j in drawn])
 
@@ -1492,7 +1853,9 @@ def rank_batch(step, rank, n_ranks, batch, seed, index) -> np.ndarray:
 def build(seed: int = 0) -> dict:
     """Three sources of 6, 4 and 2 shards, 150 documents per shard, packed offline."""
     rng = np.random.default_rng(seed)
-    docs = lambda: [rng.integers(1, 1000, int(rng.geometric(1 / 200))) for _ in range(150)]
+    docs = lambda: [
+        rng.integers(1, 1000, int(rng.geometric(1 / 200))) for _ in range(150)
+    ]
     return {s: SequenceIndex([pack_shard(docs()) for _ in range(n)])
             for s, n in {"web": 6, "code": 4, "wiki": 2}.items()}
 
@@ -1506,9 +1869,13 @@ assert all((index["web"][j] == flat[j]).all() for j in range(len(index["web"])))
 B, step = 16, 37
 world = {n: np.concatenate([rank_batch(step, r, n, B, 1, index) for r in range(n)])
          for n in (1, 2, 4, 8)}
-assert all(sorted(map(bytes, w)) == sorted(map(bytes, world[1])) for w in world.values())
+assert all(
+    sorted(map(bytes, w)) == sorted(map(bytes, world[1])) for w in world.values()
+)
 fresh = build()  # another process opens the same shards
-assert (rank_batch(step, 3, 4, B, 1, fresh) == rank_batch(step, 3, 4, B, 1, index)).all()
+assert (
+    rank_batch(step, 3, 4, B, 1, fresh) == rank_batch(step, 3, 4, B, 1, index)
+).all()
 print("batch at step 37: the same for 1, 2, 4 and 8 ranks and in a fresh process")
 ```
 
@@ -1540,7 +1907,8 @@ import numpy as np
 
 
 def rank_shards(num_shards: int, rank: int, world_size: int):
-    """Shard assignment: rank r takes shards r, r + world_size, r + 2 * world_size, ..."""
+    """Shard assignment: rank r takes shards r, r + world_size, r + 2 * world_size,
+    ..."""
     return list(range(rank, num_shards, world_size))
 
 
@@ -1558,7 +1926,11 @@ def shard_assignment_batch(step, global_batch, world_size, num_shards, docs_per_
     per_rank = global_batch // world_size
     batch = []
     for r in range(world_size):
-        mine = [s * docs_per_shard + i for s in rank_shards(num_shards, r, world_size) for i in range(docs_per_shard)]
+        mine = [
+            s * docs_per_shard + i
+            for s in rank_shards(num_shards, r, world_size)
+            for i in range(docs_per_shard)
+        ]
         batch += mine[step * per_rank : (step + 1) * per_rank]
     return sorted(batch)
 
@@ -1568,21 +1940,31 @@ assigned = [s for r in range(4) for s in rank_shards(10, r, 4)]
 assert sorted(assigned) == list(range(10))
 
 # ... but the documents in the global batch at a step depend on the world size
-assert shard_assignment_batch(3, 8, 2, 10, 16) != shard_assignment_batch(3, 8, 4, 10, 16)
+assert shard_assignment_batch(3, 8, 2, 10, 16) != shard_assignment_batch(
+    3, 8, 4, 10, 16
+)
 
 # Global indexing: the union over ranks at step t is the same set for any world size
 step, B = 7, 64
 for n_ranks in (1, 2, 4, 8, 16):
-    ids = np.concatenate([global_batch_slice(step, B, r, n_ranks) for r in range(n_ranks)])
+    ids = np.concatenate(
+        [global_batch_slice(step, B, r, n_ranks) for r in range(n_ranks)]
+    )
     assert sorted(ids.tolist()) == list(range(step * B, (step + 1) * B))
-print("rank 1 of 4 at step 7:", global_batch_slice(7, 64, 1, 4).tolist())
-print("shard assignment, step 3, 2 vs 4 ranks:", shard_assignment_batch(3, 8, 2, 10, 16)[:4], shard_assignment_batch(3, 8, 4, 10, 16)[:4])
+batch = global_batch_slice(7, 64, 1, 4).tolist()
+assert batch == list(range(batch[0], batch[0] + 16))
+print(f"rank 1 of 4 at step 7: ids {batch[0]} to {batch[-1]}, {len(batch)} consecutive")
+print(
+    "shard assignment, step 3, 2 vs 4 ranks:",
+    shard_assignment_batch(3, 8, 2, 10, 16)[:4],
+    shard_assignment_batch(3, 8, 4, 10, 16)[:4],
+)
 ```
 
 % output
 
 ```text
-rank 1 of 4 at step 7: [464, 465, 466, 467, 468, 469, 470, 471, 472, 473, 474, 475, 476, 477, 478, 479]
+rank 1 of 4 at step 7: ids 464 to 479, 16 consecutive
 shard assignment, step 3, 2 vs 4 ranks: [12, 13, 14, 15] [6, 7, 22, 23]
 ```
 
@@ -1590,9 +1972,16 @@ shard assignment, step 3, 2 vs 4 ranks: [12, 13, 14, 15] [6, 7, 22, 23]
 
 ```{figure} figures/ranks.*
 :name: fig-ch5-ranks
-:alt: Two panels for step 3 with a global batch of 8. Shard assignment: with 2 ranks, rank 0 reads documents 12–15 and rank 1 reads 28–31; with 4 ranks, the ranks read 6, 7; 22, 23; 38, 39; and 54, 55, so the global batch differs. Global indexing: with 2 ranks and with 4 the ranks split samples 24–31 among themselves, so the global batch is the same.
+:alt: Two panels for step 3 with a global batch of 8. Shard assignment: with 2 ranks,
+  rank 0 reads documents 12–15 and rank 1 reads 28–31; with 4 ranks, the ranks read 6,
+  7; 22, 23; 38, 39; and 54, 55, so the global batch differs. Global indexing: with 2
+  ranks and with 4 the ranks split samples 24–31 among themselves, so the global batch
+  is the same.
 
-The documents in the global batch at step 3 ($B = 8$, ten shards of 16 documents) for 2 and 4 ranks. Under shard assignment, each rank walks its own shards, so the set of documents seen at a step depends on $n_{ranks}$. Under global indexing, the batch is always global positions 24 to 31, and only the split between ranks changes.
+The documents in the global batch at step 3 ($B = 8$, ten shards of 16 documents) for 2
+and 4 ranks. Under shard assignment, each rank walks its own shards, so the set of
+documents seen at a step depends on $n_{ranks}$. Under global indexing, the batch is
+always global positions 24 to 31, and only the split between ranks changes.
 ```
 
 (sec-ch5-throughput)=
@@ -1611,8 +2000,27 @@ import numpy as np
 import tiktoken  # downloads the encoding on first use
 
 rng = np.random.default_rng(0)
-words = ["the", "data", "model", "shard", "version", "token", "of", "and", "a", "loader",
-         "batch", "in", "training", "which", "is", "for", "with", "that", "documents"]
+words = [
+    "the",
+    "data",
+    "model",
+    "shard",
+    "version",
+    "token",
+    "of",
+    "and",
+    "a",
+    "loader",
+    "batch",
+    "in",
+    "training",
+    "which",
+    "is",
+    "for",
+    "with",
+    "that",
+    "documents",
+]
 docs = [{"id": i, "text": " ".join(rng.choice(words, int(rng.integers(50, 600))))}
         for i in range(2000)]
 blob = gzip.compress("".join(json.dumps(d) + "\n" for d in docs).encode(), mtime=0)
@@ -1623,7 +2031,9 @@ lines = gzip.decompress(blob).splitlines()
 n = sum(len(encoding.encode_ordinary(json.loads(line)["text"])) for line in lines)
 seconds = time.perf_counter() - start
 rate = n / seconds
-print(f"{n:,} tokens from {len(lines):,} gzip JSON Lines in {seconds:.2f} s on one core")
+print(
+    f"{n:,} tokens from {len(lines):,} gzip JSON Lines in {seconds:.2f} s on one core"
+)
 print(f"{rate / 1e6:.1f} million tokens/s; cores needed per rank: {1_000 / rate:.4f} "
       f"at 1,000 tokens/s, {500_000 / rate:.2f} at 500,000")
 ```
@@ -1639,7 +2049,11 @@ The remaining ingredients are standard: reads of whole shards or large ranges ra
 
 ```{admonition} Sharding Across Ranks
 :class: tip
-The notebook section {ref}`nb-dm-distributed` simulates shard assignment for one, two, four and eight ranks (its ten shards cannot be spread over sixteen) and global indexing for one to sixteen ranks, checks that each covers the corpus exactly once, and shows the global batch at a fixed step staying identical as the world size changes under global indexing and changing under shard assignment.
+The notebook section {ref}`nb-dm-distributed` simulates shard assignment for one, two,
+four and eight ranks (its ten shards cannot be spread over sixteen) and global indexing
+for one to sixteen ranks, checks that each covers the corpus exactly once, and shows the
+global batch at a fixed step staying identical as the world size changes under global
+indexing and changing under shard assignment.
 ```
 
 (sec-ch5-loader-workers)=
@@ -1655,20 +2069,40 @@ def rank_stream(rank: int, world_size: int, n: int):
 
 
 def worker_items(rank, world_size, n, worker_id, num_workers, split_by_worker: bool):
-    """What one DataLoader worker of one rank yields from an iterable dataset. Each worker holds
-    a full replica, so without splitting each one yields the rank's whole stream."""
+    """What one DataLoader worker of one rank yields from an iterable dataset. Each
+    worker holds a full replica, so without splitting each one yields the rank's
+    whole stream."""
     stream = rank_stream(rank, world_size, n)
     return list(stream[worker_id::num_workers]) if split_by_worker else list(stream)
 
 
 world_size, n_loader, n = 4, 3, 1200
 for split in (False, True):
-    seen = [x for r in range(world_size) for w in range(n_loader) for x in worker_items(r, world_size, n, w, n_loader, split)]
-    print(f"split by worker {split!s:5s}: {len(seen):,} samples yielded, {len(set(seen)):,} distinct, "
-          f"each seen {len(seen) / len(set(seen)):.0f} times")
-naive = [x for w in range(n_loader) for x in worker_items(0, world_size, n, w, n_loader, False)]
-fixed = [x for r in range(world_size) for w in range(n_loader) for x in worker_items(r, world_size, n, w, n_loader, True)]
-assert len(naive) == n_loader * len(set(naive))  # every sample of the rank n_loader times
+    seen = [
+        x
+        for r in range(world_size)
+        for w in range(n_loader)
+        for x in worker_items(r, world_size, n, w, n_loader, split)
+    ]
+    print(
+        f"split by worker {split!s:5s}: {len(seen):,} samples yielded, "
+        f"{len(set(seen)):,} distinct, "
+        f"each seen {len(seen) / len(set(seen)):.0f} times"
+    )
+naive = [
+    x
+    for w in range(n_loader)
+    for x in worker_items(0, world_size, n, w, n_loader, False)
+]
+fixed = [
+    x
+    for r in range(world_size)
+    for w in range(n_loader)
+    for x in worker_items(r, world_size, n, w, n_loader, True)
+]
+assert len(naive) == n_loader * len(
+    set(naive)
+)  # every sample of the rank n_loader times
 assert sorted(fixed) == list(range(n))  # each sample once across all ranks and workers
 ```
 
@@ -1743,9 +2177,13 @@ def check_contract(stats, plan: dict, tolerance: float = 0.05, max_len: int = 10
             failures.append(f"{source}: missing from dataset")
             continue
         if abs(stats[source]["share"] - target) > tolerance:
-            failures.append(f"{source}: share {stats[source]['share']:.3f} vs plan {target:.3f}")
+            failures.append(
+                f"{source}: share {stats[source]['share']:.3f} vs plan {target:.3f}"
+            )
         if stats[source]["max"] > max_len:
-            failures.append(f"{source}: document of {stats[source]['max']} tokens exceeds {max_len}")
+            failures.append(
+                f"{source}: document of {stats[source]['max']} tokens exceeds {max_len}"
+            )
     for source in stats:
         if source not in plan:
             failures.append(f"{source}: present but not in plan")
@@ -1761,10 +2199,17 @@ records = (
 stats = dataset_stats(records)
 plan = {"web": 0.70, "code": 0.22, "wiki": 0.08}
 assert check_contract(stats, plan, tolerance=0.08) == []
-assert any("books" in f for f in check_contract(stats, {**plan, "books": 0.1}, tolerance=0.08))
-assert any("exceeds" in f for f in check_contract(stats, plan, tolerance=0.08, max_len=1000))
+assert any(
+    "books" in f for f in check_contract(stats, {**plan, "books": 0.1}, tolerance=0.08)
+)
+assert any(
+    "exceeds" in f for f in check_contract(stats, plan, tolerance=0.08, max_len=1000)
+)
 print("token shares:", {s: round(v["share"], 4) for s, v in stats.items()})
-print("against a plan with books:", check_contract(stats, {**plan, "books": 0.1}, tolerance=0.08)[-1])
+print(
+    "against a plan with books:",
+    check_contract(stats, {**plan, "books": 0.1}, tolerance=0.08)[-1],
+)
 ```
 
 % output
@@ -1801,7 +2246,8 @@ def ks_statistic(a, b) -> float:
 
 def ks_threshold(n: int, m: int, false_alarm: float = 0.01) -> float:
     """The D that samples of sizes n and m from one continuous distribution exceed with
-    probability `false_alarm`: P(D > c sqrt(1/n + 1/m)) -> 2 exp(-2 c^2) for large n, m."""
+    probability `false_alarm`: P(D > c sqrt(1/n + 1/m)) -> 2 exp(-2 c^2) for large n, m.
+    """
     return math.sqrt(-math.log(false_alarm / 2) / 2 * (1 / n + 1 / m))
 
 
@@ -1809,7 +2255,9 @@ def relabeled_rate(a, b, threshold: float, trials: int, seed: int) -> float:
     """Share of random relabelings of the pooled sample with D above `threshold`: the
     false-alarm rate measured on the data themselves, ties included."""
     pooled = np.sort(np.concatenate([a, b]))
-    run_end = np.append(pooled[1:] != pooled[:-1], True)  # D is read where a run of ties ends
+    run_end = np.append(
+        pooled[1:] != pooled[:-1], True
+    )  # D is read where a run of ties ends
     rng = np.random.default_rng(seed)
     above = 0
     for _ in range(trials):
@@ -1822,11 +2270,19 @@ def relabeled_rate(a, b, threshold: float, trials: int, seed: int) -> float:
 
 
 rng = np.random.default_rng(7)
-v1 = rng.lognormal(mean=6.0, sigma=1.0, size=20_000).astype(int) + 1   # document lengths in tokens, version 1
-v2_same = rng.lognormal(mean=6.0, sigma=1.0, size=20_000).astype(int) + 1  # same distribution, new draw
+v1 = (
+    rng.lognormal(mean=6.0, sigma=1.0, size=20_000).astype(int) + 1
+)  # document lengths in tokens, version 1
+v2_same = (
+    rng.lognormal(mean=6.0, sigma=1.0, size=20_000).astype(int) + 1
+)  # same distribution, new draw
 v2_bug = v2_same.copy()
-tables = rng.random(v2_bug.size) < 0.15   # an extractor update drops the tables from 15% of documents ...
-v2_bug[tables] = (v2_bug[tables] * 0.6).astype(int) + 1  # ... which removes 40% of their tokens
+tables = (
+    rng.random(v2_bug.size) < 0.15
+)  # an extractor update drops the tables from 15% of documents ...
+v2_bug[tables] = (v2_bug[tables] * 0.6).astype(
+    int
+) + 1  # ... which removes 40% of their tokens
 
 limit = ks_threshold(v1.size, v2_same.size)
 for name, v2 in (("same distribution", v2_same), ("tables dropped", v2_bug)):
@@ -1852,7 +2308,10 @@ false alarms in 5 x 1,000 relabelings: 0.7% to 1.4%, together 1.10%
 
 ```{admonition} Statistics and Contracts
 :class: note
-The notebook section {ref}`nb-dm-governance` computes per-source statistics for the demo corpus, runs a contract against a plan, injects a canary and finds it, runs a drift check on the length distribution, and renders a data card from the manifest and statistics.
+The notebook section {ref}`nb-dm-governance` computes per-source statistics for the demo
+corpus, runs a contract against a plan, injects a canary and finds it, runs a drift
+check on the length distribution, and renders a data card from the manifest and
+statistics.
 ```
 
 (sec-ch5-documentation-governance)=
@@ -1895,9 +2354,18 @@ Requests to remove content arrive after release: an opt-out, a takedown, a disco
 ```{figure} figures/removal.*
 :width: 75%
 :name: fig-ch5-removal
-:alt: A flow from a removal request for document alpha to step 1, locate via the document index at (v1.0, s0) and (v1.1, s0), step 2, cut v1.2 without alpha with a manifest diff naming s0 and the reason recorded, and step 3, record every model trained on v1.0 or v1.1 from the lineage graph. The flow ends at a policy decision outside the data system, with three outcomes: retrain, machine unlearning, or disclose.
+:alt: A flow from a removal request for document alpha to step 1, locate via the
+  document index at (v1.0, s0) and (v1.1, s0), step 2, cut v1.2 without alpha with a
+  manifest diff naming s0 and the reason recorded, and step 3, record every model
+  trained on v1.0 or v1.1 from the lineage graph. The flow ends at a policy decision
+  outside the data system, with three outcomes: retrain, machine unlearning, or
+  disclose.
 
-The removal workflow for the document `alpha` of the listing below. The data system answers the three steps exactly: where the document is, which shards a new version changes, and which models saw it. The choice between retraining, unlearning and disclosure is policy. Under SISA-style unlearning, only the constituent models whose shards held the document are retrained.
+The removal workflow for the document `alpha` of the listing below. The data system
+answers the three steps exactly: where the document is, which shards a new version
+changes, and which models saw it. The choice between retraining, unlearning and
+disclosure is policy. Under SISA-style unlearning, only the constituent models whose
+shards held the document are retrained.
 ```
 
 ```python
@@ -1917,7 +2385,9 @@ class DocumentIndex:
     def add_version(self, version: str, shard_docs: dict):
         for shard, docs in shard_docs.items():
             for text in docs:
-                self.locations.setdefault(document_hash(text), set()).add((version, shard))
+                self.locations.setdefault(document_hash(text), set()).add(
+                    (version, shard)
+                )
 
     def locate(self, text: str):
         return sorted(self.locations.get(document_hash(text), ()))
@@ -1925,7 +2395,9 @@ class DocumentIndex:
 
 index = DocumentIndex()
 index.add_version("v1.0", {"s0": ["alpha", "beta"], "s1": ["gamma"]})
-index.add_version("v1.1", {"s0": ["alpha", "beta"], "s1": ["gamma-revised"], "s2": ["delta"]})
+index.add_version(
+    "v1.1", {"s0": ["alpha", "beta"], "s1": ["gamma-revised"], "s2": ["delta"]}
+)
 assert index.locate("gamma") == [("v1.0", "s1")]
 assert index.locate("alpha") == [("v1.0", "s0"), ("v1.1", "s0")]
 assert index.locate("not present") == []
@@ -1953,15 +2425,21 @@ import numpy as np
 
 
 def constituent(doc_id: str, n_shards: int) -> int:
-    """SISA-style assignment: each document trains exactly one of n_shards constituent models."""
+    """SISA-style assignment: each document trains exactly one of n_shards
+    constituent models."""
     return int(hashlib.sha256(doc_id.encode()).hexdigest(), 16) % n_shards
 
 
 rng = np.random.default_rng(0)
-requests = [f"doc{i}" for i in rng.choice(10_000_000, size=5, replace=False)]  # five removal requests
+requests = [
+    f"doc{i}" for i in rng.choice(10_000_000, size=5, replace=False)
+]  # five removal requests
 for n_shards in (1, 8, 64):
     hit = {constituent(d, n_shards) for d in requests}
-    print(f"{n_shards:2d} constituent models: {len(hit)} retrained, {len(hit) / n_shards:.1%} of the training compute")
+    print(
+        f"{n_shards:2d} constituent models: {len(hit)} retrained, "
+        f"{len(hit) / n_shards:.1%} of the training compute"
+    )
 assert len({constituent(d, 64) for d in requests}) <= 5  # at most one model per request
 ```
 
@@ -2027,7 +2505,10 @@ What no tool supplies is the discipline: that every version is produced by the b
 ````{admonition} Solution 1
 :class: dropdown
 
-The listing draws documents averaging 300 tokens from a Zipf distribution over 5,000 pseudo-words, one token per word, and times reading each format back to token ids. Reading the text means decompressing, parsing JSON and tokenizing again; reading a binary is one slice per document.
+The listing draws documents averaging 300 tokens from a Zipf distribution over 5,000
+pseudo-words, one token per word, and times reading each format back to token ids.
+Reading the text means decompressing, parsing JSON and tokenizing again; reading a
+binary is one slice per document.
 
 ```python
 import gzip
@@ -2046,13 +2527,21 @@ while len(vocab) < 5000:  # 5,000 distinct pseudo-words, one token each
         vocab.append(word)
 word_id = {w: i for i, w in enumerate(vocab)}
 zipf = 1 / np.arange(1, len(vocab) + 1)
-docs = [rng.choice(len(vocab), size=int(n), p=zipf / zipf.sum()) for n in rng.geometric(1 / 300, size=2000)]
+docs = [
+    rng.choice(len(vocab), size=int(n), p=zipf / zipf.sum())
+    for n in rng.geometric(1 / 300, size=2000)
+]
 n_tokens = sum(d.size for d in docs)
 offsets = np.cumsum([0] + [d.size for d in docs])
 
-lines = (json.dumps({"text": " ".join(vocab[i] for i in d)}).encode() + b"\n" for d in docs)
+lines = (
+    json.dumps({"text": " ".join(vocab[i] for i in d)}).encode() + b"\n" for d in docs
+)
 jsonl = gzip.compress(b"".join(lines), mtime=0)
-binary = {dtype: np.concatenate(docs).astype(dtype).tobytes() for dtype in ("uint16", "uint32")}
+binary = {
+    dtype: np.concatenate(docs).astype(dtype).tobytes()
+    for dtype in ("uint16", "uint32")
+}
 
 
 def read_jsonl():
@@ -2072,13 +2561,19 @@ formats = [("gzip JSON Lines", read_jsonl, len(jsonl)),
            ("uint32 binary", lambda: read_binary("uint32"), len(binary["uint32"]))]
 for name, read, size in formats:
     timings = []
-    for _ in range(3):  # the fastest of three reads, so that a cold first call does not decide the order
+    # the fastest of three reads, so that a cold first call does not decide the order
+    for _ in range(
+        3
+    ):
         start = time.perf_counter()
         back = read()
         timings.append(time.perf_counter() - start)
     ms = 1000 * min(timings)
     assert all(np.array_equal(a, b) for a, b in zip(back, docs))
-    print(f"{name:16s} {size / n_tokens:.2f} bytes per token, every document read back in {ms:.0f} ms")
+    print(
+        f"{name:16s} {size / n_tokens:.2f} bytes per token, every document read back "
+        f"in {ms:.0f} ms"
+    )
 assert len(binary["uint16"]) == 2 * n_tokens and len(binary["uint32"]) == 4 * n_tokens
 ```
 
@@ -2094,12 +2589,25 @@ uint32 binary    4.00 bytes per token, every document read back in 2 ms
 The binaries cost exactly 2 and 4 bytes per token, plus 8 bytes of offset per document. Compressed text lands close to the `uint16` binary, because gzip removes most of the redundancy of words and JSON. The sizes are therefore close, and the difference is the read: on the run shown the binary is read back about a hundred times faster, and the text pays its cost again on every epoch, because it is parsed and tokenized again on every pass. Inspectability stops being worth its cost as soon as the data is read more than once by a training loop. Keep the text as the versioned record and derive the binary from it, as {ref}`sec-ch5-formats-used` recommends. The `uint32` binary doubles the size for no gain unless the vocabulary exceeds 65,536 entries.
 ````
 
-1. **Manifest diff.** Build 1,000 documents of ten lines each in which the last lines repeat the first, from none to five of them and exactly three in 1% of documents, so that the duplicate-line fraction computed by {ref}`Chapter 4 <sec-ch4-chapter-overview>`'s `repetition_stats` is the number of repeated lines divided by ten. Keep the documents that pass that filter's threshold of 0.30, then tighten the threshold by 10% to 0.27. Write both versions in two layouts, 50 documents per shard in order and 64 buckets chosen by a hash of the document id, and diff the manifests. How many shards changed in each layout, and could you have predicted which ones?
+1. **Manifest diff.** Build 1,000 documents of ten lines each in which the last lines
+   repeat the first, from none to five of them and exactly three in 1% of documents, so
+   that the duplicate-line fraction computed by
+   {ref}`Chapter 4 <sec-ch4-chapter-overview>`'s `repetition_stats` is the number of
+   repeated lines divided by ten. Keep the documents that pass that filter's threshold
+   of 0.30, then tighten the threshold by 10% to 0.27. Write both versions in two
+   layouts, 50 documents per shard in order and 64 buckets chosen by a hash of the
+   document id, and diff the manifests. How many shards changed in each layout, and
+   could you have predicted which ones?
 
 ````{admonition} Solution 2
 :class: dropdown
 
-The duplicate-line fraction takes only the values 0, 0.1, ..., 0.5, so tightening the threshold from 0.30 to 0.27 removes exactly the documents with three repeated lines; a 10% looser threshold, 0.33, keeps exactly the documents that 0.30 keeps, because no document's fraction lies between the two. The listing reuses the statistic of Chapter 4's `repetition_stats` and hashes each shard's JSON Lines bytes as in {ref}`sec-ch5-sharding`.
+The duplicate-line fraction takes only the values 0, 0.1, ..., 0.5, so tightening the
+threshold from 0.30 to 0.27 removes exactly the documents with three repeated lines; a
+10% looser threshold, 0.33, keeps exactly the documents that 0.30 keeps, because no
+document's fraction lies between the two. The listing reuses the statistic of Chapter
+4's `repetition_stats` and hashes each shard's JSON Lines bytes as in
+{ref}`sec-ch5-sharding`.
 
 ```python
 import hashlib
@@ -2110,8 +2618,13 @@ import numpy as np
 rng = np.random.default_rng(0)
 docs = []
 for i in range(1000):
-    lines = [f"doc {i} line {j}: " + " ".join(rng.choice(list("abcdefgh"), size=6)) for j in range(10)]
-    k = int(rng.choice(6, p=[0.5, 0.2, 0.15, 0.01, 0.07, 0.07]))  # the last k of the ten lines repeat the first
+    lines = [
+        f"doc {i} line {j}: " + " ".join(rng.choice(list("abcdefgh"), size=6))
+        for j in range(10)
+    ]
+    k = int(
+        rng.choice(6, p=[0.5, 0.2, 0.15, 0.01, 0.07, 0.07])
+    )  # the last k of the ten lines repeat the first
     lines[10 - k :] = [lines[0]] * k
     docs.append({"id": f"doc{i:04d}", "text": "\n".join(lines)})
 
@@ -2130,14 +2643,24 @@ def manifest(kept, layout: str) -> dict:
     """Shard name -> SHA-256 of the shard's JSON Lines bytes."""
     shards = {}
     for n, d in enumerate(kept):
-        name = f"shard_{n // 50:05d}" if layout == "count" else f"bucket_{bucket(d['id']):05d}"
+        name = (
+            f"shard_{n // 50:05d}"
+            if layout == "count"
+            else f"bucket_{bucket(d['id']):05d}"
+        )
         shards.setdefault(name, []).append(d)
-    return {name: hashlib.sha256("".join(json.dumps(d) + "\n" for d in ds).encode()).hexdigest()
-            for name, ds in shards.items()}
+    return {
+        name: hashlib.sha256(
+            "".join(json.dumps(d) + "\n" for d in ds).encode()
+        ).hexdigest()
+        for name, ds in shards.items()
+    }
 
 
 def diff(old: dict, new: dict) -> list:
-    return sorted(name for name in old.keys() | new.keys() if old.get(name) != new.get(name))
+    return sorted(
+        name for name in old.keys() | new.keys() if old.get(name) != new.get(name)
+    )
 
 
 v1 = [d for d in docs if dup_line_frac(d["text"]) <= 0.30]  # Chapter 4's threshold
@@ -2147,10 +2670,18 @@ print(f"kept {len(v1)} at 0.30 and {len(v2)} at 0.27: {len(removed)} documents r
 for layout in ("count", "hash"):
     a, b = manifest(v1, layout), manifest(v2, layout)
     changed = diff(a, b)
-    print(f"{layout:5s} layout: {len(changed)} of {len(a | b)} shards changed, first {changed[0]}")
+    print(
+        f"{layout:5s} layout: {len(changed)} of {len(a | b)} shards changed, first "
+        f"{changed[0]}"
+    )
 first_removed = v1.index(removed[0])
-assert diff(manifest(v1, "count"), manifest(v2, "count"))[0] == f"shard_{first_removed // 50:05d}"
-assert diff(manifest(v1, "hash"), manifest(v2, "hash")) == sorted({f"bucket_{bucket(d['id']):05d}" for d in removed})
+assert (
+    diff(manifest(v1, "count"), manifest(v2, "count"))[0]
+    == f"shard_{first_removed // 50:05d}"
+)
+assert diff(manifest(v1, "hash"), manifest(v2, "hash")) == sorted(
+    {f"bucket_{bucket(d['id']):05d}" for d in removed}
+)
 ```
 
 % output
@@ -2164,12 +2695,17 @@ hash  layout: 12 of 64 shards changed, first bucket_00004
 Twelve documents are removed. With shards of 50 documents in order, every shard from the one holding the first removed document onward changes, because each removal moves every later document back by one place: 16 of the 17 shards. The first changed shard is predictable from the removed document's position, but nothing after it survives. With hash buckets a removal touches only the bucket that held the document, so the 12 removals change at most 12 of the 64 buckets (here all 12, because no two removed documents share a bucket), and which ones is known from the removed ids before any shard is written. Bucketing by a hash of a stable key is what keeps the diff of an edited version small.
 ````
 
-1. **Packing efficiency.** For document length distributions with means of 100, 1,000 and 10,000 tokens and a sequence length of 4,096, measure the share of documents that concatenate-and-chunk splits and the padding rate of best-fit packing. When does packing stop being worth its complexity?
+1. **Packing efficiency.** For document length distributions with means of 100, 1,000
+   and 10,000 tokens and a sequence length of 4,096, measure the share of documents that
+   concatenate-and-chunk splits and the padding rate of best-fit packing. When does
+   packing stop being worth its complexity?
 
 ````{admonition} Solution 3
 :class: dropdown
 
-The listing draws geometric lengths, two million tokens for each mean, and packs them with best-fit decreasing as in {ref}`sec-ch5-documents-sequences`. A document longer than the sequence is cut into full sequences first, so packing splits those too.
+The listing draws geometric lengths, two million tokens for each mean, and packs them
+with best-fit decreasing as in {ref}`sec-ch5-documents-sequences`. A document longer
+than the sequence is cut into full sequences first, so packing splits those too.
 
 ```python
 import bisect
@@ -2180,16 +2716,22 @@ SEQ_LEN = 4096
 
 
 def chunking_split_rate(lengths) -> float:
-    """Concatenate and cut every SEQ_LEN tokens: the share of documents that straddle a cut."""
+    """Concatenate and cut every SEQ_LEN tokens: the share of documents that
+    straddle a cut."""
     ends = np.cumsum(lengths)
     starts = ends - lengths
     return float(np.mean(starts // SEQ_LEN != (ends - 1) // SEQ_LEN))
 
 
 def best_fit_padding(lengths) -> float:
-    """Best-fit decreasing: each piece goes into the open sequence with the least room that holds it.
-    A document longer than SEQ_LEN is cut into full sequences first. Returns the share of padding."""
-    pieces = sorted((p for n in lengths for p in [SEQ_LEN] * (n // SEQ_LEN) + [n % SEQ_LEN] if p), reverse=True)
+    """Best-fit decreasing: each piece goes into the open sequence with the least
+    room that holds it. A document longer than SEQ_LEN is cut into full sequences
+    first. Returns the share of padding.
+    """
+    pieces = sorted(
+        (p for n in lengths for p in [SEQ_LEN] * (n // SEQ_LEN) + [n % SEQ_LEN] if p),
+        reverse=True,
+    )
     room, n_seq = [], 0  # sorted free space of the open sequences
     for p in pieces:
         i = bisect.bisect_left(room, p)
@@ -2203,30 +2745,50 @@ def best_fit_padding(lengths) -> float:
 
 
 rng = np.random.default_rng(0)
+print(f"best-fit splits the documents longer than {SEQ_LEN:,} tokens")
+header = ("mean", "chunking splits", "best-fit pads", "best-fit splits")
+print(f"{header[0]:>6} {header[1]:>16} {header[2]:>14} {header[3]:>16}")
 for mean in (100, 1_000, 10_000):
     lengths = rng.geometric(1 / mean, size=2_000_000 // mean)
     longer = float(np.mean(lengths > SEQ_LEN))
-    print(f"mean {mean:>6,}: chunking splits {chunking_split_rate(lengths):.1%} of documents; "
-          f"best-fit pads {best_fit_padding(lengths):.2%} and splits {longer:.1%} (those longer than {SEQ_LEN:,})")
+    print(
+        f"{mean:>6,} {chunking_split_rate(lengths):>16.1%} "
+        f"{best_fit_padding(lengths):>14.2%} {longer:>16.1%}"
+    )
 ```
 
 % output
 
 ```text
-mean    100: chunking splits 2.4% of documents; best-fit pads 0.04% and splits 0.0% (those longer than 4,096)
-mean  1,000: chunking splits 23.2% of documents; best-fit pads 0.03% and splits 1.6% (those longer than 4,096)
-mean 10,000: chunking splits 84.0% of documents; best-fit pads 0.48% and splits 66.5% (those longer than 4,096)
+best-fit splits the documents longer than 4,096 tokens
+  mean  chunking splits  best-fit pads  best-fit splits
+   100             2.4%          0.04%             0.0%
+ 1,000            23.2%          0.03%             1.6%
+10,000            84.0%          0.48%            66.5%
 ```
 
 At a mean of 100 tokens, chunking splits only 2.4% of documents, so packing buys little. At 1,000 it splits 23.2%, while best-fit splits only the 1.6% of documents longer than the sequence, for 0.03% padding: this is where packing pays. At 10,000 most documents are longer than the sequence and are split by either method, 84.0% against 66.5%, and the gain shrinks again. Packing stops being worth its complexity when documents are either much shorter than the sequence or mostly longer than it.
 ````
 
-1. **The mask's effect.** Count how much of the causal attention the document mask removes when documents averaging 1,000 tokens are concatenated and cut into 4,096-token sequences, and how many tokens have a different context with the mask than without it. Then train two small decoders, like the `TinyLM` of the [Chapter 6 notebook](../06-architectures/examples/architecture_demo.ipynb) but scaled down to train on a CPU in seconds, on such sequences with and without the mask, from the same initial weights and on the same batches, and compare their held-out loss by position within the document: the loss at position 0 is that of predicting the document's second token from its first, the loss at position 1 that of predicting its third token from the first two, and so on.
+1. **The mask's effect.** Count how much of the causal attention the document mask
+   removes when documents averaging 1,000 tokens are concatenated and cut into
+   4,096-token sequences, and how many tokens have a different context with the mask
+   than without it. Then train two small decoders, like the `TinyLM` of the [Chapter 6
+   notebook](../06-architectures/examples/architecture_demo.ipynb) but scaled down to
+   train on a CPU in seconds, on such sequences with and without the mask, from the same
+   initial weights and on the same batches, and compare their held-out loss by position
+   within the document: the loss at position 0 is that of predicting the document's
+   second token from its first, the loss at position 1 that of predicting its third
+   token from the first two, and so on. Explain what you find at position 0.
 
 ````{admonition} Solution 4
 :class: dropdown
 
-Causal attention over a sequence of length $n$ has $n(n+1)/2$ allowed pairs. Document boundaries cut the sequence into pieces, and the document mask keeps only the pairs inside a piece: a triangle per piece, `pieces * (pieces + 1) // 2` pairs in the listing, as in {ref}`sec-ch5-cross-document-attention`. Every token outside the sequence's first piece loses context.
+Causal attention over a sequence of length $n$ has $n(n+1)/2$ allowed pairs. Document
+boundaries cut the sequence into pieces, and the document mask keeps only the pairs
+inside a piece: a triangle per piece, `pieces * (pieces + 1) // 2` pairs in the listing,
+as in {ref}`sec-ch5-cross-document-attention`. Every token outside the sequence's first
+piece loses context.
 
 ```python
 import numpy as np
@@ -2237,147 +2799,196 @@ ends = np.cumsum(rng.geometric(1 / 1000, size=4000))
 causal_pairs = SEQ_LEN * (SEQ_LEN + 1) // 2
 kept, changed, n_seq = 0, 0, int(ends[-1] // SEQ_LEN)
 for k in range(n_seq):
-    inside = ends[(ends > k * SEQ_LEN) & (ends < (k + 1) * SEQ_LEN)] - k * SEQ_LEN
-    pieces = np.diff(np.concatenate([[0], inside, [SEQ_LEN]]))
+    in_seq = (ends > k * SEQ_LEN) & (ends < (k + 1) * SEQ_LEN)
+    pieces = np.diff(np.concatenate([[0], ends[in_seq] - k * SEQ_LEN, [SEQ_LEN]]))
     kept += int(np.sum(pieces * (pieces + 1) // 2))
-    changed += SEQ_LEN - int(pieces[0])  # every token after the first document boundary
-print(f"{n_seq} sequences: the mask removes {1 - kept / (n_seq * causal_pairs):.1%} of the causal attention pairs")
+    changed += SEQ_LEN - int(pieces[0])  # every token after the first boundary
+removed = 1 - kept / (n_seq * causal_pairs)
+print(f"{n_seq} sequences: the mask removes {removed:.1%} of the causal pairs")
 print(f"and changes the context of {changed / (n_seq * SEQ_LEN):.1%} of the tokens")
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-torch.set_num_threads(1)  # small matrices: one thread is fastest and the run is repeatable
+torch.set_num_threads(1)  # small matrices: one thread is fastest and repeatable
 
-# Training comparison, with the exercise's 4,096 and 1,000 scaled down by 64 so that it runs on a CPU in seconds
+# Training comparison, with the exercise's 4,096 and 1,000 scaled down by 64 so that
+# it runs on a CPU in seconds
 VOCAB, SEQ, MEAN_DOC, EOD = 64, 64, 16, 0
 
 
 def make_batch(rng, n):
-    """n sequences cut from a stream of documents; each document repeats its own random pattern."""
+    """n sequences cut from a stream of documents; each repeats its own pattern."""
     stream = []
     while len(stream) < n * (SEQ + 1):
         period, length = int(rng.integers(3, 9)), int(rng.geometric(1 / MEAN_DOC))
-        stream += np.resize(rng.integers(1, VOCAB, size=period), length).tolist() + [EOD]
+        pattern = rng.integers(1, VOCAB, size=period)
+        stream += np.resize(pattern, length).tolist() + [EOD]
     x = torch.tensor(stream[: n * (SEQ + 1)]).view(n, SEQ + 1)
     return x[:, :-1], x[:, 1:]
 
 
-def segments(x):
-    """Document index of each position within its sequence; the EOD belongs to the document it ends."""
+def segments(x, eod_opens=False):
+    """Document index of each position within its sequence. An EOD belongs to the
+    document it ends, or with eod_opens to the document it opens."""
     ends = (x == EOD).long()
-    return torch.cumsum(ends, 1) - ends
+    count = torch.cumsum(ends, 1)
+    return count if eod_opens else count - ends
 
 
 class TinyDecoder(nn.Module):
-    """Two pre-norm layers; attention is causal, and with doc_mask also limited to the token's own document."""
+    """Two pre-norm layers; attention is causal, and with a mask also kept to the
+    token's own document."""
 
     def __init__(self, d=32, layers=2, heads=4):
         super().__init__()
         self.heads = heads
         self.tok, self.pos = nn.Embedding(VOCAB, d), nn.Embedding(SEQ, d)
-        layer = nn.TransformerEncoderLayer(d, heads, 4 * d, dropout=0.0, batch_first=True, norm_first=True)
+        layer = nn.TransformerEncoderLayer(
+            d, heads, 4 * d, dropout=0.0, batch_first=True, norm_first=True
+        )
         self.body = nn.TransformerEncoder(layer, layers, enable_nested_tensor=False)
         self.out = nn.Linear(d, VOCAB)
 
-    def forward(self, x, doc_mask):
-        allowed = torch.ones(SEQ, SEQ, dtype=torch.bool).tril().expand(x.shape[0], SEQ, SEQ)
-        if doc_mask:
-            seg = segments(x)
+    def forward(self, x, mask):
+        """mask: None for causal only, "ends" or "opens" for where an EOD belongs."""
+        allowed = torch.ones(SEQ, SEQ, dtype=torch.bool).tril().expand(len(x), SEQ, SEQ)
+        if mask:
+            seg = segments(x, eod_opens=mask == "opens")
             allowed = allowed & (seg[:, :, None] == seg[:, None, :])
-        blocked = ~allowed.repeat_interleave(self.heads, 0)  # True where attention is not allowed
-        return self.out(self.body(self.tok(x) + self.pos(torch.arange(SEQ)), mask=blocked))
+        blocked = ~allowed.repeat_interleave(self.heads, 0)  # True: not allowed
+        h = self.tok(x) + self.pos(torch.arange(SEQ))
+        return self.out(self.body(h, mask=blocked))
 
 
-def train(doc_mask, seed, steps=200):
+def train(mask, seed, steps=200):
     torch.manual_seed(seed)  # the same initial weights ...
     model = TinyDecoder()
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-3)
-    rng = np.random.default_rng(100 + seed)  # ... and the same batches for both models
+    rng = np.random.default_rng(100 + seed)  # ... and the same batches for every model
     for _ in range(steps):
         x, y = make_batch(rng, 16)
-        loss = F.cross_entropy(model(x, doc_mask).reshape(-1, VOCAB), y.reshape(-1))
+        loss = F.cross_entropy(model(x, mask).reshape(-1, VOCAB), y.reshape(-1))
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
     return model
 
 
+MODELS = {"causal only": None, "document mask": "ends", "mask, EOD opens": "opens"}
 x, y = make_batch(np.random.default_rng(2), 128)  # held out
 seg = segments(x)
 index = torch.arange(SEQ).expand_as(seg)
 starts = torch.ones_like(seg, dtype=torch.bool)
 starts[:, 1:] = seg[:, 1:] != seg[:, :-1]
-position = index - torch.where(starts, index, 0).cummax(1).values  # position of the input token in its document
-changed = seg > 0  # tokens after the first document boundary: the only ones whose context the mask changes
+# position of the input token in its document
+position = index - torch.where(starts, index, 0).cummax(1).values
+changed = seg > 0  # after the first boundary: the only tokens the mask changes
 buckets = [(0, 0), (1, 3), (4, 7), (8, 15), (16, SEQ)]
 first = changed & (position == 0)
+other = first & (y != x)  # targets at a document's first token that do not repeat it
 loss_by, probe = {}, {}
 for seed in (0, 1):
-    for doc_mask in (False, True):
-        model = train(doc_mask, seed)
+    for name, mask in MODELS.items():
+        model = train(mask, seed)
         with torch.no_grad():
-            logits = model(x, doc_mask)
-        loss = F.cross_entropy(logits.reshape(-1, VOCAB), y.reshape(-1), reduction="none").view_as(seg)
-        loss_by[seed, doc_mask] = [loss[changed & (position >= lo) & (position <= hi)].mean().item() for lo, hi in buckets]
-        # Probe at a document's first token: how much probability goes to repeating it?
-        probs = logits.softmax(-1)
-        p_repeat, p_target = probs.gather(-1, x[..., None])[..., 0], probs.gather(-1, y[..., None])[..., 0]
-        other = first & (y != x)  # the targets that are not a repeat
-        probe[seed, doc_mask] = (p_repeat[first].mean().item(), probs[..., EOD][first].mean().item(),
-                                 -p_target[other].log().mean().item(),
-                                 -(p_target / (1 - p_repeat))[other].log().mean().item())
-print(f"{'held-out loss by position in document':40s}" + " ".join(f"{h:>6}" for h in ("0", "1-3", "4-7", "8-15", "16+")))
-for (seed, doc_mask), row in loss_by.items():
-    label = f"seed {seed}, {'document mask' if doc_mask else 'causal only'}"
-    print(f"{label:40s}" + " ".join(f"{v:6.2f}" for v in row))
+            logits = model(x, mask)
+        loss = F.cross_entropy(logits.transpose(1, 2), y, reduction="none")
+        loss_by[seed, name] = [
+            loss[changed & (position >= lo) & (position <= hi)].mean().item()
+            for lo, hi in buckets
+        ]
+        # Probe at a document's first token: the probability of repeating it, then the
+        # loss and the entropy of the prediction with that probability taken away
+        probs = logits[other].softmax(-1)
+        p_repeat = probs.gather(1, x[other][:, None])[:, 0]
+        is_repeat = torch.arange(VOCAB) == x[other][:, None]
+        rest = torch.where(is_repeat, 0.0, probs) / (1 - p_repeat[:, None])
+        entropy = -(rest * rest.clamp_min(1e-12).log()).sum(1)
+        probe[seed, name] = (
+            p_repeat.mean().item(),
+            loss[other].mean().item(),
+            -rest.gather(1, y[other][:, None]).log().mean().item(),
+            entropy.mean().item(),
+        )
+columns = ("0", "1-3", "4-7", "8-15", "16+")
+print(f"{'held-out loss by position':34s}" + " ".join(f"{c:>5}" for c in columns))
+for (seed, name), row in loss_by.items():
+    print(f"{f'seed {seed}, {name}':34s}" + " ".join(f"{v:5.2f}" for v in row))
+gaps = {}
 for seed in (0, 1):
-    gap = [a - b for a, b in zip(loss_by[seed, False], loss_by[seed, True])]
-    print(f"{f'seed {seed}, gap (causal - mask)':40s}" + " ".join(f"{g:+6.2f}" for g in gap))
-    assert gap[0] < 0  # at a document's first token the mask does not help
-    assert min(gap[2:]) > 0.2  # from position 4 on it lowers the loss by more than 0.2
+    for name in ("document mask", "mask, EOD opens"):
+        gap = [a - b for a, b in zip(loss_by[seed, "causal only"], loss_by[seed, name])]
+        gaps[seed, name] = gap
+        label = f"seed {seed}, gap to {name}"
+        print(f"{label:34s}" + " ".join(f"{g:+5.2f}" for g in gap))
 eod = (y[first] == EOD).float().mean().item()
 constant = -(eod * np.log(eod) + (1 - eod) * np.log((1 - eod) / (VOCAB - 1)))
-print(f"position 0: {int(first.sum())} targets, {eod:.1%} of them EOD; best constant loss {constant:.2f}")
-print(f"{'':24s}P(repeat)  P(EOD)  loss  loss without the repeat")
-for (seed, doc_mask), (repeat, p_eod, raw, rest) in probe.items():
-    label = f"seed {seed}, {'document mask' if doc_mask else 'causal only'}"
-    print(f"{label:24s}{repeat:9.3f} {p_eod:7.3f} {raw:5.2f} {rest:23.2f}")
+print(f"position 0: {int(first.sum())} targets, {eod:.1%} of them EOD;", end=" ")
+print(f"best constant loss {constant:.2f}")
+print(f"{'position 0, non-repeat targets':34s}P(repeat)  loss  without repeat  entropy")
+for (seed, name), (repeat, raw, rest_loss, rest_entropy) in probe.items():
+    print(f"{f'seed {seed}, {name}':34s}{repeat:9.3f} {raw:5.2f} {rest_loss:15.2f}"
+          f" {rest_entropy:8.2f}")
 for seed in (0, 1):
-    assert probe[seed, True][0] > 5 * probe[seed, False][0]  # the mask makes it predict a repeat
-    assert probe[seed, True][2] - probe[seed, True][3] > 0.1  # and that mass costs it over 0.1
+    mask_gap, opens_gap = gaps[seed, "document mask"], gaps[seed, "mask, EOD opens"]
+    assert mask_gap[0] < -0.3  # at a document's first token the mask costs over 0.3
+    assert min(mask_gap[2:] + opens_gap[2:]) > 0.2  # from position 4 on both gain 0.2+
+    causal, masked, opens = (probe[seed, name] for name in MODELS)
+    assert masked[0] > 5 * causal[0]  # the mask makes the first token predict a repeat
+    assert masked[3] < causal[3] - 0.2  # and the rest of its prediction sharper
+    assert opens[0] < masked[0] / 2  # the EOD in its context undoes both
+    assert opens[3] > masked[3] + 0.2
+    assert opens_gap[0] > mask_gap[0] + 0.3  # and most of the cost at position 0
 ```
 
 % output-shape
 
 ```text
-995 sequences: the mask removes 62.0% of the causal attention pairs
+995 sequences: the mask removes 62.0% of the causal pairs
 and changes the context of 75.6% of the tokens
-held-out loss by position in document        0    1-3    4-7   8-15    16+
-seed 0, causal only                       4.22   4.23   4.10   3.99   3.89
-seed 0, document mask                     4.70   4.34   3.64   3.49   3.48
-seed 1, causal only                       4.19   4.23   4.10   3.99   3.90
-seed 1, document mask                     4.84   4.33   3.66   3.45   3.47
-seed 0, gap (causal - mask)              -0.48  -0.11  +0.46  +0.51  +0.41
-seed 1, gap (causal - mask)              -0.64  -0.10  +0.45  +0.55  +0.43
+held-out loss by position             0   1-3   4-7  8-15   16+
+seed 0, causal only                4.22  4.23  4.10  3.99  3.89
+seed 0, document mask              4.70  4.34  3.64  3.49  3.48
+seed 0, mask, EOD opens            4.27  4.22  3.63  3.42  3.36
+seed 1, causal only                4.19  4.23  4.10  3.99  3.90
+seed 1, document mask              4.84  4.33  3.66  3.45  3.47
+seed 1, mask, EOD opens            4.35  4.23  3.64  3.37  3.36
+seed 0, gap to document mask      -0.48 -0.11 +0.46 +0.51 +0.41
+seed 0, gap to mask, EOD opens    -0.05 +0.00 +0.46 +0.57 +0.53
+seed 1, gap to document mask      -0.64 -0.10 +0.45 +0.55 +0.43
+seed 1, gap to mask, EOD opens    -0.16 +0.01 +0.46 +0.63 +0.54
 position 0: 487 targets, 8.2% of them EOD; best constant loss 4.09
-                        P(repeat)  P(EOD)  loss  loss without the repeat
-seed 0, causal only         0.015   0.053  4.22                    4.20
-seed 0, document mask       0.178   0.048  4.74                    4.53
-seed 1, causal only         0.013   0.059  4.19                    4.18
-seed 1, document mask       0.182   0.046  4.88                    4.67
+position 0, non-repeat targets    P(repeat)  loss  without repeat  entropy
+seed 0, causal only                   0.015  4.22            4.20     3.99
+seed 0, document mask                 0.178  4.74            4.53     3.60
+seed 0, mask, EOD opens               0.029  4.28            4.25     3.93
+seed 1, causal only                   0.013  4.19            4.18     3.98
+seed 1, document mask                 0.181  4.88            4.67     3.57
+seed 1, mask, EOD opens               0.035  4.36            4.32     3.91
 ```
 
-The mask removes 62.0% of the causal attention pairs and changes the context of 75.6% of the tokens: every token after the first document boundary of its sequence. The change is largest for a document's first tokens, which without the mask see up to several thousand tokens of an unrelated document and with it see only the document's own tokens. For the training comparison the listing scales the setting down by 64, to 64-token sequences and documents averaging 16 tokens, and trains a two-layer decoder for 200 steps with and without the document mask, from the same initial weights and on the same batches, for two seeds. Each document repeats a random pattern of three to eight tokens, so its first tokens cannot be predicted and its later tokens can be copied from earlier in the same document, while nothing in an earlier document helps. The held-out loss is averaged by the position of the token in its document, over the tokens whose context the mask changes. The losses depend in their last digits on the machine, so the output above is the shape of one run, and the result is what the listing asserts for every seed: the gap (loss without the mask minus loss with it) is negative at position 0, the prediction of a document's second token from its first, and from position 4 on the mask lowers the loss by more than 0.2. In the run shown, both models are above the best constant prediction at position 0, which is 4.09 nats rather than ln 63 ≈ 4.14 because 8.2% of these targets are the end-of-document token, and the masked model is the further above it (4.70 and 4.84 against 4.22 and 4.19 without the mask), a gap of −0.48 and −0.64. The probe at the end of the listing accounts for part of that gap. Under the mask a document's first token can attend only to itself, and the masked model gives 0.18 of its probability to the next token repeating it, against 0.013 to 0.015 without the mask, though a document's second token repeats its first only by chance. Taking that mass away and renormalizing lowers the masked model's loss on the targets that are not a repeat by 0.21 (4.74 to 4.53 and 4.88 to 4.67) and the causal model's by 0.01 to 0.02, and the listing asserts for both seeds that the repeat costs the masked model more than 0.1. The rest of the gap, 0.33 and 0.49 nats on those targets, is not the end-of-document token, to which both models give about 0.05; the probe rules that out and does not explain the remainder. From position 4 on, where the document has a pattern to copy, the gain is between +0.41 and +0.55 in every bucket and both seeds, and the output shows no clear peak: it is about the same at positions 4 to 7, 8 to 15 and beyond 16.
+The mask removes 62.0% of the causal attention pairs and changes the context of 75.6% of the tokens: every token after the first document boundary of its sequence. The change is largest for a document's first tokens, which without the mask see up to several thousand tokens of an unrelated document and with it see only the document's own tokens. For the training comparison the listing scales the setting down by 64, to 64-token sequences and documents averaging 16 tokens, and trains a two-layer decoder for 200 steps in three ways, from the same initial weights and on the same batches, for two seeds: with causal attention only; with the document mask; and with the document mask but each end-of-document (EOD) token counted as the first token of the document it opens instead of the last of the one it ends, so that a document's first token can attend to the EOD before it. Each document repeats a random pattern of three to eight tokens, so its first tokens cannot be predicted and its later tokens can be copied from earlier in the same document, while nothing in an earlier document helps. The held-out loss is averaged by the position of the token in its document, over the tokens whose context the mask changes; a gap row is the causal model's loss minus that of the named model. The losses depend in their last digits on the machine, so the output above is the shape of one run, and the result is what the listing asserts for every seed.
+
+From position 4 on, where the document has a pattern to copy, both masked models lower the loss by more than 0.2 (by 0.41 to 0.63 in the run shown, with no clear peak across positions 4 to 7, 8 to 15 and beyond 16). At position 0, the prediction of a document's second token from its first, the plain document mask raises the loss by more than 0.3 (by 0.48 and 0.64 in the run shown). The best constant prediction there costs 4.09 nats, not ln 63 ≈ 4.14, because 8.2% of these targets are the EOD token; the causal models are near it (4.22 and 4.19), the masked ones well above it (4.70 and 4.84). The probe at the end of the listing, on the targets that do not repeat the input token, finds the cause. Under the plain mask a document's first token can attend only to itself, so nothing in its context tells it apart from a later token of a document, where the model has learned to predict from what the document has already shown. It makes two errors there. It gives 0.18 of its probability to the next token repeating the input, against 0.013 and 0.015 for the causal model, though a document's second token repeats its first only by chance; taking that mass away and renormalizing lowers its loss on these targets by 0.21 (4.74 to 4.53 and 4.88 to 4.67). And what is left is sharper than the targets allow: its entropy is 3.60 and 3.57 nats, against 3.99 and 3.98 for the causal model, on targets that are close to uniform, where any concentration of probability raises the loss. Its loss without the repeat exceeds its entropy by 0.93 and 1.10 nats, the causal model's by 0.21 and 0.20: it is confident about tokens that are no more likely than the others, and that confidence is the remaining 0.33 and 0.49 nats (4.53 against 4.20, 4.67 against 4.18). The third model tests the cause. With the EOD in its context, a document's first token gives 0.03 of its probability to a repeat, the entropy of the rest is back to 3.93 and 3.91, and the cost at position 0 falls from 0.48 and 0.64 to 0.05 and 0.16, while the gain from position 4 on stays; the listing asserts each of these for both seeds, the recovery at position 0 as more than 0.3. So the mask's cost at a document's first token is not the context it removes, which cannot help predict an unrelated document, but the missing signal that a document has begun: in this experiment one visible token before each document, here the previous document's EOD, is enough to restore it.
 ````
 
-1. **Seeking across mixture phases.** The `StrideSampler` of {ref}`sec-ch5-determinism-resumption` seeks in constant work for one fixed mixture, but runs often change the mixture partway through. Extend its cursors $\operatorname{drawn}_s(t)$ to a schedule of two phases: weights 0.7, 0.15 and 0.15 for web, wiki and code until step 5,000, then 0.5, 0.25 and 0.25. Verify the closed form against iteration: seeking to step $t$ and iterating to it must agree at a thousand random steps.
+1. **Seeking across mixture phases.** The `StrideSampler` of
+   {ref}`sec-ch5-determinism-resumption` seeks in constant work for one fixed mixture,
+   but runs often change the mixture partway through. Extend its cursors
+   $\operatorname{drawn}_s(t)$ to a schedule of two phases: weights 0.7, 0.15 and 0.15
+   for web, wiki and code until step 5,000, then 0.5, 0.25 and 0.25. Verify the closed
+   form against iteration: seeking to step $t$ and iterating to it must agree at a
+   thousand random steps.
 
 ````{admonition} Solution 5
 :class: dropdown
 
-Each phase is a stride schedule of its own, started at the phase's first step. The cursor at step $t$ is the sum, over the phases that have begun, of the closed form for the steps spent in each: whole periods times the source's slots per period, plus a prefix count. The work is one term per phase, still independent of $t$.
+Each phase is a stride schedule of its own, started at the phase's first step. The
+cursor at step $t$ is the sum, over the phases that have begun, of the closed form for
+the steps spent in each: whole periods times the source's slots per period, plus a
+prefix count. The work is one term per phase, still independent of $t$.
 
 ```python
 import numpy as np
@@ -2391,7 +3002,9 @@ def stride_schedule(weights: dict, period: int, exact: bool = False):
     w_s * period is whole; exact=True refuses to round. The slots are spread out by
     smooth weighted round-robin."""
     if period < 1 or min(weights.values()) < 0 or abs(sum(weights.values()) - 1) > 1e-9:
-        raise ValueError(f"need weights >= 0 summing to 1 and a period >= 1: {weights}, {period}")
+        raise ValueError(
+            f"need weights >= 0 summing to 1 and a period >= 1: {weights}, {period}"
+        )
     ideal = {s: w * period for s, w in sorted(weights.items())}
     counts = {s: int(x) for s, x in ideal.items()}
     by_remainder = sorted(ideal, key=lambda s: counts[s] - ideal[s])
@@ -2399,7 +3012,9 @@ def stride_schedule(weights: dict, period: int, exact: bool = False):
         counts[s] += 1
     if exact and max(abs(counts[s] - ideal[s]) for s in ideal) > 1e-9:
         nearest = {s: c / period for s, c in counts.items()}
-        raise ValueError(f"not whole multiples of 1/{period}: {weights}; nearest {nearest}")
+        raise ValueError(
+            f"not whole multiples of 1/{period}: {weights}; nearest {nearest}"
+        )
     credit = dict.fromkeys(counts, 0)
     pattern = []
     for _ in range(period):
@@ -2415,16 +3030,18 @@ def stride_schedule(weights: dict, period: int, exact: bool = False):
     return pattern, prefix
 
 
-
-
 # Two mixture phases: the second, from step 5,000, raises the share of wiki and code
-PHASES = [(0, {"web": 0.7, "wiki": 0.15, "code": 0.15}), (5_000, {"web": 0.5, "wiki": 0.25, "code": 0.25})]
+PHASES = [
+    (0, {"web": 0.7, "wiki": 0.15, "code": 0.15}),
+    (5_000, {"web": 0.5, "wiki": 0.25, "code": 0.25}),
+]
 SCHEDULES = [(start, *stride_schedule(weights, 20)) for start, weights in PHASES]
 ENDS = [start for start, _ in PHASES[1:]] + [None]
 
 
 def drawn(s: str, t: int) -> int:
-    """Documents of source s drawn before step t: the closed form per phase, summed over the phases begun."""
+    """Documents of source s drawn before step t: the closed form per phase, summed
+    over the phases begun."""
     total = 0
     for (start, pattern, prefix), end in zip(SCHEDULES, ENDS):
         if t <= start:
@@ -2462,17 +3079,28 @@ cursors at step 12,345: {'code': 2586, 'web': 7173, 'wiki': 2586}
 The closed form agrees with iteration at all 1,000 checked steps. At step 5,000, the end of the first phase, the cursors are the first phase's weights times 5,000: 3,500 web, 750 wiki and 750 code. By step 12,345 the second phase has run 7,345 steps and added 3,673 web, 1,836 wiki and 1,836 code documents, for 7,173, 2,586 and 2,586. The document at step $t$ is then found as in `StrideSampler`, with $\Pi$ keyed by the seed, the source and the epoch of $\operatorname{drawn}_s(t)$.
 ````
 
-1. **World-size invariance.** Implement a loader under both designs of {ref}`sec-ch5-sharding-across-ranks` and run one epoch of 64,000 samples in 64 shards with a global batch of 64, restarting at step 500 with the world size changed from 8 to 4. Which design gives the same batches, and how many samples does the other one repeat or skip?
+1. **World-size invariance.** Implement a loader under both designs of
+   {ref}`sec-ch5-sharding-across-ranks` and run one epoch of 64,000 samples in 64 shards
+   with a global batch of 64, restarting at step 500 with the world size changed from 8
+   to 4. Which design gives the same batches, and how many samples does the other one
+   repeat or skip?
 
 ````{admonition} Solution 6
 :class: dropdown
 
-Under global indexing every rank computes the step's global batch from the seed and the step and takes its slice, so the world size only decides who reads which sample. Under shard assignment a rank reads its own shards in a seeded order, and its position in that stream is all the step number can restore.
+Under global indexing every rank computes the step's global batch from the seed and the
+step and takes its slice, so the world size only decides who reads which sample. Under
+shard assignment a rank reads its own shards in a seeded order, and its position in that
+stream is all the step number can restore.
 
 ```python
 import numpy as np
 
-N, B, N_SHARDS = 64_000, 64, 64  # samples, global batch, shards: one epoch is 1,000 steps
+N, B, N_SHARDS = (
+    64_000,
+    64,
+    64,
+)  # samples, global batch, shards: one epoch is 1,000 steps
 STEPS, RESUME = N // B, 500
 PERM = np.random.default_rng(0).permutation(N)
 
@@ -2484,7 +3112,8 @@ def global_indexing(n_ranks: int, step: int):
 
 
 def shard_assignment(n_ranks: int, step: int):
-    """Rank r owns shards r, r + n_ranks, ... and reads them in a seeded order, B / n_ranks samples per step."""
+    """Rank r owns shards r, r + n_ranks, ... and reads them in a seeded order, B /
+    n_ranks samples per step."""
     per_rank = B // n_ranks
     out = []
     for r in range(n_ranks):
@@ -2494,13 +3123,19 @@ def shard_assignment(n_ranks: int, step: int):
     return out
 
 
-for name, loader in (("global indexing", global_indexing), ("shard assignment", shard_assignment)):
+for name, loader in (
+    ("global indexing", global_indexing),
+    ("shard assignment", shard_assignment),
+):
     seen = np.zeros(N, dtype=int)
     for step in range(STEPS):  # 8 ranks until the restart at step 500, then 4
         for part in loader(8 if step < RESUME else 4, step):
             np.add.at(seen, part, 1)
     repeated, skipped = int(np.sum(seen > 1)), int(np.sum(seen == 0))
-    print(f"{name:16s}: {repeated:,} samples seen twice, {skipped:,} never seen in the epoch")
+    print(
+        f"{name:16s}: {repeated:,} samples seen twice, {skipped:,} never seen in the "
+        "epoch"
+    )
     if loader is global_indexing:
         assert repeated == skipped == 0
 ```
@@ -2515,7 +3150,12 @@ shard assignment: 16,000 samples seen twice, 16,000 never seen in the epoch
 Global indexing gives the same batches: across the restart the epoch reads every sample exactly once. Shard assignment reads 16,000 samples twice and never reads another 16,000. After the restart, each of the four ranks owns the shards that two of the eight ranks owned (rank 0 those of ranks 0 and 4, and so on), in a new order, and the step number puts it at position 8,000 of that new stream. Some samples before that position were never read and some after it already were: the step restores a position in a per-rank stream that the new world size has replaced.
 ````
 
-1. **A removal request.** Build three versions of a corpus with 100 documents per shard: v1.0 holding documents 0 to 799, v1.1 documents 0 to 999 and v1.2 documents 100 to 1,199, and one model trained on each. Carry out the three steps of {ref}`sec-ch5-removal` for document 150: locate it, cut v1.3 without it, and list the models affected. How many documents does locating it read with the index and without it, and which step needs a record other than the index?
+1. **A removal request.** Build three versions of a corpus with 100 documents per shard:
+   v1.0 holding documents 0 to 799, v1.1 documents 0 to 999 and v1.2 documents 100 to
+   1,199, and one model trained on each. Carry out the three steps of
+   {ref}`sec-ch5-removal` for document 150: locate it, cut v1.3 without it, and list the
+   models affected. How many documents does locating it read with the index and without
+   it, and which step needs a record other than the index?
 
 ````{admonition} Solution 7
 :class: dropdown
@@ -2529,7 +3169,8 @@ def document_hash(text: str) -> str:
 
 
 def build(first: int, last: int, per_shard: int = 100) -> dict:
-    """Documents first..last - 1, in shards s0, s1, ... of per_shard consecutive document numbers."""
+    """Documents first..last - 1, in shards s0, s1, ... of per_shard consecutive
+    document numbers."""
     shards = {}
     for i in range(first, last):
         shards.setdefault(f"s{i // per_shard}", []).append(f"document {i}")
@@ -2537,11 +3178,18 @@ def build(first: int, last: int, per_shard: int = 100) -> dict:
 
 
 def manifest(contents: dict) -> dict:
-    return {shard: hashlib.sha256("\n".join(docs).encode()).hexdigest() for shard, docs in contents.items()}
+    return {
+        shard: hashlib.sha256("\n".join(docs).encode()).hexdigest()
+        for shard, docs in contents.items()
+    }
 
 
 versions = {"v1.0": build(0, 800), "v1.1": build(0, 1000), "v1.2": build(100, 1200)}
-trained_on = {"model-a": "v1.0", "model-b": "v1.1", "model-c": "v1.2"}  # the lineage graph, one edge each
+trained_on = {
+    "model-a": "v1.0",
+    "model-b": "v1.1",
+    "model-c": "v1.2",
+}  # the lineage graph, one edge each
 target = "document 150"
 
 # Step 1, locate: one lookup in an index the build filled with one hash per document
@@ -2552,7 +3200,8 @@ for version, contents in versions.items():
             index.setdefault(document_hash(text), []).append((version, shard))
 where = index[document_hash(target)]
 scanned = sum(len(docs) for contents in versions.values() for docs in contents.values())
-print(f"located in {where} by one lookup; without the index, {scanned:,} documents are read and hashed")
+print(f"located in {where} by one lookup")
+print(f"without the index, {scanned:,} documents are read and hashed")
 
 # Step 2, cut v1.3 without it; the manifest diff names the one shard that changed
 latest = versions["v1.2"]
@@ -2565,13 +3214,18 @@ print("v1.3 differs from v1.2 in", changed)
 held = {version for version, _ in where}
 affected = sorted(m for m, v in trained_on.items() if v in held)
 print("models affected:", affected)
-assert where == [("v1.0", "s1"), ("v1.1", "s1"), ("v1.2", "s1")] and changed == ["s1"] and len(affected) == 3
+assert (
+    where == [("v1.0", "s1"), ("v1.1", "s1"), ("v1.2", "s1")]
+    and changed == ["s1"]
+    and len(affected) == 3
+)
 ```
 
 % output
 
 ```text
-located in [('v1.0', 's1'), ('v1.1', 's1'), ('v1.2', 's1')] by one lookup; without the index, 2,900 documents are read and hashed
+located in [('v1.0', 's1'), ('v1.1', 's1'), ('v1.2', 's1')] by one lookup
+without the index, 2,900 documents are read and hashed
 v1.3 differs from v1.2 in ['s1']
 models affected: ['model-a', 'model-b', 'model-c']
 ```
@@ -2587,35 +3241,59 @@ Document 150 is in shard s1 of all three versions. The index finds it in one loo
 
 ### Formats, loaders and packing
 
-- [Datasets: A Community Library for Natural Language Processing](https://arxiv.org/abs/2109.02846) {cite}`lhoest2021datasets` - the Arrow-backed library and hub conventions
-- [Megatron-LM repository](https://github.com/NVIDIA/Megatron-LM) - `megatron/core/datasets` holds the indexed binary dataset (`indexed_dataset.py`) and the blended dataset (`blended_dataset.py`) used by many training codebases; the paper {cite}`shoeybi2019megatron` is about model parallelism
-- [Fewer Truncations Improve Language Modeling](https://arxiv.org/abs/2404.10830) {cite}`ding2024fewer` - best-fit packing and its measured effects
-- [In-Context Pretraining](https://arxiv.org/abs/2310.10638) {cite}`shi2024incontext` - choosing which documents share a sequence
-- [Scaling Data-Constrained Language Models](https://arxiv.org/abs/2305.16264) {cite}`muennighoff2023scaling` - epoch caps
-- [DoReMi](https://arxiv.org/abs/2305.10429) {cite}`xie2023doremi` - learned mixture weights
-- [mT5](https://arxiv.org/abs/2010.11934) {cite}`xue2021mt5` - temperature sampling across languages
+- [Datasets: A Community Library for Natural Language
+  Processing](https://arxiv.org/abs/2109.02846) {cite}`lhoest2021datasets` - the
+  Arrow-backed library and hub conventions
+- [Megatron-LM repository](https://github.com/NVIDIA/Megatron-LM) -
+  `megatron/core/datasets` holds the indexed binary dataset (`indexed_dataset.py`) and
+  the blended dataset (`blended_dataset.py`) used by many training codebases; the paper
+  {cite}`shoeybi2019megatron` is about model parallelism
+- [Fewer Truncations Improve Language Modeling](https://arxiv.org/abs/2404.10830)
+  {cite}`ding2024fewer` - best-fit packing and its measured effects
+- [In-Context Pretraining](https://arxiv.org/abs/2310.10638) {cite}`shi2024incontext` -
+  choosing which documents share a sequence
+- [Scaling Data-Constrained Language Models](https://arxiv.org/abs/2305.16264)
+  {cite}`muennighoff2023scaling` - epoch caps
+- [DoReMi](https://arxiv.org/abs/2305.10429) {cite}`xie2023doremi` - learned mixture
+  weights
+- [mT5](https://arxiv.org/abs/2010.11934) {cite}`xue2021mt5` - temperature sampling
+  across languages
 
 (sec-ch5-further-reading-documentation-auditing-governance)=
 
 ### Documentation, auditing and governance
 
-- [Datasheets for Datasets](https://arxiv.org/abs/1803.09010) {cite}`gebru2021datasheets` and [Data Cards](https://arxiv.org/abs/2204.01075) {cite}`pushkarna2022data` - the documentation templates
-- [What's In My Big Data?](https://arxiv.org/abs/2310.20707) {cite}`elazar2024whats` - inspection tooling and what it found in the public corpora
-- [Documenting Large Webtext Corpora](https://arxiv.org/abs/2104.08758) {cite}`dodge2021documenting` - C4 audited after the fact
-- [The Data Provenance Initiative](https://arxiv.org/abs/2310.16787) {cite}`longpre2023data` - license tracking across repackaged datasets
-- [The Secret Sharer](https://arxiv.org/abs/1802.08232) {cite}`carlini2019secret` - canaries for measuring memorization
-- [Poisoning Web-Scale Training Datasets is Practical](https://arxiv.org/abs/2302.10149) {cite}`carlini2024poisoning` - why distributed datasets need content hashes
-- [The Pile](https://arxiv.org/abs/2101.00027) {cite}`gao2020pile`, [Dolma](https://arxiv.org/abs/2402.00159) {cite}`soldaini2024dolma` and [FineWeb](https://arxiv.org/abs/2406.17557) {cite}`penedo2024fineweb` - corpora released with their documentation, statistics and code
+- [Datasheets for Datasets](https://arxiv.org/abs/1803.09010)
+  {cite}`gebru2021datasheets` and [Data Cards](https://arxiv.org/abs/2204.01075)
+  {cite}`pushkarna2022data` - the documentation templates
+- [What's In My Big Data?](https://arxiv.org/abs/2310.20707) {cite}`elazar2024whats` -
+  inspection tooling and what it found in the public corpora
+- [Documenting Large Webtext Corpora](https://arxiv.org/abs/2104.08758)
+  {cite}`dodge2021documenting` - C4 audited after the fact
+- [The Data Provenance Initiative](https://arxiv.org/abs/2310.16787)
+  {cite}`longpre2023data` - license tracking across repackaged datasets
+- [The Secret Sharer](https://arxiv.org/abs/1802.08232) {cite}`carlini2019secret` -
+  canaries for measuring memorization
+- [Poisoning Web-Scale Training Datasets is Practical](https://arxiv.org/abs/2302.10149)
+  {cite}`carlini2024poisoning` - why distributed datasets need content hashes
+- [The Pile](https://arxiv.org/abs/2101.00027) {cite}`gao2020pile`,
+  [Dolma](https://arxiv.org/abs/2402.00159) {cite}`soldaini2024dolma` and
+  [FineWeb](https://arxiv.org/abs/2406.17557) {cite}`penedo2024fineweb` - corpora
+  released with their documentation, statistics and code
 
 (sec-ch5-further-reading-tools)=
 
 ### Tools
 
-- [Hugging Face Hub datasets](https://huggingface.co/docs/hub/datasets) - versioned hosting with Parquet conversion and the dataset viewer
-- [Mosaic Streaming](https://github.com/mosaicml/streaming) - MDS shards with deterministic resumable shuffling
+- [Hugging Face Hub datasets](https://huggingface.co/docs/hub/datasets) - versioned
+  hosting with Parquet conversion and the dataset viewer
+- [Mosaic Streaming](https://github.com/mosaicml/streaming) - MDS shards with
+  deterministic resumable shuffling
 - [WebDataset](https://github.com/webdataset/webdataset) - tar-shard streaming
-- [DVC](https://dvc.org/) - data versioning through a content-addressed cache; [lakeFS](https://lakefs.io/) - Git-like commits and branches over object storage
-- [Croissant](https://github.com/mlcommons/croissant) - machine-readable dataset metadata
+- [DVC](https://dvc.org/) - data versioning through a content-addressed cache;
+  [lakeFS](https://lakefs.io/) - Git-like commits and branches over object storage
+- [Croissant](https://github.com/mlcommons/croissant) - machine-readable dataset
+  metadata
 - [Great Expectations](https://greatexpectations.io/) - data contracts as tests
 
 ______________________________________________________________________
