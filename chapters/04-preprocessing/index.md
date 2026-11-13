@@ -772,9 +772,38 @@ junk: score 0.463, Pareto(9) keep probability 0.0209
 
 Neither test text was in the training data, and the prose shares only a few common words with the reference. The classifier generalizes because function words ("the", "was", "at") and their pairs are dense in prose and rare in navigation and listings. The same property is its weakness. The notebook section {ref}`nb-prep-classifier` trains this classifier on the notebook's sample, scoring each document with a model whose negatives exclude that document and its copies. It ranks the catalog, the contact list and the menu below every prose document, but it scores the boilerplate document, a repeated sentence built from common words, highest of all. A bag of hashed n-grams cannot see repetition, which is why the repetition filters of {ref}`sec-ch4-repetition-filters` run before the classifier.
 
+(sec-ch4-spam-machine-generated-text)=
+
+### 4.5 Spam and machine-generated text
+
+Spam written for search engines, such as keyword lists, doorway pages and link farms, repeats itself, and most of it is removed by the repetition rules of {ref}`sec-ch4-repetition-filters` and by URL filtering; the notebook's keyword-stuffed document fails the top-2-gram rule. Text written by language models is harder, because it is fluent and passes every rule in this chapter. Detectors exist: DetectGPT {cite}`mitchell2023detectgpt` compares a passage's log probability under the suspected model with that of slightly perturbed rewrites of it, and needs no trained classifier. They are not reliable against an adversary: {cite:t}`sadasivan2023aigenerated` showed that recursive paraphrasing defeats watermark-based, neural, zero-shot and retrieval-based detectors. A data pipeline has a further problem, the base rate. The listing applies Bayes' rule to a detector that catches 95% of machine-generated documents and wrongly flags 5% of human ones.
+
+```python
+def detector_precision(share: float, tpr: float, fpr: float) -> float:
+    """Fraction of flagged documents that really are machine-generated (Bayes' rule)."""
+    flagged_true = share * tpr
+    return flagged_true / (flagged_true + (1 - share) * fpr)
+
+
+for share in (0.5, 0.1, 0.01):
+    p = detector_precision(share, tpr=0.95, fpr=0.05)
+    print(f"machine-generated share {share:.2f}: precision {p:.3f}, human documents removed {(1 - share) * 0.05:.4f}")
+assert detector_precision(0.01, 0.95, 0.05) < 0.2
+```
+
+% output
+
+```text
+machine-generated share 0.50: precision 0.950, human documents removed 0.0250
+machine-generated share 0.10: precision 0.679, human documents removed 0.0450
+machine-generated share 0.01: precision 0.161, human documents removed 0.0495
+```
+
+When machine-generated text is 1% of a crawl, 84% of the documents such a detector removes are human-written, and it deletes about 5% of the human-written documents to remove under 1% of the corpus. Pipelines therefore treat detector scores as one more quality signal, and lean on provenance: crawl dates before generated text was common, and sources known to be written by people.
+
 (sec-ch4-measuring-whether-filter-helps)=
 
-### 4.5 Measuring whether a filter helps
+### 4.6 Measuring whether a filter helps
 
 Every filter in this section was validated the same way, and so should any filter you add: train small models on data with and without it, at the same token budget, and compare on a fixed benchmark suite. FineWeb's protocol, which is typical, trains a 1.71B-parameter model on about 28B tokens per variant and reports the average of a set of benchmarks that show a clear signal at that scale (HellaSwag, ARC, PIQA, MMLU, OpenBookQA, CommonsenseQA and a few others), and trains two models per variant, each on a different random subset of the data with a different seed, because the differences are often within noise.
 
