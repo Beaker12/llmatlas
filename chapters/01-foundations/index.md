@@ -792,7 +792,7 @@ Most open-weight models since 2022 use RoPE {cite}`su2021roformer`; a few use AL
 
 ```{admonition} Embeddings and Positional Encoding
 :class: note
-The notebook ({ref}`nb-attn-positional`) visualizes sinusoidal and learned encodings, implements a learned relative-position bias and a rotary (RoPE) transform, and asserts RoPE's two defining properties: rotation preserves vector norms, and query-key dot products depend only on the relative offset.
+The notebook ({ref}`nb-attn-positional`) visualizes sinusoidal and learned encodings, implements a learned relative-position bias and a rotary (RoPE) transform, and asserts RoPE's defining properties: rotation preserves vector norms, and query-key dot products depend only on the relative offset.
 ```
 
 (sec-ch1-historical-context)=
@@ -901,7 +901,7 @@ Attention mechanisms revolutionized sequence modeling by allowing models to focu
 
 ```{admonition} Interactive Exploration
 :class: note
-The notebook implements scaled dot-product and multi-head attention in eval mode, asserts that every row of attention weights sums to 1, and plots per-head attention maps and entropies ({ref}`nb-attn-attention`).
+The notebook implements scaled dot-product and multi-head attention in eval mode, asserts that every row of attention weights sums to one, and plots per-head attention maps and entropies ({ref}`nb-attn-attention`).
 ```
 
 (sec-ch1-self-attention-fundamentals)=
