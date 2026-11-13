@@ -38,7 +38,7 @@ NOT_A_RESULT: dict[str, str] = {
     r"and diffing two versions": "names the two inputs of the diff (an old and a new version), not a measured result",
     r"checks resumption at a hundred random steps": "the number of resumption points the notebook tests, an "
                                                     "experiment setting it asserts over, not a result",
-    r"simulates eight ranks under both designs": "the simulated world size, an experiment setting, not a result",
+    r"simulates world sizes from one to sixteen ranks": "the simulated world sizes, an experiment setting, not a result",
 }
 
 MIN_FIGURES: int = 13

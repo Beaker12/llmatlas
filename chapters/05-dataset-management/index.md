@@ -1336,7 +1336,7 @@ The remaining ingredients are standard: a few worker processes per rank that pre
 
 ```{admonition} Sharding Across Ranks
 :class: tip
-The notebook section {ref}`nb-dm-distributed` simulates eight ranks under both designs, checks that each covers the corpus exactly once, and shows the global batch at a fixed step staying identical as the world size changes under global indexing and changing under shard assignment.
+The notebook section {ref}`nb-dm-distributed` simulates world sizes from one to sixteen ranks under both designs, checks that each covers the corpus exactly once, and shows the global batch at a fixed step staying identical as the world size changes under global indexing and changing under shard assignment.
 ```
 
 (sec-ch5-loader-workers)=
