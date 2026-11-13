@@ -9,7 +9,7 @@ Every token a language model is trained on was written by someone, stored somewh
 By the end of this chapter, you will understand:
 
 - What the pretraining corpora of GPT-3, the LLaMA family, The Pile, Dolma and FineWeb are made of, and roughly in what proportions
-- How Common Crawl is organised (snapshots, segments, WARC/WET/WAT files, the index) and how to read a slice of it
+- How Common Crawl is organized (snapshots, segments, WARC/WET/WAT files, the index) and how to read a slice of it
 - How to crawl responsibly: robots.txt, rate limits, sitemaps, and the economics of fetching a billion pages
 - The main curated sources (Wikipedia, books, scientific papers, source code, forums and dialogue) and what each contributes
 - The copyright, licensing and consent questions around training data, and how the major open corpora answer them
@@ -22,7 +22,7 @@ By the end of this chapter, you will understand:
 The accompanying notebook, [Data Acquisition Demo](examples/data_acquisition_demo.ipynb), fetches small samples from real public sources and checks every claim with an assertion:
 
 - Reading a Common Crawl snapshot's manifest and parsing records from a byte-range slice of a WARC file ({ref}`nb-acq-crawl`)
-- Checking robots.txt rules for search and AI crawler user agents on an encyclopaedia and a news site ({ref}`nb-acq-robots`)
+- Checking robots.txt rules for search and AI crawler user agents on an encyclopedia and a news site ({ref}`nb-acq-robots`)
 - Sampling FineWeb, FineWeb-Edu, C4, Wikipedia and FineWeb-2 through the Hugging Face rows API and comparing document lengths, language scores and domain concentration ({ref}`nb-acq-sources`)
 - Turning a compute budget into a token budget and a source mixture with per-source epoch caps ({ref}`nb-acq-mixture`)
 - Writing a provenance manifest with content hashes for everything fetched ({ref}`nb-acq-provenance`)
@@ -37,11 +37,11 @@ Imagine being asked to assemble a library for someone who will read every book i
 
 **The web** is the only source large enough to fill most of the shelves. Common Crawl, a non-profit that has crawled the web since 2008 and publishes the result for free, supplies the raw material for nearly every open corpus and, by all accounts, for most closed ones.
 
-**Curated sources** fill the gaps the web leaves: encyclopaedias for facts, books for long-form prose, scientific papers for technical reasoning, source code for programming, and conversation for dialogue. Each is a few percent of the corpus, and the smallest (Wikipedia, books) are typically seen two or more times.
+**Curated sources** fill the gaps the web leaves: encyclopedias for facts, books for long-form prose, scientific papers for technical reasoning, source code for programming, and conversation for dialogue. Each is a few percent of the corpus, and the smallest (Wikipedia, books) are typically seen two or more times.
 
 **Crawling** is how new material is obtained when the published crawls are not enough. It is a matter of HTTP mechanics, politeness conventions that are rapidly hardening into legal lines, and arithmetic about how many machines it takes to fetch a billion pages.
 
-**Rights and consent** decide what may be kept. Copyright, dataset licences, robots.txt and opt-out registries all apply, and the answer has changed quickly: a quarter of the highest-quality web text became off limits to crawlers in a single year.
+**Rights and consent** decide what may be kept. Copyright, dataset licenses, robots.txt and opt-out registries all apply, and the answer has changed quickly: a quarter of the highest-quality web text became off limits to crawlers in a single year.
 
 **Mixture design** turns the pile of sources into a training set. The scaling laws of Chapter 2 say how many tokens a model should see; the mixture says which ones, how many times, and in what proportion.
 
@@ -218,11 +218,11 @@ Common Crawl covers the open, static, mostly English web as of a few weeks ago. 
 
 ### 3.2 robots.txt and the politeness conventions
 
-The Robots Exclusion Protocol (RFC 9309) {cite}`koster2022robots` lets a site state, in `/robots.txt`, which user agents may fetch which paths. It was a convention for thirty years and became a standard in 2022; it is not enforced by anything but the crawler's own code, which is why it has become the centre of the consent question in Section 5. A crawler is expected to:
+The Robots Exclusion Protocol (RFC 9309) {cite}`koster2022robots` lets a site state, in `/robots.txt`, which user agents may fetch which paths. It was a convention for thirty years and became a standard in 2022; it is not enforced by anything but the crawler's own code, which is why it has become the center of the consent question in Section 5. A crawler is expected to:
 
 - Fetch `/robots.txt` before anything else on a host and obey the `Disallow` and `Allow` rules for its own user agent, falling back to the `*` group. When several rules match a path, the most specific one (the longest match) wins.
 - Treat the answer to that fetch as RFC 9309 says: a 4xx status (the file is "unavailable") means no restrictions, while a 5xx status or a network failure ("unreachable") means the whole site is disallowed. Use a cached copy for no more than 24 hours, and parse at least the first 500 KiB of the file.
-- Honour `Crawl-delay` where present (it is a widely used extension, not part of RFC 9309) and otherwise limit itself to a request every few seconds per host, with backoff on `429` and `503` responses.
+- Honor `Crawl-delay` where present (it is a widely used extension, not part of RFC 9309) and otherwise limit itself to a request every few seconds per host, with backoff on `429` and `503` responses.
 - Identify itself with a user agent string that names the crawler and links to a page explaining it, so that site operators can block it or write to its operator.
 - Use the `Sitemap:` entries, which list the URLs a site wants crawled, as the frontier for that site.
 
@@ -257,9 +257,9 @@ The user agents in that list are the ones that matter for training data: `CCBot`
 
 A crawler at corpus scale is a distributed system with four parts:
 
-- **Frontier**: the queue of URLs to fetch, prioritised by some estimate of value (links in, freshness, site quality) and partitioned by host so that per-host politeness can be enforced locally. The frontier is the crawl's main state and its main engineering problem; Common Crawl uses Apache Nutch's.
+- **Frontier**: the queue of URLs to fetch, prioritized by some estimate of value (links in, freshness, site quality) and partitioned by host so that per-host politeness can be enforced locally. The frontier is the crawl's main state and its main engineering problem; Common Crawl uses Apache Nutch's.
 - **Fetchers**: many workers, each holding a pool of connections, resolving DNS, fetching with timeouts, and respecting the per-host schedule. Throughput is bounded by politeness rather than bandwidth: at one request per two seconds per host, a hundred thousand hosts in flight give fifty thousand pages per second in theory and a tenth of that in practice.
-- **Deduplication of URLs** before fetching (canonicalisation, a seen-set of URL hashes) and of content after fetching (so that mirrors and soft-404 pages do not fill the frontier with links).
+- **Deduplication of URLs** before fetching (canonicalization, a seen-set of URL hashes) and of content after fetching (so that mirrors and soft-404 pages do not fill the frontier with links).
 - **Storage** as WARC, with the request, response and metadata records written together, because the raw response is what later re-extraction needs. Writing only extracted text saves space and throws away the option of re-extracting with a better tool next year.
 
 Rendering is the expensive option. A page that builds its content with JavaScript yields a near-empty HTML response to a plain fetcher; running a headless browser recovers the content at many times the cost per page. Most training-data crawls do not render, which is one reason single-page applications are under-represented in corpora.
@@ -294,11 +294,11 @@ Wikipedia is in every corpus. The Wikimedia Foundation publishes complete databa
 Books are the best source of long-range structure (a plot, an argument, a chapter that refers to an earlier one), and the most legally fraught. The sources that have been used:
 
 - **Project Gutenberg**: more than 75,000 public-domain books, mostly English works published before 1931 (the US public-domain cutoff as of 2026), downloadable in bulk. Legally clean and stylistically dated; it is the books portion of Dolma and part of LLaMA's.
-- **BookCorpus**: 11,000 self-published novels scraped from Smashwords for a 2015 study that aligned books with their film adaptations, and later used to train BERT and the original GPT; a retrospective datasheet {cite}`bandy2021addressing` found duplicates, skewed genres and books whose licences did not permit the use.
+- **BookCorpus**: 11,000 self-published novels scraped from Smashwords for a 2015 study that aligned books with their film adaptations, and later used to train BERT and the original GPT; a retrospective datasheet {cite}`bandy2021addressing` found duplicates, skewed genres and books whose licenses did not permit the use.
 - **Books3**: about 196,000 pirated books from a shadow library, included in The Pile and used by several models, withdrawn after takedown notices in 2023 and the subject of ongoing lawsuits. Its presence in a training set is now a legal liability.
-- **Licensed collections**: publishers and aggregators now sell training licences, and the large labs increasingly buy them, or buy and scan print books, rather than rely on shadow libraries. In *Bartz v. Anthropic* (N.D. Cal., June 2025) training on lawfully acquired books was held fair use, while building a permanent central library from pirated copies was not and was sent to trial {cite}`bartz2025order`. In *Kadrey v. Meta* (N.D. Cal., June 2025) Meta won summary judgment on fair use although it had downloaded books from shadow libraries, because the plaintiffs offered no evidence that the models' outputs would dilute the market for their books; the judge wrote that the ruling "does not stand for the proposition that Meta's use of copyrighted materials to train its language models is lawful" and limited it to those thirteen authors and that record {cite}`kadrey2025order`. In *Thomson Reuters v. Ross Intelligence* (D. Del., February 2025) the court rejected fair use for a non-generative legal-research tool trained on Westlaw headnotes to compete with Westlaw {cite}`thomsonreuters2025ross`.
+- **Licensed collections**: publishers and aggregators now sell training licenses, and the large labs increasingly buy them, or buy and scan print books, rather than rely on shadow libraries. In *Bartz v. Anthropic* (N.D. Cal., June 2025) training on lawfully acquired books was held fair use, while building a permanent central library from pirated copies was not and was sent to trial {cite}`bartz2025order`. In *Kadrey v. Meta* (N.D. Cal., June 2025) Meta won summary judgment on fair use although it had downloaded books from shadow libraries, because the plaintiffs offered no evidence that the models' outputs would dilute the market for their books; the judge wrote that the ruling "does not stand for the proposition that Meta's use of copyrighted materials to train its language models is lawful" and limited it to those thirteen authors and that record {cite}`kadrey2025order`. In *Thomson Reuters v. Ross Intelligence* (D. Del., February 2025) the court rejected fair use for a non-generative legal-research tool trained on Westlaw headnotes to compete with Westlaw {cite}`thomsonreuters2025ross`.
 
-The practical rule in 2026: use public-domain text, text whose licence explicitly allows the use, or text you have licensed, and keep the receipts. Books3 in The Pile is the cautionary example of what happens otherwise.
+The practical rule in 2026: use public-domain text, text whose license explicitly allows the use, or text you have licensed, and keep the receipts. Books3 in The Pile is the cautionary example of what happens otherwise.
 
 (sec-ch3-scientific-technical-papers)=
 
@@ -307,8 +307,8 @@ The practical rule in 2026: use public-domain text, text whose licence explicitl
 Papers supply formal argument, mathematics and domain vocabulary. The accessible sources:
 
 - **arXiv** publishes bulk access to its LaTeX sources and PDFs (on S3, requester pays). The LaTeX source, converted with macro expansion and with bibliographies and comments removed, is what The Pile and LLaMA used; it is also the main source of mathematical text in the open corpora.
-- **S2ORC** {cite}`lo2020s2orc` and its successor **peS2o** {cite}`soldaini2023pes2o` provide full text for roughly eight million open-access papers from Semantic Scholar, plus titles and abstracts for tens of millions more (peS2o v2: 8.2M full-text papers and 30.6M abstracts), already converted from PDF, with licences tracked per paper. Dolma's papers portion is peS2o.
-- **PubMed Central** offers the open-access subset of biomedical literature in bulk XML, licence by licence.
+- **S2ORC** {cite}`lo2020s2orc` and its successor **peS2o** {cite}`soldaini2023pes2o` provide full text for roughly eight million open-access papers from Semantic Scholar, plus titles and abstracts for tens of millions more (peS2o v2: 8.2M full-text papers and 30.6M abstracts), already converted from PDF, with licenses tracked per paper. Dolma's papers portion is peS2o.
+- **PubMed Central** offers the open-access subset of biomedical literature in bulk XML, license by license.
 
 PDF extraction is the technical problem: two-column layouts, equations, tables and footnotes come out scrambled from generic tools, which is why pipelines prefer LaTeX or publisher XML wherever it exists. Where only PDFs exist, document-understanding models trained for the job, Nougat {cite}`blecher2023nougat` for academic PDFs and olmOCR {cite}`poznanski2025olmocr` at corpus scale, now recover text, equations and tables well enough that scanned books and papers have become an acquisition channel in their own right.
 
@@ -316,13 +316,13 @@ PDF extraction is the technical problem: two-column layouts, equations, tables a
 
 ### 4.4 Source code
 
-Code is a few per cent of every mixture and is kept even in models not aimed at programming. LLaMA and Gopher both include a few per cent of code {cite}`touvron2023llama,rae2021scaling`; Dolma's mixing study (Appendix M) {cite}`soldaini2024dolma` and the data-constrained scaling experiments {cite}`muennighoff2023scaling` test what adding code does for natural-language tasks. The sources:
+Code is a few percent of every mixture and is kept even in models not aimed at programming. LLaMA and Gopher both include a few percent of code {cite}`touvron2023llama,rae2021scaling`; Dolma's mixing study (Appendix M) {cite}`soldaini2024dolma` and the data-constrained scaling experiments {cite}`muennighoff2023scaling` test what adding code does for natural-language tasks. The sources:
 
-- **The Stack** {cite}`kocetkov2022stack` is 3 TB of source files from public GitHub repositories, restricted to permissively licensed repositories (MIT, Apache, BSD and similar) determined from the repository's licence file, near-deduplicated, with an opt-out form that lets developers remove their repositories from future versions. **The Stack v2** {cite}`lozhkov2024starcoder2` was built from Software Heritage's archive instead, which preserves provenance for every file.
-- **GitHub archives** such as GH Archive (event streams) and the Software Heritage graph are the raw material behind both; building from them directly means doing the licence detection yourself.
+- **The Stack** {cite}`kocetkov2022stack` is 3 TB of source files from public GitHub repositories, restricted to permissively licensed repositories (MIT, Apache, BSD and similar) determined from the repository's license file, near-deduplicated, with an opt-out form that lets developers remove their repositories from future versions. **The Stack v2** {cite}`lozhkov2024starcoder2` was built from Software Heritage's archive instead, which preserves provenance for every file.
+- **GitHub archives** such as GH Archive (event streams) and the Software Heritage graph are the raw material behind both; building from them directly means doing the license detection yourself.
 - **Notebooks, issues, commits and documentation** are included alongside code in StarCoder's training data because they pair code with natural-language explanation.
 
-Licence filtering is the acquisition-time decision that matters most for code: a permissive-only corpus is smaller but can be released and used without the copyleft question that GPL-licensed code raises for model outputs.
+License filtering is the acquisition-time decision that matters most for code: a permissive-only corpus is smaller but can be released and used without the copyleft question that GPL-licensed code raises for model outputs.
 
 (sec-ch3-forums-dialogue-question-answering)=
 
@@ -348,7 +348,7 @@ The notebook section {ref}`nb-acq-sources` samples five hosted corpora through t
 
 (sec-ch3-rights-licenses-consent)=
 
-## 5. Rights, Licences and Consent
+## 5. Rights, Licenses and Consent
 
 This section describes the landscape as of 2026 and is not legal advice. The questions are live in several courts, the answers differ by jurisdiction, and a team assembling a corpus for anything beyond research should have counsel involved from the start.
 
@@ -356,30 +356,30 @@ This section describes the landscape as of 2026 and is not legal advice. The que
 
 ### 5.1 Copyright and the training question
 
-Almost every document on the web is under copyright from the moment it is written; the open question is whether copying it into a training set, and training on it, is permitted without a licence.
+Almost every document on the web is under copyright from the moment it is written; the open question is whether copying it into a training set, and training on it, is permitted without a license.
 
-- In the **United States** the argument is fair use: that training is a transformative, non-expressive use that does not substitute for the work. Several suits by authors, publishers and news organisations against model developers were pending or partly decided in 2024 and 2025. The rulings so far have turned on how the data was obtained (a pirated library is treated differently from a lawful copy) {cite}`bartz2025order`, on market harm, which decided *Kadrey v. Meta* because the plaintiffs offered no evidence that the model's outputs would dilute the market for their books {cite}`kadrey2025order`, and, for a non-generative tool built from a competitor's content to compete with it, against fair use in *Thomson Reuters v. Ross* {cite}`thomsonreuters2025ross`. {ref}`sec-ch3-books` gives the three cases in more detail.
-- The **European Union**'s Digital Single Market directive (2019) created a text-and-data-mining exception for research institutions and a general one that rights holders may opt out of in a machine-readable way; the AI Act (Regulation 2024/1689) requires providers of general-purpose models to put in place a copyright policy that identifies and honours those opt-outs (Article 53(1)(c)) and to publish a sufficiently detailed summary of the content used for training, on a template from the AI Office (Article 53(1)(d)). A robots.txt directive is the most common machine-readable form, though the directive says only "such as machine-readable means", and which forms count is contested.
+- In the **United States** the argument is fair use: that training is a transformative, non-expressive use that does not substitute for the work. Several suits by authors, publishers and news organizations against model developers were pending or partly decided in 2024 and 2025. The rulings so far have turned on how the data was obtained (a pirated library is treated differently from a lawful copy) {cite}`bartz2025order`, on market harm, which decided *Kadrey v. Meta* because the plaintiffs offered no evidence that the model's outputs would dilute the market for their books {cite}`kadrey2025order`, and, for a non-generative tool built from a competitor's content to compete with it, against fair use in *Thomson Reuters v. Ross* {cite}`thomsonreuters2025ross`. {ref}`sec-ch3-books` gives the three cases in more detail.
+- The **European Union**'s Digital Single Market directive (2019) created a text-and-data-mining exception for research institutions and a general one that rights holders may opt out of in a machine-readable way; the AI Act (Regulation 2024/1689) requires providers of general-purpose models to put in place a copyright policy that identifies and honors those opt-outs (Article 53(1)(c)) and to publish a sufficiently detailed summary of the content used for training, on a template from the AI Office (Article 53(1)(d)). A robots.txt directive is the most common machine-readable form, though the directive says only "such as machine-readable means", and which forms count is contested.
 - **Japan** permits uses that are not for enjoying a work's expression, which covers training, under Article 30-4 of its Copyright Act (added in 2018), unless the use would unreasonably prejudice the copyright owner's interests. The **United Kingdom** allows text and data analysis only for non-commercial research (section 29A of its Copyright Act) and opened a consultation on a broader exception in December 2024.
 
-The practical consequences for acquisition: keep the record of where each document came from and under what terms (Section 9); prefer sources that are public domain, openly licensed, or licensed to you; treat shadow libraries and scraped paywalled content as liabilities, whatever the fair-use argument; and build the machinery to honour opt-outs, because a document that was lawful to collect may not be lawful to keep.
+The practical consequences for acquisition: keep the record of where each document came from and under what terms (Section 9); prefer sources that are public domain, openly licensed, or licensed to you; treat shadow libraries and scraped paywalled content as liabilities, whatever the fair-use argument; and build the machinery to honor opt-outs, because a document that was lawful to collect may not be lawful to keep.
 
 (sec-ch3-dataset-licenses-not-content-licenses)=
 
-### 5.2 Dataset licences are not content licences
+### 5.2 Dataset licenses are not content licenses
 
-A dataset on a hub carries a licence (ODC-BY, CC BY, Apache 2.0, "other"), and it is tempting to read that licence as permission to train on the contents. It is not. The dataset licence covers the compilation and the curation work; the documents inside keep their own rights. FineWeb and Dolma are both released under ODC-BY with an explicit note that Common Crawl's terms of use apply to the underlying pages. The Data Provenance Initiative {cite}`longpre2023data` audited more than 1,800 widely used fine-tuning datasets and found that more than 70% of the licences were omitted on the hosting platforms and more than half of those stated were wrong, frequently in the permissive direction, with the original sources often restricting commercial use where the hub listing did not. The lesson is to trace every dataset to its sources and read the sources' terms, which is tedious and is the job.
+A dataset on a hub carries a license (ODC-BY, CC BY, Apache 2.0, "other"), and it is tempting to read that license as permission to train on the contents. It is not. The dataset license covers the compilation and the curation work; the documents inside keep their own rights. FineWeb and Dolma are both released under ODC-BY with an explicit note that Common Crawl's terms of use apply to the underlying pages. The Data Provenance Initiative {cite}`longpre2023data` audited more than 1,800 widely used fine-tuning datasets and found that more than 70% of the licenses were omitted on the hosting platforms and more than half of those stated were wrong, frequently in the permissive direction, with the original sources often restricting commercial use where the hub listing did not. The lesson is to trace every dataset to its sources and read the sources' terms, which is tedious and is the job.
 
 (sec-ch3-robots-txt-opt-outs-commons)=
 
 ### 5.3 robots.txt, opt-outs and the shrinking commons
 
-Consent in Crisis {cite}`longpre2024consent` measured, across C4, RefinedWeb and Dolma, how the web's permissions for AI crawlers changed between 2023 and 2024: within a year, robots.txt restrictions had put off limits more than 5% of all of C4's tokens and more than 28% of the tokens from its most actively maintained, highest-quality domains (news organisations above all), with terms-of-service restrictions covering a further large share (about 45% of C4), and the restrictions were rising fastest exactly where the best text was. The restrictions are also inconsistent: many sites block OpenAI's crawler but not others, many block `CCBot` without realising that this also removes them from the open corpora that research depends on, and many state a prohibition in their terms of service that their robots.txt does not express.
+Consent in Crisis {cite}`longpre2024consent` measured, across C4, RefinedWeb and Dolma, how the web's permissions for AI crawlers changed between 2023 and 2024: within a year, robots.txt restrictions had put off limits more than 5% of all of C4's tokens and more than 28% of the tokens from its most actively maintained, highest-quality domains (news organizations above all), with terms-of-service restrictions covering a further large share (about 45% of C4), and the restrictions were rising fastest exactly where the best text was. The restrictions are also inconsistent: many sites block OpenAI's crawler but not others, many block `CCBot` without realizing that this also removes them from the open corpora that research depends on, and many state a prohibition in their terms of service that their robots.txt does not express.
 
 Opt-out mechanisms beyond robots.txt:
 
 - **Registries** such as Spawning's Do Not Train list and the `ai.txt` proposal, which some corpus builders query at acquisition time.
-- **Per-dataset opt-out forms**, as The Stack provides for GitHub repositories, honoured in the next release.
+- **Per-dataset opt-out forms**, as The Stack provides for GitHub repositories, honored in the next release.
 - **Retroactive removal**: FineWeb and RefinedWeb state that they will remove pages whose owners ask, and Common Crawl removes content on request from future snapshots.
 
 A corpus built today should record, per document, the robots.txt state at fetch time and should be rebuilt against current opt-outs before each new training run. The cost of doing so is small; the cost of not doing so is a model that cannot be shipped.
@@ -388,20 +388,20 @@ A corpus built today should record, per document, the robots.txt state at fetch 
 
 ### 5.4 What the open corpora decided
 
-| Corpus                                  | Content licence position                                        | Opt-out                                   | Known problems                                          |
+| Corpus                                  | Content license position                                        | Opt-out                                   | Known problems                                          |
 | --------------------------------------- | --------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------- |
 | C4 {cite}`raffel2019exploring`          | Common Crawl terms; first released as a script that regenerates it from Common Crawl, hosted as text from 2021 | None | Removed benign minority text with its word list {cite}`dodge2021documenting` |
 | The Pile {cite}`gao2020pile`            | Mixed; included Books3                                          | None                                      | Books3 withdrawn after takedown; litigation            |
-| The Stack {cite}`kocetkov2022stack`     | Permissive licences only, detected from licence files           | Form per repository                       | Licence detection errors; copyleft-adjacent files       |
+| The Stack {cite}`kocetkov2022stack`     | Permissive licenses only, detected from license files           | Form per repository                       | License detection errors; copyleft-adjacent files       |
 | Dolma {cite}`soldaini2024dolma`         | ODC-BY on the compilation; sources' terms apply                 | Via Common Crawl and source hubs          | Reddit portion predates API closure                     |
-| FineWeb {cite}`penedo2024fineweb`       | ODC-BY on the compilation; Common Crawl terms apply             | Email removal requests honoured           | Web only, so inherits every robots.txt gap              |
+| FineWeb {cite}`penedo2024fineweb`       | ODC-BY on the compilation; Common Crawl terms apply             | Email removal requests honored           | Web only, so inherits every robots.txt gap              |
 | RedPajama-V2 {cite}`weber2024redpajama` | Released with quality signals so users apply their own filters  | Via Common Crawl                          | 100T raw tokens, deliberately unfiltered                |
 
 (sec-ch3-personal-data-sensitive-sources)=
 
 ### 5.5 Personal data and sensitive sources
 
-Data-protection law (the GDPR and its relatives) applies to personal data regardless of copyright, which is why acquisition should avoid sources that are mostly personal data (people directories, leaked databases, social profiles) rather than relying on the redaction in Chapter 4 to fix them later. Health records, children's content and content from regions with strict localisation rules are usually excluded at the source level for the same reason.
+Data-protection law (the GDPR and its relatives) applies to personal data regardless of copyright, which is why acquisition should avoid sources that are mostly personal data (people directories, leaked databases, social profiles) rather than relying on the redaction in Chapter 4 to fix them later. Health records, children's content and content from regions with strict localization rules are usually excluded at the source level for the same reason.
 
 (sec-ch3-infrastructure-replacing-robots-txt)=
 
@@ -409,11 +409,11 @@ Data-protection law (the GDPR and its relatives) applies to personal data regard
 
 Three developments in 2025 are turning the informal conventions above into machinery, and a corpus built in 2026 should expect to interact with all of them:
 
-- **Default blocking and paid crawling.** Cloudflare, which fronts a large share of the web, changed its default to block AI crawlers on 1 July 2025 and introduced a pay-per-crawl mechanism the same day; the IETF's AI Preferences working group is standardising a vocabulary for expressing training and inference permissions in robots.txt and HTTP headers.
-- **Regulatory codes.** The EU's General-Purpose AI Code of Practice (published 10 July 2025) is a voluntary code whose copyright chapter shows providers how to meet the AI Act's copyright obligations, which include honouring machine-readable opt-outs. The training-content summary is not a Code commitment but a legal obligation under Article 53(1)(d), with a template the Commission adopted in July 2025. Together they make the opt-out handling of {ref}`sec-ch3-robots-txt-opt-outs-commons` a compliance requirement rather than a courtesy.
-- **Openly licensed corpora.** The Common Pile {cite}`kandpal2025common` (8 TB of public-domain and openly licensed text, with a model trained on it to show the approach is viable), Common Corpus and institutional collections of digitised public-domain books show what a corpus looks like when Section 5's advice is followed to the letter: smaller, older on average, and free of the exposure that the web corpora carry.
+- **Default blocking and paid crawling.** Cloudflare, which fronts a large share of the web, changed its default to block AI crawlers on 1 July 2025 and introduced a pay-per-crawl mechanism the same day; the IETF's AI Preferences working group is standardizing a vocabulary for expressing training and inference permissions in robots.txt and HTTP headers.
+- **Regulatory codes.** The EU's General-Purpose AI Code of Practice (published 10 July 2025) is a voluntary code whose copyright chapter shows providers how to meet the AI Act's copyright obligations, which include honoring machine-readable opt-outs. The training-content summary is not a Code commitment but a legal obligation under Article 53(1)(d), with a template the Commission adopted in July 2025. Together they make the opt-out handling of {ref}`sec-ch3-robots-txt-opt-outs-commons` a compliance requirement rather than a courtesy.
+- **Openly licensed corpora.** The Common Pile {cite}`kandpal2025common` (8 TB of public-domain and openly licensed text, with a model trained on it to show the approach is viable), Common Corpus and institutional collections of digitized public-domain books show what a corpus looks like when Section 5's advice is followed to the letter: smaller, older on average, and free of the exposure that the web corpora carry.
 
-One acquisition-time risk is specific to how corpora are distributed. Many image-text datasets are published as URL lists rather than content, and {cite:t}`carlini2024poisoning` showed that buying expired domains on those lists is enough to insert chosen content into the copy of anyone who later re-downloads the dataset; the same work showed that timing edits to land just before a Wikipedia snapshot is taken poisons the snapshot; content hashes recorded at collection time (Section 9) are the defence.
+One acquisition-time risk is specific to how corpora are distributed. Many image-text datasets are published as URL lists rather than content, and {cite:t}`carlini2024poisoning` showed that buying expired domains on those lists is enough to insert chosen content into the copy of anyone who later re-downloads the dataset; the same work showed that timing edits to land just before a Wikipedia snapshot is taken poisons the snapshot; content hashes recorded at collection time (Section 9) are the defense.
 
 (sec-ch3-multilingual-low-resource-sources)=
 
@@ -431,20 +431,20 @@ Roughly 45% of Common Crawl's pages are English, which is already a large over-r
 
 | Corpus                                         | Languages | Source               | Approach                                                                                 |
 | ---------------------------------------------- | --------- | -------------------- | ---------------------------------------------------------------------------------------- |
-| mC4 {cite}`xue2021mt5`                         | 101       | 71 Common Crawl WET  | cld3 language id, per-language C4 rules; known to contain mislabelled and machine-translated text |
+| mC4 {cite}`xue2021mt5`                         | 101       | 71 Common Crawl WET  | cld3 language id, per-language C4 rules; known to contain mislabeled and machine-translated text |
 | OSCAR {cite}`abadji2022oscar`                  | 150+      | Common Crawl WET     | fastText language id per line, then document level; releases new versions per snapshot  |
-| ROOTS {cite}`laurenccon2022bigscience`         | 46 + 13 programming | Curated datasets + crawl, chosen by language communities | Community-sourced catalogue of sources; per-language cleaning parameters |
+| ROOTS {cite}`laurenccon2022bigscience`         | 46 + 13 programming | Curated datasets + crawl, chosen by language communities | Community-sourced catalog of sources; per-language cleaning parameters |
 | CulturaX {cite}`nguyen2023culturax`            | 167       | mC4 + OSCAR          | Merge, re-identify language, URL blocklist, per-language perplexity thresholds, MinHash |
 | MADLAD-400 {cite}`kudugunta2023madlad`         | 419       | Common Crawl         | Manual audit of every language by inspection; drops the labels that were not real languages |
 | FineWeb-2 {cite}`penedo2025fineweb2`           | 1,000+    | 96 Common Crawl snapshots | Per-language thresholds derived from reference-corpus statistics; duplicates "rehydrated" with cluster-size-dependent weights (1–10) derived from filter rates |
 
-The recurring finding, first established by the audit by {cite:t}`kreutzer2022quality` across mC4, OSCAR and other crawled corpora and repeated in the MADLAD-400 audit, is that automatic language identification produces hundreds of "languages" that on inspection are noise, boilerplate, mislabelled majority-language text or machine translation. Below the top hundred or so languages, a human who reads the language has to look at the data. FineWeb-2's rehydration step adds a nuance: after global per-language deduplication it records each kept document's cluster size and up-samples by a weight between 1 and 10 chosen from how often the quality filters removed documents of that cluster size. Moderately duplicated pages get the highest weights; unique pages and the most-copied pages (often boilerplate) get the lowest.
+The recurring finding, first established by the audit by {cite:t}`kreutzer2022quality` across mC4, OSCAR and other crawled corpora and repeated in the MADLAD-400 audit, is that automatic language identification produces hundreds of "languages" that on inspection are noise, boilerplate, mislabeled majority-language text or machine translation. Below the top hundred or so languages, a human who reads the language has to look at the data. FineWeb-2's rehydration step adds a nuance: after global per-language deduplication it records each kept document's cluster size and up-samples by a weight between 1 and 10 chosen from how often the quality filters removed documents of that cluster size. Moderately duplicated pages get the highest weights; unique pages and the most-copied pages (often boilerplate) get the lowest.
 
 (sec-ch3-beyond-crawl)=
 
 ### 6.3 Beyond the crawl
 
-For languages the web under-serves, acquisition reaches for sources that the web pipeline skips: religious texts and their translations (the Bible and Quran exist in more languages than any other document), government publications and legal codes in official languages, broadcaster transcripts, Wikipedia editions, OPUS and other parallel corpora assembled for machine translation, and community collections such as those gathered for ROOTS and by Masakhane for African languages. These are small, but a few million tokens of genuine text in a language is worth more than a billion tokens of mislabelled crawl.
+For languages the web under-serves, acquisition reaches for sources that the web pipeline skips: religious texts and their translations (the Bible and Quran exist in more languages than any other document), government publications and legal codes in official languages, broadcaster transcripts, Wikipedia editions, OPUS and other parallel corpora assembled for machine translation, and community collections such as those gathered for ROOTS and by Masakhane for African languages. These are small, but a few million tokens of genuine text in a language is worth more than a billion tokens of mislabeled crawl.
 
 (sec-ch3-synthetic-data)=
 
@@ -465,7 +465,7 @@ If the stock of human-written text is the binding constraint, text generated by 
 
 ### 7.2 What can go wrong
 
-Synthetic data inherits the generating model's errors, style and gaps, and feeding it back repeatedly compounds them. {cite:t}`shumailov2024curse` showed that models trained on the outputs of earlier models lose the tails of the distribution first, so that after a few generations rare content disappears and the model's outputs converge on a narrow, repetitive mode. The practical mitigations are to keep synthetic data a minority of the mixture, to keep human-written data in every generation, to anchor generation in real documents (rephrasing, grounded question writing) rather than free generation, and to mark synthetic data as such in provenance records. The last matters beyond your own pipeline: model-generated text is now a growing fraction of the open web, so future crawls contain it whether or not it was labelled.
+Synthetic data inherits the generating model's errors, style and gaps, and feeding it back repeatedly compounds them. {cite:t}`shumailov2024curse` showed that models trained on the outputs of earlier models lose the tails of the distribution first, so that after a few generations rare content disappears and the model's outputs converge on a narrow, repetitive mode. The practical mitigations are to keep synthetic data a minority of the mixture, to keep human-written data in every generation, to anchor generation in real documents (rephrasing, grounded question writing) rather than free generation, and to mark synthetic data as such in provenance records. The last matters beyond your own pipeline: model-generated text is now a growing fraction of the open web, so future crawls contain it whether or not it was labeled.
 
 (sec-ch3-mixture-design-token-budgeting)=
 
@@ -494,10 +494,10 @@ Small, high-quality sources (Wikipedia, textbooks, papers) hit the cap first and
 Three ways the weights get set:
 
 - **By hand, from experience.** LLaMA's mixture (67% crawl, 15% C4, 4.5% each of GitHub, Wikipedia and books, 2.5% arXiv, 2% StackExchange, with Wikipedia and books at about two epochs) {cite}`touvron2023llama` is the template most open models started from.
-- **By optimisation.** DoReMi {cite}`xie2023doremi` trains a small proxy model with weights adjusted to minimise the worst-case excess loss across domains against a reference, then trains the large model with the resulting weights; on The Pile it improved average downstream accuracy at the same token budget and reached the baseline's downstream accuracy 2.6 times faster.
+- **By optimization.** DoReMi {cite}`xie2023doremi` trains a small proxy model with weights adjusted to minimize the worst-case excess loss across domains against a reference, then trains the large model with the resulting weights; on The Pile it improved average downstream accuracy at the same token budget and reached the baseline's downstream accuracy 2.6 times faster.
 - **By ablation.** The FineWeb {cite}`penedo2024fineweb` and DataComp-LM {cite}`li2024datacomp` protocol, training small models on candidate mixtures and comparing benchmarks, is the method of last resort and the one most teams actually use for the final decision.
 
-A fourth, increasingly common choice is **curriculum**: training on the full mixture for most of the run and then "annealing" on a small, high-quality subset (FineWeb-Edu, textbooks, instruction-like data) in the final few per cent of steps, which the Llama 3 report {cite}`grattafiori2024llama` and several open models describe as a measurable gain.
+A fourth, increasingly common choice is **curriculum**: training on the full mixture for most of the run and then "annealing" on a small, high-quality subset (FineWeb-Edu, textbooks, instruction-like data) in the final few percent of steps, which the Llama 3 report {cite}`grattafiori2024llama` and several open models describe as a measurable gain.
 
 (sec-ch3-budgeting-procedure)=
 
@@ -576,8 +576,8 @@ Every document that enters the corpus should carry, as metadata that travels wit
 
 - **Source and locator**: the corpus or site, the URL or file path, and for Common Crawl the snapshot, WARC file and byte offset, which together are enough to re-fetch the exact bytes.
 - **Fetch time and crawl time**, because the page may have changed, been removed or opted out since.
-- **Licence or terms** as understood at acquisition, and the robots.txt decision for the crawler that fetched it.
-- **A content hash** of the raw bytes, so that the document can be recognised in later versions and so that exact deduplication has something to work with.
+- **License or terms** as understood at acquisition, and the robots.txt decision for the crawler that fetched it.
+- **A content hash** of the raw bytes, so that the document can be recognized in later versions and so that exact deduplication has something to work with.
 - **Synthetic or not**, with the generating model and prompt if synthetic.
 
 ```python
@@ -586,7 +586,7 @@ import json
 import time
 
 
-def provenance_record(source, locator, raw_bytes, licence, robots_decision, synthetic=False, **extra):
+def provenance_record(source, locator, raw_bytes, license, robots_decision, synthetic=False, **extra):
     """One manifest line per acquired document; stable field order, content-addressed."""
     return {
         "source": source,
@@ -594,7 +594,7 @@ def provenance_record(source, locator, raw_bytes, licence, robots_decision, synt
         "sha256": hashlib.sha256(raw_bytes).hexdigest(),
         "bytes": len(raw_bytes),
         "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "licence": licence,
+        "license": license,
         "robots": robots_decision,
         "synthetic": synthetic,
         **extra,
@@ -603,7 +603,7 @@ def provenance_record(source, locator, raw_bytes, licence, robots_decision, synt
 
 doc = b"<html><body><p>Example page.</p></body></html>"
 rec = provenance_record("commoncrawl", "crawl-data/CC-MAIN-2026-39/.../00000.warc.gz#offset=0", doc,
-                        licence="CC terms of use", robots_decision="allowed:CCBot")
+                        license="CC terms of use", robots_decision="allowed:CCBot")
 other = provenance_record("commoncrawl", "same locator", doc + b"\n", "CC terms of use", "allowed:CCBot")
 assert provenance_record("x", "y", doc, "l", "r")["sha256"] == rec["sha256"]  # same bytes, same id
 assert other["sha256"] != rec["sha256"]                                        # one byte changed, different id
@@ -622,7 +622,7 @@ A documentation practice that goes further is to publish measurements of the cor
 
 ### 9.3 Handing off
 
-The output of acquisition is a set of raw shards plus a manifest: one provenance record per document, the robots and licence decisions, the source table with unique-token counts, and the mixture plan. Chapter 4 consumes the shards and must preserve the records through every filter; Chapter 5 versions the result so that the model, the corpus and the manifest can be matched up later.
+The output of acquisition is a set of raw shards plus a manifest: one provenance record per document, the robots and license decisions, the source table with unique-token counts, and the mixture plan. Chapter 4 consumes the shards and must preserve the records through every filter; Chapter 5 versions the result so that the model, the corpus and the manifest can be matched up later.
 
 ```{admonition} Provenance in Practice
 :class: tip
@@ -636,9 +636,9 @@ The notebook section {ref}`nb-acq-provenance` writes a provenance record for eve
 1. **Read a snapshot.** Using the manifest and range-request code from Section 2, estimate the size of a current Common Crawl snapshot from the number of WARC files and the sizes reported by a `HEAD` request on ten of them. Compare with Common Crawl's published figure.
 1. **Who is blocked.** Fetch robots.txt from the fifty most-linked news sites you can list and tabulate which of `CCBot`, `GPTBot`, `ClaudeBot`, `Google-Extended` and `*` each disallows. How many block Common Crawl, and did they likely intend to leave the open corpora?
 1. **Source comparison.** Extend the notebook's source comparison to a sixth source of your choosing from the Hugging Face hub. Which of the statistics in the notebook separates it from the others most clearly?
-1. **Licence tracing.** Pick three popular datasets on the hub, read their stated licence, then trace each to its original sources and read those terms. Record every discrepancy, in the style of the Data Provenance Initiative audit.
+1. **License tracing.** Pick three popular datasets on the hub, read their stated license, then trace each to its original sources and read those terms. Record every discrepancy, in the style of the Data Provenance Initiative audit.
 1. **Budget sensitivity.** Using `plan_mixture`, hold the mixture preferences fixed and sweep the total budget from 0.5T to 20T tokens. At what budget does each source hit the epoch cap, and what does the mixture look like at 20T?
-1. **Low-resource audit.** Take fifty documents labelled as a language you read from mC4 or OSCAR and classify each by hand as genuine text, boilerplate, mislabelled or machine-translated. Compare your rate with the MADLAD-400 audit for that language.
+1. **Low-resource audit.** Take fifty documents labeled as a language you read from mC4 or OSCAR and classify each by hand as genuine text, boilerplate, mislabeled or machine-translated. Compare your rate with the MADLAD-400 audit for that language.
 1. **A datasheet.** Write the collection-process section of a datasheet for the samples the notebook fetched, answering every question in the Datasheets template that applies.
 
 (sec-ch3-further-reading)=
@@ -655,8 +655,8 @@ The notebook section {ref}`nb-acq-provenance` writes a provenance record for eve
 - [The Pile](https://arxiv.org/abs/2101.00027) {cite}`gao2020pile` - the case for source diversity, and the Books3 cautionary tale
 - [The RefinedWeb Dataset for Falcon LLM](https://arxiv.org/abs/2306.01116) {cite}`penedo2023refinedweb` - the argument that filtered web alone is enough
 - [RedPajama](https://arxiv.org/abs/2411.12372) {cite}`weber2024redpajama` - a 100T-token raw web corpus released with quality signals instead of filters
-- [The Stack](https://arxiv.org/abs/2211.15533) {cite}`kocetkov2022stack` and [StarCoder 2 and The Stack v2](https://arxiv.org/abs/2402.19173) {cite}`lozhkov2024starcoder2` - licence-filtered code with an opt-out process
-- [S2ORC](https://arxiv.org/abs/1911.02782) {cite}`lo2020s2orc` - open-access papers as full text with licences tracked
+- [The Stack](https://arxiv.org/abs/2211.15533) {cite}`kocetkov2022stack` and [StarCoder 2 and The Stack v2](https://arxiv.org/abs/2402.19173) {cite}`lozhkov2024starcoder2` - license-filtered code with an opt-out process
+- [S2ORC](https://arxiv.org/abs/1911.02782) {cite}`lo2020s2orc` - open-access papers as full text with licenses tracked
 - [A Critical Analysis of Common Crawl](https://doi.org/10.1145/3630106.3659033) {cite}`baack2024critical` - what the crawl is and is not
 
 (sec-ch3-further-reading-rights-consent-provenance)=
