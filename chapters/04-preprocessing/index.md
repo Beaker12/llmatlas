@@ -1,6 +1,6 @@
 # Data Preprocessing and Cleaning
 
-A language model is a compressed description of its training data. Every property you want the model to have, from grammatical fluency to factual reliability to the absence of memorized phone numbers, is either present in the data that reaches the optimizer or absent from the model. This chapter covers the stage between acquiring raw text (Chapter 3) and managing a versioned dataset (Chapter 5): turning billions of crawled, scanned and scraped documents into a corpus that is worth spending compute on.
+A language model is a compressed description of its training data. Every property you want the model to have, from grammatical fluency to factual reliability to the absence of memorized phone numbers, is either present in the data that reaches the optimizer or absent from the model. This chapter covers the stage between acquiring raw text ({ref}`data acquisition <sec-ch3-chapter-overview>`) and managing a versioned dataset ({ref}`dataset management <sec-ch5-chapter-overview>`): turning billions of crawled, scanned and scraped documents into a corpus that is worth spending compute on.
 
 (sec-ch4-chapter-overview)=
 
@@ -80,7 +80,7 @@ Most of the text, usually well over 90%, is thrown away, and the discarded porti
 
 ### 1.2 Quality versus quantity
 
-The scaling laws of Chapter 2 treat tokens as interchangeable, but they are not. Several results show that a smaller, cleaner corpus beats a larger, dirtier one at fixed compute:
+The scaling laws of {ref}`sec-ch2-scaling-laws-compute` treat tokens as interchangeable, but they are not. Several results show that a smaller, cleaner corpus beats a larger, dirtier one at fixed compute:
 
 - **Gopher** {cite}`rae2021scaling` found that the combination of heuristic quality filters and deduplication improved downstream performance across the board in ablations on a 1.4B-parameter model.
 - **Deduplication alone** {cite}`lee2022deduplicating` lets a model reach the same validation perplexity in fewer steps and reduces the fraction of generated text that is copied verbatim from the training set by an order of magnitude.
@@ -1618,7 +1618,7 @@ The lesson of the C4 analysis is that any filter aimed at toxic content will als
 
 ### 6.3 Licenses, consent and opt-out
 
-Whether a document may be used is a question for acquisition (Chapter 3), but preprocessing is where the decision is enforced. The Stack keeps only files whose repository license is on a permissive allowlist and honors opt-out requests by repository. These rules are implemented as filters on document metadata and run first, because a document that should not be in the corpus should not consume any further compute.
+Whether a document may be used is a question for acquisition ({ref}`sec-ch3-rights-licenses-consent`), but preprocessing is where the decision is enforced. The Stack keeps only files whose repository license is on a permissive allowlist and honors opt-out requests by repository. These rules are implemented as filters on document metadata and run first, because a document that should not be in the corpus should not consume any further compute.
 
 ```{admonition} Redaction in Practice
 :class: note
@@ -1902,7 +1902,7 @@ Dolma's release {cite}`soldaini2024dolma` is a good model: the toolkit, the per-
 
 ### 9.4 Preparing the output for training
 
-The last step formats the corpus for the training loader, which Chapter 5 covers in depth. The decisions that belong to preprocessing:
+The last step formats the corpus for the training loader, which the {ref}`dataset-management chapter <sec-ch5-chapter-overview>` covers in depth. The decisions that belong to preprocessing:
 
 - **Document boundaries** are marked with an end-of-text token, so that the model learns where documents end and attention does not need to cross them.
 - **Shuffling** happens at the document level across all sources before sharding, so that every training batch is a mixture; a loader that reads shards in order would otherwise feed the model all of Wikipedia and then all of GitHub.
