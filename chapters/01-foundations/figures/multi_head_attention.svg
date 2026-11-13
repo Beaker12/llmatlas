@@ -9,12 +9,7 @@
 <g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(43.2 487.2)">
 <title>MultiHeadAttention</title>
 <polygon fill="#ffffff" stroke="none" points="-28.8,28.8 -28.8,-472.8 444.96,-472.8 444.96,28.8 -28.8,28.8"/>
-<text xml:space="preserve" text-anchor="start" x="67.78" y="-429.3" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00">Split the columns into n</text>
-<text xml:space="preserve" text-anchor="start" x="215.11" y="-429.3" font-family="Helvetica,sans-Serif" font-weight="bold" baseline-shift="sub" font-size="13.00">h</text>
-<text xml:space="preserve" text-anchor="start" x="223.05" y="-429.3" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00"> heads of d</text>
-<text xml:space="preserve" text-anchor="start" x="291.67" y="-429.3" font-family="Helvetica,sans-Serif" font-weight="bold" baseline-shift="sub" font-size="13.00">k</text>
-<text xml:space="preserve" text-anchor="start" x="298.9" y="-429.3" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00"> = d / n</text>
-<text xml:space="preserve" text-anchor="start" x="340.43" y="-429.3" font-family="Helvetica,sans-Serif" font-weight="bold" baseline-shift="sub" font-size="13.00">h</text>
+<text xml:space="preserve" text-anchor="start" x="67.78" y="-429.3" font-family="Helvetica,sans-Serif" font-size="13.00"><tspan font-weight="bold">Split the columns into n</tspan><tspan font-weight="bold" baseline-shift="sub" font-size="9.75">h</tspan><tspan font-weight="bold"> heads of d</tspan><tspan font-weight="bold" baseline-shift="sub" font-size="9.75">k</tspan><tspan font-weight="bold"> = d / n</tspan><tspan font-weight="bold" baseline-shift="sub" font-size="9.75">h</tspan></text>
 <!-- x -->
 <g id="node1" class="node">
 <title>x</title>
@@ -26,13 +21,7 @@
 <g id="node2" class="node">
 <title>qkv</title>
 <path fill="#ebf4ff" stroke="#2d3748" stroke-width="1.4" d="M343.05,-329C343.05,-329 80.78,-329 80.78,-329 74.78,-329 68.78,-323 68.78,-317 68.78,-317 68.78,-296.6 68.78,-296.6 68.78,-290.6 74.78,-284.6 80.78,-284.6 80.78,-284.6 343.05,-284.6 343.05,-284.6 349.05,-284.6 355.05,-290.6 355.05,-296.6 355.05,-296.6 355.05,-317 355.05,-317 355.05,-323 349.05,-329 343.05,-329"/>
-<text xml:space="preserve" text-anchor="start" x="90.38" y="-303.9" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Q, K, V = XW</text>
-<text xml:space="preserve" text-anchor="start" x="168.75" y="-303.9" font-family="Helvetica,sans-Serif" font-weight="bold" baseline-shift="sub" font-size="13.00" fill="#1a202c">Q</text>
-<text xml:space="preserve" text-anchor="start" x="178.86" y="-303.9" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">, XW</text>
-<text xml:space="preserve" text-anchor="start" x="207.03" y="-303.9" font-family="Helvetica,sans-Serif" font-weight="bold" baseline-shift="sub" font-size="13.00" fill="#1a202c">K</text>
-<text xml:space="preserve" text-anchor="start" x="216.42" y="-303.9" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">, XW</text>
-<text xml:space="preserve" text-anchor="start" x="244.58" y="-303.9" font-family="Helvetica,sans-Serif" font-weight="bold" baseline-shift="sub" font-size="13.00" fill="#1a202c">V</text>
-<text xml:space="preserve" text-anchor="start" x="253.25" y="-303.9" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"> &#160;&#160;(each n × d)</text>
+<text xml:space="preserve" text-anchor="start" x="90.38" y="-303.9" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"><tspan font-weight="bold">Q, K, V = XW</tspan><tspan font-weight="bold" baseline-shift="sub" font-size="9.75">Q</tspan><tspan font-weight="bold">, XW</tspan><tspan font-weight="bold" baseline-shift="sub" font-size="9.75">K</tspan><tspan font-weight="bold">, XW</tspan><tspan font-weight="bold" baseline-shift="sub" font-size="9.75">V</tspan><tspan> &#160;&#160;(each n × d)</tspan></text>
 </g>
 <!-- x&#45;&gt;qkv -->
 <g id="edge9" class="edge">
@@ -45,8 +34,7 @@
 <title>h1</title>
 <path fill="#ebf4ff" stroke="#2d3748" stroke-width="1.4" d="M73.83,-237.6C73.83,-237.6 12,-237.6 12,-237.6 6,-237.6 0,-231.6 0,-225.6 0,-225.6 0,-194.8 0,-194.8 0,-188.8 6,-182.8 12,-182.8 12,-182.8 73.83,-182.8 73.83,-182.8 79.83,-182.8 85.83,-188.8 85.83,-194.8 85.83,-194.8 85.83,-225.6 85.83,-225.6 85.83,-231.6 79.83,-237.6 73.83,-237.6"/>
 <text xml:space="preserve" text-anchor="start" x="21.6" y="-212.5" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Head 1</text>
-<text xml:space="preserve" text-anchor="start" x="25.21" y="-199.5" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c">n × d</text>
-<text xml:space="preserve" text-anchor="start" x="54.12" y="-199.5" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="13.00" fill="#1a202c">k</text>
+<text xml:space="preserve" text-anchor="start" x="25.21" y="-199.5" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"><tspan>n × d</tspan><tspan baseline-shift="sub" font-size="9.75">k</tspan></text>
 </g>
 <!-- qkv&#45;&gt;h1 -->
 <g id="edge1" class="edge">
@@ -59,8 +47,7 @@
 <title>h2</title>
 <path fill="#ebf4ff" stroke="#2d3748" stroke-width="1.4" d="M191.83,-237.6C191.83,-237.6 130,-237.6 130,-237.6 124,-237.6 118,-231.6 118,-225.6 118,-225.6 118,-194.8 118,-194.8 118,-188.8 124,-182.8 130,-182.8 130,-182.8 191.83,-182.8 191.83,-182.8 197.83,-182.8 203.83,-188.8 203.83,-194.8 203.83,-194.8 203.83,-225.6 203.83,-225.6 203.83,-231.6 197.83,-237.6 191.83,-237.6"/>
 <text xml:space="preserve" text-anchor="start" x="139.6" y="-212.5" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Head 2</text>
-<text xml:space="preserve" text-anchor="start" x="143.21" y="-199.5" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c">n × d</text>
-<text xml:space="preserve" text-anchor="start" x="172.12" y="-199.5" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="13.00" fill="#1a202c">k</text>
+<text xml:space="preserve" text-anchor="start" x="143.21" y="-199.5" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"><tspan>n × d</tspan><tspan baseline-shift="sub" font-size="9.75">k</tspan></text>
 </g>
 <!-- qkv&#45;&gt;h2 -->
 <g id="edge3" class="edge">
@@ -79,10 +66,8 @@
 <g id="node6" class="node">
 <title>hn</title>
 <path fill="#ebf4ff" stroke="#2d3748" stroke-width="1.4" d="M404.16,-237.6C404.16,-237.6 333.67,-237.6 333.67,-237.6 327.67,-237.6 321.67,-231.6 321.67,-225.6 321.67,-225.6 321.67,-194.8 321.67,-194.8 321.67,-188.8 327.67,-182.8 333.67,-182.8 333.67,-182.8 404.16,-182.8 404.16,-182.8 410.16,-182.8 416.16,-188.8 416.16,-194.8 416.16,-194.8 416.16,-225.6 416.16,-225.6 416.16,-231.6 410.16,-237.6 404.16,-237.6"/>
-<text xml:space="preserve" text-anchor="start" x="343.27" y="-212.5" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Head n</text>
-<text xml:space="preserve" text-anchor="start" x="386.62" y="-212.5" font-family="Helvetica,sans-Serif" font-weight="bold" baseline-shift="sub" font-size="13.00" fill="#1a202c">h</text>
-<text xml:space="preserve" text-anchor="start" x="351.21" y="-199.5" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c">n × d</text>
-<text xml:space="preserve" text-anchor="start" x="380.12" y="-199.5" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="13.00" fill="#1a202c">k</text>
+<text xml:space="preserve" text-anchor="start" x="343.27" y="-212.5" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"><tspan font-weight="bold">Head n</tspan><tspan font-weight="bold" baseline-shift="sub" font-size="9.75">h</tspan></text>
+<text xml:space="preserve" text-anchor="start" x="351.21" y="-199.5" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"><tspan>n × d</tspan><tspan baseline-shift="sub" font-size="9.75">k</tspan></text>
 </g>
 <!-- qkv&#45;&gt;hn -->
 <g id="edge5" class="edge">
@@ -94,12 +79,7 @@
 <g id="node7" class="node">
 <title>cat</title>
 <path fill="#ebf4ff" stroke="#2d3748" stroke-width="1.4" d="M312.74,-135.8C312.74,-135.8 111.09,-135.8 111.09,-135.8 105.09,-135.8 99.09,-129.8 99.09,-123.8 99.09,-123.8 99.09,-103.4 99.09,-103.4 99.09,-97.4 105.09,-91.4 111.09,-91.4 111.09,-91.4 312.74,-91.4 312.74,-91.4 318.74,-91.4 324.74,-97.4 324.74,-103.4 324.74,-103.4 324.74,-123.8 324.74,-123.8 324.74,-129.8 318.74,-135.8 312.74,-135.8"/>
-<text xml:space="preserve" text-anchor="start" x="120.69" y="-110.7" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Concatenate</text>
-<text xml:space="preserve" text-anchor="start" x="198.71" y="-110.7" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"> &#160;&#160;n × n</text>
-<text xml:space="preserve" text-anchor="start" x="238.45" y="-110.7" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="13.00" fill="#1a202c">h</text>
-<text xml:space="preserve" text-anchor="start" x="245.68" y="-110.7" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c">d</text>
-<text xml:space="preserve" text-anchor="start" x="252.91" y="-110.7" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="13.00" fill="#1a202c">v</text>
-<text xml:space="preserve" text-anchor="start" x="259.41" y="-110.7" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"> = n × d</text>
+<text xml:space="preserve" text-anchor="start" x="120.69" y="-110.7" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"><tspan font-weight="bold">Concatenate</tspan><tspan> &#160;&#160;n × n</tspan><tspan baseline-shift="sub" font-size="9.75">h</tspan><tspan>d</tspan><tspan baseline-shift="sub" font-size="9.75">v</tspan><tspan> = n × d</tspan></text>
 </g>
 <!-- h1&#45;&gt;cat -->
 <g id="edge2" class="edge">
@@ -124,9 +104,7 @@
 <g id="node8" class="node">
 <title>o</title>
 <path fill="#f0fff4" stroke="#276749" stroke-width="1.4" d="M313.23,-44.4C313.23,-44.4 110.6,-44.4 110.6,-44.4 104.6,-44.4 98.6,-38.4 98.6,-32.4 98.6,-32.4 98.6,-12 98.6,-12 98.6,-6 104.6,0 110.6,0 110.6,0 313.23,0 313.23,0 319.23,0 325.23,-6 325.23,-12 325.23,-12 325.23,-32.4 325.23,-32.4 325.23,-38.4 319.23,-44.4 313.23,-44.4"/>
-<text xml:space="preserve" text-anchor="start" x="120.2" y="-19.3" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Output projection W</text>
-<text xml:space="preserve" text-anchor="start" x="245.12" y="-19.3" font-family="Helvetica,sans-Serif" font-weight="bold" baseline-shift="sub" font-size="13.00" fill="#1a202c">O</text>
-<text xml:space="preserve" text-anchor="start" x="255.23" y="-19.3" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"> &#160;&#160;(n × d)</text>
+<text xml:space="preserve" text-anchor="start" x="120.2" y="-19.3" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"><tspan font-weight="bold">Output projection W</tspan><tspan font-weight="bold" baseline-shift="sub" font-size="9.75">O</tspan><tspan> &#160;&#160;(n × d)</tspan></text>
 </g>
 <!-- cat&#45;&gt;o -->
 <g id="edge10" class="edge">

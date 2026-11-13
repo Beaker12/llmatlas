@@ -77,11 +77,7 @@
 <g id="node8" class="node">
 <title>h</title>
 <path fill="#f0fff4" stroke="#276749" stroke-width="1.4" d="M232.38,-357.6C232.38,-357.6 19.62,-357.6 19.62,-357.6 13.62,-357.6 7.62,-351.6 7.62,-345.6 7.62,-345.6 7.62,-325.2 7.62,-325.2 7.62,-319.2 13.62,-313.2 19.62,-313.2 19.62,-313.2 232.38,-313.2 232.38,-313.2 238.38,-313.2 244.38,-319.2 244.38,-325.2 244.38,-325.2 244.38,-345.6 244.38,-345.6 244.38,-351.6 238.38,-357.6 232.38,-357.6"/>
-<text xml:space="preserve" text-anchor="start" x="29.22" y="-332.5" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Encoder output H</text>
-<text xml:space="preserve" text-anchor="start" x="138.26" y="-332.5" font-family="Helvetica,sans-Serif" font-weight="bold" baseline-shift="sub" font-size="13.00" fill="#1a202c">enc</text>
-<text xml:space="preserve" text-anchor="start" x="160.66" y="-332.5" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"> &#160;(n</text>
-<text xml:space="preserve" text-anchor="start" x="179.45" y="-332.5" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="13.00" fill="#1a202c">src</text>
-<text xml:space="preserve" text-anchor="start" x="196.78" y="-332.5" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"> × d)</text>
+<text xml:space="preserve" text-anchor="start" x="29.22" y="-332.5" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"><tspan font-weight="bold">Encoder output H</tspan><tspan font-weight="bold" baseline-shift="sub" font-size="9.75">enc</tspan><tspan> &#160;(n</tspan><tspan baseline-shift="sub" font-size="9.75">src</tspan><tspan> × d)</tspan></text>
 </g>
 <!-- eff&#45;&gt;h -->
 <g id="edge3" class="edge">
