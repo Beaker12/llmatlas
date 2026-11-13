@@ -82,7 +82,7 @@ This is the identity behind the attention gradient in {ref}`sec-ch2-attention-gr
 :name: fig-ch2-softmax-saturation
 :alt: Log-scale plot of the softmax derivative p1 times one minus p1 against the logit gap, for 2 and 64 logits; at gap 8 it is 0.00034 for 2 logits and 0.02 for 64.
 
-The diagonal softmax derivative $\partial p_1/\partial z_1 = p_1(1 - p_1)$ when logit $z_1$ leads all the others by the same gap. It peaks at 0.25 where $p_1 = 0.5$ and then falls by about a factor $e$ per unit of gap. At a gap of 8, the standard deviation of unscaled scores at $d_k = 64$, it is 0.00034 with 2 logits and 0.02 with 64. Computed from the formula above by `figures/make_figures.py`.
+The diagonal softmax derivative $\partial p_i/\partial z_i = p_i(1 - p_i)$ when logit $z_i$ leads all the others by the same gap. It peaks at 0.25 where $p_i = 0.5$ and then falls by about a factor $e$ per unit of gap. At a gap of 8, the standard deviation of unscaled scores at $d_k = 64$, it is 0.00034 with 2 logits and 0.02 with 64. Computed from the formula above by `figures/make_figures.py`.
 ```
 
 (sec-ch2-norms-conditioning-scale-matters)=
@@ -95,7 +95,7 @@ The operator norm $\|W\|_2$ is the largest factor by which $W$ can stretch a vec
 
 ### 0.4 Singular value decomposition and low rank
 
-Every real matrix factors as $W = U \Sigma R^\top$, where $U$ and $R$ have orthonormal columns and $\Sigma$ is diagonal, holding the singular values $\Sigma_{jj} \ge 0$ in decreasing order. Read as a map, $W$ rotates (by $R^\top$), stretches each axis by a singular value, and rotates again (by $U$); the operator norm of {ref}`sec-ch2-norms-conditioning-scale-matters` is the largest stretch, so $\|W\|_2$ is the largest singular value.
+Every real matrix factors as $W = U \Sigma R^\top$, where $U$ and $R$ have orthonormal columns and $\Sigma$ is diagonal, holding the singular values $\Sigma_{jj} \ge 0$ in decreasing order. Read as a map, $W$ rotates or reflects (by $R^\top$), stretches each axis by a singular value, and rotates or reflects again (by $U$); the operator norm of {ref}`sec-ch2-norms-conditioning-scale-matters` is the largest stretch, so $\|W\|_2$ is the largest singular value.
 
 Keeping only the $n_{rank}$ largest singular values, $\sum_{j=1}^{n_{rank}} \Sigma_{jj}\, U_{:,j} R_{:,j}^\top$, gives a matrix of rank $n_{rank}$. {cite:t}`eckart1936approximation` showed that no matrix of that rank is closer to $W$ in the Frobenius norm, and that the error is the root of the sum of the discarded squares, $\sqrt{\sum_{j > n_{rank}} \Sigma_{jj}^2}$; in the operator norm the error is the largest discarded singular value. A rank-$n_{rank}$ matrix stored as two factors costs $n_{rank}(d_{\text{in}} + d_{\text{out}})$ numbers instead of $d_{\text{in}} d_{\text{out}}$: for a $4096 \times 4096$ matrix and $n_{rank} = 8$ that is 65,536 instead of 16,777,216, or 0.39%. LoRA {cite}`hu2022lora` uses exactly this count, training the update to a frozen weight matrix as a product of two such thin factors.
 
@@ -131,7 +131,7 @@ For a layer that maps $x \in \mathbb{R}^{d_{\text{in}}}$ to $y \in \mathbb{R}^{d
 
 $$\frac{\partial \mathcal{L}}{\partial x} = g^\top \frac{\partial y}{\partial x},$$
 
-and for the operations a transformer uses this product has a closed form far cheaper than the matrix. For a linear map $y = xW$ the VJP is $g W^\top$ (and the weight gradient is $x^\top g$); for an element-wise activation $y = \operatorname{act}(x)$ it is $g \odot \operatorname{act}'(x)$; for the softmax it is the formula of {ref}`sec-ch2-softmax-jacobian`, which costs $\mathcal{O}(d)$ instead of the $d^2$ entries of the Jacobian. The softmax over a 50,257-token vocabulary has a Jacobian of about 2.5 billion entries, while its VJP touches 50,257 numbers twice.
+and for the operations a transformer uses this product has a closed form far cheaper than the matrix. For a linear map $y = xW$ the VJP is $g W^\top$ (and the weight gradient is $x^\top g$); for an element-wise activation $y = \operatorname{act}(x)$ it is $g \odot \operatorname{act}'(x)$; for the softmax it is the formula of {ref}`sec-ch2-softmax-jacobian`, whose cost grows linearly with the number of logits while the Jacobian has the square of that number of entries. The softmax over a 50,257-token vocabulary has a Jacobian of about 2.5 billion entries, while its VJP touches 50,257 numbers twice.
 
 ```python
 import torch
@@ -629,7 +629,7 @@ class AdamWWithWarmup:
         self.step_count += 1
         t = self.step_count
 
-        # Global-norm clipping across ALL parameters, as in Section 2.3
+        # Global-norm clipping across ALL parameters, as in the equation above
         torch.nn.utils.clip_grad_norm_(self.params, self.max_grad_norm)
 
         for i, p in enumerate(self.params):
@@ -800,9 +800,9 @@ The identity term gives every layer a direct path for the gradient, so a deep st
 
 ```{figure} figures/gradient-flow-depth.*
 :name: fig-ch2-gradient-flow-depth
-:alt: Gradient norm against depth through 12 linear layers on a log scale: without LayerNorm at std 0.02 it falls from about 100 at the output to about 0.000002 at the input; the other three variants stay near 100.
+:alt: Gradient norm against depth through 12 linear layers on a log scale: without LayerNorm at std 0.02 it falls from about 100 at the output to about 0.000002 at the input; the Xavier and LayerNorm variants stay near 100, and the residual variant rises to about 330 at the input.
 
-Gradient norm at each depth of a stack of 12 linear layers ($d = 128$). With weights of standard deviation 0.02 and nothing else, each layer shrinks the gradient and it falls by nearly eight orders of magnitude; Xavier scaling, LayerNorm or a residual connection each keeps it near its output value; the Xavier and LayerNorm lines coincide and are told apart by their markers. From the notebook section {ref}`nb-math-layernorm`, by executing its cell tagged `figure:gradient-flow-depth`.
+Gradient norm at each depth of a stack of 12 linear layers ($d = 128$). With weights of standard deviation 0.02 and nothing else, each layer shrinks the gradient and it falls by nearly eight orders of magnitude; Xavier scaling or LayerNorm keeps it near its output value, and with residual connections (plus LayerNorm) it grows by less than a factor of four toward the input instead of shrinking; the Xavier and LayerNorm lines coincide and are told apart by their markers. From the notebook section {ref}`nb-math-layernorm`, by executing its cell tagged `figure:gradient-flow-depth`.
 ```
 
 (sec-ch2-pre-post-ln)=
@@ -1020,7 +1020,7 @@ rows of W_E with a nonzero gradient: [3, 7]
 
 ```{admonition} Gradient Flow Analysis
 :class: tip
-The notebook section {ref}`nb-math-backprop` implements scaled dot-product attention and reports its input gradients, and {ref}`nb-math-layernorm` compares gradient norms through a stack of linear layers with and without layer normalization, with residual connections, and with a Xavier-scaled initialization, so you can see which of these actually prevents vanishing. With weights of standard deviation 0.02 and nothing else, the gradient at the input is a fraction 1.912e-08 of the gradient at the last layer; Xavier scaling alone keeps it near 1.
+The notebook section {ref}`nb-math-backprop` implements scaled dot-product attention and reports its input gradients, and {ref}`nb-math-layernorm` compares gradient norms through a stack of linear layers with and without layer normalization, with residual connections, and with a Xavier-scaled initialization, so you can see which of these actually prevents vanishing. With weights of standard deviation 0.02 and nothing else, the gradient at the input is a fraction 1.912e-08 of the gradient at the last layer; Xavier scaling alone keeps that ratio near one.
 ```
 
 (sec-ch2-scaling-laws-compute)=
@@ -1122,7 +1122,7 @@ where 1.69 is the loss no model or dataset size removes. At $N = 70 \times 10^9$
 
 Chinchilla scaling implies that many large models are "undertrained"—better performance could be achieved with smaller models trained on more data. This has significant implications for training efficiency and inference costs.
 
-Because $a_N \approx a_D \approx 0.5$, the compute-optimal ratio $D^*/N^*$ is roughly the same at every budget, and Hoffmann et al.'s Table 3 puts it near 20 tokens per parameter: 20.2 billion tokens for 1 billion parameters, 205.1 billion for 10 billion, 1.5 trillion for 67 billion and 3.7 trillion for 175 billion {cite}`hoffmann2022training`, ratios of 20.2, 20.5, 22.4 and 21.1. Chinchilla itself, 70 billion parameters on 1.4 trillion tokens, sits at 20. With $C \approx 6ND$ ({ref}`sec-ch2-flops`) the rule fixes both sizes from the budget alone. GPT-3's 175 billion parameters would on this rule call for about 3.5 trillion training tokens (Table 3's own projection is 3.7 trillion).
+Because $a_N \approx a_D \approx 0.5$, the compute-optimal ratio $D^*/N^*$ is roughly the same at every budget, and Hoffmann et al.'s Table 3, which gives the projections of their first approach, puts it near 20 tokens per parameter: 20.2 billion tokens for 1 billion parameters, 205.1 billion for 10 billion, 1.5 trillion for 67 billion and 3.7 trillion for 175 billion {cite}`hoffmann2022training`, ratios of 20.2, 20.5, 22.4 and 21.1. Chinchilla itself, 70 billion parameters on 1.4 trillion tokens, sits at 20. With $C \approx 6ND$ ({ref}`sec-ch2-flops`) the rule fixes both sizes from the budget alone. GPT-3's 175 billion parameters would on this rule call for about 3.5 trillion training tokens (Table 3's own projection is 3.7 trillion).
 
 {numref}`fig-ch2-allocation-lines` shows how far the two prescriptions part once the budget moves away from Chinchilla's.
 
@@ -1246,7 +1246,7 @@ Weights and optimizer state alone are close to three terabytes, which is why a 1
 :alt: Stacked bar of GPT-3 training memory: fp16 weights 349 GB, fp16 gradients 349 GB, fp32 master weights 698 GB, Adam moments 1,397 GB and activations 2,203 GB, 4,996 GB in total.
 :width: 90%
 
-Training memory of the GPT-3 175B configuration with mixed precision and Adam, batch 8 of 2,048 tokens, no activation recomputation. The Adam moments alone take more memory than the weights, gradients and master copy together. Computed by `figures/make_figures.py` from the `estimate_memory_usage` listing above.
+Training memory of the GPT-3 175B configuration with mixed precision and Adam, batch 8 of 2,048 tokens, no activation recomputation. The Adam moments alone take as much memory as the weights, gradients and master copy together, 8 bytes per parameter each. Computed by `figures/make_figures.py` from the `estimate_memory_usage` listing above.
 ```
 
 ```{admonition} Scaling Laws Visualization
@@ -1451,8 +1451,8 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 - **Probability and information theory** ({ref}`sec-ch2-probability-information-theory`). The training loss is the cross-entropy $H(p, q) = H(p) + D_{KL}(p\,\|\,q)$; perplexity is its exponential, and bits per byte divides the loss in bits by the bytes of text, so it compares models with different tokenizers. KL divergence is asymmetric and infinite where the model gives zero probability to an outcome that occurs.
 - **Optimization** ({ref}`sec-ch2-optimization-fundamentals`). On a quadratic, gradient descent is stable for $\eta < 2/\lambda_{\max}$ and heavy-ball momentum for $\eta < 2(1 + \beta_{\text{mom}})/\lambda_{\max}$. Adam divides the bias-corrected first moment by the root of the bias-corrected second moment, so its first step has size about $\eta$ whatever the scale of the gradient. Warm-up, cosine decay, global-norm clipping and gradient accumulation (which reproduces a large batch's gradient from micro-batches) control the step.
 - **Backpropagation through transformers** ({ref}`sec-ch2-backpropagation-through-transformers`). A residual connection adds the identity to every layer's Jacobian, so a gradient path that skips every layer always exists; pre-LN keeps that path free of normalization. The attention gradient is the softmax Jacobian applied row by row, and the layer-norm gradient removes the components along the mean and along the normalized input.
-- **Scaling laws and compute** ({ref}`sec-ch2-scaling-laws-compute`). Training costs about $6N$ FLOPs per token, so $C \approx 6ND$: Chinchilla's 70 billion parameters and 1.4 trillion tokens cost $5.88 \times 10^{23}$ FLOPs. Kaplan's power laws have exponents 0.076 in parameters and 0.095 in data; Chinchilla's three methods put the compute-optimal ratio near 20 tokens per parameter, and its loss fit gives 1.937 at Chinchilla's own size. Per layer, attention scores cost $2n^2 d$ multiply-adds against $12 n d^2$ for the weight matrices, so they dominate only beyond $n = 6d$. Mixed-precision Adam holds 16 bytes per parameter before activations.
-- **Numerical stability** ({ref}`sec-ch2-numerical-stability-considerations`). fp16 overflows above 65,504 and underflows below its smallest subnormal, so its gradients need loss scaling; bf16 has fp32's exponent range and fewer than three significant decimal digits. Subtracting the largest logit makes softmax and log-sum-exp safe in any format. Xavier and He initialization keep activation variance constant across width, and scaling each residual branch's output weights by $1/\sqrt{2L}$ keeps the residual stream's variance from growing with depth.
+- **Scaling laws and compute** ({ref}`sec-ch2-scaling-laws-compute`). Training costs about $6N$ FLOPs per token, so $C \approx 6ND$: Chinchilla's 70 billion parameters and 1.4 trillion tokens cost $5.88 \times 10^{23}$ FLOPs. Kaplan's power laws have exponents 0.076 in parameters and 0.095 in data; the projections of Hoffmann et al.'s first approach (their Table 3) put the compute-optimal ratio near 20 tokens per parameter, the ratio Chinchilla was trained at, and their parametric loss fit gives 1.937 at Chinchilla's own size. Per layer, attention scores cost $2n^2 d$ multiply-adds against $12 n d^2$ for the weight matrices, so they dominate only beyond $n = 6d$. Mixed-precision Adam holds 16 bytes per parameter before activations.
+- **Numerical stability** ({ref}`sec-ch2-numerical-stability-considerations`). fp16 overflows above 65,504 and underflows below its smallest subnormal, so its gradients need loss scaling; bf16 has fp32's exponent range and fewer than three significant decimal digits. Subtracting the largest logit makes softmax and log-sum-exp safe in any format. Xavier and He initialization scale the weight variance to the layer's width so that activations neither grow nor shrink from layer to layer, and scaling each residual branch's output weights by $1/\sqrt{2L}$ keeps the residual stream's variance from growing with depth.
 
 (sec-ch2-exercises)=
 
@@ -1492,7 +1492,7 @@ A code with lengths $-\log_2 p(x)$, here 1, 2, 3 and 3 bits (for example 0, 10, 
 
 $$N^* = \left(\frac{0.34 \times 406.4}{0.28 \times 410.7}\right)^{1/0.62} \left(\frac{C}{6}\right)^{0.28/0.62} = 1.345 \left(\frac{C}{6}\right)^{0.4516}.$$
 
-At $C = 5.88 \times 10^{23}$, $C/6 = 9.8 \times 10^{22}$ and $N^* = 3.25 \times 10^{10}$ parameters with $D^* = C/(6N^*) = 3.02 \times 10^{12}$ tokens, about 93 tokens per parameter, at a loss of 1.930. The exponent 0.4516 is the $a_N = 0.46$ of Hoffmann et al.'s third method ({ref}`sec-ch2-chinchilla-scaling-laws`); their first two methods give $a_N \approx 0.5$ and the 20-tokens-per-parameter rule. The fitted loss differs between 32.5 and 70 billion parameters by only 0.007, which is why the methods can disagree on the ratio and still agree on the conclusion of part (c).
+At $C = 5.88 \times 10^{23}$, $C/6 = 9.8 \times 10^{22}$ and $N^* = 3.25 \times 10^{10}$ parameters with $D^* = C/(6N^*) = 3.02 \times 10^{12}$ tokens, about 93 tokens per parameter, at a loss of 1.930. This is not the paper's own prescription: the projections of Hoffmann et al.'s Table 3, which come from their first approach, and Chinchilla itself sit near 20 tokens per parameter ({ref}`sec-ch2-training-implications`). {cite:t}`besiroglu2024chinchilla` found that the published constants of the parametric fit are inconsistent with the paper's first two approaches and with the ratio Chinchilla was trained at; refitting the same functional form to data reconstructed from the paper's figures, they obtained an optimum of about 20 tokens per parameter (25.6 at their point estimate). They report, on the word of one of Hoffmann et al.'s authors, that the original fit stopped its minimizer early because it averaged the Huber loss over data points instead of summing it. The exponent 0.4516 is the $a_N = 0.46$ the paper reports for this fit, against $a_N = 0.50$ and $0.49$ from its first two approaches ({ref}`sec-ch2-chinchilla-scaling-laws`). Because the fitted loss differs between 32.5 and 70 billion parameters by only 0.007, small errors in the constants move the optimum a long way, while the conclusion of part (c), that the 280-billion-parameter model is clearly worse, does not change.
 ```
 
 4. **Saturation and depth.** (a) A softmax over two logits $z_i \ge z_j$ gives the larger one the probability $p_i = 1/(1 + e^{-(z_i - z_j)})$, and $\partial p_i / \partial z_i = p_i(1 - p_i)$. Evaluate the probability and the derivative for gaps $z_i - z_j$ of 0, 1 and 8. Query and key entries are independent with mean 0 and variance 1, and $d_k = 64$: what is the standard deviation of a raw score $q \cdot k$, and of the scaled score $q \cdot k / \sqrt{d_k}$? (b) The residual stream starts as $h^{(0)}$ with variance 1 and has $2L$ branches added to it, each with variance 1 and uncorrelated with the rest. Compute its variance after $L = 12$ and $L = 48$ blocks, and again when each branch is multiplied by $1/\sqrt{2L}$.
