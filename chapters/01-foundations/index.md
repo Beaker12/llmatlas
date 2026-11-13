@@ -733,9 +733,34 @@ For runnable versions of the ideas in this section, see the accompanying noteboo
 
 ## 3. Historical Context
 
+The pieces of the previous two sections, and the attention of the next, were not designed at once. This section follows them from counting word sequences to the open-weight models of 2024.
+
+(sec-ch1-ngram-neural-lm)=
+
+### 3.1 From n-grams to Neural Language Models
+
+For decades a language model was an **n-gram** model: the probability of the next word given the previous $n - 1$ words, estimated by counting how often each sequence of $n$ words occurs in a corpus. Counting cannot generalize to sequences it has never seen, and almost every long sequence is unseen. Bengio et al. put a number on this "curse of dimensionality": to model 10 consecutive words from a vocabulary of 100,000 there are "potentially $100{,}000^{10} - 1 = 10^{50} - 1$ free parameters" {cite}`bengio2003neural`. Their answer was the **neural language model**: give every word a learned vector, a "distributed representation", and let a neural network map the vectors of the context words to the next-word distribution, so that what is learned about one sentence transfers to sentences with similar words. The embedding tables of {ref}`sec-ch1-embedding-spaces` descend from this idea. The difference in size is the whole argument:
+
+```python
+vocab, context = 100_000, 10
+table = vocab**context - 1
+print(f"joint table over {context} words: {table:.3e} free parameters")
+d = 100
+print(f"one {d}-dimensional vector per word: {vocab * d:,} parameters")
+```
+
+% output
+
+```text
+joint table over 10 words: 1.000e+50 free parameters
+one 100-dimensional vector per word: 10,000,000 parameters
+```
+
+**word2vec** made such vectors cheap. Mikolov et al. dropped the hidden layers and trained the vectors alone, so that "it takes less than a day to learn high quality word vectors from a 1.6 billion words data set" {cite}`mikolov2013efficient`. These vectors were static, one per word whatever its context; the models below made them depend on the sentence.
+
 (sec-ch1-evolution-rnns)=
 
-### 3.1 Evolution from RNNs
+### 3.2 Evolution from RNNs
 
 The path to transformers involved several key developments:
 
@@ -747,11 +772,13 @@ The path to transformers involved several key developments:
 
 **Long Short-Term Memory (LSTM)** {cite}`hochreiter1997long` networks addressed vanishing gradients but remained sequential.
 
-**Attention mechanisms** {cite}`bahdanau2014neural` first appeared in machine translation, allowing models to focus on relevant source positions when generating target words.
+**Sequence to sequence.** Sutskever et al. used one deep LSTM "to map the input sequence to a vector of a fixed dimensionality, and then another deep LSTM to decode the target sequence from the vector" {cite}`sutskever2014sequence`. On English-to-French translation (WMT'14) it reached a BLEU score of 34.8, against 33.3 for a phrase-based statistical system. This encoder-decoder shape is the one the transformer kept ({ref}`sec-ch1-encoder-decoder`).
+
+**Attention mechanisms** {cite}`bahdanau2014neural` first appeared in machine translation, allowing models to focus on relevant source positions when generating target words, instead of squeezing the whole source into one fixed-size vector.
 
 (sec-ch1-transformer-breakthrough)=
 
-### 3.2 The Transformer Breakthrough
+### 3.3 The Transformer Breakthrough
 
 "Attention Is All You Need" {cite}`vaswani2017attention` demonstrated that attention alone could achieve state-of-the-art results without recurrence or convolution. Key innovations included:
 
@@ -761,16 +788,30 @@ The path to transformers involved several key developments:
 
 (sec-ch1-scaling-language-models)=
 
-### 3.3 Scaling to Language Models
+### 3.4 Pretraining and Scaling
 
-The transformer's success in machine translation led to its adoption for language modeling:
+The transformer's success in machine translation led to its adoption for language modeling, and to the idea of pretraining one model on unlabeled text and reusing it for many tasks:
 
-- **GPT** (2018) showed the power of unsupervised pre-training
-- **BERT** (2018) demonstrated bidirectional representations
-- **GPT-2** (2019) showed zero-shot transfer to many tasks from language modeling alone {cite}`radford2019language`
-- **GPT-3** (2020) achieved few-shot learning with 175B parameters {cite}`brown2020language`
+- **ELMo** (2018) introduced "deep contextualized word representations": each token's vector is "a function of the entire input sentence", computed by a bidirectional LSTM trained as a language model, so the same word gets different vectors in different sentences {cite}`peters2018deep`.
+- **GPT** (2018) pretrained a transformer decoder as a language model on unlabeled text and fine-tuned it for each task {cite}`radford2018improving`.
+- **BERT** (2018) pretrained a transformer encoder with the masked-language-model objective of {ref}`sec-ch1-masked-lm`, giving bidirectional representations {cite}`devlin2018bert`.
+- **GPT-2** (2019) scaled the decoder to 1.5 billion parameters (1,542M in its paper's table) and showed zero-shot transfer to many tasks from language modeling alone {cite}`radford2019language`.
+- **T5** (2019) cast every task as text-to-text with an encoder-decoder {cite}`raffel2019exploring`, and **BART** (2019) pretrained an encoder-decoder as "a denoising autoencoder", reconstructing text from corrupted input {cite}`lewis2020bart`.
+- **GPT-3** (2020) achieved few-shot learning with 175B parameters {cite}`brown2020language`.
 
-This progression established the foundation for today's LLMs and their remarkable capabilities.
+(sec-ch1-instruction-tuning-open-weights)=
+
+### 3.5 Instruction Tuning and Open Weights
+
+A pretrained language model continues text; it does not follow instructions. **Instruction tuning** closes the gap. InstructGPT fine-tuned GPT-3 on demonstrations written by human labelers, then further with reinforcement learning from human feedback on their rankings of model outputs. Labelers preferred the outputs of the 1.3B-parameter InstructGPT to those of the 175B GPT-3, "despite having 100x fewer parameters" {cite}`ouyang2022training`. On 30 November 2022 OpenAI released **ChatGPT**, described as "a sibling model to InstructGPT" trained for dialogue, and brought instruction-tuned models to a general audience {cite}`openai2022chatgpt`.
+
+The weights of these models were not released. The **open-weight** line that followed published them:
+
+- **LLaMA** (February 2023): models "ranging from 7B to 65B parameters", trained on publicly available data only {cite}`touvron2023llama`.
+- **Mistral 7B** (October 2023): a 7-billion-parameter model that outperforms "the best open 13B model (Llama 2) across all evaluated benchmarks" {cite}`jiang2023mistral`.
+- **Llama 3** (2024): up to "a dense Transformer with 405B parameters and a context window of up to 128K tokens" {cite}`grattafiori2024llama`.
+
+All three are decoder-only transformers with the changes of {ref}`sec-ch1-modern-block`. From GPT-2's 1.5 billion parameters in 2019 to Llama 3's 405 billion in 2024 is a factor of 270 in five years.
 
 (sec-ch1-attention-mechanisms)=
 
