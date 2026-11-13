@@ -1235,7 +1235,7 @@ reports its input gradients, and {ref}`nb-math-layernorm` compares gradient norm
 through a stack of linear layers with and without layer normalization, with residual
 connections, and with a Xavier-scaled initialization, so you can see which of these
 actually prevents vanishing. With weights of standard deviation 0.02 and nothing else,
-the gradient at the input is a fraction 1.912e-08 of the gradient at the last layer;
+the gradient at the input is a fraction 1.723e-08 of the gradient at the last layer;
 Xavier scaling alone keeps that ratio near one.
 ```
 
