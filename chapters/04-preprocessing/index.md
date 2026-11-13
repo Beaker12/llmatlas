@@ -279,6 +279,16 @@ assert normalize_text("ﬁle Ａ", form="NFC") == "ﬁle Ａ"
 persian = "\u0645\u06cc\u200c\u0634\u0648\u062f"
 assert normalize_text(persian) == persian
 assert "\u200c" not in normalize_text(persian, strip_joiners=True)
+ligature, zwnj = "\ufb01le \uff21", "\u200c"
+print(f"NFKC: {normalize_text(ligature, form='NFKC')!r}")
+print(f"ZWNJ kept by default: {zwnj in normalize_text(persian)}; with strip_joiners=True: {zwnj in normalize_text(persian, strip_joiners=True)}")
+```
+
+% output
+
+```text
+NFKC: 'file A'
+ZWNJ kept by default: True; with strip_joiners=True: False
 ```
 
 One rule that is easy to get wrong: do not lowercase. Case carries information (proper nouns, sentence boundaries, the difference between `US` and `us`), modern tokenizers handle it without vocabulary explosion, and it cannot be put back.
@@ -372,6 +382,15 @@ profiles = {
 }
 assert identify("Which language is this sentence written in?", profiles)[0] == "en"
 assert identify("In welcher Sprache ist dieser Satz geschrieben?", profiles)[0] == "de"
+for sentence in ("Which language is this sentence written in?", "In welcher Sprache ist dieser Satz geschrieben?"):
+    print(f"{identify(sentence, profiles)[0]}: {sentence}")
+```
+
+% output
+
+```text
+en: Which language is this sentence written in?
+de: In welcher Sprache ist dieser Satz geschrieben?
 ```
 
 Real profiles are built from megabytes of text per language, and real classifiers learn weights for each n-gram rather than using ranks, but the failure modes are the same as the toy's: a document of a few words has too few n-grams to rank, a list of names has no language, and text in Bosnian, Croatian and Serbian shares most of its n-gram profile.
@@ -480,6 +499,16 @@ assert gopher_quality_filter(listing) == (False, "mean_word_length")
 
 catalog = " ".join(f"SKU-{i:05d}" for i in range(80))
 assert gopher_quality_filter(catalog)[1] in {"non_alpha_words", "stop_words"}
+for name, doc in (("prose", prose), ("listing", listing), ("catalog", catalog)):
+    print(f"{name}: {gopher_quality_filter(doc)}")
+```
+
+% output
+
+```text
+prose: (True, 'ok')
+listing: (False, 'mean_word_length')
+catalog: (False, 'stop_words')
 ```
 
 Every threshold above was set for English. The mean-word-length bounds exclude most Chinese and Japanese text (no spaces, so one "word" per line) and much German (compounds), and the stop-word list is meaningless outside English. Multilingual pipelines replace the word splitter with a language-appropriate tokenizer and the stop-word list with a per-language one.
@@ -584,6 +613,13 @@ varied = (
     "afternoon, though everyone had read it."
 )
 assert passes_repetition_filter(varied)
+print(f"spam passes: {passes_repetition_filter(spam)}; varied prose passes: {passes_repetition_filter(varied)}")
+```
+
+% output
+
+```text
+spam passes: False; varied prose passes: True
 ```
 
 The duplicate n-gram measure is deliberately simple: a passage repeated once contributes its characters once at every $n$ from 5 to 10, and the decreasing thresholds reflect that longer repeats are rarer in genuine prose. Changing the counting rule, for instance to count overlapping windows, changes what the thresholds mean, so a reimplementation should match the reference definition or re-tune them.
@@ -648,6 +684,16 @@ assert lm.perplexity(encyclopedic) < lm.perplexity(gibberish)
 # The pathology: formulaic text that repeats common words scores *better* than real prose
 boilerplate = "the the the and the of the and the the"
 assert lm.perplexity(boilerplate) < lm.perplexity(encyclopedic)
+for name, text in (("boilerplate", boilerplate), ("encyclopedic", encyclopedic), ("gibberish", gibberish)):
+    print(f"{name}: perplexity {lm.perplexity(text):.4g}")
+```
+
+% output
+
+```text
+boilerplate: perplexity 8.887
+encyclopedic: perplexity 26.98
+gibberish: perplexity 121
 ```
 
 The last assertion is the reason perplexity is rarely used as a hard filter on its own. In practice it is one feature among several, or it is used to bucket documents so that a later classifier or a human can look at each bucket.
@@ -689,6 +735,17 @@ keep_rate = np.stack([pareto_keep(scores, seed=s) for s in range(2000)]).mean(ax
 assert keep_rate[-1] == 1.0  # score 1.0 is always kept
 assert keep_rate[0] < 0.05  # score 0.0 almost never
 assert np.all(np.diff(keep_rate) >= -0.02)  # monotone up to sampling noise
+for i in (0, 5, 9, 10):
+    print(f"score {scores[i]:.1f}: kept {keep_rate[i]:.4f}, expected {(2 - scores[i]) ** -9:.4f}")
+```
+
+% output
+
+```text
+score 0.0: kept 0.0020, expected 0.0020
+score 0.5: kept 0.0255, expected 0.0260
+score 0.9: kept 0.4100, expected 0.4241
+score 1.0: kept 1.0000, expected 1.0000
 ```
 
 Because the expected keep rate at classifier score $\hat{p}$ is $\Pr[\text{Pareto}(9) > 1 - \hat{p}]$, which is $(1 + 1 - \hat{p})^{-9}$, the curve is steep: a document at score 0.5 is kept with probability about $1.5^{-9} \approx 0.026$. Diversity comes from the sheer number of low-scoring documents, not from a generous acceptance rate.
@@ -857,6 +914,13 @@ def exact_dedup(docs, key=lambda d: d):
 corpus = ["a b c", "d e f", "a b c", "g h i", "d e f"]
 flags = [dup for _, dup in exact_dedup(corpus)]
 assert flags == [False, False, True, False, True]
+print(f"duplicate flags: {flags}")
+```
+
+% output
+
+```text
+duplicate flags: [False, False, True, False, True]
 ```
 
 Exact matching over the whole document misses the common case where two copies differ by a date, a byline or a trailing menu. The usual mitigation is to hash a normalized key: lowercase, punctuation removed, digits replaced by a placeholder. Even then, near-duplicates need their own method.
@@ -1087,6 +1151,15 @@ for k, s in sigs.items():
     index.add(k, s)
 assert ("orig", "retitled") in index.candidate_pairs()
 assert ("orig", "unrelated") not in index.candidate_pairs()
+print(f"true J {true_j:.3f}, MinHash estimate {est_j:.3f}")
+print(f"candidate pairs: {sorted(index.candidate_pairs())}")
+```
+
+% output
+
+```text
+true J 0.769, MinHash estimate 0.828
+candidate pairs: [('orig', 'retitled')]
 ```
 
 Production systems differ from this toy in three ways. They compute signatures in a distributed map over shards and do the bucket join as a global shuffle; they then build the connected components of the candidate graph (union-find) and keep one document per component, usually the longest or the earliest; and they skip the exact Jaccard check on candidates because at the chosen threshold the false-positive rate is low enough to ignore.
@@ -1298,6 +1371,13 @@ assert len(spans) == 1
 start, end = spans[0]
 assert tokens[start:end] == license
 assert start == len(doc_a) + 2  # the copy in doc_b, not the one in doc_a
+print(f"repeated span: tokens {start} to {end}, starting {' '.join(tokens[start : start + 4])!r}")
+```
+
+% output
+
+```text
+repeated span: tokens 19 to 32, starting 'permission is hereby granted'
 ```
 
 Because substring removal cuts through the middle of documents, it is applied after document-level deduplication, and the resulting documents are re-checked against the minimum-length rule so that a document reduced to a fragment is dropped.
@@ -1366,6 +1446,15 @@ assert keep
 
 directory = "\n".join(f"user{i}@example.com" for i in range(8))
 assert redact_pii(directory)[2] is False
+print(redacted)
+print(f"counts {counts}, keep {keep}; directory kept: {redact_pii(directory)[2]}")
+```
+
+% output
+
+```text
+Contact Jane at |||EMAIL||| or |||PHONE|||; server |||IPV4||| is down.
+counts {'EMAIL': 1, 'PHONE': 1, 'IPV4': 1}, keep True; directory kept: False
 ```
 
 Two cautions. Regular expressions written for North American formats miss most of the world's phone numbers, and a pattern loose enough to catch them all will also catch ISBNs, timestamps and version numbers. And redaction is not anonymization: a document that names a person and describes their circumstances is still identifying after its email address is removed. Pipelines that need stronger guarantees drop whole documents from sources known to contain personal records rather than trying to scrub them.
@@ -1512,6 +1601,16 @@ short_leak = "Pub quiz round two. Which element has atomic number 26? Iron, as m
 assert contaminated_fraction(leaked, index) > 0
 assert contaminated_fraction(short_leak, index) > 0  # the 6-word example is indexed whole
 assert contaminated_fraction(innocent, index) == 0.0
+for name, text in (("leaked", leaked), ("short_leak", short_leak), ("innocent", innocent)):
+    print(f"{name}: contaminated fraction {contaminated_fraction(text, index):.3f}")
+```
+
+% output
+
+```text
+leaked: contaminated fraction 0.316
+short_leak: contaminated fraction 0.100
+innocent: contaminated fraction 0.000
 ```
 
 (sec-ch4-overlap-misses)=
@@ -1569,6 +1668,16 @@ assert code_quality_filter(good) == (True, "ok")
 assert code_quality_filter("# Auto-generated by protoc. DO NOT EDIT!\nx = 1\n")[1] == "autogenerated"
 assert code_quality_filter("x = 1\n" + "y = 1; " * 400 + "\n")[1] == "max_line_length"
 assert code_quality_filter("".join("=" * 60 + "\n" for _ in range(20)))[1] == "low_alphanumeric"
+print(f"good: {code_quality_filter(good)}")
+generated = "# Auto-generated by protoc. DO NOT EDIT!\nx = 1\n"
+print(f"generated: {code_quality_filter(generated)}")
+```
+
+% output
+
+```text
+good: (True, 'ok')
+generated: (False, 'autogenerated')
 ```
 
 (sec-ch4-mathematics-scientific-text)=
@@ -1672,6 +1781,13 @@ assert pipe.counts["dropped_by:min_length"] == 1
 assert pipe.counts["dropped_by:no_lorem"] == 1
 assert pipe.counts["dropped_by:english_only"] == 1
 assert pipe.reasons["english_only:language"] == 1
+print(f"kept {len(kept)} of {len(docs)}; {sorted(pipe.counts.items())}")
+```
+
+% output
+
+```text
+kept 1 of 4; [('dropped_by:english_only', 1), ('dropped_by:min_length', 1), ('dropped_by:no_lorem', 1), ('input', 4), ('output', 1)]
 ```
 
 (sec-ch4-keeping-receipts)=
