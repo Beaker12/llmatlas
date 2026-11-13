@@ -120,7 +120,13 @@ def word_tokenize(text):
 # Example
 text = "Hello, world! How are you?"
 tokens = word_tokenize(text)
-# Output: ['hello', ',', 'world', '!', 'how', 'are', 'you', '?']
+print(tokens)
+```
+
+% output
+
+```text
+['hello', ',', 'world', '!', 'how', 'are', 'you', '?']
 ```
 
 **Limitations**:
@@ -144,7 +150,13 @@ def char_tokenize(text):
 # Example
 text = "Hello"
 tokens = char_tokenize(text)
-# Output: ['H', 'e', 'l', 'l', 'o']
+print(tokens)
+```
+
+% output
+
+```text
+['H', 'e', 'l', 'l', 'o']
 ```
 
 **Advantages**:
@@ -606,6 +618,25 @@ class LearnedPositionalEmbedding(nn.Module):
         positions = torch.arange(seq_length, device=x.device)
         position_embeddings = self.position_embeddings(positions)
         return x + position_embeddings
+
+
+# GPT-2 small's sizes: 1,024 positions of width 768
+pos = LearnedPositionalEmbedding(1024, 768)
+print(f"position parameters: {sum(p.numel() for p in pos.parameters()):,}")
+x = torch.zeros(2, 10, 768)  # a batch of 2 sequences of 10 token embeddings
+print("output shape:", tuple(pos(x).shape))
+try:
+    pos(torch.zeros(1, 1025, 768))
+except IndexError as err:
+    print("a sequence of 1,025:", type(err).__name__)
+```
+
+% output
+
+```text
+position parameters: 786,432
+output shape: (2, 10, 768)
+a sequence of 1,025: IndexError
 ```
 
 
@@ -842,11 +873,10 @@ one 100-dimensional vector per word: 10,000,000 parameters
 
 The path to transformers involved several key developments:
 
-**Recurrent Neural Networks** initially dominated sequence modeling but suffered from:
+**Recurrent Neural Networks** initially dominated sequence modeling. They read a sequence one token at a time, computing a new hidden state from the previous state and the current input, and this has two costs:
 
-- Vanishing gradient problems in long sequences
-- Sequential processing preventing parallelization
-- Limited ability to capture long-range dependencies
+- **Vanishing and exploding gradients.** The gradient that reaches a token many steps back has been multiplied by one Jacobian per step in between, so long-range components "go exponentially fast to norm 0" or grow exponentially {cite}`pascanu2013difficulty`. If each step scales the gradient by 0.9, the signal from 50 tokens back arrives scaled by $0.9^{50} \approx 0.005$; at 1.1 it is multiplied by $1.1^{50} \approx 117$. Either way the network learns little about dependencies that span many tokens.
+- **Sequential computation.** Each state needs the one before it, so processing $n$ tokens takes $n$ sequential steps however many processors are available, and a signal between two tokens $n$ positions apart passes through $n$ steps. A self-attention layer needs a constant number of sequential operations and connects any two positions directly (Table 1 of {cite:t}`vaswani2017attention`).
 
 **Long Short-Term Memory (LSTM)** {cite}`hochreiter1997long` networks addressed vanishing gradients but remained sequential.
 
@@ -1141,13 +1171,15 @@ cross-attention: (2, 5, 64) (2, 8, 5, 7)
 
 ### 4.2 Attention Patterns and Interpretability
 
-Probing studies find heads that track particular linguistic relations {cite}`clark2019what`:
+An attention map can be read directly: for each token, which token does a head attend to most? {cite:t}`clark2019what` did this for all 144 heads of BERT-base (12 layers of 12 heads) and scored the most-attended word as a guess of the token's syntactic head in the Wall Street Journal dependency treebank. No head parses well overall (the best gets 34.5% of all relations right, against 26.3% for always choosing the next word), but single relations have specialists:
 
-- **Syntactic heads**: Focus on grammatical relationships (subject-verb, modifier-noun)
-- **Semantic heads**: Capture semantic similarity and coreference
-- **Positional heads**: Attend to specific relative positions
+| Relation | Head (layer-head) | Accuracy | Best fixed-offset baseline |
+| --- | --- | --- | --- |
+| Determiner to its noun | 8-11 | 94.3% | 51.7% (next word) |
+| Direct object to its verb | 8-10 | 86.8% | 40.0% (two words back) |
+| Coreferent mention to its antecedent | 5-4 | 65% | 52% (same head word) |
 
-Visualization tools like attention maps provide insights into model behavior, though interpreting attention patterns requires caution {cite}`jain2019attention`.
+The coreference head comes close to a rule-based system (69%). Other heads attend almost only to the previous or the next token, and over half of the attention in layers 6 to 10 goes to the separator token [SEP], which the authors argue serves as a no-op. Such maps say where a head looks, not why the model predicts what it does: {cite:t}`jain2019attention` find that attention weights "are frequently uncorrelated with gradient-based measures of feature importance", and that very different attention distributions can give the same prediction.
 
 (sec-ch1-transformer-architecture)=
 
@@ -1509,7 +1541,43 @@ class PreLNBlock(nn.Module):
         h = self.norm1(x)
         x = x + self.attention(h, h, h)
         return x + self.ffn(self.norm2(x))
+
+
+class SelfAttention(nn.Module):
+    """Causal multi-head attention with the forward(q, k, v) interface PreLNBlock expects."""
+
+    def __init__(self, d_model, n_heads):
+        super().__init__()
+        self.mha = nn.MultiheadAttention(d_model, n_heads, bias=False, batch_first=True)
+
+    def forward(self, q, k, v):
+        n = q.size(1)
+        future = torch.triu(torch.ones(n, n, dtype=torch.bool), diagonal=1)
+        return self.mha(q, k, v, attn_mask=future, need_weights=False)[0]
+
+
+torch.manual_seed(0)
+d_model = 64
+block = PreLNBlock(d_model, SelfAttention(d_model, n_heads=4))
+count = lambda m: sum(p.numel() for p in m.parameters())
+print(f"SwiGLU hidden width: {block.ffn.w1.out_features} (8/3 x {d_model}, rounded down)")
+print(f"SwiGLU parameters: {count(block.ffn):,}; a 4x two-matrix FFN: {2 * d_model * 4 * d_model:,}")
+print(f"attention {count(block.attention):,} + norms {count(block.norm1) + count(block.norm2)} "
+      f"+ SwiGLU {count(block.ffn):,} = block {count(block):,}")
+x = torch.randn(2, 5, d_model)
+print("output shape:", tuple(block(x).shape))
 ```
+
+% output
+
+```text
+SwiGLU hidden width: 170 (8/3 x 64, rounded down)
+SwiGLU parameters: 32,640; a 4x two-matrix FFN: 32,768
+attention 16,384 + norms 128 + SwiGLU 32,640 = block 49,152
+output shape: (2, 5, 64)
+```
+
+SwiGLU has three weight matrices where the original feed-forward layer has two, so its hidden width is cut from $4d$ to $\tfrac{8}{3} d$: at model width $d = 64$ that is 170 units and 32,640 parameters, within 0.4% of the 32,768 of the two-matrix layer. The block keeps the shape of its input, so blocks stack.
 
 (sec-ch1-language-modeling-objective)=
 
@@ -1538,6 +1606,21 @@ def create_causal_mask(seq_length: int) -> torch.Tensor:
     """Create a causal mask to prevent attention to future tokens."""
     mask = torch.triu(torch.ones(seq_length, seq_length), diagonal=1)
     return mask == 0  # True for allowed positions, False for masked
+
+
+mask = create_causal_mask(4)
+print(mask.int())  # row = query position, column = key position
+print("keys allowed per query:", mask.sum(dim=1).tolist())
+```
+
+% output
+
+```text
+tensor([[1, 0, 0, 0],
+        [1, 1, 0, 0],
+        [1, 1, 1, 0],
+        [1, 1, 1, 1]], dtype=torch.int32)
+keys allowed per query: [1, 2, 3, 4]
 ```
 
 For the four inputs of the next listing the mask is {numref}`fig-ch1-causal-mask`. Mathematically a masked score is $-\infty$, so that its weight $e^{-\infty}$ is exactly 0. The attention listings fill masked scores with `torch.finfo(scores.dtype).min`, the most negative finite number, instead: the weight still underflows to exactly 0, and a row whose keys are all masked (a padding query) gets uniform weights instead of the NaN that $-\infty - (-\infty)$ gives inside the softmax ({ref}`sec-ch1-exercises` works both cases).
