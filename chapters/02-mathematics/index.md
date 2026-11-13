@@ -1160,7 +1160,7 @@ where 1.69 is the loss no model or dataset size removes. At $N = 70 \times 10^9$
 
 #### Implications for Training
 
-Hoffmann et al. conclude that many large models of the time were "undertrained" {cite}`hoffmann2022training`: at the same compute, a smaller model trained on more tokens reaches a lower loss. A smaller model is also cheaper to run, so the shift lowers inference cost as well.
+{cite:t}`hoffmann2022training` conclude that "current large language models are significantly undertrained": at the same compute, a smaller model trained on more tokens reaches a lower loss. A smaller model is also cheaper to run, so the shift lowers inference cost as well.
 
 Because $a_N \approx a_D \approx 0.5$, the compute-optimal ratio $D^*/N^*$ is roughly the same at every budget, and Hoffmann et al.'s Table 3, which gives the projections of their first approach, puts it near 20 tokens per parameter: 20.2 billion tokens for 1 billion parameters, 205.1 billion for 10 billion, 1.5 trillion for 67 billion and 3.7 trillion for 175 billion {cite}`hoffmann2022training`, ratios of 20.2, 20.5, 22.4 and 21.1. Chinchilla itself, 70 billion parameters on 1.4 trillion tokens, sits at 20. With $C \approx 6ND$ ({ref}`sec-ch2-flops`) the rule fixes both sizes from the budget alone. GPT-3's 175 billion parameters would on this rule call for about 3.5 trillion training tokens (Table 3's own projection is 3.7 trillion).
 
@@ -1385,13 +1385,13 @@ $$\mathrm{loss}_{\text{scaled}} = \mathrm{loss} \times \zeta$$
 
 where $\zeta$ is the scale factor. By the chain rule every gradient is multiplied by $\zeta$ as well, and the optimizer divides them by $\zeta$ in fp32 before the update, so the update itself is unchanged. A gradient of $10^{-8}$ is below fp16's smallest subnormal, $2^{-24} = 5.96 \times 10^{-8}$, and would be stored as zero; with $\zeta = 2^{16}$ it becomes $6.55 \times 10^{-4}$, which fp16 stores with its full ten mantissa bits ({ref}`sec-ch2-exercise-5`).
 
-The right $\zeta$ depends on the largest gradient: {cite:t}`micikevicius2017mixed` trained with constant factors between 8 and 32K, chosen so that the factor times "the maximum absolute gradient value is below 65,504", and noted that an overflow can be detected in the gradients and that update skipped. They proposed, as future work, that the factor "could be dynamically increased or decreased by inspecting the weight gradients for overflow". **Dynamic loss scaling** is that rule as frameworks implement it; PyTorch's `GradScaler` uses these defaults: it starts at $\zeta = 2^{16}$; when any scaled gradient overflows to infinity or NaN it skips that optimizer step and multiplies $\zeta$ by 0.5; and after 2,000 consecutive steps without overflow it multiplies $\zeta$ by 2. The scale therefore settles just below the largest value that does not overflow, halving quickly when it is too large and probing upward again every 2,000 steps.
+The right $\zeta$ depends on the largest gradient: {cite:t}`micikevicius2017mixed` trained with constant factors between 8 and 32K, chosen so that the factor times "the maximum absolute gradient value is below 65,504", and noted that an overflow can be detected in the gradients and that update skipped. They proposed, as future work, that the factor "could be dynamically increased or decreased by inspecting the weight gradients for overflow". **Dynamic loss scaling** is that rule as frameworks implement it; PyTorch's `GradScaler` uses these defaults {cite}`pytorch2026gradscaler`: it starts at $\zeta = 2^{16}$; when any scaled gradient overflows to infinity or NaN it skips that optimizer step and multiplies $\zeta$ by 0.5; and after 2,000 consecutive steps without overflow it multiplies $\zeta$ by 2. The scale therefore settles just below the largest value that does not overflow, halving quickly when it is too large and probing upward again every 2,000 steps.
 
 (sec-ch2-bfloat16)=
 
 #### bfloat16
 
-**bf16** keeps fp32's 8 exponent bits and gives up mantissa bits instead, so it covers the same range as fp32 and needs no loss scaling at all. bf16 is widely used for training on accelerators that support it, usually with an fp32 master copy of the weights; fp16 with loss scaling remains the choice on hardware without bf16 support.
+**bf16** keeps fp32's 8 exponent bits and gives up mantissa bits instead, so it covers the same range as fp32 and needs no loss scaling. {cite:t}`kalamkar2019study` give that range as the reason bf16 suits training ("the range of values it can represent is the same as that of IEEE 754 floating-point format (FP32)") and report that training in bf16 reaches the same results as fp32 "in the same number of iterations and with no changes to hyper-parameters" across image, speech, language-modeling and recommendation workloads. Their training is mixed precision, converting tensors between fp32 and bf16, and the rounding used for that conversion is one of the operations they study. On hardware without bf16 arithmetic, fp16 with loss scaling is the alternative.
 
 (sec-ch2-epsilon-placement)=
 
@@ -1407,7 +1407,7 @@ where the first sum is geometric with ratio $\beta_1^2/\beta_2 = 0.8108$. Multip
 
 $$\frac{|\hat{m}_t|}{\sqrt{\hat{v}_t}} \le \frac{1 - \beta_1}{1 - \beta_1^t}\sqrt{\frac{1 - \beta_2^t}{1 - \beta_2}\cdot\frac{1 - (\beta_1^2/\beta_2)^t}{1 - \beta_1^2/\beta_2}} \;\longrightarrow\; \frac{1 - \beta_1}{\sqrt{(1 - \beta_2)(1 - \beta_1^2/\beta_2)}} = \frac{0.1}{\sqrt{0.001 \times 0.1892}} = 7.27.$$
 
-The right-hand side is 1 at $t = 1$ and rises with $t$ toward its limit. Equality in Cauchy-Schwarz needs the two factors to be proportional, $\beta_2^{(t-i)/2} g_i \propto (\beta_1/\sqrt{\beta_2})^{t-i}$, that is $g_i \propto (\beta_2/\beta_1)^{i}$: a gradient that grows by the factor $\beta_2/\beta_1 = 1.11$ at every step. Such a gradient reaches $7.09\,\eta$ after 3,000 steps, and 7.27 is approached but never reached. For dense gradients of steady size the ratio is about 1 or less. Either way $\epsilon$ is not what keeps the step finite. It does two other things: it avoids $0/0$ for a weight that has so far received only zero gradients, and it damps the steps of weights whose gradients are tiny, which without it would move by about $\eta$ whatever their gradient's size. With constant gradients of $10^{-10}$, $\hat{m}_t = \sqrt{\hat{v}_t} = 10^{-10}$ and the step is $\eta \cdot 10^{-10}/(10^{-10} + 10^{-8}) = 0.0099\,\eta$ instead of $\eta$. LayerNorm adds it inside, $\sigma = \sqrt{\frac{1}{d}\sum_i (x_i - \mu)^2 + \epsilon}$ ({ref}`sec-ch2-layer-normalization-mathematics`), as PyTorch's `LayerNorm` documents, so the factor $1/\sigma$ can never exceed $1/\sqrt{\epsilon}$: 316.2 at PyTorch's default $\epsilon = 10^{-5}$. The size of $\epsilon$ has to suit the format. Adam's usual $10^{-8}$ is below fp16's smallest positive number, about $5.96 \times 10^{-8}$, and rounds to zero, which is one reason optimizer state is kept in fp32 ({ref}`sec-ch2-memory-requirements`).
+The right-hand side is 1 at $t = 1$ and rises with $t$ toward its limit. Equality in Cauchy-Schwarz needs the two factors to be proportional, $\beta_2^{(t-i)/2} g_i \propto (\beta_1/\sqrt{\beta_2})^{t-i}$, that is $g_i \propto (\beta_2/\beta_1)^{i}$: a gradient that grows by the factor $\beta_2/\beta_1 = 1.11$ at every step. Such a gradient reaches $7.09\,\eta$ after 3,000 steps, and 7.27 is approached but never reached. For dense gradients of steady size the ratio is about 1 or less. Either way $\epsilon$ is not what keeps the step finite. It does two other things: it avoids $0/0$ for a weight that has so far received only zero gradients, and it damps the steps of weights whose gradients are tiny, which without it would move by about $\eta$ whatever their gradient's size. With constant gradients of $10^{-10}$, $\hat{m}_t = \sqrt{\hat{v}_t} = 10^{-10}$ and the step is $\eta \cdot 10^{-10}/(10^{-10} + 10^{-8}) = 0.0099\,\eta$ instead of $\eta$. LayerNorm adds it inside, $\sigma = \sqrt{\frac{1}{d}\sum_i (x_i - \mu)^2 + \epsilon}$ ({ref}`sec-ch2-layer-normalization-mathematics`), as PyTorch's `LayerNorm` documents {cite}`pytorch2026layernorm`, so the factor $1/\sigma$ can never exceed $1/\sqrt{\epsilon}$: 316.2 at PyTorch's default $\epsilon = 10^{-5}$. The size of $\epsilon$ has to suit the format. Adam's usual $10^{-8}$ is below fp16's smallest positive number, about $5.96 \times 10^{-8}$, and rounds to zero, which is one reason optimizer state is kept in fp32 ({ref}`sec-ch2-memory-requirements`).
 
 ```python
 import math
@@ -1652,14 +1652,14 @@ $\mu = 2$, $\sigma^2 = (1 + 0 + 1)/3 = 2/3$, $\sigma = 0.8165$ and $\hat{x} = (-
 
 **Start Here - Intuitive Explanations:**
 
-1. [3Blue1Brown: Neural Networks](https://www.3blue1brown.com/?topic=neural-networks) - Visual explanations of backpropagation and gradient descent
+1. [3Blue1Brown: Neural Networks](https://www.3blue1brown.com/topics/neural-networks) {cite}`sanderson2026neural` - Visual explanations of backpropagation and gradient descent
 1. [Distill: Momentum](https://distill.pub/2017/momentum/) - Interactive visualization of optimization algorithms
-1. [The Matrix Calculus You Need For Deep Learning](https://explained.ai/matrix-calculus/) - Essential calculus for understanding backpropagation
+1. [The Matrix Calculus You Need For Deep Learning](https://explained.ai/matrix-calculus/) {cite}`parr2018matrix` - Essential calculus for understanding backpropagation
 
 **Mathematical Foundations:**
 
-4. [Mathematics for Machine Learning](https://mml-book.github.io/) - Free textbook covering linear algebra, calculus, and probability
-1. [MIT 18.065: Matrix Methods in Data Analysis](https://ocw.mit.edu/courses/18-065-matrix-methods-in-data-analysis-signal-processing-and-machine-learning-spring-2018/) - Gilbert Strang's course "Matrix Methods in Data Analysis, Signal Processing, and Machine Learning\"
+4. [Mathematics for Machine Learning](https://mml-book.github.io/) {cite}`deisenroth2020mathematics` - Free textbook covering linear algebra, calculus, and probability
+1. [MIT 18.065: Matrix Methods in Data Analysis](https://ocw.mit.edu/courses/18-065-matrix-methods-in-data-analysis-signal-processing-and-machine-learning-spring-2018/) - Gilbert Strang's course "Matrix Methods in Data Analysis, Signal Processing, and Machine Learning" {cite}`strang2018matrix`
 
 (sec-ch2-further-reading-foundational-papers)=
 
