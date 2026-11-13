@@ -231,6 +231,17 @@ def kv_cache_elements_per_token(cfg):
     n_kv = cfg.get("num_key_value_heads") or n_heads
     head_dim = cfg.get("head_dim") or cfg["hidden_size"] // n_heads
     return layers * 2 * n_kv * head_dim
+
+
+print(kv_cache_elements_per_token(  # Llama 3.1 8B: 32 layers, 8 KV heads of 128
+    {"model_type": "llama", "num_hidden_layers": 32, "num_attention_heads": 32,
+     "num_key_value_heads": 8, "hidden_size": 4096}), "elements per token")
+```
+
+% output
+
+```text
+65536 elements per token
 ```
 
 (sec-ch6-multi-query-grouped-query-attention)=
@@ -275,6 +286,16 @@ def grouped_query_attention(q, k, v):
     k = k.repeat_interleave(group, dim=1)  # each KV head serves `group` adjacent query heads
     v = v.repeat_interleave(group, dim=1)
     return F.scaled_dot_product_attention(q, k, v, is_causal=True)
+
+
+print("output shape:", tuple(grouped_query_attention(  # 8 query heads sharing 2 KV heads
+    torch.ones(1, 8, 5, 16), torch.ones(1, 2, 5, 16), torch.ones(1, 2, 5, 16)).shape))
+```
+
+% output
+
+```text
+output shape: (1, 8, 5, 16)
 ```
 
 Production kernels avoid materializing the repeated tensors, but the result is the same. That equivalence is what the notebook asserts ({ref}`nb-arch-block`): grouped-query attention equals multi-head attention whose key and value weights are the grouped weights repeated, to floating-point precision, and multi-query attention is the `n_kv = 1` case.
@@ -401,6 +422,17 @@ def rope_frequencies(d, base=10000.0):
 def ntk_aware_base(base, scale, d):
     """Base that divides the lowest frequency by `scale` and keeps the highest."""
     return base * scale ** (d / (d - 2))
+
+
+print(f"lowest frequency at d = 128: {rope_frequencies(128)[-1].item():.4g}")
+print(f"NTK-aware base for an 8x longer context: {ntk_aware_base(10000.0, 8, 128):,.0f}")
+```
+
+% output
+
+```text
+lowest frequency at d = 128: 0.0001155
+NTK-aware base for an 8x longer context: 82,685
 ```
 
 The notebook section {ref}`nb-arch-rope` asserts the identities above to $10^{-9}$: after NTK-aware scaling, $\omega_0$ is unchanged and $\omega_{d_k/2-1}$ is exactly $1/s_{ctx}$ of its old value; with position interpolation, the largest angle at the low-frequency components over the extended length stays within one position's rotation of the largest angle seen in training.
@@ -464,6 +496,16 @@ def route_top_k(x, router_weight, k):
     f = counts / counts.sum()  # fraction of routed slots sent to each expert; sums to 1
     p = probs.mean(dim=0)  # mean router probability of each expert
     return top_i, gates, n_experts * (f * p).sum()
+
+
+print("auxiliary loss of a uniform router:",  # all logits equal: f_i = P_i = 1/8
+      route_top_k(torch.ones(64, 16), torch.zeros(8, 16), 2)[2].item())
+```
+
+% output
+
+```text
+auxiliary loss of a uniform router: 1.0
 ```
 
 (sec-ch6-keeping-experts-balanced)=
@@ -612,6 +654,18 @@ def count_params(cfg):
     active_with_embedding = active_without_embedding + (0 if tied else V * H)
     return {"total": total, "active_with_embedding": active_with_embedding,
             "active_without_embedding": active_without_embedding}
+
+
+print("Llama 3.1 8B:", format(count_params(  # the paper's architecture
+    {"model_type": "llama", "hidden_size": 4096, "num_hidden_layers": 32,
+     "num_attention_heads": 32, "num_key_value_heads": 8, "intermediate_size": 14336,
+     "vocab_size": 128256, "tie_word_embeddings": False})["total"], ","))
+```
+
+% output
+
+```text
+Llama 3.1 8B: 8,030,261,248
 ```
 
 Everything outside the transformer blocks is the embedding, the output projection (absent when tied) and one final norm. Inside a block, the terms follow the sections above: four attention projections (with $n_{kv}$ sharing keys and values), the norms, and the feed-forward networks.
