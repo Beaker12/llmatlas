@@ -70,8 +70,9 @@ sphinx:
       preamble: |
         \providecommand{\cjkfontname}{Noto Sans CJK SC}
         \providecommand{\arabicfontname}{Noto Naskh Arabic}
-        \usepackage[Latin,Greek]{ucharclasses}  % same options as sphinx-jupyterbook-latex, which loads it again
+        \usepackage[Latin,Greek,Arabic]{ucharclasses}  % superset of sphinx-jupyterbook-latex's options (it loads it again); Arabic makes \setTransitionsFor{Arabic} fire
         \usepackage{xeCJK}
+        \xeCJKDeclareCharClass{Default}{"00B7, "2026}  % middle dot and ellipsis stay in the Latin font
         \setCJKmainfont{\cjkfontname}
         \setCJKmonofont{\cjkfontname}
         \usepackage{bidi}
