@@ -1122,7 +1122,7 @@ A `HEAD` request returns a file's headers without its body, and `Content-Length`
 - Estimate: $100{,}000 \times 923{,}116{,}424 \approx 9.231 \times 10^{13}$ bytes, which is 92.3 TB or 83.96 TiB ($1\ \text{TiB} = 2^{40}$ bytes).
 - Uncertainty: the standard error of a ten-file mean is $20.8 / \sqrt{10} \approx 6.6$ MB, 0.71% of the mean.
 
-Common Crawl's announcement of the crawl gives the WARC files as 82.79 TiB {cite}`commoncrawl2026september`. The estimate is 1.4% high, about two standard errors, which a sample of ten can produce; a hundred files would cut the standard error to about 0.2%. Note the units: the announcement's 82.79 TiB is 91.0 TB, the "about 90 TB" of the table in {ref}`sec-ch3-snapshots-segments-files`.
+Common Crawl's announcement of the crawl gives the WARC files as 82.79 TiB {cite}`commoncrawl2026september`. The estimate is 1.4% high, about two standard errors, which a sample of ten can produce; a hundred files would cut the standard error to about 0.2%. Note the units: the announcement's 82.79 TiB is 91.0 TB, the "about 90 TB" of the table in {ref}`sec-ch3-snapshots-segments-files`. The notebook's estimate, from the first three files of the manifest, is about 95 TB: three files are a smaller sample, and the first files of a manifest are not a random draw, which is why this solution samples with a seed.
 ```
 
 2. **Who is blocked.** The notebook commits the two robots.txt files it reads, Wikipedia's and a news site's, under `examples/data/`. Parse both and tabulate which of `*`, `CCBot`, `GPTBot`, `ClaudeBot` and `Google-Extended` may fetch an article. Which site blocks Common Crawl, and did it likely intend to leave the open corpora? How would you extend the table to fifty news sites?

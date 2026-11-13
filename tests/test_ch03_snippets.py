@@ -29,6 +29,7 @@ RESULT_CLAIMS: list[tuple[str, str, str]] = [
     (r"with (428) Disallow rules for every agent", r"Disallow lines: \{'\*': (\d+)\}", "eq"),
     (r"median article \((206) words", r"(?m)^wikipedia\s+\d+\s+(\d+)", "eq"),
     (r"median page \((188) words", r"(?m)^c4\s+\d+\s+(\d+)", "eq"),
+    (r"from the first three files of the manifest, is about (95) TB", r"GB -> ~(\d+) TB of WARC", "eq"),
 ]
 
 # regex over a sentence -> one-line reason; such a sentence links a notebook and mentions a number but states
