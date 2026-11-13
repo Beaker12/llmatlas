@@ -21,7 +21,6 @@ With no file the tool reads references.bib and every bib/*.bib.
 """
 from __future__ import annotations
 
-import glob
 import html
 import json
 import os
@@ -32,6 +31,12 @@ import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tools.book_files import bib_files  # noqa: E402
 
 FIELD = (r"(\w+)\s*=\s*(\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}"
          r"|\"([^\"]*)\"|(\w+))")
@@ -433,7 +438,7 @@ def main(argv):
         i = args.index("--keys")
         only = set(args[i + 1].split(","))
         del args[i:i + 2]
-    paths = args or ["references.bib"] + sorted(glob.glob("bib/*.bib"))
+    paths = args or [str(p) for p in bib_files(".")]
     items = select_entries(paths, only)
     if not items:
         what = f"matches --keys {','.join(sorted(only))}" if only else "has an eprint or doi field"

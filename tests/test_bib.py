@@ -19,6 +19,8 @@ import json
 import re
 
 import pytest
+
+from tools.book_files import bib_files as book_bib_files
 from pybtex.database import BibliographyData, parse_file
 from pybtex.errors import set_strict_mode
 from pybtex.database import BibliographyDataError
@@ -42,7 +44,7 @@ CITE = re.compile(r"\{cite(?::[a-z]+)?\}`([^`\n]+)`")
 
 
 def bib_files():
-    return [ROOT / "references.bib"] + sorted((ROOT / "bib").glob("*.bib"))
+    return book_bib_files(ROOT)
 
 
 def load(files):

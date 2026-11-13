@@ -2,15 +2,19 @@
 
 A fence line opens or closes a block: three or more backticks, tildes or colons, then an info string. A fence
 is code unless it opens a MyST directive whose content is prose: an info string starting with `{name}` where
-name is not in CODE_DIRECTIVES ({admonition}, {note}, {figure}, {table}, ...), or any colon fence. The content
+name is not in CODE_DIRECTIVES ({admonition}, {note}, {figure}, {table}, ...), or a colon fence with no
+directive. A code directive is code behind either fence (:::{code-cell} too). The content
 of a prose directive is prose, and the code fences nested in it are code again. A closing fence has no info
 string, uses the opening fence's character and is at least as long; so a longer outer fence (four backticks)
 protects the fences it contains.
 
 line_kinds(text)   one kind per line: PROSE, DIRECTIVE (the opening or closing fence of a prose directive, or
                    prose inside one) or CODE (a code fence's lines, fences included)
-blank_code(text)   the text with code lines blanked by spaces, so character offsets and line numbers are kept
+blank(text, kinds, keep_offsets)   the text with the lines of the given kinds emptied (or, with keep_offsets,
+                   replaced by spaces, so character offsets are kept too); line numbers are always kept
+blank_code(text)   blank(text, {CODE}, keep_offsets=True), for finding math
 fences(text)       the code fences as dicts {info, body, line, end}
+python_fences(text)  the fences whose info string is exactly `python`
 """
 from __future__ import annotations
 
@@ -54,7 +58,7 @@ def _walk(text: str):
                 stack.pop()
                 yield line, FENCE_LINE, None
                 continue
-            if char == ":" or (role and directive_name(role) not in CODE_DIRECTIVES):
+            if (role and directive_name(role) not in CODE_DIRECTIVES) or (char == ":" and not role):
                 stack.append((char, size))
                 yield line, FENCE_LINE, None
                 continue
@@ -69,10 +73,16 @@ def line_kinds(text: str) -> list[str]:
     return [kind for _line, kind, _code in _walk(text)]
 
 
+def blank(text: str, kinds, keep_offsets: bool = False) -> str:
+    """The text with every line whose kind is in `kinds` emptied, or replaced by spaces with `keep_offsets`."""
+    return "\n".join((" " * len(line) if keep_offsets else "") if kind in kinds else line
+                     for line, kind, _code in _walk(text))
+
+
 def blank_code(text: str) -> str:
     """The text with every line of a code fence replaced by spaces: offsets and line numbers are kept, and the
     prose and math of directives (admonitions, figure captions, tables) stay readable."""
-    return "\n".join(" " * len(line) if kind == CODE else line for line, kind, _code in _walk(text))
+    return blank(text, {CODE}, keep_offsets=True)
 
 
 def fences(text: str) -> list[dict]:
@@ -89,3 +99,8 @@ def fences(text: str) -> list[dict]:
             current = None
         offset = end + 1
     return found
+
+
+def python_fences(text: str) -> list[dict]:
+    """The fences of `text` whose info string is exactly `python` (the runnable listings), as from fences()."""
+    return [f for f in fences(text) if f["info"] == "python"]

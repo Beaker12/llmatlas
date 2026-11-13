@@ -17,6 +17,8 @@ import unicodedata
 
 import pytest
 
+from tools.book_files import bib_files as book_bib_files
+
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check
 from tests._pages import blank_code, blank_inline_code, line_of, pages
 
@@ -30,7 +32,7 @@ BEFORE = re.compile(r"([^\W\d_][\w\-]*)(?:['\u2019]s)?\s*$")
 
 
 def bib_files():
-    return [ROOT / "references.bib"] + sorted((ROOT / "bib").glob("*.bib"))
+    return book_bib_files(ROOT)
 
 
 def _braced(text, start):

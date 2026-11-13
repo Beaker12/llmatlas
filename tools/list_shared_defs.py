@@ -24,9 +24,9 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tools.notation_tables import pages  # noqa: E402
+from tools.book_files import notebooks, pages  # noqa: E402
+from tools.fences import python_fences  # noqa: E402
 
-FENCE = re.compile(r"```python\n([\s\S]*?)```")
 PSEUDO = re.compile(r"# pseudo-code(?![\w-])")
 DEFS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
@@ -97,9 +97,8 @@ def chapter_sources(chapter_dir: Path):
     """(label, source, is_pseudo_code) for each python fence of the chapter's pages."""
     for page in pages(chapter_dir):
         text = page.read_text(encoding="utf-8")
-        for m in FENCE.finditer(text):
-            line = text[: m.start()].count("\n") + 1
-            yield f"{page.name}:L{line}", m.group(1), bool(PSEUDO.match(m.group(1).lstrip()))
+        for fence in python_fences(text):
+            yield f"{page.name}:L{fence['line']}", fence["body"], bool(PSEUDO.match(fence["body"].lstrip()))
 
 
 def notebook_sources(notebook: Path):
@@ -138,7 +137,7 @@ def parse_failures(chapter_dir: Path) -> list[str]:
                 ast.parse(source)
             except SyntaxError as e:
                 failures.append(f"{label}: cannot parse: {e.msg} (line {e.lineno})")
-    for notebook in sorted((chapter_dir / "examples").glob("*.ipynb")):
+    for notebook in notebooks(chapter_dir):
         for label, source in notebook_sources(notebook):
             try:
                 ast.parse(blank_magics(source))
@@ -152,7 +151,7 @@ def shared_defs(chapter_dir: Path) -> dict[str, tuple[str, str]]:
     chapter_dir = Path(chapter_dir)
     in_chapter = chapter_defs(chapter_dir)
     in_notebook: dict[str, str] = {}
-    for notebook in sorted((chapter_dir / "examples").glob("*.ipynb")):
+    for notebook in notebooks(chapter_dir):
         in_notebook.update(notebook_defs(notebook))
     return {name: (in_chapter[name], in_notebook[name]) for name in in_chapter if name in in_notebook}
 

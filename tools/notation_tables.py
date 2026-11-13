@@ -12,23 +12,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from tools.book_files import LOCAL_LIST, pages  # noqa: F401  (re-exported for the tools)
+from tools.fences import CODE, CODE_DIRECTIVES, FENCE_LINE, blank  # noqa: F401
 from tools.unescape_math import math_regions
 
 ROOT = Path(__file__).resolve().parents[1]
 GLOBAL = ROOT / "tests" / "notation_global.txt"
-LOCAL_LIST = "notation-local.md"
-
-def pages(chapter_dir) -> list[Path]:
-    """Every *.md directly in the chapter directory except notation-local.md (a symbol list, not a page), sorted."""
-    return sorted(p for p in Path(chapter_dir).glob("*.md") if p.name != LOCAL_LIST)
-
 
 # --- the prose unit splitter --------------------------------------------------------------------------------
 
-FENCE_LINE = re.compile(r"^[ \t]*(`{3,}|~{3,}|:{3,})[ \t]*(.*?)[ \t]*$")
-# MyST directives whose content is code or markup, not prose; every other directive keeps its text
-CODE_DIRECTIVES = {"code-cell", "code-block", "sourcecode", "code", "math", "literalinclude", "raw", "eval-rst",
-                   "mermaid", "graphviz"}
 LIST_ITEM = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+")
 ABBREVIATION = re.compile(r"(?:\be\.g|\bi\.e|\betc|\bvs|\bcf|\bal|\bFig|\bEq|\bSec|\bapprox|\bNo|(?<![A-Za-z])[A-Z])\.$")
 
@@ -37,27 +29,9 @@ def blank_code(text):
     """The text with every fenced code block (any info string, none, or a code directive) blanked.
 
     Line count is kept. The fence lines of prose directives ({admonition}, {note}, ...) are blanked but their
-    content stays; a ::: fence is always a prose directive.
+    content stays; a ::: fence is always a prose directive (tools/fences.py).
     """
-    out, stack = [], []   # stack of (marker char, length, is_code)
-    for line in text.split("\n"):
-        m = FENCE_LINE.match(line)
-        if m:
-            marker, info = m.groups()
-            char, length = marker[0], len(marker)
-            if stack and stack[-1][0] == char and length >= stack[-1][1] and not info:
-                stack.pop()
-                out.append("")
-                continue
-            if not (stack and stack[-1][2]):
-                directive = re.match(r"\{([\w:-]+)\}", info)
-                is_code = ((directive is None and char != ":")
-                           or (directive is not None and directive.group(1) in CODE_DIRECTIVES))
-                stack.append((char, length, is_code))
-                out.append("")
-                continue
-        out.append("" if stack and stack[-1][2] else line)
-    return "\n".join(out)
+    return blank(text, {CODE, FENCE_LINE})
 
 
 def prose_units(text):

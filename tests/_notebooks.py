@@ -16,12 +16,9 @@ import nbformat
 from nbclient import NotebookClient
 
 from tests._compare import compare_output
+from tools.book_files import notebooks  # noqa: F401  (the one notebook list)
 
 CELL_TIMEOUT = 600
-
-
-def notebooks(chapter_dir):
-    return sorted((Path(chapter_dir) / "examples").glob("*.ipynb"))
 
 
 def read(path):

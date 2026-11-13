@@ -12,8 +12,8 @@ import pytest
 from tests._compare import compare_output
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check, tracked
 from tests._pages import pages as chapter_pages
+from tools.fences import python_fences as shared_python_fences
 
-FENCE = re.compile(r"```python\n([\s\S]*?)```")
 PSEUDO_MARKER = re.compile(r"# pseudo-code(?![\w-])")
 NETWORK_MARKER = re.compile(r"# network(?![\w-])")
 
@@ -22,9 +22,9 @@ def fences():
     for path in tracked("chapters/**/*.md"):
         rel = path.relative_to(ROOT).as_posix()
         text = path.read_text(encoding="utf-8")
-        for m in FENCE.finditer(text):
-            line = text[: m.start()].count("\n") + 2
-            yield pytest.param(rel, line, m.group(1), id=f"{rel}:{line}")
+        for fence in shared_python_fences(text):
+            line = fence["line"] + 1
+            yield pytest.param(rel, line, fence["body"], id=f"{rel}:{line}")
 
 
 @pytest.mark.parametrize("rel,line,code", list(fences()))
@@ -66,8 +66,8 @@ def run_fence(code, timeout):
 
 def python_fences(text):
     """(line of the opening fence, code, text after the fence) for each ```python fence."""
-    for m in FENCE.finditer(text):
-        yield text[: m.start()].count("\n") + 1, m.group(1), text[m.end():]
+    for fence in shared_python_fences(text):
+        yield fence["line"], fence["body"], text[fence["end"]:]
 
 
 def marker_failures(text, name):
@@ -140,13 +140,19 @@ FIXTURE = ROOT / "tests" / "fixtures" / "sample-chapter"
 SAMPLE = FIXTURE / "index.md"
 
 
+def _line_start(text, line):
+    """Offset of the first character of the 1-based line `line`."""
+    return sum(len(x) + 1 for x in text.split("\n")[:line - 1])
+
+
 def chunk(marker):
     """The fixture fence containing `marker`, with its output block, as a page of its own (fence at L1)."""
     text = SAMPLE.read_text(encoding="utf-8")
-    for m in FENCE.finditer(text):
-        if marker in m.group(1):
-            block = OUTPUT_BLOCK.match(text[m.end():])
-            return text[m.start(): m.end() + (block.end() if block else 0)] + "\n"
+    for fence in shared_python_fences(text):
+        if marker in fence["body"]:
+            start = _line_start(text, fence["line"])
+            block = OUTPUT_BLOCK.match(text[fence["end"]:])
+            return text[start: fence["end"] + (block.end() if block else 0)] + "\n"
     raise AssertionError(f"no fixture fence contains {marker!r}")
 
 
