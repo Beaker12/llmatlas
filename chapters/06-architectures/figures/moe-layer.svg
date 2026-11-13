@@ -16,25 +16,23 @@
 <!-- x -->
 <g id="node1" class="node">
 <title>x</title>
-<polygon fill="#ffffff" stroke="#2d3748" stroke-width="1.3" points="666.02,-549.2 429.98,-549.2 429.98,-472.4 666.02,-472.4 666.02,-549.2"/>
-<text xml:space="preserve" text-anchor="start" x="451.58" y="-514.8" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510">token&#39;s hidden state x</text>
-<text xml:space="preserve" text-anchor="start" x="479.09" y="-490.8" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510">(after the norm)</text>
+<polygon fill="#ffffff" stroke="#2d3748" stroke-width="1.3" points="667.02,-549.2 430.98,-549.2 430.98,-472.4 667.02,-472.4 667.02,-549.2"/>
+<text xml:space="preserve" text-anchor="start" x="452.58" y="-514.8" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510">token&#39;s hidden state x</text>
+<text xml:space="preserve" text-anchor="start" x="480.09" y="-490.8" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510">(after the norm)</text>
 </g>
 <!-- router -->
 <g id="node2" class="node">
 <title>router</title>
-<polygon fill="#fde8d7" stroke="#2d3748" stroke-width="1.3" points="588.39,-423.4 167.61,-423.4 167.61,-302.6 588.39,-302.6 588.39,-423.4"/>
-<text xml:space="preserve" text-anchor="start" x="193.21" y="-385" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510">router: logits r, probabilities ρ = softmax(r)</text>
-<text xml:space="preserve" text-anchor="start" x="219.59" y="-358" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510">keep TopK(r), the n</text>
-<text xml:space="preserve" text-anchor="start" x="391.9" y="-358" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="20.00" fill="#050510">act</text>
-<text xml:space="preserve" text-anchor="start" x="418.58" y="-358" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510"> largest logits</text>
-<text xml:space="preserve" text-anchor="start" x="293.51" y="-325" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510">of E routed experts</text>
+<polygon fill="#fde8d7" stroke="#2d3748" stroke-width="1.3" points="589.39,-423.4 168.61,-423.4 168.61,-302.6 589.39,-302.6 589.39,-423.4"/>
+<text xml:space="preserve" text-anchor="start" x="194.21" y="-385" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510">router: logits r, probabilities ρ = softmax(r)</text>
+<text xml:space="preserve" text-anchor="start" x="220.59" y="-358" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510"><tspan>keep TopK(r), the n</tspan><tspan baseline-shift="sub" font-size="9.75">act</tspan><tspan> largest logits</tspan></text>
+<text xml:space="preserve" text-anchor="start" x="294.51" y="-325" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510">of E routed experts</text>
 </g>
 <!-- x&#45;&gt;router -->
 <g id="edge1" class="edge">
 <title>x&#45;&gt;router</title>
-<path fill="none" stroke="#2d3748" stroke-width="1.3" d="M503.78,-471.87C488.67,-458.91 471.3,-444.02 454.39,-429.52"/>
-<polygon fill="#2d3748" stroke="#2d3748" stroke-width="1.3" points="456.09,-427.75 449.19,-425.05 452.9,-431.47 456.09,-427.75"/>
+<path fill="none" stroke="#2d3748" stroke-width="1.3" d="M504.78,-471.87C489.67,-458.91 472.3,-444.02 455.39,-429.52"/>
+<polygon fill="#2d3748" stroke="#2d3748" stroke-width="1.3" points="457.09,-427.75 450.19,-425.05 453.9,-431.47 457.09,-427.75"/>
 </g>
 <!-- s1 -->
 <g id="node8" class="node">
@@ -46,49 +44,46 @@
 <!-- x&#45;&gt;s1 -->
 <g id="edge7" class="edge">
 <title>x&#45;&gt;s1</title>
-<path fill="none" stroke="#2d3748" stroke-width="1.3" d="M574.46,-471.9C584.29,-457.09 595.18,-439.77 604,-423.4 636.96,-362.22 668.03,-288.45 687.48,-239.6"/>
-<polygon fill="#2d3748" stroke="#2d3748" stroke-width="1.3" points="689.71,-240.61 690.01,-233.2 685.15,-238.81 689.71,-240.61"/>
+<path fill="none" stroke="#2d3748" stroke-width="1.3" d="M575.49,-471.92C585.32,-457.11 596.21,-439.78 605,-423.4 637.8,-362.25 668.54,-288.48 687.75,-239.61"/>
+<polygon fill="#2d3748" stroke="#2d3748" stroke-width="1.3" points="689.98,-240.63 690.25,-233.22 685.42,-238.85 689.98,-240.63"/>
 </g>
 <!-- e1 -->
 <g id="node3" class="node">
 <title>e1</title>
 <polygon fill="#e6f0fa" stroke="#2d3748" stroke-width="2.2" points="109.6,-211.6 16.4,-211.6 16.4,-158.8 109.6,-158.8 109.6,-211.6"/>
-<text xml:space="preserve" text-anchor="start" x="38" y="-180.2" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510">FFN</text>
-<text xml:space="preserve" text-anchor="start" x="76.88" y="-180.2" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="20.00" fill="#050510">1</text>
+<text xml:space="preserve" text-anchor="start" x="38" y="-180.2" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510"><tspan>FFN</tspan><tspan baseline-shift="sub" font-size="9.75">1</tspan></text>
 </g>
 <!-- router&#45;&gt;e1 -->
 <g id="edge2" class="edge">
 <title>router&#45;&gt;e1</title>
-<path fill="none" stroke="#2d3748" stroke-width="2.2" d="M252.9,-302.04C211.4,-280.84 165.49,-255.93 125,-230.6 118.9,-226.79 112.6,-222.59 106.46,-218.35"/>
-<polygon fill="#2d3748" stroke="#2d3748" stroke-width="2.2" points="108.08,-216.49 100.94,-214.48 105.27,-220.51 108.08,-216.49"/>
-<text xml:space="preserve" text-anchor="middle" x="228.62" y="-260.6" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#2d3748"> ρ̃₁</text>
+<path fill="none" stroke="#2d3748" stroke-width="2.2" d="M254.3,-302C212.48,-280.7 166.07,-255.75 125,-230.6 118.87,-226.84 112.55,-222.68 106.39,-218.46"/>
+<polygon fill="#2d3748" stroke="#2d3748" stroke-width="2.2" points="108.01,-216.6 100.87,-214.6 105.2,-220.62 108.01,-216.6"/>
+<text xml:space="preserve" text-anchor="start" x="206.95" y="-261.6" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#2d3748"><tspan> ρ̃</tspan><tspan baseline-shift="sub" font-size="9.75">1</tspan></text>
 </g>
 <!-- e2 -->
 <g id="node4" class="node">
 <title>e2</title>
 <polygon fill="#ffffff" stroke="#a0aec0" stroke-width="1.3" points="234.6,-211.6 141.4,-211.6 141.4,-158.8 234.6,-158.8 234.6,-211.6"/>
-<text xml:space="preserve" text-anchor="start" x="163" y="-180.2" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#718096">FFN</text>
-<text xml:space="preserve" text-anchor="start" x="201.88" y="-180.2" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="20.00" fill="#718096">2</text>
+<text xml:space="preserve" text-anchor="start" x="163" y="-180.2" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#718096"><tspan>FFN</tspan><tspan baseline-shift="sub" font-size="9.75">2</tspan></text>
 </g>
 <!-- router&#45;&gt;e2 -->
 <g id="edge4" class="edge">
 <title>router&#45;&gt;e2</title>
-<path fill="none" stroke="#cbd5e0" stroke-width="1.5" stroke-dasharray="1,5" d="M313.14,-301.99C282.75,-273.87 247.76,-241.5 222.52,-218.14"/>
-<polygon fill="#cbd5e0" stroke="#cbd5e0" stroke-width="1.5" points="224.47,-216.61 217.67,-213.65 221.14,-220.2 224.47,-216.61"/>
+<path fill="none" stroke="#cbd5e0" stroke-width="1.5" stroke-dasharray="1,5" d="M313.8,-301.99C283.25,-273.87 248.08,-241.5 222.7,-218.14"/>
+<polygon fill="#cbd5e0" stroke="#cbd5e0" stroke-width="1.5" points="224.63,-216.58 217.82,-213.64 221.31,-220.19 224.63,-216.58"/>
 </g>
 <!-- e3 -->
 <g id="node5" class="node">
 <title>e3</title>
 <polygon fill="#e6f0fa" stroke="#2d3748" stroke-width="2.2" points="359.6,-211.6 266.4,-211.6 266.4,-158.8 359.6,-158.8 359.6,-211.6"/>
-<text xml:space="preserve" text-anchor="start" x="288" y="-180.2" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510">FFN</text>
-<text xml:space="preserve" text-anchor="start" x="326.88" y="-180.2" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="20.00" fill="#050510">3</text>
+<text xml:space="preserve" text-anchor="start" x="288" y="-180.2" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510"><tspan>FFN</tspan><tspan baseline-shift="sub" font-size="9.75">3</tspan></text>
 </g>
 <!-- router&#45;&gt;e3 -->
 <g id="edge3" class="edge">
 <title>router&#45;&gt;e3</title>
-<path fill="none" stroke="#2d3748" stroke-width="2.2" d="M355.81,-301.99C346.01,-275.48 334.81,-245.19 326.32,-222.24"/>
-<polygon fill="#2d3748" stroke="#2d3748" stroke-width="2.2" points="328.63,-221.41 323.9,-215.69 324.03,-223.11 328.63,-221.41"/>
-<text xml:space="preserve" text-anchor="middle" x="367.73" y="-260.6" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#2d3748"> ρ̃₃</text>
+<path fill="none" stroke="#2d3748" stroke-width="2.2" d="M356.47,-301.99C346.52,-275.48 335.15,-245.19 326.53,-222.24"/>
+<polygon fill="#2d3748" stroke="#2d3748" stroke-width="2.2" points="328.82,-221.38 324.07,-215.69 324.24,-223.1 328.82,-221.38"/>
+<text xml:space="preserve" text-anchor="start" x="346" y="-261.6" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#2d3748"><tspan> ρ̃</tspan><tspan baseline-shift="sub" font-size="9.75">3</tspan></text>
 </g>
 <!-- e4 -->
 <g id="node6" class="node">
@@ -99,27 +94,26 @@
 <!-- router&#45;&gt;e4 -->
 <g id="edge5" class="edge">
 <title>router&#45;&gt;e4</title>
-<path fill="none" stroke="#cbd5e0" stroke-width="1.5" stroke-dasharray="1,5" d="M393.02,-301.99C399.79,-274.95 407.54,-243.97 413.32,-220.86"/>
-<polygon fill="#cbd5e0" stroke="#cbd5e0" stroke-width="1.5" points="415.64,-221.7 414.96,-214.31 410.89,-220.51 415.64,-221.7"/>
+<path fill="none" stroke="#cbd5e0" stroke-width="1.5" stroke-dasharray="1,5" d="M393.68,-301.99C400.29,-274.95 407.87,-243.97 413.52,-220.86"/>
+<polygon fill="#cbd5e0" stroke="#cbd5e0" stroke-width="1.5" points="415.84,-221.69 415.12,-214.31 411.08,-220.53 415.84,-221.69"/>
 </g>
 <!-- eE -->
 <g id="node7" class="node">
 <title>eE</title>
 <polygon fill="#ffffff" stroke="#a0aec0" stroke-width="1.3" points="579.71,-211.6 484.29,-211.6 484.29,-158.8 579.71,-158.8 579.71,-211.6"/>
-<text xml:space="preserve" text-anchor="start" x="505.89" y="-180.2" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#718096">FFN</text>
-<text xml:space="preserve" text-anchor="start" x="544.77" y="-180.2" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="20.00" fill="#718096">E</text>
+<text xml:space="preserve" text-anchor="start" x="505.89" y="-180.2" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#718096"><tspan>FFN</tspan><tspan baseline-shift="sub" font-size="9.75">E</tspan></text>
 </g>
 <!-- router&#45;&gt;eE -->
 <g id="edge6" class="edge">
 <title>router&#45;&gt;eE</title>
-<path fill="none" stroke="#cbd5e0" stroke-width="1.5" stroke-dasharray="1,5" d="M430.57,-301.99C454.89,-274.23 482.84,-242.32 503.23,-219.04"/>
-<polygon fill="#cbd5e0" stroke="#cbd5e0" stroke-width="1.5" points="505.04,-220.69 507.81,-213.82 501.35,-217.47 505.04,-220.69"/>
+<path fill="none" stroke="#cbd5e0" stroke-width="1.5" stroke-dasharray="1,5" d="M431.23,-301.99C455.39,-274.23 483.16,-242.32 503.42,-219.04"/>
+<polygon fill="#cbd5e0" stroke="#cbd5e0" stroke-width="1.5" points="505.21,-220.71 507.96,-213.82 501.52,-217.49 505.21,-220.71"/>
 </g>
 <!-- y -->
 <g id="node9" class="node">
 <title>y</title>
-<polygon fill="#edf2f7" stroke="#2d3748" stroke-width="1.3" points="541.69,-90.8 84.31,-90.8 84.31,0 541.69,0 541.69,-90.8"/>
-<text xml:space="preserve" text-anchor="start" x="109.91" y="-52.4" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510">y = (shared experts&#39; output) + Σ ρ̃ᵢ FFNᵢ(x)</text>
+<polygon fill="#edf2f7" stroke="#2d3748" stroke-width="1.3" points="529.46,-90.8 96.54,-90.8 96.54,0 529.46,0 529.46,-90.8"/>
+<text xml:space="preserve" text-anchor="start" x="122.14" y="-55.4" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510"><tspan>y = (shared experts&#39; output) + Σ ρ̃</tspan><tspan baseline-shift="sub" font-size="9.75">i</tspan><tspan> FFN</tspan><tspan baseline-shift="sub" font-size="9.75">i</tspan><tspan>(x)</tspan></text>
 <text xml:space="preserve" text-anchor="start" x="200.19" y="-22.4" font-family="Helvetica,sans-Serif" font-size="20.00" fill="#050510">summed over i in TopK(r)</text>
 </g>
 <!-- e1&#45;&gt;y -->

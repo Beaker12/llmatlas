@@ -20,7 +20,7 @@ Read a modern model's `config.json` as a list of decisions. Each key is the answ
 
 **Accounting** is the discipline that keeps all of this honest: a function from a configuration to parameters, FLOPs and bytes, checked against the real checkpoints.
 
-The theme throughout is that architecture choices are constraints from somewhere else in the system. The head count is chosen for the cache, the expert count for the interconnect, the norm placement for the learning rate. A model table is therefore worth reading column by column.
+The theme throughout is that architecture choices are constraints from somewhere else in the system. The head count is chosen for the cache and the norm placement for the learning rate. A model table is therefore worth reading column by column.
 
 Every symbol the book uses is listed on the {ref}`notation page <sec-notation>`, with a link to the section that introduces each symbol used only in this chapter.
 
@@ -30,7 +30,7 @@ Every symbol the book uses is listed on the {ref}`notation page <sec-notation>`,
 
 By the end of this chapter, you will understand:
 
-- How the 2025 decoder block differs from the 2017 block: pre-norm, RMSNorm, post-sublayer and QK normalization, gated feed-forward networks, no biases
+- How a current decoder block differs from the 2017 block: pre-norm, RMSNorm, post-sublayer and QK normalization, gated feed-forward networks, no biases
 - How depth and width are chosen across a model family, and what the scaling-law evidence says about the shape of a model at fixed size
 - How multi-head, multi-query, grouped-query and multi-head latent attention trade quality against the size of the KV cache, and how to compute that size for any configuration
 - How sliding-window and interleaved local/global attention bound the cost of long sequences
@@ -56,7 +56,7 @@ Everything runs on a CPU. The configuration cell reads the model files from the 
 
 (sec-ch6-block-2017-2025)=
 
-## 1. From the 2017 Block to the 2025 Block
+## 1. From the 2017 Block to the Current Block
 
 (sec-ch6-models-this-chapter)=
 
@@ -64,7 +64,7 @@ Everything runs on a CPU. The configuration cell reads the model files from the 
 
 Twelve models are used as running examples, among them the open mixture-of-experts model OLMoE {cite}`muennighoff2025olmoe` and two from 2025, Qwen3 {cite}`qwen2025qwen3` and Gemma 3 {cite}`gemma2025gemma3`. They span dense and sparse designs, three attention families and six organizations. Every figure below traces to a pinned `config.json` or to the model's paper, with the paper-derived rows expressed in the conventions of the Hugging Face configurations (for example vocabulary entries, and the width of one gate or up projection).
 
-All twelve have the same outer structure: a token embedding, a stack of identical blocks, a final normalization, and an output projection to the vocabulary. Within a block, an attention sublayer and then a feed-forward sublayer each add their output to the residual stream. What differs is the contents of the boxes and where the normalizations sit: before each sublayer in most of the twelve, after it in OLMo 2, and on both sides in Gemma 2 and Gemma 3 (the design table below and {ref}`sec-ch6-normalizing-sublayer-outputs`). {numref}`fig-ch6-block-2017-2025` sets the two ends of that history side by side.
+All twelve have the same outer structure: a token embedding, a stack of blocks of one design, a final normalization, and an output projection to the vocabulary. Within a block, an attention sublayer and then a feed-forward sublayer each add their output to the residual stream. What differs is the contents of the boxes and where the normalizations sit: before each sublayer in most of the twelve, after it in OLMo 2, and on both sides in Gemma 2 and Gemma 3 (the design table below and {ref}`sec-ch6-normalizing-sublayer-outputs`). {numref}`fig-ch6-block-2017-2025` sets the 2017 block beside Llama 3.1 8B's block (2024), which has the pre-norm, RMSNorm, gated feed-forward and bias-free layout; QK normalization and normalization after the sublayer, which Llama 3.1 does not have, are in {ref}`sec-ch6-normalizing-queries-keys` and {ref}`sec-ch6-normalizing-sublayer-outputs`.
 
 :::{figure} figures/block-2017-2025.*
 :name: fig-ch6-block-2017-2025
@@ -105,7 +105,7 @@ from block to block without passing through a norm.
 | Gemma 2 9B | 256,000 | not stated (Transformers default 10,000) | 8,192 | 9.24B | paper |
 | OLMo 2 7B (1124) | 100,352 | 500,000 | 4,096 | 7.30B | config |
 | Qwen3 8B (base) | 151,936 | 1,000,000 | 32,768 (config); 128K (paper) | 8.19B | config |
-| Gemma 3 12B, text decoder only | 262,208 | 10,000 local, 1,000,000 global | 128K | 11.77B | paper, reference code and conversion code (transcribed) |
+| Gemma 3 12B, text decoder only | 262,208 | 10,000 local; 1,000,000 global, positions ÷ 8 | 128K | 11.77B | paper, reference code and conversion code (transcribed) |
 
 **Sparse (mixture-of-experts) models.**
 
@@ -167,7 +167,7 @@ Beyond shapes, the models make different design choices, summarized here and dev
 | Gemma 3 | pre and post | yes | no | yes | five local (1,024) per global |
 | Mixtral | pre | no | no | no | full causal (config: no window) |
 | OLMoE | pre | yes | no | no | full causal |
-| DeepSeek-V2/V3 | pre | on the latent ({ref}`sec-ch6-multi-head-latent-attention`) | no | no | full causal |
+| DeepSeek-V2/V3 | pre | latent norm | no | no | full causal |
 
 ```{admonition} The Tables, Computed
 :class: tip
@@ -198,9 +198,11 @@ How much this choice matters was measured at fixed size. {cite:t}`kaplan2020scal
 
 ### 2.1 Pre-norm and post-norm
 
-The original transformer {cite}`vaswani2017attention` applied layer normalization *after* adding the sublayer output to the residual (post-norm): $x \leftarrow \mathrm{Norm}(x + F(x))$. Every layer's output passes through a normalization on the way to the next, which means the gradient reaching early layers is rescaled at each step. At initialization the gradients near the output are large, and {cite:t}`xiong2020layer` trace post-norm's reliance on a learning-rate warm-up to them. How strict that reliance is depends on the learning rate: in the notebook section {ref}`nb-arch-train`, post-norm fails without warm-up only at the highest of three rates, and warm-up lets it train there in some seeds but not in all.
+The original transformer {cite}`vaswani2017attention` applied layer normalization *after* adding the sublayer output to the residual (post-norm): $x \leftarrow \mathrm{Norm}(x + F(x))$. Every layer's output passes through a normalization on the way to the next, which means the gradient reaching early layers is rescaled at each step. For this original arrangement, {cite:t}`xiong2020layer` prove with mean-field arguments that at initialization "the expected gradients of the parameters near the output layer are large", so that "using a large learning rate on those gradients makes the training unstable", and they trace the need for a warm-up to this. Their setting is an encoder-decoder transformer with layer normalization, ReLU feed-forward networks and Xavier initialization, and the proof takes the query and key matrices to be zero; what holds for a model with other ingredients is a question of measurement (below). How strict the reliance on warm-up is depends on the learning rate: in the notebook section {ref}`nb-arch-train`, post-norm fails without warm-up only at the highest of three rates, and warm-up lets it train there in some seeds but not in all.
 
-Pre-norm moves the normalization inside the branch: $x \leftarrow x + F(\mathrm{Norm}(x))$. The residual path from the embedding to the output is then an unnormalized identity, so gradients reach every layer directly. {cite:t}`xiong2020layer` show that this keeps the gradient scale stable at initialization and makes warm-up optional. The price is that the residual stream's magnitude grows with depth, so the representation of the last layers can be dominated by the accumulated sum; this is why every pre-norm model adds a final normalization before the output projection. The notebook section {ref}`nb-arch-train` trains both arrangements side by side at three learning rates, with and without warm-up. {numref}`fig-ch6-norm-sweep` plots the recorded runs behind its statements.
+Pre-norm moves the normalization inside the branch: $x \leftarrow x + F(\mathrm{Norm}(x))$. The residual path from the embedding to the output is then an unnormalized identity, so gradients reach every layer directly. In the same setting {cite:t}`xiong2020layer` show that the gradients of pre-norm are "well-behaved at initialization": the gradient of the last feed-forward layer is of order $\mathcal{O}(d\sqrt{\ln d})$ for post-norm whatever the depth $L$, and smaller by a factor of $\sqrt{L}$ for pre-norm (their Theorem 1), and they remove the warm-up for pre-norm models in translation and BERT pre-training. The price is that the residual stream's magnitude grows with depth, so the representation of the last layers can be dominated by the accumulated sum; this is why every pre-norm model adds a final normalization before the output projection. The notebook section {ref}`nb-arch-train` trains both arrangements side by side at three learning rates, with and without warm-up. {numref}`fig-ch6-norm-sweep` plots the recorded runs behind its statements.
+
+The notebook also measures the gradients themselves, at initialization, on its six-layer model, which has RMSNorm, SwiGLU, rotary attention, PyTorch's default initialization and tied embeddings, and no encoder. Over five seeds, the norm of the gradient of each block's attention output projection is flat across the six blocks for post-norm (the last block's over the first block's is between 0.86 and 1.03) and smaller than pre-norm's at every block, while pre-norm's falls toward the output (the same ratio is 0.32 to 0.49). Post-norm's stream has a root mean square of 1 after every block; pre-norm's grows from about 0.16 after the first block to about 0.73 after the sixth, and multiplying the matrices that write into the stream by $1/\sqrt{2L}$ ({ref}`sec-ch6-initialization-residual-branches`) cuts the last value to about 0.20. The model thus shows the growth of the pre-norm stream, but not large output-side gradients for post-norm, so the failure of post-norm at $3 \times 10^{-3}$ in the sweep is not explained by them; the notebook records that failure as an observation and does not trace its cause.
 
 :::{figure} figures/norm-sweep.*
 :name: fig-ch6-norm-sweep
@@ -216,7 +218,7 @@ where pre-norm still trains. With a 100-step warm-up (right), post-norm at 0.003
 in four seeds and fails in one.
 :::
 
-Chapter 2 follows the gradient through the residual path and notes that where the normalization sits matters ({ref}`sec-ch2-pre-post-ln`). Post-norm is not extinct, and the question is revisited every few years, but the practical argument favors pre-norm: a diverged run on a cluster costs far more than any small quality difference at a size where both train.
+Chapter 2 follows the gradient through the residual path and notes that where the normalization sits matters ({ref}`sec-ch2-pre-post-ln`). Normalizing after the sublayer has not disappeared ({ref}`sec-ch6-normalizing-sublayer-outputs` gives current examples), but the practical argument favors pre-norm: a diverged run on a cluster costs far more than any small quality difference at a size where both train.
 
 (sec-ch6-rmsnorm)=
 
@@ -321,7 +323,7 @@ In elements, the cache of one token in one layer is:
 | Multi-query attention (MQA) | $2\, d_k$ |
 | Multi-head latent attention (MLA) | $d_c + d_{rope}$ |
 
-Multiplying by the number of layers and the bytes per element (2 for bf16, bfloat16, a 16-bit floating-point format with float32's 8 exponent bits and 7 mantissa bits) gives the bytes per token. The following function implements the table for a Hugging Face configuration dictionary.
+Multiplying by the number of layers and the bytes per element (2 for bf16, bfloat16, a 16-bit floating-point format with the sign and 8 exponent bits of float32 and the top 7 of its 23 mantissa bits) gives the bytes per token. The following function implements the table for a Hugging Face configuration dictionary.
 
 ```python
 def kv_cache_elements_per_token(cfg):
@@ -547,8 +549,8 @@ global, starting with a local layer).
 
 ```{admonition} Cache Sizes, Measured
 :class: tip
-The notebook section {ref}`nb-arch-kvcache` generates text with a cache and checks that
-it equals the full forward pass, measures the cache of the small model in bytes against
+The notebook section {ref}`nb-arch-kvcache` decodes a sequence one token at a time with a cache and checks
+the logits against the full forward pass, measures the cache of the small model in bytes against
 the formulas above for MHA, GQA and MQA, and builds a simplified latent cache whose
 output matches its own uncompressed expansion. The windowed rolling-buffer cache is
 checked by the listing above.
@@ -590,7 +592,7 @@ Two families of fix change the frequencies, and both are used in the table:
 
 **A larger base.** Raising $b$ lowers every frequency, so the angles at position $m$ are those of a smaller position. {cite:t}`xiong2024effective` proposed raising the base from 10,000 to 500,000 for long-context training, and Llama 3 uses that value {cite}`grattafiori2024llama`; Qwen2.5 and Mixtral use 1,000,000. It is the simplest approach: train from the start, or continue training, with the larger base.
 
-**Rescaling an existing model.** Position interpolation divides every position by the length ratio $s_{ctx} = n'/n_{train}$ of a target context length $n'$ to the trained one, so positions up to the target length map into $[0, n_{train})$ and no angle exceeds what training saw {cite}`chen2023extending`. Its drawback is that it squeezes the high frequencies too, blurring the distinction between adjacent tokens. NTK-aware scaling, from a 2023 Reddit post by the pseudonymous {cite:t}`bloc972023ntk`, instead changes the base; the YaRN paper writes the rule out (its Eq. 22, arXiv v3) {cite}`peng2024yarn`:
+**Rescaling an existing model.** Position interpolation divides every position by the length ratio $s_{ctx} = n'/n_{train}$ of a target context length $n'$ to the trained one, so positions up to the target length map into $[0, n_{train})$ and no angle exceeds what training saw {cite}`chen2023extending`. Its drawback is that it squeezes the high frequencies too, blurring the distinction between adjacent tokens. It is not only a superseded baseline: Gemma 3 applies it on its global layers together with the larger base, "a process similar to the positional interpolation of Chen et al. (2023)" in the words of its report {cite}`gemma2025gemma3`, with a factor of 8, as the reference configuration (`global_scale_factor=8.0`) and the conversion script (`"rope_type": "linear", "factor": 8.0`) cited in {ref}`sec-ch6-models-this-chapter` show; the local layers keep a base of 10,000 and no scaling. NTK-aware scaling, from a 2023 Reddit post by the pseudonymous {cite:t}`bloc972023ntk`, instead changes the base; the YaRN paper writes the rule out (its Eq. 22, arXiv v3) {cite}`peng2024yarn`:
 
 $$b' = b \cdot s_{ctx}^{\,d_k/(d_k-2)}$$
 
@@ -717,7 +719,7 @@ longest trained length.
 The notebook section {ref}`nb-arch-rope` checks that RoPE preserves norms and makes
 query-key products depend on relative offset, asserts the NTK-aware identities in
 float64, compares interpolation and extrapolation on the low-frequency components, and
-plots the rotation angles across the extended range.
+plots the per-pair frequencies under each rescaling.
 ```
 
 (sec-ch6-mixture-of-experts)=
@@ -794,6 +796,8 @@ Left alone, routers collapse: an expert that gets slightly more tokens trains fa
 import torch
 import torch.nn.functional as F
 
+torch.set_num_threads(1)  # small matrices: one thread is fastest and repeatable
+
 
 def train_moe(aux_weight, seed, n_experts=8, d=16, steps=400):
     torch.manual_seed(seed)
@@ -835,7 +839,7 @@ Without the balancing term, three or four of the eight experts receive no tokens
 
 **An auxiliary loss.** The Switch loss is $\lambda_{aux}\, E \sum_{i=1}^{E} f_i \bar{\rho}_i$, where $f_i$ is the fraction of tokens dispatched to expert $i$ and $\bar{\rho}_i$ is the mean router probability assigned to it {cite}`fedus2022switch`. With $\sum_i f_i = 1$ (defined over the routed slots when $n_{act} > 1$), the loss equals 1 under uniform routing. It is not a minimum over all routers: with two experts, 30% of tokens at $\rho = (1, 0)$ and 70% at $(0.49, 0.51)$ give 0.886. If $f$ tracked $\bar{\rho}$ exactly, the loss would be $E \sum_i \bar{\rho}_i^2 \geq 1$, with equality only for uniform routing, which is the sense in which {cite:t}`fedus2022switch` call it minimized. A value near 1 therefore does not certify balance. Because $f_i$ is not differentiable, the gradient flows through $\bar{\rho}_i$. The coefficient trades balance against quality: Mixtral's configuration has 0.02 and OLMoE's 0.01. ST-MoE adds a *router z-loss*, a penalty on the squared log-sum-exp of the router logits that keeps them small and the routing computation numerically stable in bf16 {cite}`zoph2022st`.
 
-**A capacity factor.** On parallel hardware each expert processes a fixed-size buffer of $\kappa = \lceil \phi\, n_{act}\, T / E \rceil$ tokens for $T$ tokens in a batch and capacity factor $\phi$. Tokens beyond an expert's capacity are dropped from that expert (they pass through the residual connection unchanged). A factor of 1.0 is fully balanced and drops any overload; larger values waste compute on padding. "Dropless" implementations such as MegaBlocks {cite}`gale2023megablocks`, used for OLMoE {cite}`muennighoff2025olmoe`, avoid the choice at the cost of irregular shapes.
+**A capacity factor.** On parallel hardware each expert processes a fixed-size buffer of $\kappa = \lceil \phi\, n_{act}\, T / E \rceil$ tokens for $T$ tokens in a batch and capacity factor $\phi$. Tokens beyond an expert's capacity are dropped from that expert (they pass through the residual connection unchanged). A factor of 1.0 gives each expert exactly its share under perfectly even routing, so any imbalance drops tokens; larger values waste compute on padding. "Dropless" implementations such as MegaBlocks {cite}`gale2023megablocks`, used for OLMoE {cite}`muennighoff2025olmoe`, avoid the choice at the cost of irregular shapes.
 
 **Expert-choice routing.** {cite:t}`zhou2022mixture` invert the direction: each expert chooses its top tokens, which makes balance exact by construction, though it complicates autoregressive decoding, where the future tokens that would compete for an expert are not yet known.
 
@@ -924,7 +928,7 @@ Standard training predicts one next token per position. {cite:t}`gloeckle2024bet
 
 ### 7.4 Embeddings and vocabulary
 
-The embedding table and the output projection each hold $|\mathcal{V}| \cdot d$ parameters. Tying them, using one matrix for both, halves that cost; Gemma 2 does so, and many small models do. At large scale the embedding is a small part of the total and untying gives the output projection freedom, so Llama, Qwen, Mistral, OLMo and DeepSeek do not tie. The share is large for small models with large vocabularies: Gemma 2 9B's tied table has 917M parameters, 9.9% of the model, while DeepSeek-V3's two tables hold 1.9B of 671B, 0.3%.
+The embedding table and the output projection each hold $|\mathcal{V}| \cdot d$ parameters. Tying them, using one matrix for both, halves that cost; Gemma 2 does so, and many small models do. At large scale the embedding is a small part of the total and untying gives the output projection freedom, so none of the Llama, Qwen, Mistral, OLMo and DeepSeek models in this chapter ties; the smallest members of the Llama 3.2 and Qwen2.5 families do ({ref}`sec-ch1-embedding-sharing-tying`). The share is large for small models with large vocabularies: Gemma 2 9B's tied table has 917M parameters, 9.9% of the model, while DeepSeek-V3's two tables hold 1.9B of 671B, 0.3%.
 
 Larger vocabularies shorten sequences (chapter 1's tokenization companion measures this in {ref}`sec-tdd-choosing-vocabulary-size`) at the cost of a larger table and a softmax over more classes. The progression from 32,000 entries in the original Llama and Mistral to 128,256 in Llama 3 and 256,000 in Gemma 2 follows from multilingual coverage and from the fact that the table became a smaller part of larger models.
 

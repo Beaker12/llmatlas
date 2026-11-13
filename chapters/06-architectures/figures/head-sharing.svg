@@ -12,20 +12,17 @@
 <g id="clust1" class="cluster">
 <title>cluster_mha</title>
 <path fill="#f7fafc" stroke="#4a5568" stroke-width="1.3" d="M20,-430C20,-430 936,-430 936,-430 942,-430 948,-436 948,-442 948,-442 948,-621 948,-621 948,-627 942,-633 936,-633 936,-633 20,-633 20,-633 14,-633 8,-627 8,-621 8,-621 8,-442 8,-442 8,-436 14,-430 20,-430"/>
-<text xml:space="preserve" text-anchor="start" x="83.58" y="-610.2" font-family="DejaVu Sans" font-weight="bold" font-size="22.00">multi&#45;head (MHA)</text>
-<text xml:space="preserve" text-anchor="start" x="303.18" y="-610.2" font-family="DejaVu Sans" font-size="22.00">: 8 K/V heads, cache 2 × 8 × dₖ per token per layer</text>
+<text xml:space="preserve" text-anchor="start" x="87.7" y="-610.2" font-family="DejaVu Sans" font-size="22.00"><tspan font-weight="bold">multi&#45;head (MHA)</tspan><tspan>: 8 K/V heads, cache 2 × 8 × d</tspan><tspan baseline-shift="sub" font-size="9.75">k</tspan><tspan> per token per layer</tspan></text>
 </g>
 <g id="clust2" class="cluster">
 <title>cluster_gqa</title>
 <path fill="#f7fafc" stroke="#4a5568" stroke-width="1.3" d="M20,-219C20,-219 882,-219 882,-219 888,-219 894,-225 894,-231 894,-231 894,-410 894,-410 894,-416 888,-422 882,-422 882,-422 20,-422 20,-422 14,-422 8,-416 8,-410 8,-410 8,-231 8,-231 8,-225 14,-219 20,-219"/>
-<text xml:space="preserve" text-anchor="start" x="142.66" y="-399.2" font-family="DejaVu Sans" font-weight="bold" font-size="22.00">grouped&#45;query (GQA)</text>
-<text xml:space="preserve" text-anchor="start" x="408.66" y="-399.2" font-family="DejaVu Sans" font-size="22.00">: 2 K/V heads, cache 2 × 2 × dₖ</text>
+<text xml:space="preserve" text-anchor="start" x="146.78" y="-399.2" font-family="DejaVu Sans" font-size="22.00"><tspan font-weight="bold">grouped&#45;query (GQA)</tspan><tspan>: 2 K/V heads, cache 2 × 2 × d</tspan><tspan baseline-shift="sub" font-size="9.75">k</tspan></text>
 </g>
 <g id="clust5" class="cluster">
 <title>cluster_mqa</title>
 <path fill="#f7fafc" stroke="#4a5568" stroke-width="1.3" d="M20,-8C20,-8 882,-8 882,-8 888,-8 894,-14 894,-20 894,-20 894,-199 894,-199 894,-205 888,-211 882,-211 882,-211 20,-211 20,-211 14,-211 8,-205 8,-199 8,-199 8,-20 8,-20 8,-14 14,-8 20,-8"/>
-<text xml:space="preserve" text-anchor="start" x="187.26" y="-188.2" font-family="DejaVu Sans" font-weight="bold" font-size="22.00">multi&#45;query (MQA)</text>
-<text xml:space="preserve" text-anchor="start" x="417.49" y="-188.2" font-family="DejaVu Sans" font-size="22.00">: 1 K/V head, cache 2 × dₖ</text>
+<text xml:space="preserve" text-anchor="start" x="191.38" y="-188.2" font-family="DejaVu Sans" font-size="22.00"><tspan font-weight="bold">multi&#45;query (MQA)</tspan><tspan>: 1 K/V head, cache 2 × d</tspan><tspan baseline-shift="sub" font-size="9.75">k</tspan></text>
 </g>
 <!-- m_lab -->
 <g id="node1" class="node">
