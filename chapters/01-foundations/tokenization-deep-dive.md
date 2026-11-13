@@ -946,7 +946,10 @@ def preprocess_for_tokenization(text, strategy="conservative"):
 **3. Handling Rare Tokens**:
 
 ```python
+import re
+
 import matplotlib.pyplot as plt
+
 
 def analyze_token_frequency(corpus, tokenizer):
     """Analyze token frequency distribution."""
@@ -988,17 +991,58 @@ def analyze_token_frequency(corpus, tokenizer):
     plt.show()
 
     return token_counts
+
+
+class WordTokenizer:
+    """Lowercase words of letters only; enough to count word frequencies."""
+
+    def encode(self, text):
+        return re.findall(r"[a-z]+", text.lower())
+
+
+# A fixed sample: Lincoln's Gettysburg Address (1863), public domain, as in Project Gutenberg eBook #4
+GETTYSBURG = """Four score and seven years ago, our fathers brought forth upon this continent a new nation:
+conceived in liberty, and dedicated to the proposition that all men are created equal.
+
+Now we are engaged in a great civil war. . .testing whether that nation, or any nation so conceived and so
+dedicated. . . can long endure. We are met on a great battlefield of that war.
+
+We have come to dedicate a portion of that field as a final resting place for those who here gave their lives
+that this nation might live. It is altogether fitting and proper that we should do this.
+
+But, in a larger sense, we cannot dedicate. . .we cannot consecrate. . . we cannot hallow this ground. The brave
+men, living and dead, who struggled here have consecrated it, far above our poor power to add or detract. The
+world will little note, nor long remember, what we say here, but it can never forget what they did here.
+
+It is for us the living, rather, to be dedicated here to the unfinished work which they who fought here have
+thus far so nobly advanced. It is rather for us to be here dedicated to the great task remaining before us. .
+.that from these honored dead we take increased devotion to that cause for which they gave the last full
+measure of devotion. . . that we here highly resolve that these dead shall not have died in vain. . . that this
+nation, under God, shall have a new birth of freedom. . . and that government of the people. . .by the people.
+. .for the people. . . shall not perish from this earth."""
+
+counts = analyze_token_frequency(GETTYSBURG.split("\n\n"), WordTokenizer())
+print("most frequent:", ", ".join(f"{w} {c}" for w, c in counts.most_common(5)))
+```
+
+% output
+
+```text
+Total tokens: 268
+Unique tokens: 140
+Rare tokens (< 5): 127 (90.7%)
+most frequent: that 12, the 10, we 10, to 8, here 8
 ```
 
 ```{figure} figures/word-frequency.*
 :name: fig-ch1-word-frequency
-:width: 83%
-:alt: Log-log scatter of word frequency against rank: about 580 occurrences for the most frequent word, falling roughly along a straight line to a long tail of words that occur once.
+:width: 84%
+:alt: Log-log scatter of word frequency against rank for the 140 distinct words of the Gettysburg Address: 12 occurrences for the most frequent word, falling more slowly than a dashed line of slope −1 to a flat tail of 93 words that occur once.
 
-`analyze_token_frequency` applied to the prose of this chapter's main page (its paragraphs, without code and display math), split into lowercase words of letters only; `figures/make_figures.py` runs it. The dashed line has slope −1, Zipf's law anchored at the most frequent word. The counts fall more slowly than the line over the first few hundred ranks and then end in a long tail of words seen once or twice.
+The listing's plot for its fixed sample, the 268 words of the Gettysburg Address split into lowercase words of letters only; `figures/make_figures.py` runs the listing to draw it. The dashed line has slope −1, Zipf's law anchored at the most frequent word ("that", 12 times). The counts stay above the line (rank 10 has 5 occurrences where the line gives 1.2), and 93 of the 140 distinct words occur once, which makes the flat tail on the right.
 ```
 
-{numref}`fig-ch1-word-frequency` shows the plot for this chapter's own text.
+{numref}`fig-ch1-word-frequency` shows the plot. A text this short shows the shape only roughly: Zipf's law describes large corpora, and a few hundred words cannot hold a long sequence of ranks with distinct counts.
 
 
 **4. Multi-Domain Tokenization**:

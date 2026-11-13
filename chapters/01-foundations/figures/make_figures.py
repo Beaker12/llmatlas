@@ -5,8 +5,8 @@ Usage: python make_figures.py <output-directory>
 Each figure is written as <name>.svg (the file the HTML build uses, compared byte for byte by the test suite) and
 <name>.pdf (the file the LaTeX build uses). The sources are:
 
-  - the pages' own listings: the BPE trace, the sinusoidal plots, the position-cost plot and the word-frequency plot
-    execute the text of the fence that defines them, so editing the fence changes the figure;
+  - the pages' own listings: the BPE trace, the sinusoidal plots, the position-cost plot and the word-frequency plot (on
+    its own fixed sample text) execute the text of the fence that defines them, so editing the fence changes the figure;
   - numbers stated on the page (the worked attention example, the RoPE example, the history milestones), repeated
     below next to the figure that uses them;
   - figures/data/tokens_per_language.json, written by the deep-dive's `# network` fence with LLMATLAS_WRITE_DATA=1.
@@ -294,22 +294,9 @@ def position_cost(out):
     save(shown[0], out, "position-parameter-cost")
 
 
-# Word frequencies (sec-tdd-best-practices-tokenization): the fence's function run on this chapter's main page.
-class WordTokenizer:
-    def encode(self, text):
-        return re.findall(r"[a-z]+", text.lower())
-
-
+# Word frequencies (sec-tdd-best-practices-tokenization): the fence plots its own fixed sample, the Gettysburg Address.
 def word_frequency(out):
-    paragraphs = [p for p in PAGE.read_text(encoding="utf-8").split("\n\n") if not p.startswith(("```", "$$"))]
-    namespace, shown = run_fence(DEEP_DIVE, "def analyze_token_frequency")
-    shown.clear()
-    plt.show = lambda *a, **k: shown.append(plt.gcf())
-    try:
-        with contextlib.redirect_stdout(io.StringIO()):
-            namespace["analyze_token_frequency"](paragraphs, WordTokenizer())
-    finally:
-        pass  # main() restores plt.show
+    _, shown = run_fence(DEEP_DIVE, "def analyze_token_frequency")
     save(shown[0], out, "word-frequency")
 
 
