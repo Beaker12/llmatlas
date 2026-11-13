@@ -1,0 +1,42 @@
+// Scaled dot-product attention as a computation graph. Rendered with rankdir LR.
+// Top: forward values and their shapes. Below: the backward pass, one VJP per node. Backward edges are written
+// left to right with dir=back, so both passes keep the same column order and the arrows point the way gradients flow.
+// Attributes are set per node and per edge because the renderer's theme replaces the defaults.
+digraph attention_graph {
+  graph [fontname="DejaVu Sans", nodesep=0.3, ranksep=0.55, newrank=true];
+
+  Q  [label="Q\nn × dₖ", fontsize=16, shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
+  K  [label="K\nn × dₖ", fontsize=16, shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
+  V  [label="V\nn × dₖ", fontsize=16, shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
+  S  [label="S = QKᵀ / √dₖ\nn × n", fontsize=16, shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
+  A  [label="A = softmax(S)\nn × n", fontsize=16, shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
+  O  [label="O = AV\nn × dₖ", fontsize=16, shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
+
+  dQ [label="∂ℒ/∂Q = (∂ℒ/∂S) K / √dₖ", fontsize=16, shape=box, style="rounded,filled", color="#4a5568", fillcolor="#fdf1e6"];
+  dK [label="∂ℒ/∂K = (∂ℒ/∂S)ᵀ Q / √dₖ", fontsize=16, shape=box, style="rounded,filled", color="#4a5568", fillcolor="#fdf1e6"];
+  dS [label="∂ℒ/∂S =\nA ⊙ (G − (G ⊙ A)11ᵀ)", fontsize=16, shape=box, style="rounded,filled", color="#4a5568", fillcolor="#fdf1e6"];
+  G  [label="G = ∂ℒ/∂A\n= (∂ℒ/∂O) Vᵀ", fontsize=16, shape=box, style="rounded,filled", color="#4a5568", fillcolor="#fdf1e6"];
+  dV [label="∂ℒ/∂V = Aᵀ (∂ℒ/∂O)", fontsize=16, shape=box, style="rounded,filled", color="#4a5568", fillcolor="#fdf1e6"];
+  dO [label="∂ℒ/∂O\nfrom above", fontsize=16, shape=box, style="rounded,filled", color="#4a5568", fillcolor="#fdf1e6"];
+
+  { rank=same; Q; K; dQ; dK; }
+  { rank=same; S; dS; }
+  { rank=same; A; V; G; dV; }
+  { rank=same; O; dO; }
+
+  Q -> S [color="#4a5568", penwidth=1.4];
+  K -> S [color="#4a5568", penwidth=1.4];
+  S -> A [color="#4a5568", penwidth=1.4];
+  A -> O [color="#4a5568", penwidth=1.4];
+  V -> O [color="#4a5568", penwidth=1.4];
+
+  dQ -> dS [dir=back, style=dashed, color="#d62728", penwidth=1.6];
+  dK -> dS [dir=back, style=dashed, color="#d62728", penwidth=1.6];
+  dS -> G  [dir=back, style=dashed, color="#d62728", penwidth=1.6];
+  G -> dO  [dir=back, style=dashed, color="#d62728", penwidth=1.6];
+  dV -> dO [dir=back, style=dashed, color="#d62728", penwidth=1.6];
+
+  Q -> K [style=invis]; K -> dQ [style=invis]; dQ -> dK [style=invis];
+  A -> V [style=invis]; V -> G [style=invis]; G -> dV [style=invis];
+  S -> dS [style=invis]; O -> dO [style=invis];
+}
