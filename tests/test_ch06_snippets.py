@@ -70,6 +70,7 @@ def config(repo: str) -> dict:
 # repo: (total in billions, tolerance, active in billions, convention, tolerance)
 PUBLISHED = {
     "Qwen/Qwen2.5-7B": (7.61, 0.01, None, None, None),  # consistent with truncating 7.6156
+    "Qwen/Qwen3-8B-Base": (8.2, 0.05, None, None, None),  # model card at the pinned commit
     "allenai/OLMoE-1B-7B-0924": (6.9, 0.05, 1.3, "with", 0.05),
     "deepseek-ai/DeepSeek-V2-Lite": (15.7, 0.05, 2.4, "without", 0.1),  # vendor truncates 2.451
     "deepseek-ai/DeepSeek-V3": (671, 0.5, 37, "without", 0.5),
@@ -80,6 +81,7 @@ PUBLISHED = {
 # Exact results, so that any edit to the function that changes a count fails here
 PINS = {
     "Qwen/Qwen2.5-7B": (7615616512, 7615616512, 7070619136),
+    "Qwen/Qwen3-8B-Base": (8190735360, 8190735360, 7568405504),
     "allenai/OLMo-2-1124-7B": (7298617344, 7298617344, 6887575552),
     "allenai/OLMoE-1B-7B-0924": (6919161856, 1282017280, 1178994688),
     "deepseek-ai/DeepSeek-V2-Lite": (15706484224, 2661150208, 2451435008),
@@ -103,6 +105,13 @@ PAPER_CONFIGS = {
         "num_attention_heads": 16, "num_key_value_heads": 8, "head_dim": 256,
         "intermediate_size": 14336, "vocab_size": 256000, "tie_word_embeddings": True},  # vocabulary: hub, not paper
 }
+
+# Gemma 3 12B, text decoder only: shapes from the Gemma3_12B configuration of Google's reference code
+# (gemma/gm/nn/_gemma.py), vocabulary 262,144 ("256k entries" in the paper); the hub total includes vision.
+GEMMA3 = {
+    "model_type": "gemma3_text", "hidden_size": 3840, "num_hidden_layers": 48,
+    "num_attention_heads": 16, "num_key_value_heads": 8, "head_dim": 256,
+    "intermediate_size": 15360, "vocab_size": 262144, "tie_word_embeddings": True}
 
 
 @pytest.mark.parametrize("repo", sorted(PINS))
@@ -135,7 +144,7 @@ def test_regression_pins(repo):
 
 def test_coverage_spans_dense_sparse_and_latent_attention():
     kinds = {config(repo)["model_type"] for repo in PINS}
-    assert {"qwen2", "mixtral", "deepseek_v3", "deepseek_v2"} <= kinds
+    assert {"qwen2", "qwen3", "mixtral", "deepseek_v3", "deepseek_v2"} <= kinds
 
 
 def test_unsupported_model_type_raises():
@@ -160,6 +169,34 @@ def test_gemma2_paper_vocabulary_and_parameter_split():
     assert non_embedding == 8_324_201_984  # paper, Table 2, non-embedding parameters (9B)
     paper_total = COUNT({**cfg, "vocab_size": 256_128})["total"]
     assert paper_total == 9_242_164_736 != HUB_TOTALS["google/gemma-2-9b"]["elements_total"]
+
+
+def test_gemma3_text_decoder_matches_the_papers_table_1():
+    """D23: the paper's Table 1 gives 10,759M non-embedding and a 417M vision encoder for the 12B model."""
+    counts = COUNT(GEMMA3)
+    assert counts["total"] == 11_765_788_416
+    non_embedding = counts["total"] - GEMMA3["vocab_size"] * GEMMA3["hidden_size"]
+    assert non_embedding == 10_759_155_456 and round(non_embedding / 1e6) == 10_759
+    rest = HUB_TOTALS["google/gemma-3-12b-pt"]["elements_total"] - counts["total"]
+    assert rest == 421_536_624 and 417e6 <= rest < 430e6  # vision encoder (417M) and projection
+
+
+def test_qwen3_non_embedding_and_kv_cache():
+    """D23: Qwen3 8B's model card gives 6.95B non-embedding; its cache is 73,728 elements per token."""
+    cfg = config("Qwen/Qwen3-8B-Base")
+    non_embedding = COUNT(cfg)["total"] - 2 * cfg["vocab_size"] * cfg["hidden_size"]
+    assert non_embedding == 6_946_075_648 and round(non_embedding / 1e9, 2) == 6.95
+    kv = chapter_function("def kv_cache_elements_per_token")["kv_cache_elements_per_token"]
+    assert kv(cfg) == 73_728 and kv(GEMMA3) == 196_608
+
+
+def test_gemma3_cache_at_128k_with_five_local_layers_per_global():
+    """D23: 8 global and 40 local (1,024-token) layers; bf16 bytes at 131,072 tokens."""
+    per_layer = 2 * 8 * 256
+    global_bytes, local_bytes = 8 * per_layer * 131_072 * 2, 40 * per_layer * 1_024 * 2
+    assert (round(global_bytes / 1e9, 2), round(local_bytes / 1e9, 2)) == (8.59, 0.34)
+    assert round((global_bytes + local_bytes) / 1e9, 2) == 8.93
+    assert round(48 * per_layer * 131_072 * 2 / 1e9, 1) == 51.5
 
 
 def test_yarn_attention_factor_grows_so_temperature_falls():

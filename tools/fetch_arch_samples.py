@@ -28,11 +28,12 @@ import sys
 import time
 import urllib.request
 
-UA = {"User-Agent": os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")}
+UA = {"User-Agent": os.environ.get("LLMATLAS_USER_AGENT", "Mozilla/5.0 (compatible; reader)")}
 HUB = "https://huggingface.co"
 
 CANDIDATES = [
     "Qwen/Qwen2.5-7B",
+    "Qwen/Qwen3-8B-Base",
     "allenai/OLMo-2-1124-7B",
     "allenai/OLMoE-1B-7B-0924",
     "deepseek-ai/DeepSeek-V2-Lite",
@@ -43,7 +44,8 @@ CANDIDATES = [
 
 # Gated repositories: the config is not downloadable without signing in, but the hub's public
 # metadata still reports the exact parameter total of the checkpoint.
-GATED = ["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-70B", "google/gemma-2-9b"]
+# Gemma 3 12B is multimodal: its total includes the vision encoder, and the chapter counts the text decoder.
+GATED = ["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-70B", "google/gemma-2-9b", "google/gemma-3-12b-pt"]
 
 GUTENBERG_URL = "https://www.gutenberg.org/cache/epub/1342/pg1342.txt"
 TEXT_BYTES = 150_000
@@ -67,10 +69,10 @@ def slug(repo):
 
 def pin_commits(out):
     path = out / "pins.json"
-    if path.exists():
-        return json.loads(path.read_text())
-    pins = {}
+    pins = json.loads(path.read_text()) if path.exists() else {}  # existing pins are kept
     for repo in CANDIDATES:
+        if repo in pins:
+            continue
         info = json.loads(get(f"{HUB}/api/models/{repo}"))
         pins[repo] = info["sha"]
     path.write_text(json.dumps(pins, indent=1) + "\n")
@@ -162,15 +164,20 @@ def main(out):
               f"mtp {c['elements_mtp_layer']:>13,}  fp8 scales {c['elements_fp8_scales']:>12,}")
     (out / "checkpoint_counts.json").write_text(json.dumps(counts, indent=1) + "\n")
 
-    totals = {}
+    totals_path = out / "hub_totals.json"
+    totals = json.loads(totals_path.read_text()) if totals_path.exists() else {}  # keep recorded totals
     for repo in GATED:
+        if repo in totals:
+            continue
         info = json.loads(get(f"{HUB}/api/models/{repo}"))
         st = info["safetensors"]
         totals[repo] = {"sha": info["sha"], "elements_total": st["total"], "by_dtype": st["parameters"]}
         print(f"{repo:32} gated; hub metadata total {st['total']:,}")
     (out / "hub_totals.json").write_text(json.dumps(totals, indent=1) + "\n")
 
-    (out / "pride_and_prejudice_150k.txt").write_bytes(fetch_training_text())
+    text_path = out / "pride_and_prejudice_150k.txt"
+    if not text_path.exists():
+        text_path.write_bytes(fetch_training_text())
 
     sums = {
         str(p.relative_to(out)): hashlib.sha256(p.read_bytes()).hexdigest()

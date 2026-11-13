@@ -70,5 +70,15 @@
   "elements_by_dtype": {
    "BF16": 46702792704
   }
+ },
+ "Qwen/Qwen3-8B-Base": {
+  "sha": "49e3418fbbbca6ecbdf9608b4d22e5a407081db4",
+  "shards": 5,
+  "elements_counted": 8190735360,
+  "elements_mtp_layer": 0,
+  "elements_fp8_scales": 0,
+  "elements_by_dtype": {
+   "BF16": 8190735360
+  }
  }
 }

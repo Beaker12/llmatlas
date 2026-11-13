@@ -137,7 +137,7 @@ for repo in PINS:
 ''')
 
 md(r"""
-The three gated models, transcribed from their papers, except Gemma 2's vocabulary: the paper's Table 1 lists 256,128 entries, the released checkpoint has 256,000 rows, and the hub's total is reproduced with 256,000. Gemma 2's head dimension (256) is larger than $d/n_h$, and its embeddings are tied.
+The four gated models, transcribed from their papers, except Gemma 2's vocabulary and Gemma 3's layer shapes, which come from Google's reference implementation (the paper gives the counts but not the shapes); Gemma 3 is the text decoder of a multimodal model. Gemma 2's vocabulary: the paper's Table 1 lists 256,128 entries, the released checkpoint has 256,000 rows, and the hub's total is reproduced with 256,000. Gemma 2's head dimension (256) is larger than $d/n_h$, and its embeddings are tied.
 """)
 code(r'''
 PAPER_CONFIGS = {
@@ -153,7 +153,13 @@ PAPER_CONFIGS = {
         "model_type": "gemma2", "hidden_size": 3584, "num_hidden_layers": 42,
         "num_attention_heads": 16, "num_key_value_heads": 8, "head_dim": 256,
         "intermediate_size": 14336, "vocab_size": 256000, "tie_word_embeddings": True},  # vocabulary: hub, not paper
+    # Gemma 3 12B, text decoder only: shapes from Google's reference code, vocabulary 262,144
+    "google/gemma-3-12b-pt": {
+        "model_type": "gemma3_text", "hidden_size": 3840, "num_hidden_layers": 48,
+        "num_attention_heads": 16, "num_key_value_heads": 8, "head_dim": 256,
+        "intermediate_size": 15360, "vocab_size": 262144, "tie_word_embeddings": True},
 }
+TEXT_ONLY = {"google/gemma-3-12b-pt"}  # multimodal checkpoint: the hub total includes the vision encoder
 ALL_CONFIGS = {**CONFIGS, **PAPER_CONFIGS}
 ''')
 
@@ -179,9 +185,17 @@ print(f"  DeepSeek-V3 also stores {v3['elements_mtp_layer']:,} multi-token-predi
       f"{v3['elements_fp8_scales']:,} FP8-scale elements, counted separately")
 
 # 2. Gated models: the hub's public metadata reports the exact total
-for repo in PAPER_CONFIGS:
+exact = [repo for repo in PAPER_CONFIGS if repo not in TEXT_ONLY]
+for repo in exact:
     assert COUNTS[repo]["total"] == HUB_TOTALS[repo]["elements_total"], repo
-print("hub totals reproduced exactly for", ", ".join(PAPER_CONFIGS))
+print("hub totals reproduced exactly for", ", ".join(exact))
+# Gemma 3: the paper's Table 1 gives 10,759M non-embedding parameters and a 417M vision encoder
+gemma3 = PAPER_CONFIGS["google/gemma-3-12b-pt"]
+non_embedding = COUNTS["google/gemma-3-12b-pt"]["total"] - gemma3["vocab_size"] * gemma3["hidden_size"]
+rest = HUB_TOTALS["google/gemma-3-12b-pt"]["elements_total"] - COUNTS["google/gemma-3-12b-pt"]["total"]
+assert round(non_embedding / 1e6) == 10759 and 417e6 <= rest < 430e6, (non_embedding, rest)
+print(f"Gemma 3 12B text decoder: {non_embedding / 1e6:,.0f}M non-embedding, as in the paper; "
+      f"{rest / 1e6:.1f}M of the hub total is vision")
 
 # 3. Published figures (billions): (total, tolerance, active, convention, tolerance)
 # Tolerances are half a unit in the last published digit, widened where the figure is consistent
@@ -189,6 +203,7 @@ print("hub totals reproduced exactly for", ", ".join(PAPER_CONFIGS))
 # (Mistral 7.2417 -> 7.3). OLMo 2 7B has no published total more precise than its name.
 PUBLISHED = {
     "Qwen/Qwen2.5-7B": (7.61, 0.01, None, None, None),
+    "Qwen/Qwen3-8B-Base": (8.2, 0.05, None, None, None),
     "allenai/OLMoE-1B-7B-0924": (6.9, 0.05, 1.3, "with", 0.05),
     "deepseek-ai/DeepSeek-V2-Lite": (15.7, 0.05, 2.4, "without", 0.1),
     "deepseek-ai/DeepSeek-V3": (671, 0.5, 37, "without", 0.5),

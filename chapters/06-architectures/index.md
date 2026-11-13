@@ -59,9 +59,9 @@ The theme throughout is that architecture choices are constraints from somewhere
 
 ### 1.1 The models in this chapter
 
-Ten models are used as running examples, among them the open mixture-of-experts model OLMoE {cite}`muennighoff2025olmoe`. They span dense and sparse designs, three attention families and six organizations. Every figure below traces to a pinned `config.json` or to the model's paper, with the paper-derived rows expressed in the conventions of the Hugging Face configurations (for example vocabulary entries, and the width of one gate or up projection).
+Twelve models are used as running examples, among them the open mixture-of-experts model OLMoE {cite}`muennighoff2025olmoe` and two from 2025, Qwen3 {cite}`qwen2025qwen3` and Gemma 3 {cite}`gemma2025gemma3`. They span dense and sparse designs, three attention families and six organizations. Every figure below traces to a pinned `config.json` or to the model's paper, with the paper-derived rows expressed in the conventions of the Hugging Face configurations (for example vocabulary entries, and the width of one gate or up projection).
 
-All ten have the same outer structure: a token embedding, a stack of identical blocks, a final normalization, and an output projection to the vocabulary. Within a block, a normalization, an attention sublayer and a residual addition are followed by a normalization, a feed-forward sublayer and a second residual addition. Only the contents of the boxes differ.
+All twelve have the same outer structure: a token embedding, a stack of identical blocks, a final normalization, and an output projection to the vocabulary. Within a block, a normalization, an attention sublayer and a residual addition are followed by a normalization, a feed-forward sublayer and a second residual addition. Only the contents of the boxes differ.
 
 **Dense models.**
 
@@ -73,6 +73,8 @@ All ten have the same outer structure: a token embedding, a stack of identical b
 | Qwen2.5 7B | 28 | 3,584 | 28 / 4 × 128 | 18,944 | 152,064 | 1,000,000 | 131,072 (config; 32,768 trained, longer with YaRN) | 7.62B | config |
 | Gemma 2 9B | 42 | 3,584 | 16 / 8 × 256 | 14,336 | 256,000 | not stated (Transformers default 10,000) | 8,192 | 9.24B | paper |
 | OLMo 2 7B (1124) | 32 | 4,096 | 32 / 32 × 128 | 11,008 | 100,352 | 500,000 | 4,096 | 7.30B | config |
+| Qwen3 8B (base) | 36 | 4,096 | 32 / 8 × 128 | 12,288 | 151,936 | 1,000,000 | 32,768 (config); 128K (paper) | 8.19B | config |
+| Gemma 3 12B, text decoder only | 48 | 3,840 | 16 / 8 × 256 | 15,360 | 262,144 | 10,000 local, 1,000,000 global | 128K | 11.77B | paper and reference code |
 
 **Sparse (mixture-of-experts) models.**
 
@@ -89,6 +91,7 @@ A few notes on reading the tables.
 - **Parameters** are exact element counts divided by $10^9$, from the checkpoints' tensor shapes rather than from rounded marketing figures. Section 8 explains the "with" and "without" embedding convention for active parameters.
 - **Vocabulary.** The Llama 3 paper describes a 128K vocabulary; the configuration has 128,256 entries, the 128,000 of the tokenizer plus 256 reserved special tokens. The Gemma 2 paper's Table 1 lists a vocabulary of 256,128 and its Table 2 counts 917,962,752 embedding parameters accordingly ($256{,}128 \times 3{,}584$); the released checkpoint has 256,000 rows (917,504,000 parameters), and the table uses the checkpoint's 256,000 {cite}`gemma2024gemma2`. The paper's non-embedding count for 9B, 8,324,201,984, is reproduced exactly. Likewise Gemma 2's paper lists the feed-forward width as the combined 28,672 of the gate and up projections, which is twice the 14,336 of each in the configuration and the table.
 - **Context.** Mistral 7B v0.1's paper reports training at 8,192 tokens with a 4,096-token sliding window; its configuration advertises 32,768 positions. Both are quoted because they answer different questions: what the model saw, and what the code accepts (Section 5.4).
+- **Gemma 3.** The 12B model is multimodal, and its row is the text decoder only: the paper's Table 1 counts a 417M-parameter vision encoder separately {cite}`gemma2025gemma3`. The paper gives the parameter counts, the 256K-entry vocabulary, the attention pattern and the RoPE bases but not the layer shapes, which are taken from Google's reference implementation (the `Gemma3_12B` configuration of the `gemma` package): 48 layers, width 3,840, a feed-forward width of 15,360, and 262,144 vocabulary entries. {ref}`sec-ch6-validation` checks them against the paper's counts.
 - **Gemma 2's head dimension.** Sixteen heads of 256 give an attention width of 4,096, larger than the model width of 3,584. The head width is a free parameter, not $d/n_h$.
 - **DeepSeek-V3's total.** The 671.03B counts the main model. The released checkpoint also contains a 13.46B-element multi-token-prediction layer (Section 7.3), about 1.85B of which are copies of the embedding and output head that the paper shares with the main model, and 41.5M FP8 scale factors; the model card's "685B" includes both.
 
@@ -101,6 +104,8 @@ Beyond shapes, the models make different design choices, summarized here and dev
 | Qwen2.5 | pre | no | q, k, v | no | full causal |
 | Gemma 2 | pre and post | no | no | yes | alternating local (4,096) and global |
 | OLMo 2 | post-sublayer | yes | no | no | full causal |
+| Qwen3 | pre | yes | no | no | full causal |
+| Gemma 3 | pre and post | yes | no | yes | five local (1,024) per global |
 | Mixtral | pre | no | no | no | full causal (config: no window) |
 | OLMoE | pre | yes | no | no | full causal |
 | DeepSeek-V2/V3 | pre | on the latent (Section 4.4) | no | no | full causal |
@@ -146,13 +151,13 @@ The argument is that the re-scaling is what matters and the re-centering is not.
 
 Attention logits are dot products $q \cdot k / \sqrt{d_k}$. If a few directions in $q$ and $k$ grow large during training, the softmax saturates into a one-hot distribution, gradients through it vanish, and the loss spikes. Normalizing the queries and keys before the dot product (QK-norm) was proposed for translation models by {cite:t}`henry2020query`, and Dehghani et al. used it to stabilize a 22-billion-parameter vision transformer {cite}`dehghani2023scaling`. It bounds the logits regardless of how the projection weights drift.
 
-OLMo 2 {cite}`olmo2024olmo2` and OLMoE {cite}`muennighoff2025olmoe` (whose configuration and model code show the same layout) apply an RMSNorm to the full query and key projections before they are split into heads; in the parameter count this adds $n_h d_k$ weights for the queries and $n_{kv} d_k$ for the keys per layer. DeepSeek's multi-head latent attention normalizes the compressed latents instead (Section 4.4).
+OLMo 2 {cite}`olmo2024olmo2` and OLMoE {cite}`muennighoff2025olmoe` (whose configuration and model code show the same layout) apply an RMSNorm to the full query and key projections before they are split into heads; in the parameter count this adds $n_h d_k$ weights for the queries and $n_{kv} d_k$ for the keys per layer. Qwen3 {cite}`qwen2025qwen3` and Gemma 3 {cite}`gemma2025gemma3` normalize each head separately, with one weight vector of width $d_k$ shared by all query heads and another by all key heads, so the count is $2 d_k$ per layer. Both reports name the purpose: Qwen3 introduces QK-norm "to ensure stable training", and Gemma 3 uses it to "replace the soft-capping of Gemma 2" ({ref}`sec-ch6-sliding-window-interleaved-attention`). DeepSeek's multi-head latent attention normalizes the compressed latents instead (Section 4.4).
 
 (sec-ch6-normalizing-sublayer-outputs)=
 
 ### 2.4 Normalizing sublayer outputs
 
-A second family places the normalization on the *output* of each sublayer, before it is added to the residual. OLMo 2 does this in its "reordered" arrangement, $x \leftarrow x + \mathrm{Norm}(F(x))$ for both attention and feed-forward, and combines it with QK-norm; the authors report it as one of the changes that removed the loss spikes of their first-generation recipe {cite}`olmo2024olmo2`. Gemma 2 uses both: a normalization before each sublayer and another after it, four per layer {cite}`gemma2024gemma2`. The sandwich arrangement was introduced for image-token transformers in CogView, again to control instabilities {cite}`ding2021cogview`.
+A second family places the normalization on the *output* of each sublayer, before it is added to the residual. OLMo 2 does this in its "reordered" arrangement, $x \leftarrow x + \mathrm{Norm}(F(x))$ for both attention and feed-forward, and combines it with QK-norm; the authors report it as one of the changes that removed the loss spikes of their first-generation recipe {cite}`olmo2024olmo2`. Gemma 2 uses both: a normalization before each sublayer and another after it, four per layer {cite}`gemma2024gemma2`, and Gemma 3 keeps this "post-norm and pre-norm with RMSNorm" {cite}`gemma2025gemma3`. The sandwich arrangement was introduced for image-token transformers in CogView, again to control instabilities {cite}`ding2021cogview`.
 
 All of these keep the *magnitude* of what each layer adds to the residual stream bounded. That is the common thread: the stream is a running sum of terms, and the stability techniques of the last five years are ways of controlling the size of the terms.
 
@@ -193,7 +198,7 @@ Each feed-forward network has $3\,d \cdot d_{ff}$ parameters. Across the dense m
 
 ### 3.3 No biases
 
-Linear layers in these models have no bias terms, as the model code of each shows. PaLM's authors give a reason: removing the biases from the dense layers and layer norms "result[ed] in increased training stability for large models" {cite}`chowdhery2023palm`. The exception in the table is Qwen2.5, which keeps biases on the query, key and value projections only; this detail is fixed in the model code rather than in `config.json`, a pattern that matters for the parameter count in Section 8.
+Linear layers in these models have no bias terms, as the model code of each shows. PaLM's authors give a reason: removing the biases from the dense layers and layer norms "result[ed] in increased training stability for large models" {cite}`chowdhery2023palm`. The exception in the table is Qwen2.5, which keeps biases on the query, key and value projections only; this detail is fixed in the model code rather than in `config.json`, a pattern that matters for the parameter count in Section 8. Its successor drops them: Qwen3's report says "we remove QKV-bias used in Qwen2" and adds QK-norm in their place {cite}`qwen2025qwen3`. For Qwen3 8B that removes $36 \times (32 + 2 \times 8) \times 128 = 221{,}184$ bias parameters and adds $36 \times 2 \times 128 = 9{,}216$ norm weights.
 
 (sec-ch6-attention-variants)=
 
@@ -242,12 +247,14 @@ The choice of $n_{kv}$ is a direct dial on the cache. Llama 3.1 8B uses 8 key/va
 | OLMoE 1B-7B (MHA) | 65,536 | 131,072 | 1× |
 | Mistral 7B, Mixtral, Llama 3.1 8B (GQA, 8 KV heads) | 65,536 | 131,072 | 4× smaller |
 | Qwen2.5 7B (GQA, 4 KV heads) | 28,672 | 57,344 | 7× smaller |
+| Qwen3 8B (GQA, 8 KV heads) | 73,728 | 147,456 | 4× smaller |
 | Gemma 2 9B (GQA, 8 KV heads of 256) | 172,032 | 344,064 | 2× smaller |
+| Gemma 3 12B (GQA, 8 KV heads of 256) | 196,608 | 393,216 | 2× smaller |
 | Llama 3.1 70B (GQA, 8 KV heads) | 163,840 | 327,680 | 8× smaller |
 | DeepSeek-V2-Lite (MLA) | 15,552 | 31,104 | 8.9× smaller |
 | DeepSeek-V3 (MLA) | 35,136 | 70,272 | 71× smaller |
 
-"Compared with MHA" divides the cache the same model would need with one key/value head per query head by the actual cache. For Gemma 2, the full-cache figure assumes every layer keeps the entire context; its local layers can in fact discard tokens beyond the window (Section 4.5), so the real cache at long context is smaller.
+"Compared with MHA" divides the cache the same model would need with one key/value head per query head by the actual cache. For Gemma 2 and Gemma 3, the full-cache figure assumes every layer keeps the entire context; its local layers can in fact discard tokens beyond the window (Section 4.5), so the real cache at long context is smaller.
 
 At 128K tokens, Llama 3.1 8B's cache for a single sequence is $131{,}072 \times 131{,}072 = 17.2$ GB, more than its 16.1 GB of bf16 weights. Section 8 works through this.
 
@@ -290,7 +297,9 @@ DeepSeek-V3 caches 70 KB per token against Llama 3.1 70B's 328 KB, although it h
 
 Full causal attention costs $\mathcal{O}(n^2)$ in time and the cache grows with $n$. Sliding-window attention lets each token attend only to the previous $n_{win}$ tokens {cite}`beltagy2020longformer`. Cost and cache become $\mathcal{O}(n\, n_{win})$, and since each layer extends the receptive field by $n_{win}$, information can still travel $L\, n_{win}$ positions through the stack. Mistral 7B uses $n_{win} = 4096$ in every layer and a rolling-buffer cache of fixed size {cite}`jiang2023mistral`.
 
-A pure window gives up exact long-range retrieval in any single layer. Gemma 2 alternates local layers (window 4,096) with global layers (8,192-token span) {cite}`gemma2024gemma2`: half the layers pay for the full span, half pay a constant. It also caps the attention logits with a $\tanh$ soft-cap (at 50.0) and the final logits (at 30.0) as another bound on magnitudes. ModernBERT, an encoder, uses a similar alternation, with a global layer every third layer and a 128-token local window (Section 9).
+A pure window gives up exact long-range retrieval in any single layer. Gemma 2 alternates local layers (window 4,096) with global layers (8,192-token span) {cite}`gemma2024gemma2`: half the layers pay for the full span, half pay a constant. It also caps the attention logits with a $\tanh$ soft-cap (at 50.0) and the final logits (at 30.0) as another bound on magnitudes.
+
+Gemma 3 pushes the ratio further: "a pattern of 5 local layers for every global layer, starting with a local layer", with the local span cut to 1,024 tokens, and QK-norm in place of the soft-cap {cite}`gemma2025gemma3`. The authors report "minimal impact on perplexity" from the ratio. The cache arithmetic shows why it is worth having. Gemma 3 12B has 8 global and 40 local layers, each caching $2 \times 8 \times 256 = 4{,}096$ elements per token. At 128K tokens in bf16 the global layers hold $8 \times 4{,}096 \times 131{,}072 \times 2 = 8.59$ GB and the local layers only their last 1,024 tokens, $40 \times 4{,}096 \times 1{,}024 \times 2 = 0.34$ GB: 8.93 GB in all, against 51.5 GB if every layer were global. ModernBERT, an encoder, uses a similar alternation, with a global layer every third layer and a 128-token local window (Section 9).
 
 A property of window attention that surprises people: tokens near the start of a sequence receive a disproportionate share of attention even when they are irrelevant, as "attention sinks", and removing them from a windowed cache breaks the model. Xiao et al. exploit this to stream arbitrarily long text by always keeping the first few tokens plus a window {cite}`xiao2024efficient`. The streaming model does not remember what fell out of the window; it simply stays stable.
 
@@ -479,11 +488,11 @@ Larger vocabularies shorten sequences (Chapter 1 and its tokenization companion 
 
 ### 8.1 Counting parameters from a configuration
 
-The following function turns a Hugging Face `config.json` into exact parameter counts. It dispatches on `model_type` and refuses model types it does not know, because several details are fixed in a model's code rather than in its configuration: Qwen2's attention biases, the QK-norm weights of OLMo 2 and OLMoE, the four norms of a Gemma 2 layer, the per-expert bias of DeepSeek-V3's router. The same function is run by the repository's tests and by the notebook.
+The following function turns a Hugging Face `config.json` into exact parameter counts. It dispatches on `model_type` and refuses model types it does not know, because several details are fixed in a model's code rather than in its configuration: Qwen2's attention biases, the QK-norm weights of OLMo 2 and OLMoE (over the full projection) and of Qwen3 and Gemma 3 (one head's width, shared by all heads), the four norms of a Gemma 2 or Gemma 3 layer, the per-expert bias of DeepSeek-V3's router. The same function is run by the repository's tests and by the notebook.
 
 ```python
-SUPPORTED = ("llama", "qwen2", "mistral", "mixtral", "olmo2", "olmoe", "gemma2",
-             "deepseek_v2", "deepseek_v3")
+SUPPORTED = ("llama", "qwen2", "qwen3", "mistral", "mixtral", "olmo2", "olmoe", "gemma2",
+             "gemma3_text", "deepseek_v2", "deepseek_v3")
 
 
 def count_params(cfg):
@@ -514,15 +523,17 @@ def count_params(cfg):
             attn += nh * dh + 2 * nkv * dh  # biases on q, k and v (set in the model code)
         if kind in ("olmo2", "olmoe"):
             attn += nh * dh + nkv * dh  # QK-norm weights over the full q and k projections
-    # RMSNorm weights per layer: two (before or after each sublayer), or four for Gemma 2,
-    # which normalises both before and after each sublayer
-    norms = (4 if kind == "gemma2" else 2) * H
+        if kind in ("qwen3", "gemma3_text"):
+            attn += 2 * dh  # QK-norm weights of one head, shared by all heads
+    # RMSNorm weights per layer: two (before or after each sublayer), or four for Gemma 2 and 3,
+    # which normalize both before and after each sublayer
+    norms = (4 if kind in ("gemma2", "gemma3_text") else 2) * H
 
     def gated(width):  # SwiGLU feed-forward: gate, up and down projections
         return 3 * H * width
 
     def ffn(layer):  # (total, active) feed-forward parameters of one layer
-        if kind in ("llama", "qwen2", "mistral", "olmo2", "gemma2"):
+        if kind in ("llama", "qwen2", "qwen3", "mistral", "olmo2", "gemma2", "gemma3_text"):
             return gated(cfg["intermediate_size"]), gated(cfg["intermediate_size"])
         if kind in ("mixtral", "olmoe"):
             experts = cfg.get("num_local_experts") or cfg["num_experts"]
@@ -556,20 +567,21 @@ Everything outside the transformer blocks is the embedding, the output projectio
 
 A parameter counter is only useful if it is right, and "right" has three different meanings, each checked.
 
-1. **Against the checkpoint.** `tools/fetch_arch_samples.py` reads the header of every `.safetensors` shard of each ungated model with two HTTP range requests (eight bytes for the header length, then the JSON header) and sums the tensor element counts. Counting elements rather than bytes makes the check independent of the storage type: OLMo 2 is stored in float32, DeepSeek-V3 in a mix of BF16, FP8 and float32. The counts are committed in `data/checkpoint_counts.json`. The function reproduces **all seven** to the last digit: for DeepSeek-V3, the main model's 671,026,419,200 elements, with the multi-token-prediction layer (`model.layers.61.*`) and the FP8 scale tensors (`*_scale_inv`) summed separately and excluded.
-2. **Against the hub's totals for gated models.** The paper-derived configurations of Llama 3.1 8B and 70B and of Gemma 2 9B (with Gemma 2's vocabulary of 256,000 taken from the hub, not the paper's 256,128) are not downloadable, but the hub's public metadata reports each checkpoint's parameter total. The function applied to the transcribed configurations gives 8,030,261,248, 70,553,706,496 and 9,241,705,984, matching the metadata exactly. That checks the architecture description of each paper, including Gemma 2's four norms and tied embeddings.
+1. **Against the checkpoint.** `tools/fetch_arch_samples.py` reads the header of every `.safetensors` shard of each ungated model with two HTTP range requests (eight bytes for the header length, then the JSON header) and sums the tensor element counts. Counting elements rather than bytes makes the check independent of the storage type: OLMo 2 is stored in float32, DeepSeek-V3 in a mix of BF16, FP8 and float32. The counts are committed in `data/checkpoint_counts.json`. The function reproduces **all eight** to the last digit: for DeepSeek-V3, the main model's 671,026,419,200 elements, with the multi-token-prediction layer (`model.layers.61.*`) and the FP8 scale tensors (`*_scale_inv`) summed separately and excluded.
+2. **Against the hub's totals for gated models.** The paper-derived configurations of Llama 3.1 8B and 70B and of Gemma 2 9B (with Gemma 2's vocabulary of 256,000 taken from the hub, not the paper's 256,128) are not downloadable, but the hub's public metadata reports each checkpoint's parameter total. The function applied to the transcribed configurations gives 8,030,261,248, 70,553,706,496 and 9,241,705,984, matching the metadata exactly. That checks the architecture description of each paper, including Gemma 2's four norms and tied embeddings. Gemma 3 12B cannot be checked this way, because its hub total of 12,187,325,040 includes the vision encoder. Its text decoder is checked against the paper's Table 1 instead {cite}`gemma2025gemma3`: the function gives 10,759,155,456 non-embedding parameters, the paper's 10,759M, and the remaining 421,536,624 of the hub total are consistent with the paper's 417M vision encoder plus the projection into the text model's width.
 3. **Against the published figures.** Each vendor's quoted total, and active count in its convention, is compared with a tolerance of half a unit in the last published digit, except where noted.
 
 | Model | Computed total | Published | Computed active | Published active (convention) |
 | --- | --- | --- | --- | --- |
 | Qwen2.5 7B | 7,615,616,512 | 7.61B | — | — |
+| Qwen3 8B | 8,190,735,360 | 8.2B | — | — |
 | Mistral 7B v0.1 | 7,241,732,096 | 7.3B | — | — |
 | Mixtral 8x7B | 46,702,792,704 | 46.7B | 12,879,925,248 (with) | 12.9B (with) |
 | OLMoE 1B-7B | 6,919,161,856 | 6.9B | 1,282,017,280 (with) | 1.3B (with) |
 | DeepSeek-V2-Lite | 15,706,484,224 | 15.7B | 2,451,435,008 (without) | 2.4B (without) |
 | DeepSeek-V3 | 671,026,419,200 | 671B | 36,625,618,432 (without) | 37B (without) |
 
-Three entries need a comment. Qwen's 7.61B is consistent with truncating 7.6156B, and Mistral's 7.3B, from its release announcement, with rounding 7.2417B up to the next tenth of a billion; the checks for these two use correspondingly wider tolerances (0.01B and 0.1B). DeepSeek-V2-Lite's "2.4B active" is consistent with truncating 2.451B. OLMo 2 7B is not in the table: its model card names it 7B and quotes no more precise total, so the 7.30B of Section 1.1 is the hub's count, which the checkpoint check already covers. These are the vendors' choices and the exact counts are in the committed regression test.
+Three entries need a comment. Qwen's 7.61B is consistent with truncating 7.6156B, and Mistral's 7.3B, from its release announcement, with rounding 7.2417B up to the next tenth of a billion; the checks for these two use correspondingly wider tolerances (0.01B and 0.1B). DeepSeek-V2-Lite's "2.4B active" is consistent with truncating 2.451B. Qwen3 8B's model card also gives 6.95B non-embedding parameters, which is the total less both untied tables, $8{,}190{,}735{,}360 - 2 \times 151{,}936 \times 4{,}096 = 6{,}946{,}075{,}648$. OLMo 2 7B is not in the table: its model card names it 7B and quotes no more precise total, so the 7.30B of Section 1.1 is the hub's count, which the checkpoint check already covers. These are the vendors' choices and the exact counts are in the committed regression test.
 
 The three checks catch different mistakes. The checkpoint comparison finds wrong formulas, including a forgotten bias or norm. The hub-totals comparison verifies the descriptions transcribed from papers. The published-figure comparison finds convention mismatches (the embedding in "active"), which the first two cannot, because they only concern the total.
 
