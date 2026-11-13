@@ -94,6 +94,8 @@ Two results set the limits of stretching a fixed corpus:
 
 Both results bear directly on acquisition. If repeated tokens are nearly free, then a small, high-quality source is worth collecting even though it will be seen many times. If the stock is finite, then every source lost to opt-outs or licensing is a permanent reduction, and synthetic data (Section 7) stops being optional.
 
+Age matters as well as amount. {cite:t}`longpre2023pretrainers` pretrained models on data collected at different times and found that "a temporal shift between evaluation data and pretraining data leads to performance degradation, which is not overcome by finetuning". The newest documents in a corpus set the model's knowledge cutoff, so recording each document's crawl date ({ref}`sec-ch3-record-contents`) is what lets a team state the cutoff and choose snapshots to move it.
+
 (sec-ch3-open-web-common-crawl)=
 
 ## 2. The Open Web: Common Crawl
@@ -119,6 +121,7 @@ A snapshot is identified by a crawl id such as `CC-MAIN-2026-39` (the thirty-nin
 A WARC file is a sequence of gzip members, one per record, so that any record can be decompressed on its own once its byte offset is known. Each record has a header block (`WARC-Type`, `WARC-Target-URI`, `WARC-Date`, a content digest, the detected payload type) followed by the payload; a fetched page produces three records, `request`, `response` and `metadata`. The manifest files `warc.paths.gz`, `wet.paths.gz` and `wat.paths.gz` list every file in the snapshot, which is how a job divides the snapshot across machines.
 
 ```python
+# network
 import gzip
 import json
 import os
@@ -168,16 +171,73 @@ paths = warc_paths("CC-MAIN-2026-39")
 first_256k = fetch(BASE + paths[0], {"Range": "bytes=0-262143"})
 records = [parse_record(r) for r in warc_records(first_256k)]
 print(len(paths), "WARC files;", len(records), "complete records in the first 256 KB")
-print({h.get("WARC-Type") for h, _ in records})  # {'warcinfo', 'request', 'response', 'metadata'}
+print(sorted({h.get("WARC-Type") for h, _ in records}))
+```
+
+% output-shape
+
+```text
+100000 WARC files; 62 complete records in the first 256 KB
+['metadata', 'request', 'response', 'warcinfo']
 ```
 
 The `Range` request is the key technique: it fetches a few hundred kilobytes out of a gigabyte-sized file, which makes it possible to look at a snapshot without downloading it. Production pipelines stream whole files, and the same `warc_records` logic, written in a streaming form, is the inner loop of every WARC reader.
+
+Large responses are not stored whole. Common Crawl's crawler stops reading a response at a fixed size, which protects it from endless streams and very large files: the limit was 1 MiB for the crawls before March 2025 and has been 5 MiB from `CC-MAIN-2025-13` onwards {cite}`commoncrawl2025truncated`. The WARC format marks such a record with a `WARC-Truncated` field whose value gives the reason (`length` when the size limit was reached) {cite}`iipc2017warc`. Most HTML pages are far below either limit, but long PDFs and large data files arrive cut off, so a pipeline that extracts from WARC should check the field and either drop truncated records or fetch the document again.
 
 (sec-ch3-index-targeted-retrieval)=
 
 ### 2.3 The index and targeted retrieval
 
 Common Crawl also publishes a URL index for each snapshot, queryable through the CDX API (`index.commoncrawl.org/<crawl-id>-index?url=…&output=json`), which returns the WARC filename, byte offset and length of every capture of a URL or URL prefix. Combined with a range request this retrieves a single page from a 90 TB snapshot in one round trip. It is how researchers study a particular site's history across snapshots, and how a corpus builder can pull every capture of a chosen list of domains without scanning the whole snapshot. The index server is shared and rate limited, so bulk use goes through the columnar index files (`cc-index-table`, in Parquet on S3) and a query engine rather than the HTTP API.
+
+A worked query: ask the index for the captures of one URL, then fetch exactly the bytes of the first capture's record. Because each record is its own gzip member, the slice decompresses on its own.
+
+```python
+# network
+import gzip
+import json
+import os
+import time
+import urllib.parse
+import urllib.request
+
+UA = os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")
+
+
+def get(url, headers=None, tries=4):
+    req = urllib.request.Request(url, headers={"User-Agent": UA, **(headers or {})})
+    for attempt in range(tries):
+        try:
+            return urllib.request.urlopen(req, timeout=60).read()
+        except urllib.error.HTTPError as e:   # back off on a busy server, give up on anything else
+            if e.code not in (429, 502, 503, 504) or attempt == tries - 1:
+                raise
+            time.sleep(5 * 2**attempt)
+
+
+query = urllib.parse.urlencode({"url": "commoncrawl.org/", "output": "json", "filter": "=status:200"})
+captures = [json.loads(line) for line in get(f"https://index.commoncrawl.org/CC-MAIN-2026-39-index?{query}").splitlines()]
+hit = captures[0]
+start, length = int(hit["offset"]), int(hit["length"])
+time.sleep(2)
+record = gzip.decompress(get("https://data.commoncrawl.org/" + hit["filename"],
+                             {"Range": f"bytes={start}-{start + length - 1}"}))
+warc_head, http_head, html = record.split(b"\r\n\r\n", 2)
+print(len(captures), "captures; the first is", length, "compressed bytes at offset", start)
+print(warc_head.split(b"\r\n")[0].decode(), "|", http_head.split(b"\r\n")[0].decode())
+print(len(html), "bytes of HTML; truncated:", b"WARC-Truncated" in warc_head)
+```
+
+% output-shape
+
+```text
+1 captures; the first is 18342 compressed bytes at offset 412345678
+WARC/1.0 | HTTP/1.1 200 OK
+71208 bytes of HTML; truncated: False
+```
+
+The `length` and `offset` fields of the index entry are all a range request needs, so a corpus builder with a list of a hundred thousand URLs makes a hundred thousand small requests instead of reading whole files. The index server answers slowly or with a gateway error when it is busy, which is why the fence retries with a growing delay, and why bulk lookups belong in the columnar index.
 
 (sec-ch3-corpora-derived-common-crawl)=
 
@@ -229,6 +289,7 @@ The Robots Exclusion Protocol (RFC 9309) {cite}`koster2022robots` lets a site st
 Python's standard library parses the file:
 
 ```python
+# network
 import os
 import urllib.request
 import urllib.robotparser
@@ -247,6 +308,16 @@ for agent in ["*", "Googlebot", "CCBot", "GPTBot", "Google-Extended"]:
     print(f"{agent:16} article: {article}  search: {search}")
 ```
 
+% output-shape
+
+```text
+*                article: True  search: False
+Googlebot        article: True  search: False
+CCBot            article: True  search: False
+GPTBot           article: True  search: False
+Google-Extended  article: True  search: False
+```
+
 The standard-library parser predates RFC 9309: it ignores the `*` wildcard and the end-of-path anchor (a final dollar sign) and applies the first matching rule instead of the longest, so `Disallow: /*.pdf` does not block `/a/b.pdf`, and `Disallow: /a` followed by `Allow: /a/b` blocks `/a/b/c`, which the RFC allows. Use it for inspection, as here; a production crawler needs a compliant parser, such as Google's `robotstxt` library or `protego` in Python.
 
 The user agents in that list are the ones that matter for training data: `CCBot` is Common Crawl, `GPTBot` is OpenAI's crawler, `Google-Extended` is Google's token for opting out of model training without leaving search, and `ClaudeBot`, `anthropic-ai`, `Bytespider`, `PerplexityBot` and `Applebot-Extended` are the others most often named in robots files. A site that disallows `CCBot` removes itself from every future Common Crawl snapshot, and therefore from every corpus derived from one.
@@ -263,6 +334,169 @@ A crawler at corpus scale is a distributed system with four parts:
 - **Storage** as WARC, with the request, response and metadata records written together, because the raw response is what later re-extraction needs. Writing only extracted text saves space and throws away the option of re-extracting with a better tool next year.
 
 Rendering is the expensive option. A page that builds its content with JavaScript yields a near-empty HTML response to a plain fetcher; running a headless browser recovers the content at many times the cost per page. Most training-data crawls do not render, which is one reason single-page applications are under-represented in corpora.
+
+Two of these parts are worth seeing in code. URL canonicalization decides when two strings name the same page. RFC 3986 {cite}`berners2005rfc3986` defines the normalizations that never change what a URL refers to: lowercase the scheme and host, write the hexadecimal digits of percent-encodings in uppercase and decode those that stand for unreserved characters, remove `.` and `..` path segments, and drop a port that is the scheme's default. Crawlers add rules the RFC does not sanction: dropping the fragment, which never reaches the server, sorting the query parameters, and stripping session and tracking parameters. These merge many duplicates and occasionally two different pages, so each is a per-site decision. Conditional requests make re-crawling cheap: a server that sent an `ETag` with a page answers a later request that carries the tag in `If-None-Match` with `304 (Not Modified)` and no content when the page has not changed {cite}`fielding2022rfc9110`.
+
+The loop below puts these together with the robots.txt rules of {ref}`sec-ch3-robots-txt-politeness-conventions`. The frontier is a queue per host, and the loop always serves the host whose delay expires first, so requests to different hosts interleave while each host sees at most one request every two seconds. robots.txt is fetched once per host and read as RFC 9309 says: a 4xx answer means no restrictions and a 5xx answer means nothing may be fetched. The transport and the clock are simulated so that the example runs offline and gives the same answer every time; replacing `transport` with an HTTP call gives a working, single-threaded crawler.
+
+```python
+import posixpath
+import re
+from collections import Counter, deque
+from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.robotparser import RobotFileParser
+
+UNRESERVED = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+
+
+def canonicalize(url):
+    """RFC 3986 normalization (case, default port, percent-encoding, dot segments), then two crawler
+    conventions that the RFC does not make: drop the fragment and sort the query parameters."""
+    p = urlsplit(url)
+    scheme, host = p.scheme.lower(), (p.hostname or "").lower()
+    netloc = host if p.port in (None, {"http": 80, "https": 443}.get(scheme)) else f"{host}:{p.port}"
+
+    def percent(m):
+        ch = chr(int(m[0][1:], 16))
+        return ch if ch in UNRESERVED else m[0].upper()
+
+    path = re.sub(r"%[0-9A-Fa-f]{2}", percent, p.path or "/")
+    trailing = path.endswith(("/", "/.", "/..")) and path != "/"
+    path = posixpath.normpath(path) + ("/" if trailing else "")
+    query = "&".join(sorted(p.query.split("&"))) if p.query else ""
+    return urlunsplit((scheme, netloc, path, query, ""))
+
+
+class PoliteCrawler:
+    """One robots.txt per host, a minimum delay per host, and conditional re-fetches by ETag."""
+
+    def __init__(self, transport, agent="examplebot", delay=2.0):
+        self.transport, self.agent, self.delay = transport, agent, delay
+        self.robots, self.ready = {}, {}    # per host: parsed robots.txt, earliest time of the next request
+        self.etags, self.store = {}, {}     # per URL: last ETag, last body
+        self.now = 0.0                      # simulated clock, in seconds
+
+    def get(self, url):
+        host = urlsplit(url).netloc
+        self.now = max(self.now, self.ready.get(host, 0.0))   # wait for this host's turn
+        self.ready[host] = self.now + self.delay
+        headers = {"User-Agent": self.agent}
+        if url in self.etags:
+            headers["If-None-Match"] = self.etags[url]
+        status, reply, body = self.transport(url, headers)
+        if status == 304:                   # not modified: reuse the stored copy
+            body = self.store[url]
+        elif status == 200 and "ETag" in reply:
+            self.etags[url], self.store[url] = reply["ETag"], body
+        return status, body
+
+    def allowed(self, url):
+        p = urlsplit(url)
+        if p.netloc not in self.robots:
+            status, body = self.get(f"{p.scheme}://{p.netloc}/robots.txt")
+            rp = RobotFileParser()
+            rp.parse(body.splitlines() if status == 200 else [])   # 4xx: no restrictions (RFC 9309)
+            rp.disallow_all = status >= 500                         # 5xx: treat the site as disallowed
+            self.robots[p.netloc] = rp
+        return self.robots[p.netloc].can_fetch(self.agent, url)
+
+    def crawl(self, seeds):
+        frontier, seen, counts = {}, set(), Counter()
+
+        def add(url):
+            url = canonicalize(url)
+            if url in seen:
+                counts["duplicate"] += 1
+            else:
+                seen.add(url)
+                frontier.setdefault(urlsplit(url).netloc, deque()).append(url)
+
+        for url in seeds:
+            add(url)
+        while any(frontier.values()):
+            host = min((h for h, q in frontier.items() if q), key=lambda h: self.ready.get(h, 0.0))
+            url = frontier[host].popleft()
+            if not self.allowed(url):
+                counts["blocked"] += 1
+                continue
+            status, body = self.get(url)
+            counts[status] += 1
+            for link in re.findall(r'href="([^"]+)"', body):
+                add(urljoin(url, link))
+        return counts
+
+
+SITE = {  # a simulated web: URL -> (ETag, body)
+    "https://example.com/robots.txt": ("r1", "User-agent: *\nDisallow: /private/\n"),
+    "https://example.com/": ("e1", '<a href="/a">a</a> <a href="/private/x">x</a> <a href="https://example.org/">org</a>'),
+    "https://example.com/a": ("e2", '<a href="/A/../a#part-2">this page</a> <a href="/b">b</a>'),
+    "https://example.com/b": ("e3", "no links"),
+    "https://example.org/": ("e4", '<a href="/c">c</a> <a href="HTTPS://EXAMPLE.ORG:443/c?">c again</a>'),
+    "https://example.org/c": ("e5", "no links"),
+}
+
+
+def transport(url, headers):
+    if url not in SITE:
+        return 404, {}, ""
+    etag, body = SITE[url]
+    if headers.get("If-None-Match") == etag:
+        return 304, {"ETag": etag}, ""
+    return 200, {"ETag": etag}, body
+
+
+print(canonicalize("HTTP://Example.COM:80/a/./b/../c/%7euser?b=2&a=1#top"))
+bot = PoliteCrawler(transport)
+first = bot.crawl(["https://Example.com/"])
+print("first crawl: ", dict(sorted(first.items(), key=str)), "in", bot.now, "simulated seconds")
+start = bot.now
+second = bot.crawl(["https://example.com/"])
+print("second crawl:", dict(sorted(second.items(), key=str)), "in", bot.now - start, "simulated seconds")
+```
+
+% output
+
+```text
+http://example.com/a/c/~user?a=1&b=2
+first crawl:  {'blocked': 1, 'duplicate': 2, 200: 5} in 6.0 simulated seconds
+second crawl: {'blocked': 1, 'duplicate': 2, 304: 5} in 6.0 simulated seconds
+```
+
+The first crawl fetches five pages and two robots.txt files in six simulated seconds, skips the disallowed `/private/x`, and recognizes two links (`/A/../a#part-2` and the upper-case `example.org` URL with an empty query) as pages it already has. The re-crawl receives five `304` answers and transfers no page content. Against a real server the same exchange looks like this:
+
+```python
+# network
+import os
+import time
+import urllib.error
+import urllib.request
+
+URL = "https://data.commoncrawl.org/crawl-data/CC-MAIN-2026-39/warc.paths.gz"
+UA = os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")
+
+
+def get(headers):
+    req = urllib.request.Request(URL, headers={"User-Agent": UA, **headers})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return r.status, r.headers, len(r.read())
+    except urllib.error.HTTPError as e:   # urllib raises on 304, which is not an error here
+        return e.code, e.headers, len(e.read())
+
+
+status, headers, size = get({})
+print(status, size, "bytes, ETag", headers["ETag"].strip('"')[:8])
+time.sleep(2)                             # politeness: two seconds between requests to one host
+status, _, size = get({"If-None-Match": headers["ETag"]})
+print(status, size, "bytes")
+```
+
+% output-shape
+
+```text
+200 201289 bytes, ETag e621c46e
+304 0 bytes
+```
 
 ```{admonition} Reading robots.txt
 :class: note
@@ -330,7 +564,7 @@ License filtering is the acquisition-time decision that matters most for code: a
 
 Conversation teaches turn-taking, register and the question-answer form that instruction tuning ({ref}`roadmap-post-training-and-alignment`) later refines. The sources have become harder to obtain:
 
-- **Reddit** was the backbone of WebText (GPT-2 {cite}`radford2019language` used links with at least three upvotes as a quality signal) and of the Pushshift archive used by many corpora, until Reddit restricted bulk access through its API.
+- **Reddit** was the backbone of WebText (GPT-2 {cite}`radford2019language` used links with at least three upvotes as a quality signal) and of the Pushshift archive used by many corpora, until Reddit restricted bulk access through its API. Its Data API Terms, in effect since 19 June 2023 and last revised in July 2026, grant no right to use Reddit content "for training a machine learning or AI model, without the express permission of rightsholders" {cite}`reddit2026dataapi`, and access for training is licensed instead: Google announced in February 2024 that it has access to the Data API to "display, train on, and otherwise use" Reddit content {cite}`google2024reddit`.
 - **Stack Exchange** published a quarterly dump of every question and answer on its sites under CC BY-SA, which is in The Pile and LLaMA, and is the single best source of paired technical questions and answers; in July 2024 the download moved behind a login, with an agreement that the file is for "projects that do not include training a large language model".
 - **Mailing lists, IRC logs and email archives**, the Ubuntu IRC logs and the Enron email corpus in The Pile, supply informal dialogue.
 - **Subtitles and transcripts** (OpenSubtitles, YouTube captions) supply spoken-register dialogue; their licensing is unsettled and most recent open corpora omit them.
@@ -362,6 +596,8 @@ Almost every document on the web is under copyright from the moment it is writte
 - The **European Union**'s Digital Single Market directive (2019) created a text-and-data-mining exception for research institutions and a general one that rights holders may opt out of in a machine-readable way; the AI Act (Regulation 2024/1689) requires providers of general-purpose models to put in place a copyright policy that identifies and honors those opt-outs (Article 53(1)(c)) and to publish a sufficiently detailed summary of the content used for training, on a template from the AI Office (Article 53(1)(d)). A robots.txt directive is the most common machine-readable form, though the directive says only "such as machine-readable means", and which forms count is contested.
 - **Japan** permits uses that are not for enjoying a work's expression, which covers training, under Article 30-4 of its Copyright Act (added in 2018), unless the use would unreasonably prejudice the copyright owner's interests. The **United Kingdom** allows text and data analysis only for non-commercial research (section 29A of its Copyright Act) and opened a consultation on a broader exception in December 2024.
 
+Copyright is not the only legal route. A site's terms of service raise a contract question, and in the United States anti-hacking law adds another: the Computer Fraud and Abuse Act forbids accessing a protected computer "without authorization". In *hiQ Labs v. LinkedIn* the Ninth Circuit, reconsidering the case after the Supreme Court's *Van Buren* decision, held that hiQ had raised serious questions whether that concept applies "where, as here, prior authorization is not generally required but a particular person—or bot—is refused access", that is, to pages anyone can view, while noting that trespass to chattels and breach of contract claims may still be available {cite}`hiq2022linkedin`. Scraping public pages is therefore not thereby lawful: the risk moves from copyright to contract and tort, which is why the terms-of-service restrictions measured in {ref}`sec-ch3-robots-txt-opt-outs-commons` matter even where robots.txt admits a crawler.
+
 The practical consequences for acquisition: keep the record of where each document came from and under what terms (Section 9); prefer sources that are public domain, openly licensed, or licensed to you; treat shadow libraries and scraped paywalled content as liabilities, whatever the fair-use argument; and build the machinery to honor opt-outs, because a document that was lawful to collect may not be lawful to keep.
 
 (sec-ch3-dataset-licenses-not-content-licenses)=
@@ -381,6 +617,7 @@ Opt-out mechanisms beyond robots.txt:
 - **Registries** such as Spawning's Do Not Train list and the `ai.txt` proposal, which some corpus builders query at acquisition time.
 - **Per-dataset opt-out forms**, as The Stack provides for GitHub repositories, honored in the next release.
 - **Retroactive removal**: FineWeb and RefinedWeb state that they will remove pages whose owners ask, and Common Crawl removes content on request from future snapshots.
+- **Reservations in the response or the page.** The TDM Reservation Protocol (TDMRep) of a W3C community group {cite}`w3c2024tdmrep` expresses the EU text-and-data-mining opt-out as two properties, `tdm-reservation` (1 means the rights are reserved) and `tdm-policy` (where to learn how to obtain a license), declared in a `tdmrep.json` file under `/.well-known`, in an HTTP response header or in HTML metadata. DeviantArt introduced `noai` and `noimageai` directives in November 2022, placed in an HTML tag on the page and sent in an HTTP header when an image is downloaded {cite}`deviantart2022noai`. Search engines read directives of the same kind from the robots meta tag and from its HTTP-header form, `X-Robots-Tag` {cite}`google2026robotsmeta`. A crawler that checks only robots.txt sees none of these; honoring them means parsing the headers and HTML it has already fetched.
 
 A corpus built today should record, per document, the robots.txt state at fetch time and should be rebuilt against current opt-outs before each new training run. The cost of doing so is small; the cost of not doing so is a model that cannot be shipped.
 
@@ -402,6 +639,43 @@ A corpus built today should record, per document, the robots.txt state at fetch 
 ### 5.5 Personal data and sensitive sources
 
 Data-protection law (the GDPR and its relatives) applies to personal data regardless of copyright, which is why acquisition should avoid sources that are mostly personal data (people directories, leaked databases, social profiles) rather than relying on the redaction in Chapter 4 to fix them later. Health records, children's content and content from regions with strict localization rules are usually excluded at the source level for the same reason.
+
+In the European Union, processing personal data needs one of the lawful bases in Article 6 of the GDPR {cite}`gdpr2016`. Consent cannot be collected from everyone named in a web crawl; the basis available to a developer is Article 6(1)(f), processing "necessary for the purposes of the legitimate interests pursued by the controller or by a third party, except where such interests are overridden by the interests or fundamental rights and freedoms of the data subject". The European Data Protection Board's Opinion 28/2024 of 18 December 2024 addresses that legal basis for developing AI models and when a trained model can be considered anonymous {cite}`edpb2024opinion`. Article 17 gives a person the right to obtain the erasure of their personal data "without undue delay", and the regulation's recitals ask controllers to answer such requests within one month at the latest.
+
+Erasure is where acquisition decisions come back. A request names a person, an address or a page; answering it means finding every document that matches, removing those documents from the shards, and making sure that the next rebuild does not bring them back. The provenance manifest of {ref}`sec-ch3-record-contents` turns that into a query:
+
+```python
+import hashlib
+import re
+
+# A manifest as in the provenance section: one record per document, with the shard it was written to.
+docs = {
+    "https://example.com/team": b"Contact Jane Roe at jane.roe@example.com or on extension 4417.",
+    "https://example.com/blog/1": b"Jane Roe wrote about tokenizers.",
+    "https://example.org/news": b"The council met on Tuesday.",
+    "https://example.org/people/jroe": b"J. Roe (jane.roe@example.com) lives on Elm Street.",
+}
+manifest = [{"locator": u, "sha256": hashlib.sha256(b).hexdigest(), "shard": i % 2} for i, (u, b) in enumerate(docs.items())]
+
+# An erasure request names the person and their address; the matching runs over the raw text.
+request = re.compile(r"jane\.roe@example\.com|\bjane roe\b", re.IGNORECASE)
+hits = [r for r in manifest if request.search(docs[r["locator"]].decode())]
+blocklist = {r["sha256"] for r in hits}   # kept so that the next rebuild drops the same bytes
+print(len(hits), "of", len(manifest), "documents match; shards to rewrite:", sorted({r["shard"] for r in hits}))
+
+# At corpus scale: k matching documents spread uniformly over S shards touch S(1 - (1 - 1/S)^k) shards.
+S, k = 10_000, 200
+print(f"{S * (1 - (1 - 1 / S) ** k):.1f} of {S:,} shards rewritten for {k} documents")
+```
+
+% output
+
+```text
+3 of 4 documents match; shards to rewrite: [0, 1]
+198.0 of 10,000 shards rewritten for 200 documents
+```
+
+The fourth document is found only through the email address, which is why a request is matched on every identifier it gives. Removing documents is cheap; rewriting the shards they sit in is not. With documents spread uniformly, k matches touch about `S * (1 - (1 - 1/S) ** k)` of S shards, nearly one shard per document while k is small compared with S, so 200 matches rewrite about 198 of 10,000 shards. The hash blocklist lets the next rebuild from raw data drop the same bytes without repeating the search. A model already trained on the removed text is a separate problem that the corpus cannot fix.
 
 (sec-ch3-infrastructure-replacing-robots-txt)=
 
@@ -446,6 +720,28 @@ The recurring finding, first established by the audit by {cite:t}`kreutzer2022qu
 
 For languages the web under-serves, acquisition reaches for sources that the web pipeline skips: religious texts and their translations (the Bible and Quran exist in more languages than any other document), government publications and legal codes in official languages, broadcaster transcripts, Wikipedia editions, OPUS and other parallel corpora assembled for machine translation, and community collections such as those gathered for ROOTS and by Masakhane for African languages. These are small, but a few million tokens of genuine text in a language is worth more than a billion tokens of mislabeled crawl.
 
+How far such a source goes is set by the epoch cap of {ref}`sec-ch3-epochs-unique-tokens`: a source can supply at most four times its unique tokens before it passes four epochs. In a trillion-token run:
+
+```python
+budget = 1e12        # tokens in the training run
+max_epochs = 4
+for unique in [5e6, 50e6, 500e6]:
+    share = max_epochs * unique / budget
+    print(f"{unique / 1e6:5.0f}M unique tokens -> at most {share * 100:.1g}% of a 1T-token run")
+print(f"for a 1% share at {max_epochs} epochs: {0.01 * budget / max_epochs / 1e9:.1f}B unique tokens")
+```
+
+% output
+
+```text
+    5M unique tokens -> at most 0.002% of a 1T-token run
+   50M unique tokens -> at most 0.02% of a 1T-token run
+  500M unique tokens -> at most 0.2% of a 1T-token run
+for a 1% share at 4 epochs: 2.5B unique tokens
+```
+
+Even half a billion tokens of curated text is a fifth of a percent of such a run, so a low-resource language gets most of its share of a multilingual model from the crawl, and the curated sources serve another purpose: they are the clean reference text from which language-identification models and per-language filter thresholds (as in FineWeb-2) are built and checked. Two cautions apply to all of them. Many modern translations of religious texts, and the publications of many governments, are under copyright or restrictive terms although they are free to read, so the license check of {ref}`sec-ch3-dataset-licenses-not-content-licenses` applies; and a parallel corpus built from translations can contain machine-translated text, the same contamination the audits found in the crawl.
+
 (sec-ch3-synthetic-data)=
 
 ## 7. Synthetic Data
@@ -466,6 +762,47 @@ If the stock of human-written text is the binding constraint, text generated by 
 ### 7.2 What can go wrong
 
 Synthetic data inherits the generating model's errors, style and gaps, and feeding it back repeatedly compounds them. {cite:t}`shumailov2024curse` showed that models trained on the outputs of earlier models lose the tails of the distribution first, so that after a few generations rare content disappears and the model's outputs converge on a narrow, repetitive mode. The practical mitigations are to keep synthetic data a minority of the mixture, to keep human-written data in every generation, to anchor generation in real documents (rephrasing, grounded question writing) rather than free generation, and to mark synthetic data as such in provenance records. The last matters beyond your own pipeline: model-generated text is now a growing fraction of the open web, so future crawls contain it whether or not it was labeled.
+
+A toy version of the experiment shows the mechanism. Let training be the estimation of word frequencies from a sample and generation be sampling from the estimate. A word type that a finite sample happens to miss gets probability zero and can never return, so with each generation of purely synthetic data the rare types disappear; replacing half of each generation's data with fresh human text keeps most of them:
+
+```python
+import random
+
+rng = random.Random(0)
+V, N, GENERATIONS = 1000, 10_000, 10
+human = [1 / r for r in range(1, V + 1)]        # Zipf-shaped frequencies over V word types
+
+
+def train(sample):
+    """'Training' here is estimating unigram frequencies; a type never sampled gets zero."""
+    counts = [0] * V
+    for t in sample:
+        counts[t] += 1
+    return counts
+
+
+synthetic = mixed = human
+print("generation  types left (all synthetic)  types left (half human)")
+for g in range(1, GENERATIONS + 1):
+    synthetic = train(rng.choices(range(V), weights=synthetic, k=N))
+    mixed = train(rng.choices(range(V), weights=mixed, k=N // 2) + rng.choices(range(V), weights=human, k=N // 2))
+    if g in (1, 2, 5, 10):
+        print(f"{g:10}  {sum(c > 0 for c in synthetic):25}  {sum(c > 0 for c in mixed):23}")
+assert all(c > 0 for c in synthetic[:50]) and all(c > 0 for c in mixed[:50])   # the head survives in both
+assert sum(c > 0 for c in synthetic) < sum(c > 0 for c in mixed)               # the tail survives with human data
+```
+
+% output
+
+```text
+generation  types left (all synthetic)  types left (half human)
+         1                        901                      912
+         2                        799                      880
+         5                        620                      882
+        10                        478                      898
+```
+
+After ten generations the all-synthetic chain keeps 478 of the 1,000 types and the half-human chain 898, and every one of the 50 most frequent types survives in both: the loss is in the tail, as {cite:t}`shumailov2024curse` report. The half-and-half ratio is not a recommendation (the toy says nothing about how much synthetic data helps a real model), but it shows why keeping human data in every generation is the mitigation that works.
 
 (sec-ch3-mixture-design-token-budgeting)=
 
@@ -557,6 +894,16 @@ for name, (w, t, e) in plan.items():
     print(f"{name:10} weight {w:6.3f}  tokens {t/1e12:5.2f}T  epochs {e:4.2f}")
 ```
 
+% output
+
+```text
+web        weight  0.834  tokens  1.67T  epochs 0.14
+code       weight  0.081  tokens  0.16T  epochs 0.16
+papers     weight  0.041  tokens  0.08T  epochs 0.54
+wikipedia  weight  0.013  tokens  0.03T  epochs 4.00
+books      weight  0.031  tokens  0.06T  epochs 2.04
+```
+
 The procedure says nothing about whether the preferred weights are good; it only keeps them feasible. Choosing them is the ablation work of Section 8.3, and documenting the choice is Section 9.
 
 ```{admonition} Planning a Mixture
@@ -582,7 +929,6 @@ Every document that enters the corpus should carry, as metadata that travels wit
 
 ```python
 import hashlib
-import json
 import time
 
 
@@ -607,7 +953,15 @@ rec = provenance_record("commoncrawl", "crawl-data/CC-MAIN-2026-39/.../00000.war
 other = provenance_record("commoncrawl", "same locator", doc + b"\n", "CC terms of use", "allowed:CCBot")
 assert provenance_record("x", "y", doc, "l", "r")["sha256"] == rec["sha256"]  # same bytes, same id
 assert other["sha256"] != rec["sha256"]                                        # one byte changed, different id
-print(json.dumps(rec, indent=1)[:200])
+print(rec["sha256"][:16], rec["bytes"], "bytes")
+print(other["sha256"][:16], other["bytes"], "bytes")
+```
+
+% output
+
+```text
+a146439479bc0c21 46 bytes
+a06b0fa001efbf09 47 bytes
 ```
 
 (sec-ch3-datasheets-data-cards)=
@@ -617,6 +971,8 @@ print(json.dumps(rec, indent=1)[:200])
 Datasheets for Datasets {cite}`gebru2021datasheets` is the standard template: motivation, composition, collection process, preprocessing, uses, distribution and maintenance, each as a list of questions with answers. Dolma's datasheet is a good complete example, and Hugging Face dataset cards are the lightweight version that every hosted dataset should have. The questions that acquisition has to answer, and that are most often left blank, are the collection ones: who collected it, over what period, with what mechanism, under what terms, and what was deliberately excluded.
 
 A documentation practice that goes further is to publish measurements of the corpus itself. What's In My Big Data {cite}`elazar2024whats` ran a fixed battery of analyses (duplication, benchmark contamination, toxic and personal content, domain and language distributions, the most frequent documents) over ten open corpora and found, among other things, that C4 and the Pile contained benchmark test sets and that several corpora were dominated by a handful of domains. Running the same battery over your own corpus before training is cheaper than discovering the answers from the model.
+
+Two other formats complement the datasheet. Data Statements {cite}`bender2018data`, which their authors propose "as a design solution and professional practice" for natural language processing, record which populations and language varieties a text collection comes from, because, in the authors' words, data "from certain populations" is used "in the development of technology for other populations". Croissant {cite}`akhtar2024croissant` is a machine-readable metadata format that gives a dataset "a shared representation across ML tools, frameworks, and platforms"; repositories that publish it let a dataset be found by search and loaded into common ML frameworks without code written for that dataset. A datasheet answers questions for a human reader; a Croissant file lets a pipeline check the same facts.
 
 (sec-ch3-handing-off)=
 
