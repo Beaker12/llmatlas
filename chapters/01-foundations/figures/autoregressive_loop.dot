@@ -12,5 +12,5 @@ digraph AutoregressiveLoop {
     d -> c [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
     c -> s [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
     s -> e [color="#2d3748" penwidth=1.3 fontsize=13 fontcolor="#1a202c" label=<&nbsp;&nbsp;yes>];
-    s -> m [color="#2d3748" penwidth=1.3 fontsize=13 fontcolor="#1a202c" label=<no: append the token> style=dashed constraint=false];
+    s -> m [color="#2d3748" penwidth=1.3 fontsize=13 fontcolor="#1a202c" label=<&nbsp;&nbsp;&nbsp;no: append the token> style=dashed constraint=false];
 }

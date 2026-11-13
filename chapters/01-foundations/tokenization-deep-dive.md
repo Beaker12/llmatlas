@@ -18,7 +18,7 @@ After this page you should be able to:
 
 ## T.1 Subword Algorithms in Practice
 
-The chapter builds byte pair encoding (BPE) by hand. Production tokenizers use four related schemes: WordPiece, the unigram language model, byte-level BPE and the SentencePiece library, which implements BPE and unigram. They differ in how they choose the vocabulary and in how they split a word once the vocabulary is fixed. The listing at the end of this section trains and runs small versions of WordPiece and the unigram model; for byte-level BPE it only shows the pre-tokenization and the byte mapping, and learns no merges (a complete byte-level BPE tokenizer is trained in {ref}`sec-tdd-implementation-walkthrough`). The chapter's {ref}`sec-ch1-sentencepiece` trains a real SentencePiece model.
+The chapter builds byte pair encoding (BPE) by hand. Production tokenizers use four related schemes: WordPiece, the unigram language model, byte-level BPE and the SentencePiece library, which implements BPE and unigram. They differ in how they choose the vocabulary and in how they split a word once the vocabulary is fixed. The listing at the end of this section does not train full tokenizers. For WordPiece it scores the candidate pairs of a small word list and picks the first merge, then encodes words greedily with a fixed toy vocabulary; for the unigram model it runs Viterbi, sampling and one pruning step over a fixed toy vocabulary with given probabilities; for byte-level BPE it shows only the pre-tokenization and the byte mapping, and learns no merges (a complete byte-level BPE tokenizer is trained in {ref}`sec-tdd-implementation-walkthrough`). The chapter's {ref}`sec-ch1-sentencepiece` trains a real SentencePiece model.
 
 (sec-tdd-wordpiece)=
 

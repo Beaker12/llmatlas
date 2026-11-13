@@ -13,6 +13,8 @@ Each figure is written as <name>.svg (the file the HTML build uses, compared byt
 
 The output is deterministic: Agg backend, fixed seeds, fixed SVG hash salt, glyphs as paths, no date metadata,
 DejaVu Sans.
+
+The schematics (the figures with a .dot source) are not drawn here; merge_text_runs.py gives the steps to rebuild one.
 """
 import contextlib
 import io
