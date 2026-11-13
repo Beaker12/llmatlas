@@ -2,6 +2,26 @@
 
 Chapter 1 built the transformer as it was drawn in 2017, and listed in one section what changed. This chapter takes that list apart. A decoder-only model released in 2024 or 2025 is still recognizably the 2017 block, but nearly every part of it has been replaced for a reason: to keep a 70-billion-parameter run from diverging, to shrink the cache that dominates serving memory, to stretch the context window, or to buy more parameters per unit of compute. We go through those replacements one at a time, put numbers on each from the published configuration files of real models, and finish with the accounting that turns a configuration into parameters, FLOPs and bytes.
 
+(sec-ch6-chapter-overview)=
+
+## Chapter Overview
+
+Read a modern model's `config.json` as a list of decisions. Each key is the answer to a question that the 2017 paper left open or answered differently.
+
+**Normalization and the residual stream** decide whether a very deep stack trains at all. Normalizing inside the residual branch rather than after the addition keeps a clean path for the gradient; normalizing queries and keys, or normalizing the output of each sublayer, removes the instabilities that appear when activations grow.
+
+**The feed-forward network** holds most of the parameters. Gated activations replaced the plain ReLU or GELU layer, and the hidden width is chosen so that three matrices cost about what two used to.
+
+**Attention variants** are mostly about inference. The keys and values of every previous token are kept in memory while generating, and the number of key/value heads, or the size of a compressed latent, sets that memory.
+
+**Positions and long context** are handled by rotating queries and keys. Making a model work at four times its training length is a matter of changing the rotation frequencies, then training a little at the new length.
+
+**Mixture of experts** replaces one feed-forward network by many and sends each token to a few, so parameters grow without the compute per token growing with them.
+
+**Accounting** is the discipline that keeps all of this honest: a function from a configuration to parameters, FLOPs and bytes, checked against the real checkpoints.
+
+The theme throughout is that architecture choices are constraints from somewhere else in the system. The head count is chosen for the cache, the expert count for the interconnect, the norm placement for the learning rate. A model table is therefore worth reading column by column.
+
 (sec-ch6-learning-objectives)=
 
 ## Learning Objectives
@@ -30,26 +50,6 @@ The accompanying notebook, [Modern Architectures Demo](examples/architecture_dem
 - A seeded comparison of post-norm and pre-norm training on a small text ({ref}`nb-arch-train`)
 
 Everything runs on a CPU. The configuration cell reads the model files from the Hugging Face hub when it can and from committed copies when it cannot, so the notebook gives the same results offline.
-
-(sec-ch6-chapter-overview)=
-
-## Chapter Overview
-
-Read a modern model's `config.json` as a list of decisions. Each key is the answer to a question that the 2017 paper left open or answered differently.
-
-**Normalization and the residual stream** decide whether a very deep stack trains at all. Normalizing inside the residual branch rather than after the addition keeps a clean path for the gradient; normalizing queries and keys, or normalizing the output of each sublayer, removes the instabilities that appear when activations grow.
-
-**The feed-forward network** holds most of the parameters. Gated activations replaced the plain ReLU or GELU layer, and the hidden width is chosen so that three matrices cost about what two used to.
-
-**Attention variants** are mostly about inference. The keys and values of every previous token are kept in memory while generating, and the number of key/value heads, or the size of a compressed latent, sets that memory.
-
-**Positions and long context** are handled by rotating queries and keys. Making a model work at four times its training length is a matter of changing the rotation frequencies, then training a little at the new length.
-
-**Mixture of experts** replaces one feed-forward network by many and sends each token to a few, so parameters grow without the compute per token growing with them.
-
-**Accounting** is the discipline that keeps all of this honest: a function from a configuration to parameters, FLOPs and bytes, checked against the real checkpoints.
-
-The theme throughout is that architecture choices are constraints from somewhere else in the system. The head count is chosen for the cache, the expert count for the interconnect, the norm placement for the learning rate. A model table is therefore worth reading column by column.
 
 (sec-ch6-block-2017-2025)=
 
@@ -889,14 +889,293 @@ T5-base: 222,903,552 (encoder 84,954,240, decoder 113,275,008, ratio to BERT-bas
 
 ## Exercises
 
-1. **Which head count?** For a model with $d = 4096$, 32 layers and $d_k = 128$, tabulate the KV cache per token for $n_{kv} \in \{32, 16, 8, 4, 2, 1\}$. For a 24 GB GPU holding 8 GB of weights and serving 32K-token sequences, how many concurrent sequences fit at each setting?
-1. **Converting to GQA.** Take the notebook's multi-head attention layer, mean-pool its key and value projection weights into groups as Ainslie et al. describe, and measure how far the layer's output moves from the original for $n_{kv} = 16, 8, 4, 2, 1$. What does the shape of the curve suggest about the choice of 8?
-1. **Counting a new model.** Fetch the `config.json` of a model type `count_params` does not support (for example a recent Qwen3 or Llama variant), work out which details its model code fixes, extend the function, and validate it against the checkpoint's safetensors header. Which of the three checks of Section 8.2 caught your first mistake?
-1. **Absorbing the up-projection.** Show algebraically that for MLA without RoPE, $q_m \cdot k_{m'} = (q_m W^{UK\top}) \cdot c_{m'}$ and compute the number of multiplications per decoded token with and without the absorption. Why does the decoupled rotary key prevent it for the RoPE part?
-1. **A better interpolation.** Implement YaRN's per-dimension blend of interpolation and extrapolation, with the ramp defined by the `beta_fast` and `beta_slow` values in DeepSeek's configuration. Plot the resulting frequencies against the original and the NTK-aware ones.
-1. **Router collapse.** Train the notebook's small mixture-of-experts layer on a text task without the auxiliary loss and with coefficients 0.001, 0.01 and 0.1. Plot the fraction of tokens each expert receives over training. When does the loss improve with balance, and when does it get worse?
-1. **Auxiliary-loss-free balancing.** Implement the bias update of Wang et al. and compare its expert load and loss with the auxiliary-loss router of the previous exercise.
-1. **Active parameters.** Using `count_params`, compute the ratio of active to total parameters for each MoE model in Section 1. Which of the two conventions for "active" would you use to estimate the cost of a training run, and which to estimate serving memory?
+1. **Which head count?** For a model with $d = 4{,}096$, $L = 32$ layers and $d_k = 128$, tabulate the bf16 KV cache per token for $n_{kv} \in \{32, 16, 8, 4, 2, 1\}$. A 24 GB GPU holds 8 GB of weights and serves sequences of 32,768 tokens. How many such sequences fit in the remaining memory at each setting?
+
+````{admonition} Solution 1
+:class: dropdown
+
+By the table of {ref}`sec-ch6-inference-drives-design`, one token occupies $2\, n_{kv}\, d_k$ elements per layer, so $2 \times n_{kv} \times 128 \times 32 \times 2 = 16{,}384\, n_{kv}$ bytes across all layers in bf16. A sequence of 32,768 tokens needs $0.537\, n_{kv}$ GB, and 16 GB are free after the weights.
+
+```python
+layers, head_dim, context = 32, 128, 32_768
+free = 24e9 - 8e9  # bytes left for the cache after the weights
+for n_kv in (32, 16, 8, 4, 2, 1):
+    per_token = 2 * n_kv * head_dim * layers * 2  # keys and values, all layers, 2 bytes each
+    per_sequence = per_token * context
+    print(f"n_kv = {n_kv:2d}: {per_token:7,} bytes per token, {per_sequence / 1e9:5.2f} GB per sequence, "
+          f"{int(free // per_sequence):2d} fit")
+```
+
+% output
+
+```text
+n_kv = 32: 524,288 bytes per token, 17.18 GB per sequence,  0 fit
+n_kv = 16: 262,144 bytes per token,  8.59 GB per sequence,  1 fit
+n_kv =  8: 131,072 bytes per token,  4.29 GB per sequence,  3 fit
+n_kv =  4:  65,536 bytes per token,  2.15 GB per sequence,  7 fit
+n_kv =  2:  32,768 bytes per token,  1.07 GB per sequence, 14 fit
+n_kv =  1:  16,384 bytes per token,  0.54 GB per sequence, 29 fit
+```
+
+With 32 key/value heads (multi-head attention) not even one sequence fits: its 17.18 GB cache exceeds the 16 GB left. Each halving of $n_{kv}$ roughly doubles the number of sequences, from 1 at $n_{kv} = 16$ to 29 at $n_{kv} = 1$; the counts are not exact doublings because a fraction of a sequence does not fit. The common choice of 8 serves 3.
+````
+
+1. **Converting to grouped-query attention.** {cite:t}`ainslie2023gqa` convert a multi-head checkpoint by mean-pooling the key and value projection weights of the heads in each group. (a) For Llama 3.1 70B's shape ($d = 8{,}192$, $L = 80$, $n_h = 64$ heads of $d_k = 128$), how many key and value weights does converting to $n_{kv} = 8$ remove, and how does the cache per token change? (b) Show that the conversion leaves the attention scores unchanged when the key heads within each group are already equal, and explain why the paper still trains the converted model briefly.
+
+````{admonition} Solution 2
+:class: dropdown
+
+(a) Each layer's key and value projections have $2\, d\, n_h\, d_k$ weights under multi-head attention and $2\, d\, n_{kv}\, d_k$ after the conversion. (b) A query head's scores are $x W_Q^{(j)} \big(x W_K^{(j)}\big)^{\top}$ for head $j$; if every head of a group has the same $W_K^{(j)}$, their mean is that same matrix, and every score is unchanged. The listing builds such a layer and also one whose key heads are independent.
+
+```python
+import numpy as np
+
+d, layers, n_h, head_dim, n_kv = 8192, 80, 64, 128, 8
+removed = layers * 2 * d * (n_h - n_kv) * head_dim  # key and value weights of all layers
+print(f"key and value weights removed: {removed:,}")
+print(f"cache per token: {2 * n_h * head_dim * layers * 2:,} bytes before, {2 * n_kv * head_dim * layers * 2:,} after")
+
+rng = np.random.default_rng(0)
+width, heads, groups, head_width, seq = 32, 8, 2, 4, 6  # a small layer
+x = rng.standard_normal((seq, width))
+w_q = rng.standard_normal((heads, width, head_width))
+
+
+def scores(w_k):
+    """Attention scores of every head, [heads, seq, seq]."""
+    return np.einsum("sw,hwc,tv,hvc->hst", x, w_q, x, w_k)
+
+
+def pooled(w_k):
+    """Mean-pool the key heads of each group and repeat the result for the group's query heads."""
+    mean = w_k.reshape(groups, heads // groups, width, head_width).mean(axis=1)
+    return np.repeat(mean, heads // groups, axis=0)
+
+
+equal = np.repeat(rng.standard_normal((groups, width, head_width)), heads // groups, axis=0)
+independent = rng.standard_normal((heads, width, head_width))
+print("equal heads, scores unchanged:", np.allclose(scores(equal), scores(pooled(equal)), rtol=1e-12, atol=1e-12))
+change = np.linalg.norm(scores(independent) - scores(pooled(independent))) / np.linalg.norm(scores(independent))
+print(f"independent heads, relative change of the scores: {change:.2f}")
+```
+
+% output
+
+```text
+key and value weights removed: 9,395,240,960
+cache per token: 2,621,440 bytes before, 327,680 after
+equal heads, scores unchanged: True
+independent heads, relative change of the scores: 0.93
+```
+
+The conversion removes 9.4 billion of Llama 3.1 70B's 70.6 billion parameters and divides the cache per token by 8, from the 2,621,440 bytes of multi-head attention to the 327,680 of the table in {ref}`sec-ch6-multi-query-grouped-query-attention`. The pooled layer reproduces the original exactly only when the heads of a group were equal. Heads trained independently are not, and with fully independent random heads the scores move by about as much as their own size. Mean-pooling is the starting point that keeps as much as an average can, and the paper's short uptraining, 5% of the original pretraining compute, lets the model adapt to the shared heads.
+````
+
+1. **A forgotten bias.** Suppose you count Qwen2.5 7B ($d = 3{,}584$, $L = 28$, $n_{kv} = 4$ key/value heads of $d_k = 128$) without the biases on its query, key and value projections ({ref}`sec-ch6-no-biases`). By how much is the count short, and which of the three checks of {ref}`sec-ch6-validation` notices?
+
+````{admonition} Solution 3
+:class: dropdown
+
+The query bias has one value per output, $d$; the key and value biases have $n_{kv} d_k$ each. The listing subtracts their sum over the layers from the correct total of {ref}`sec-ch6-validation` and applies the vendor's convention, a truncation to hundredths of a billion.
+
+```python
+layers, d, n_kv, head_dim = 28, 3584, 4, 128
+total = 7_615_616_512  # the count with the biases, which matches the checkpoint
+biases = layers * (d + 2 * n_kv * head_dim)
+wrong = total - biases
+print(f"biases: {biases:,}; count without them: {wrong:,}")
+print(f"truncated to the published precision: {int(total / 1e7) / 100}B with, {int(wrong / 1e7) / 100}B without")
+```
+
+% output
+
+```text
+biases: 129,024; count without them: 7,615,487,488
+truncated to the published precision: 7.61B with, 7.61B without
+```
+
+The count is 129,024 short. The published figure cannot see the difference: both counts truncate to the 7.61B the vendor publishes. Qwen2.5 7B is ungated, so the hub-totals check, which is for gated models, does not apply. The checkpoint check catches it: the stored tensors hold exactly 7,615,616,512 elements, and the wrong count misses by 129,024. This is the kind of mistake the checkpoint comparison exists for.
+````
+
+1. **Absorbing the up-projection.** Show that for multi-head latent attention without RoPE, $q_m \cdot k_{m'} = \big(q_m W^{UK\top}\big) \cdot c_{m'}$, where $k_{m'} = c_{m'} W^{UK}$ and $W^{UK}$ is one head's key up-projection. Count the multiplications one head needs per decoded token over $n = 4{,}096$ cached tokens with and without this absorption, for DeepSeek-V3's $d_c = 512$ and content-key width 128. Why would RoPE applied to the reconstructed key prevent the absorption, and how does the decoupled rotary key restore it?
+
+````{admonition} Solution 4
+:class: dropdown
+
+With row vectors, $q_m \cdot k_{m'} = q_m \big(c_{m'} W^{UK}\big)^{\top} = q_m W^{UK\top} c_{m'}^{\top} = \big(q_m W^{UK\top}\big) \cdot c_{m'}$. Without absorption, every cached latent is first expanded into a key, $d_c \times 128$ multiplications per cached token, and then dotted with the query, 128 more. With absorption the query is mapped into the latent space once, $128 \times d_c$ multiplications, and each cached latent costs one dot product of length $d_c$.
+
+```python
+import numpy as np
+
+d_c, width, n = 512, 128, 4096  # latent width, content-key width of one head, cached tokens
+rng = np.random.default_rng(0)
+q = rng.standard_normal(width)
+w_uk = rng.standard_normal((d_c, width)) / np.sqrt(d_c)
+c = rng.standard_normal((16, d_c))  # sixteen cached latents
+print("the two orders agree:", np.allclose((c @ w_uk) @ q, c @ (w_uk @ q), rtol=1e-12, atol=1e-12))
+without = n * (d_c * width + width)
+absorbed = width * d_c + n * d_c
+print(f"without absorption {without:,}, with {absorbed:,}: {without / absorbed:.0f} times fewer")
+```
+
+% output
+
+```text
+the two orders agree: True
+without absorption 268,959,744, with 2,162,688: 124 times fewer
+```
+
+Absorption cuts the work of one head from 268,959,744 to 2,162,688 multiplications per decoded token, 124 times fewer, and it is what lets the cache hold only the latent: caching the reconstructed keys instead would give back the memory MLA saves. RoPE rotates the query by an angle set by $m$ and the reconstructed key $c_{m'} W^{UK}$ by one set by $m'$. Moved to the query side as above, the two rotations combine into a rotation by the offset $m - m'$ that sits between $q_m$ and $W^{UK\top}$, so the matrix that would be folded into the query differs for every cached token: there is no single absorbed matrix. DeepSeek therefore leaves the 128 content dimensions unrotated, so that they absorb as above, and adds a separate 64-dimensional key, computed from the hidden state, rotated and cached as it is. The score is the sum of the two dot products, and only the small rotary part needs positions.
+````
+
+1. **YaRN for DeepSeek-V3.** DeepSeek-V3's configuration applies YaRN to its rotary dimensions with $d_{rope} = 64$, $b = 10{,}000$, $n_{train} = 4{,}096$, $s_{ctx} = 40$, $\beta_{fast} = 32$ and $\beta_{slow} = 1$. Using the ramp $\psi$ of {ref}`sec-ch6-trained-length-matters`, how many of the 32 pairs are kept, blended and interpolated? By what factor is the lowest frequency divided, and how does its largest angle over the 163,840 configured positions compare with the largest angle it reached in training?
+
+````{admonition} Solution 5
+:class: dropdown
+
+The listing repeats the chapter's `yarn_frequencies` with the configuration's values; the pair index runs over the 64 rotary dimensions, so $\omega_i = b^{-2i/64}$.
+
+```python
+import math
+
+
+def yarn_frequencies(d, base, n_train, scale, beta_slow=1.0, beta_fast=32.0):
+    """YaRN's per-pair frequencies; returns them with the ramp value psi of each pair."""
+    out = []
+    for i in range(d // 2):
+        omega = base ** (-2 * i / d)
+        xi = n_train * omega / (2 * math.pi)  # turns completed within the trained length
+        psi = min(1.0, max(0.0, (xi - beta_slow) / (beta_fast - beta_slow)))
+        out.append(((1 - psi) * omega / scale + psi * omega, psi))
+    return out
+
+
+d, base, n_train, scale = 64, 10000.0, 4096, 40
+pairs = yarn_frequencies(d, base, n_train, scale)
+kept = sum(psi == 1.0 for _, psi in pairs)
+interpolated = sum(psi == 0.0 for _, psi in pairs)
+print(f"kept {kept}, blended {len(pairs) - kept - interpolated}, interpolated {interpolated}")
+lowest_old, lowest_new = base ** (-(d - 2) / d), pairs[-1][0]
+print(f"lowest frequency divided by {lowest_old / lowest_new:.4g}")
+print(f"largest angle of the lowest pair: {n_train * lowest_old:.4g} rad in training, "
+      f"{n_train * scale * lowest_new:.4g} rad at {n_train * scale:,} positions")
+```
+
+% output
+
+```text
+kept 11, blended 12, interpolated 9
+lowest frequency divided by 40
+largest angle of the lowest pair: 0.5462 rad in training, 0.5462 rad at 163,840 positions
+```
+
+Eleven pairs keep their frequency, 12 are blended and 9 are fully interpolated: fewer than in the chapter's $d_k = 128$ example because there are half as many pairs. The lowest frequency is divided by exactly 40, so over the 163,840 configured positions it turns through 0.5462 rad, the same largest angle it reached in the 4,096 trained positions. The low-frequency pairs therefore see no angle outside training, while the 11 kept pairs, each completing more than 32 turns within the trained length, had already seen every angle.
+````
+
+1. **Capacity and the auxiliary loss.** A batch of $T = 4{,}096$ tokens is routed top-2 over $E = 8$ experts, and the router sends a quarter of all routed slots to expert 1 and spreads the rest evenly. Using the capacity formula of {ref}`sec-ch6-keeping-experts-balanced`, how many of expert 1's tokens are dropped at capacity factors $\phi = 1.0$ and $\phi = 1.25$? What is the Switch loss $E \sum_i f_i \bar{\rho}_i$ (without $\lambda_{aux}$) if the mean probabilities $\bar{\rho}_i$ equal the dispatch fractions $f_i$, and what is it under uniform routing?
+
+````{admonition} Solution 6
+:class: dropdown
+
+There are $n_{act} T = 8{,}192$ routed slots, so expert 1 receives 2,048 and each of the other seven 878 (to the nearest token). The capacity is $\kappa = \lceil \phi\, n_{act}\, T / E \rceil$.
+
+```python
+import math
+
+tokens, experts, k = 4096, 8, 2
+slots = k * tokens
+f = [0.25] + [0.75 / 7] * 7  # dispatch fractions over the routed slots; they sum to 1
+for phi in (1.0, 1.25):
+    capacity = math.ceil(phi * k * tokens / experts)
+    print(f"phi = {phi}: capacity {capacity:,}, expert 1 drops {max(0, round(f[0] * slots) - capacity):,} tokens")
+print(f"Switch loss, skewed router: {experts * sum(fi * fi for fi in f):.4g}")
+print(f"Switch loss, uniform router: {experts * sum((1 / experts) ** 2 for _ in range(experts)):.4g}")
+```
+
+% output
+
+```text
+phi = 1.0: capacity 1,024, expert 1 drops 1,024 tokens
+phi = 1.25: capacity 1,280, expert 1 drops 768 tokens
+Switch loss, skewed router: 1.143
+Switch loss, uniform router: 1
+```
+
+At $\phi = 1.0$ each expert holds 1,024 tokens, and expert 1 drops 1,024 of its 2,048, half of them. At $\phi = 1.25$ it holds 1,280 and drops 768, while each of the other seven experts receives 878 tokens and pads the remaining 402 places of its buffer. If $\bar{\rho}$ tracks $f$, the loss is $E \sum_i f_i^2$, 1.143 here against 1 for uniform routing; it exceeds 1 for any uneven routing, so its gradient lowers expert 1's probability. As {ref}`sec-ch6-keeping-experts-balanced` shows, the converse fails when $\bar{\rho}$ does not track $f$.
+````
+
+1. **Auxiliary-loss-free balancing.** Implement the bias update of {cite:t}`wang2024auxiliary` for a router whose sigmoid affinities favor some of its 16 experts, with top-2 selection: after each batch, lower the selection bias of each overloaded expert by a fixed step and raise that of each underloaded one. How loaded are the most and least used experts, relative to a perfectly even share, before the update and after 200 batches?
+
+````{admonition} Solution 7
+:class: dropdown
+
+The affinity of each token to each expert is a sigmoid of a random logit plus a fixed preference that grows from 0 for the first expert to 1 for the last. The bias enters only the choice of experts, as in {ref}`sec-ch6-fine-grained-shared-experts`; the gate weights would still come from the unbiased affinities.
+
+```python
+import numpy as np
+
+tokens, experts, k, batches, step = 4096, 16, 2, 200, 0.01
+rng = np.random.default_rng(0)
+preference = np.linspace(0.0, 1.0, experts)
+bias = np.zeros(experts)
+
+
+def load(bias):
+    """Tokens each expert receives in one fresh batch, as a multiple of the even share."""
+    affinity = 1 / (1 + np.exp(-(rng.standard_normal((tokens, experts)) + preference)))
+    chosen = np.argsort(-(affinity + bias), axis=1)[:, :k]  # the bias changes the selection only
+    return np.bincount(chosen.ravel(), minlength=experts) / (tokens * k / experts)
+
+
+before = load(bias)
+for _ in range(batches):
+    bias -= step * np.sign(load(bias) - 1)  # lower overloaded experts, raise underloaded ones
+after = load(bias)
+print(f"before: most loaded {before.max():.3g}, least loaded {before.min():.3g} times the even share")
+print(f"after {batches} batches: most loaded {after.max():.3g}, least loaded {after.min():.3g}")
+```
+
+% output
+
+```text
+before: most loaded 1.97, least loaded 0.348 times the even share
+after 200 batches: most loaded 1.16, least loaded 0.857
+```
+
+Before any update the most favored expert receives 1.97 times an even share and the least favored 0.348 times. After 200 batches the spread is 1.16 to 0.857: the bias has offset the preference without any loss term, so no gradient competes with the language-modeling objective. The load does not settle at exactly 1, because each batch is a fresh sample and the bias moves by a fixed step, so it keeps oscillating around the balancing values; a smaller step settles closer but takes more batches.
+````
+
+1. **Active parameters.** From the totals and active counts of {ref}`sec-ch6-validation`, and the input-embedding sizes (vocabulary times width: 32,000 × 4,096 for Mixtral, 50,304 × 2,048 for OLMoE, 102,400 × 2,048 for DeepSeek-V2-Lite and 129,280 × 7,168 for DeepSeek-V3), compute the share of active parameters under both conventions for each sparse model. Which count goes into the $6N$ rule of {ref}`sec-ch6-flops-per-token`, and which number sets the memory needed to serve the model?
+
+````{admonition} Solution 8
+:class: dropdown
+
+The table gives one convention for each model; adding or subtracting the input embedding gives the other.
+
+```python
+models = {  # total, active, whether the active count includes the input embedding, embedding size
+    "Mixtral 8x7B": (46_702_792_704, 12_879_925_248, True, 32_000 * 4_096),
+    "OLMoE 1B-7B": (6_919_161_856, 1_282_017_280, True, 50_304 * 2_048),
+    "DeepSeek-V2-Lite": (15_706_484_224, 2_451_435_008, False, 102_400 * 2_048),
+    "DeepSeek-V3": (671_026_419_200, 36_625_618_432, False, 129_280 * 7_168),
+}
+for name, (total, active, includes, embedding) in models.items():
+    with_embedding = active if includes else active + embedding
+    without = with_embedding - embedding
+    print(f"{name:16s} with embedding {100 * with_embedding / total:5.2f}%, without {100 * without / total:5.2f}%")
+```
+
+% output
+
+```text
+Mixtral 8x7B     with embedding 27.58%, without 27.30%
+OLMoE 1B-7B      with embedding 18.53%, without 17.04%
+DeepSeek-V2-Lite with embedding 16.94%, without 15.61%
+DeepSeek-V3      with embedding  5.60%, without  5.46%
+```
+
+The $6N$ rule counts parameters in matrix multiplications, so it takes the count without the input embedding (the output head stays in), the 12.75B for Mixtral in the table of {ref}`sec-ch6-flops-per-token`. Serving memory is set by neither active count: every expert must be held, so the total is what multiplies the bytes per parameter, 46.7B for Mixtral and 671B for DeepSeek-V3. The two conventions differ least for the largest models (5.60% against 5.46% for DeepSeek-V3) and most for OLMoE (18.53% against 17.04%), whose embedding is the largest part of its total.
+````
 
 (sec-ch6-further-reading)=
 

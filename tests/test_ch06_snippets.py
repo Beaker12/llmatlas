@@ -267,3 +267,136 @@ def test_make_figures_is_deterministic(tmp_path):
         assert done.returncode == 0, done.stderr[-2000:]
         runs.append({p.name: p.read_bytes() for p in sorted(out.glob("*.svg"))})
     assert len(runs[0]) == 7 and runs[0] == runs[1]
+
+
+# --- The router, frequency and grouped-query fences, executed ------------------------------------------------
+def test_grouped_query_fence_equals_attention_with_repeated_heads():
+    """The 4.3 fence: GQA equals ordinary attention per query head over its group's key/value head; n_kv = 1 is
+    MQA."""
+    import torch
+    import torch.nn.functional as F
+    gqa = chapter_function("def grouped_query_attention")["grouped_query_attention"]
+    torch.manual_seed(0)
+    q = torch.randn(2, 8, 5, 16, dtype=torch.float64)
+    for n_kv in (8, 2, 1):
+        k, v = torch.randn(2, n_kv, 5, 16, dtype=torch.float64), torch.randn(2, n_kv, 5, 16, dtype=torch.float64)
+        group = 8 // n_kv
+        expected = torch.cat([F.scaled_dot_product_attention(q[:, h:h + 1], k[:, h // group:h // group + 1],
+                                                             v[:, h // group:h // group + 1], is_causal=True)
+                              for h in range(8)], dim=1)
+        assert torch.allclose(gqa(q, k, v), expected, atol=1e-12)
+
+
+def test_router_fence_gates_and_auxiliary_loss():
+    """The 6.1 fence: gates renormalize over the chosen experts; the loss equals E * sum f_i P_i computed by
+    hand, is 1 for a uniform router and well above 1 when every token prefers one expert."""
+    import torch
+    route = chapter_function("def route_top_k")["route_top_k"]
+    torch.manual_seed(0)
+    x = torch.randn(512, 16, dtype=torch.float64)
+    weight = torch.randn(8, 16, dtype=torch.float64)
+    ids, gates, loss = route(x, weight, 2)
+    assert ids.shape == gates.shape == (512, 2)
+    assert torch.allclose(gates.sum(-1), torch.ones(512, dtype=torch.float64))
+    probs = (x @ weight.T).softmax(-1)
+    f = torch.bincount(ids.flatten(), minlength=8).double() / ids.numel()
+    assert torch.isclose(loss, 8 * (f * probs.mean(0)).sum())
+    assert route(torch.ones(64, 16), torch.zeros(8, 16), 2)[2].item() == 1.0
+    favored = torch.zeros(8, 16)
+    favored[0] = 1.0  # every token prefers expert 0
+    assert route(torch.ones(64, 16), favored, 2)[2].item() > 1.5
+
+
+def test_frequency_fences():
+    """The 5.2 fences: YaRN keeps 21, blends 25 and interpolates 18 pairs at d_k = 128, s = 8, and 11/12/9 with
+    DeepSeek-V3's committed rope settings; the NTK-aware base keeps omega_0 and divides the lowest by s."""
+    import math
+    yarn = chapter_function("def yarn_frequencies")["yarn_frequencies"]
+    rope = chapter_function("def rope_frequencies")
+    v3 = config("deepseek-ai/DeepSeek-V3")
+    sc = v3["rope_scaling"]
+    cases = (((128, 10000.0, 4096, 8), (21, 25, 18)),
+             ((v3["qk_rope_head_dim"], float(v3["rope_theta"]), sc["original_max_position_embeddings"],
+               sc["factor"], sc["beta_slow"], sc["beta_fast"]), (11, 12, 9)))
+    for args, expected in cases:
+        pairs = yarn(*args)
+        kept, interp = sum(p == 1.0 for _, p in pairs), sum(p == 0.0 for _, p in pairs)
+        assert (kept, len(pairs) - kept - interp, interp) == expected
+        assert math.isclose(args[1] ** (-(args[0] - 2) / args[0]) / pairs[-1][0], args[3])
+    for s in (2, 8, 40):
+        old = rope["rope_frequencies"](128)
+        new = rope["rope_frequencies"](128, rope["ntk_aware_base"](10000.0, s, 128))
+        assert math.isclose(new[0].item(), old[0].item()) and math.isclose(old[-1].item() / new[-1].item(), s)
+
+
+# --- Exercise answers ----------------------------------------------------------------------------------------
+# Each solution's listing is run from the page; ANSWERS are patterns it must print, and STATED are numbers the
+# prose of the answer gives, which must appear in the printed output too. The inputs the solutions transcribe
+# are checked against the committed configurations and the counting function in the last test.
+SOLUTION = re.compile(r"^`{4}\{admonition\} Solution (\d+)\n(.*?)^`{4}$", re.S | re.M)
+LISTING = re.compile(r"^```python\n(.*?)^```$", re.S | re.M)
+ANSWERS = {
+    1: [r"n_kv = 32: 524,288 bytes per token, 17\.18 GB per sequence,  0 fit",
+        r"n_kv = 16: 262,144 bytes .* 1 fit", r"n_kv =  8: 131,072 bytes .* 3 fit", r"n_kv =  1: .* 29 fit"],
+    2: [r"removed: 9,395,240,960", r"2,621,440 bytes before, 327,680 after", r"scores unchanged: True",
+        r"relative change of the scores: 0\.93"],
+    3: [r"biases: 129,024; count without them: 7,615,487,488", r"7\.61B with, 7\.61B without"],
+    4: [r"agree: True", r"without absorption 268,959,744, with 2,162,688: 124 times fewer"],
+    5: [r"kept 11, blended 12, interpolated 9", r"divided by 40\n", r"0\.5462 rad in training, 0\.5462 rad at 163,840"],
+    6: [r"phi = 1\.0: capacity 1,024, expert 1 drops 1,024", r"phi = 1\.25: capacity 1,280, expert 1 drops 768",
+        r"skewed router: 1\.143", r"uniform router: 1\n"],
+    7: [r"most loaded 1\.97, least loaded 0\.348", r"200 batches: most loaded 1\.16, least loaded 0\.857"],
+    8: [r"Mixtral 8x7B +with embedding 27\.58%, without 27\.30%", r"OLMoE 1B-7B +with embedding 18\.53%, without 17\.04%",
+        r"V2-Lite with embedding 16\.94%, without 15\.61%", r"DeepSeek-V3 +with embedding +5\.60%, without +5\.46%"],
+}
+STATED = {1: ["17.18", "29"], 2: ["2,621,440", "327,680"], 3: ["129,024", "7.61"],
+          4: ["268,959,744", "2,162,688", "124"], 5: ["0.5462", "163,840"], 6: ["1,024", "1,280", "768", "1.143"],
+          7: ["1.97", "0.348", "1.16", "0.857"], 8: ["5.60%", "5.46%", "18.53%", "17.04%"]}
+
+
+def solutions() -> dict:
+    return {int(n): body for n, body in SOLUTION.findall(CHAPTER.read_text(encoding="utf-8"))}
+
+
+def test_every_exercise_has_its_answers_listed():
+    assert sorted(solutions()) == sorted(ANSWERS) == list(range(1, 9))
+
+
+@pytest.mark.parametrize("n", sorted(ANSWERS))
+def test_exercise_answer(n):
+    import os
+    import subprocess
+    import sys
+    body = solutions()[n]
+    listings = LISTING.findall(body)
+    assert len(listings) == 1, f"solution {n} should hold one listing"
+    run = subprocess.run([sys.executable, "-W", "error", "-c", listings[0]], capture_output=True, text=True,
+                         timeout=600, env={**os.environ, "MPLBACKEND": "Agg"})
+    assert run.returncode == 0, run.stderr[-2000:]
+    for pattern in ANSWERS[n]:
+        assert re.search(pattern, run.stdout), f"solution {n}: {pattern!r} not in\n{run.stdout}"
+    answer = LISTING.sub("", body).split("% output")[-1]
+    for number in STATED[n]:
+        assert number in answer, f"solution {n}'s answer no longer states {number}"
+        assert number in run.stdout, f"solution {n} states {number} but the listing prints\n{run.stdout}"
+
+
+def test_exercise_inputs_match_the_configurations_and_the_counter():
+    """What the solutions transcribe: Qwen2.5's shape and checkpoint count (solution 3), and solution 8's
+    totals, active counts and input-embedding sizes, recomputed by count_params from the committed configs."""
+    qwen = config("Qwen/Qwen2.5-7B")
+    head = qwen["hidden_size"] // qwen["num_attention_heads"]
+    assert (qwen["num_hidden_layers"], qwen["hidden_size"], qwen["num_key_value_heads"], head) == (28, 3584, 4, 128)
+    assert CHECKPOINT["Qwen/Qwen2.5-7B"]["elements_counted"] == COUNT(qwen)["total"] == 7_615_616_512
+    for repo, total, active, key, vocab, width in (
+            ("mistralai/Mixtral-8x7B-v0.1", 46_702_792_704, 12_879_925_248, "active_with_embedding", 32_000, 4_096),
+            ("allenai/OLMoE-1B-7B-0924", 6_919_161_856, 1_282_017_280, "active_with_embedding", 50_304, 2_048),
+            ("deepseek-ai/DeepSeek-V2-Lite", 15_706_484_224, 2_451_435_008, "active_without_embedding", 102_400,
+             2_048),
+            ("deepseek-ai/DeepSeek-V3", 671_026_419_200, 36_625_618_432, "active_without_embedding", 129_280,
+             7_168)):
+        cfg = config(repo)
+        counts = COUNT(cfg)
+        assert (cfg["vocab_size"], cfg["hidden_size"]) == (vocab, width)
+        assert (counts["total"], counts[key]) == (total, active)
+        assert counts["active_with_embedding"] - counts["active_without_embedding"] == vocab * width
