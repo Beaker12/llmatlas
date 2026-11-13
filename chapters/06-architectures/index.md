@@ -208,7 +208,7 @@ The 2017 feed-forward network is $\mathrm{ReLU}(x W_{up})\, W_{down}$ with a hid
 
 $$\mathrm{SwiGLU}(x) = \big(\mathrm{SiLU}(x W_{gate}) \odot x W_{up}\big) W_{down}$$
 
-With a GELU gate this is GeGLU, which Gemma uses; with SiLU it is SwiGLU, which every other model in the table uses. At matched parameter count the gated forms gave consistently lower loss, and the paper's own explanation is candid: "we offer no explanation as to why these architectures seem to work; we attribute their success, as all else, to divine benevolence." The gain has held up in every large-scale replication since.
+With a GELU gate this is GeGLU, which Gemma uses; with SiLU it is SwiGLU, which every other model in the table uses. At matched parameter count the gated forms gave consistently lower loss, and the paper's own explanation is candid: "we offer no explanation as to why these architectures seem to work; we attribute their success, as all else, to divine benevolence." Since then the gated forms have become the default: every one of the twelve models in this chapter uses one.
 
 (sec-ch6-width)=
 
