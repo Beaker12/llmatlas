@@ -20,4 +20,7 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\tilde{x}$ | corrupted input sequence of the masked-language-model objective | C1-13, `sec-ch1-masked-lm` |  |  |
 | $n_{ctx}$ | context length (number of learned position embeddings) | C1-13, `sec-ch1-parameter-count` |  |  |
 | $a_h$ | ALiBi slope of head $h$ | fix round 1, `sec-ch1-positional-encodings` |  |  |
+| $\omega_0$ | highest RoPE frequency | index.md:L743, `sec-ch1-rope` |  |  |
+| $\omega_{d_k/2-1}$ | lowest RoPE frequency | index.md:L746, `sec-ch1-rope` |  |  |
+| $\mathcal{R}_1$ | RoPE rotation for a position offset of 1 | index.md:L1912, `sec-ch1-exercise-9` |  |  |
 
