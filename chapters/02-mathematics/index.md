@@ -43,9 +43,9 @@ The notebook provides executable, assertion-checked code for:
 - Entropy, cross-entropy and KL divergence in bits ({ref}`nb-math-information-theory`)
 - SGD, momentum and Adam from scratch (Adam checked against `torch.optim.Adam`) on the Rosenbrock function ({ref}`nb-math-optimizers`)
 - Warm-up and decay schedules ({ref}`nb-math-schedules`)
-- Attention gradients, layer normalization, residual connections and initialisation scale ({ref}`nb-math-backprop`)
+- Attention gradients, layer normalization, residual connections and initialization scale ({ref}`nb-math-backprop`)
 - Kaplan and Chinchilla scaling laws, parameter counts and training memory ({ref}`nb-math-scaling`)
-- fp16/bf16 precision, loss scaling, gradient clipping and initialisation ({ref}`nb-math-numerics`)
+- fp16/bf16 precision, loss scaling, gradient clipping and initialization ({ref}`nb-math-numerics`)
 
 (sec-ch2-linear-algebra-you-need)=
 
@@ -129,7 +129,7 @@ $$H(p) = -\sum_{x} p(x) \log p(x)$$
 
 Using $\log_2$ gives entropy in bits; the natural logarithm gives nats. The entropy and KL functions below use $\log_2$ and return bits; the cross-entropy loss uses the natural logarithm, as PyTorch does, so it and the perplexity built on it are in nats.
 
-For language, entropy measures the average information content per symbol. Shannon's experiments put the entropy of printed English at roughly 0.6 to 1.3 bits per character, far below the ~4.7 bits of a uniform choice over the alphabet, which is what makes language predictable {cite}`shannon1951prediction`.
+For language, entropy measures the average information content per symbol. Shannon's experiments bound the entropy of printed English, for a reader who knows the preceding 100 letters, between 0.6 and 1.3 bits per letter, far below the 4.7 bits of a uniform choice over the 26 letters, which is what makes language predictable {cite}`shannon1951prediction`.
 
 (sec-ch2-cross-entropy-kl-divergence)=
 
@@ -491,7 +491,7 @@ def attention_gradients(Q, K, V, grad_output):
 
 ```{admonition} Gradient Flow Analysis
 :class: tip
-The notebook section {ref}`nb-math-backprop` implements scaled dot-product attention and reports its input gradients, and {ref}`nb-math-layernorm` compares gradient norms through twelve linear layers with and without layer normalization, with residual connections, and with a Xavier-scaled initialisation, so you can see which of these actually prevents vanishing.
+The notebook section {ref}`nb-math-backprop` implements scaled dot-product attention and reports its input gradients, and {ref}`nb-math-layernorm` compares gradient norms through twelve linear layers with and without layer normalization, with residual connections, and with a Xavier-scaled initialization, so you can see which of these actually prevents vanishing.
 ```
 
 (sec-ch2-scaling-laws-compute)=
@@ -722,7 +722,7 @@ def train_with_gradient_accumulation(model, data_loader, optimizer, accumulation
 
 ```{admonition} Numerical Stability Demonstrations
 :class: tip
-The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surviving it), clips a global gradient norm and plots before/after, compares Xavier and He initialisation statistics, and {ref}`nb-math-loss-scaling` simulates dynamic loss scaling.
+The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surviving it), clips a global gradient norm and plots before/after, compares Xavier and He initialization statistics, and {ref}`nb-math-loss-scaling` simulates dynamic loss scaling.
 ```
 
 (sec-ch2-exercises)=
