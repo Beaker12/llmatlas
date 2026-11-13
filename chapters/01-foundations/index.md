@@ -1,6 +1,6 @@
 # LLM Foundations
 
-Large Language Models represent a paradigm shift in natural language processing, achieving unprecedented capabilities through the transformer architecture and massive scale training. This chapter establishes the foundational concepts necessary to understand how these models work, their historical development, and the core principles that enable their remarkable performance.
+Large language models are transformer networks trained on very large text corpora to predict the next token. This chapter establishes the foundational concepts necessary to understand how these models work, their historical development, and the principles behind their performance.
 
 (sec-ch1-learning-objectives)=
 
@@ -155,7 +155,7 @@ tokens = char_tokenize(text)
 
 #### Byte Pair Encoding (BPE)
 
-BPE {cite}`sennrich2015neural` strikes a balance by iteratively merging the most frequent character pairs:
+Byte pair encoding began as a data-compression technique by Philip Gage (1994); {cite:t}`sennrich2015neural` adapted it to word segmentation. It starts from characters and iteratively merges the most frequent adjacent pair:
 
 ```python
 class SimpleBPE:
@@ -248,10 +248,10 @@ Merges: [('h', 'e'), ('he', 'l'), ('hel', 'l'), ('hell', 'o')]
 Tokens: ['hel', 'p', 'e', 'r', '</w>']
 ```
 
-**BPE Evolution**:
+**Other subword algorithms**:
 
 1. **Original BPE** {cite}`sennrich2015neural`: merges the most frequent adjacent pair
-1. **WordPiece**: Google's variant that merges the pair which most increases the training corpus likelihood
+1. **WordPiece** {cite}`wu2016google`: Google's variant that merges the pair which most increases the training corpus likelihood
 1. **Unigram LM** {cite}`kudo2018subword`: starts from a large candidate vocabulary and prunes it, keeping the segmentation with the highest probability
 1. **SentencePiece** {cite}`kudo2018sentencepiece` is a *toolkit*, not an algorithm: it implements both BPE and unigram on raw text without pre-tokenization
 
@@ -308,7 +308,7 @@ Pieces: ['▁He', 'llo', ',', '▁w', 'orld', '!', '▁', '<0xE4>', '<0xBD>', '<
 19 ids; decoded text equals the input: True
 ```
 
-With byte fallback, the four Chinese characters, absent from the learned pieces, become twelve UTF-8 byte pieces instead of `<unk>`, and decoding returns the input. Without it, the same model would map them to the unknown id. The toy corpus supports a vocabulary of a few hundred pieces; asking for the common 32,000 needs a training corpus of tens of megabytes, and SentencePiece refuses a vocabulary size larger than the corpus can fill.
+With byte fallback, the four Chinese characters, absent from the learned pieces, become twelve UTF-8 byte pieces instead of `<unk>`, and decoding returns the input. Without it, the same model would map them to the unknown id. SentencePiece refuses a vocabulary size larger than the corpus can fill. The toy corpus supports a few hundred pieces; for the common 32,000, a 100 kB sample of English Wikipedia text (WikiText-103) is refused and a 1 MB sample is enough, although production tokenizers train on far more text so that the pieces reflect real frequencies.
 
 **Key advantages**:
 
@@ -342,7 +342,7 @@ These embeddings are learned during training to capture semantic relationships. 
 
 #### Embedding Initialization Strategies
 
-The initialization and any scaling in the forward pass have to be chosen together. The original transformer multiplies the embedding by $\sqrt{d}$ before adding the sinusoidal encoding {cite}`vaswani2017attention`. If the table is drawn from $\mathcal{N}(0, 1/d)$, each coordinate of the scaled embedding has variance $1/d \cdot d = 1$, the same order as the sinusoidal encoding, whose coordinates average $\sin^2 = \cos^2 = 1/2$. Drawing the table with Xavier's rule instead, whose variance $2/(|\mathcal{V}| + d)$ is tiny for a 50,000-row table, would leave the position signal about 25 times stronger than the token signal; drawing it from $\mathcal{N}(0, 1)$ and then scaling would make the token signal over a hundred times stronger.
+The initialization and any scaling in the forward pass have to be chosen together. The original transformer multiplies the embedding by $\sqrt{d}$ before adding the sinusoidal encoding {cite}`vaswani2017attention`. If the table is drawn from $\mathcal{N}(0, 1/d)$, each coordinate of the scaled embedding has variance $1/d \cdot d = 1$, the same order as the sinusoidal encoding, whose coordinates average $\sin^2 = \cos^2 = 1/2$. Drawing the table with Xavier's rule instead, whose variance $2/(|\mathcal{V}| + d)$ is tiny for a 50,000-row table, would leave the position signal $(|\mathcal{V}| + d)/(4d) \approx 24.7$ times stronger in power than the token signal for $|\mathcal{V}| = 50{,}000$ and $d = 512$; drawing it from $\mathcal{N}(0, 1)$ and then scaling would make the token signal $2d = 1{,}024$ times stronger.
 
 ```python
 import math
@@ -382,7 +382,7 @@ RMS of a sinusoidal encoding:    0.707
 
 #### Embedding Sharing and Tying
 
-Many architectures share the input embedding matrix with the output projection (GPT-2, T5, Gemma do; the LLaMA and Mistral families keep them separate):
+Many architectures share the input embedding matrix with the output projection {cite}`press2017using` (GPT-2, T5, Gemma do; the LLaMA and Mistral families keep them separate):
 
 ```python
 # pseudo-code: `TransformerStack` stands for the model body; illustrates weight tying only
@@ -721,7 +721,7 @@ print(f"norm before and after rotation: {q.norm():.3f} {apply_rope(q[None], torc
 score at (3, 5):   -10.28
 score at (10, 12): -10.28
 score at (3, 6):   -10.75
-norm before and after rotation: 8.371 8.371
+norm before and after rotation: 8.370 8.370
 ```
 
 (sec-ch1-position-scheme-choice)=
@@ -732,7 +732,7 @@ Most open-weight models since 2022 use RoPE {cite}`su2021roformer`; a few use AL
 
 ```{admonition} Embeddings and Positional Encoding
 :class: note
-The notebook ({ref}`nb-attn-positional`) visualises sinusoidal and learned encodings, implements a learned relative-position bias and a rotary (RoPE) transform, and asserts RoPE's two defining properties: rotation preserves vector norms, and query-key dot products depend only on the relative offset.
+The notebook ({ref}`nb-attn-positional`) visualizes sinusoidal and learned encodings, implements a learned relative-position bias and a rotary (RoPE) transform, and asserts RoPE's two defining properties: rotation preserves vector norms, and query-key dot products depend only on the relative offset.
 ```
 
 ```{admonition} Hands-On Practice
@@ -1044,7 +1044,7 @@ cross-attention: (2, 5, 64) (2, 8, 5, 7)
 
 ### 4.2 Attention Patterns and Interpretability
 
-Different attention heads learn to capture various linguistic phenomena:
+Probing studies find heads that track particular linguistic relations {cite}`clark2019what`:
 
 - **Syntactic heads**: Focus on grammatical relationships (subject-verb, modifier-noun)
 - **Semantic heads**: Capture semantic similarity and coreference
@@ -1066,7 +1066,7 @@ The transformer architecture {cite}`vaswani2017attention` combines attention mec
 
 #### Layer Normalization
 
-Layer normalization stabilizes training by normalizing inputs across the feature dimension:
+Layer normalization {cite}`ba2016layer` stabilizes training by normalizing inputs across the feature dimension:
 
 $$\text{LayerNorm}(x) = \gamma \odot \frac{x - \mu}{\sigma} + \beta$$
 
@@ -1076,7 +1076,7 @@ where $\mu$ and $\sigma$ are the mean and standard deviation computed across the
 
 #### Residual Connections
 
-Residual connections help gradient flow in deep networks:
+Residual connections {cite}`he2016deep` help gradient flow in deep networks:
 
 $$\text{output} = \text{LayerNorm}(x + \text{Sublayer}(x))$$
 
@@ -1327,9 +1327,9 @@ Encoders trained this way are strong at understanding tasks such as classificati
 
 ### 5.3 What Changed Since 2017
 
-The block above is the 2017 design. Every widely used LLM since GPT-2 differs from it in a handful of ways, all aimed at training stability or inference cost:
+The block above is the 2017 design. Later models change it in some of the following ways, aimed at training stability or inference cost; not every model adopts every change (GPT-2 and GPT-3, for example, adopt only the first):
 
-- **Pre-LN instead of post-LN.** Normalization is applied *before* each sublayer, so the residual stream is never normalized: $x \leftarrow x + \mathrm{MHA}(\mathrm{Norm}(x))$. Post-LN transformers have large gradients at initialization and need learning-rate warm-up to train at all; pre-LN removes most of that sensitivity {cite}`xiong2020layer`.
+- **Pre-LN instead of post-LN.** Normalizing each sublayer's input, $x \leftarrow x + \mathrm{MHA}(\mathrm{Norm}(x))$, instead of the sum makes training less sensitive to the learning rate: post-LN can fail at learning rates where pre-LN trains ({ref}`sec-ch2-pre-post-ln`).
 - **RMSNorm instead of LayerNorm.** Dropping the mean subtraction and the bias, $\mathrm{RMSNorm}(x) = \gamma \odot x / \sqrt{\lVert x \rVert_2^2 / d + \epsilon}$, is cheaper and trains just as well {cite}`zhang2019root`. LLaMA, Mistral, Qwen and Gemma all use it.
 - **Gated activations.** The feed-forward network becomes $\mathrm{FFN}(x) = (\mathrm{SiLU}(xW_{\text{gate}}) \odot xW_{\text{up}})W_{\text{down}}$ (SwiGLU), with the hidden width reduced to about $\tfrac{8}{3}d$ to keep the parameter count unchanged {cite}`shazeer2020glu`.
 - **Rotary position embeddings.** Positions enter through RoPE on the queries and keys ({ref}`sec-ch1-rope`), not through vectors added to the input {cite}`su2021roformer`.
@@ -1511,7 +1511,7 @@ where $h^{(L)}_{i-1}$ is the hidden state of the last layer $L$ at position $i-1
 
 $$\text{Perplexity} = \exp\left(-\frac{1}{T} \sum_{i=1}^{T} \log p_\theta(x_i \mid x_{<i})\right) = \exp(\mathcal{L})$$
 
-Perplexity was introduced as the effective branching factor of a language model {cite}`jelinek1977perplexity`; lower is better. It correlates only loosely with downstream task accuracy, so large-scale evaluations report both {cite}`liang2022holistic`.
+Perplexity was introduced as a measure of the difficulty of speech recognition tasks {cite}`jelinek1977perplexity`; it is the number of equally likely tokens that would give the same loss, and lower is better. Across model families it predicts downstream accuracy poorly: in HELM, bits per byte on the Pile was a poor predictor of downstream accuracy {cite}`liang2022holistic`, so evaluations report both.
 
 (sec-ch1-bits-per-byte)=
 
@@ -1579,8 +1579,8 @@ The notebook ({ref}`nb-attn-lm`) builds the causal mask, applies it inside atten
 
 **Mathematical Foundations:**
 
-4. [Understanding Large Language Models](https://magazine.sebastianraschka.com/p/understanding-large-language-models) by Sebastian Raschka
-5. [Linear Algebra for Machine Learning](https://www.deeplearningbook.org/contents/linear_algebra.html) - Deep Learning Book Chapter 2
+1. [Understanding Large Language Models](https://magazine.sebastianraschka.com/p/understanding-large-language-models) by Sebastian Raschka
+1. [Linear Algebra](https://www.deeplearningbook.org/contents/linear_algebra.html) - Deep Learning Book Chapter 2
 
 (sec-ch1-further-reading-foundational-papers)=
 
@@ -1598,13 +1598,13 @@ The notebook ({ref}`nb-attn-lm`) builds the causal mask, applies it inside atten
 
 - [The Annotated Transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html) - Line-by-line implementation with explanations
 - [Hugging Face Transformers](https://huggingface.co/docs/transformers/index) - Production-ready transformer implementations
-- [MinGPT](https://github.com/karpathy/minGPT) by Andrej Karpathy - Minimal GPT implementation for learning
+- [minGPT](https://github.com/karpathy/minGPT) by Andrej Karpathy - Minimal GPT implementation for learning
 
 **Interactive Learning:**
 
 - [Transformer Explainer](https://poloclub.github.io/transformer-explainer/) - Interactive visualization tool
 - [Tiktokenizer](https://tiktokenizer.vercel.app/) - Explore how GPT and other tokenizers split text
-- [Attention Patterns](https://github.com/jessevig/bertviz) - Visualize attention in BERT and GPT models
+- [BertViz](https://github.com/jessevig/bertviz) - Visualize attention in BERT and GPT models
 
 (sec-ch1-further-reading-advanced-topics-recent-research)=
 
@@ -1621,7 +1621,7 @@ The notebook ({ref}`nb-attn-lm`) builds the causal mask, applies it inside atten
 - [Pre-trained Models for Natural Language Processing](https://arxiv.org/abs/2003.08271) {cite}`qiu2020pre` - Survey of pre-trained models
 - [BERT Rediscovers the Classical NLP Pipeline](https://arxiv.org/abs/1905.05950) {cite}`tenney2019bert` - Probing which layers of BERT encode which linguistic structure
 
-**Optimization and Efficiency:**
+**Architecture and Efficiency:**
 
 - [RoFormer: Enhanced Transformer with Rotary Position Embedding](https://arxiv.org/abs/2104.09864) {cite}`su2021roformer` - RoPE positional encodings
 - [FlashAttention: Fast and Memory-Efficient Exact Attention](https://arxiv.org/abs/2205.14135) {cite}`dao2022flashattention` - Efficient attention computation

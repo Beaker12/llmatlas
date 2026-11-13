@@ -138,7 +138,7 @@ The chapter builds byte pair encoding (BPE) by hand. Production tokenizers use f
 
 ### WordPiece
 
-WordPiece comes from Google's speech and translation systems {cite}`wu2016google` and is the tokenizer of BERT {cite}`devlin2018bert`. Training starts, as BPE does, from single characters and merges pairs, but it does not merge the most frequent pair. It merges the pair that most increases the likelihood of the training data {cite}`kudo2018subword`, which the [Hugging Face implementation](https://huggingface.co/learn/llm-course/chapter6/6) computes as
+WordPiece comes from Google's speech and translation systems {cite}`wu2016google` and is the tokenizer of BERT {cite}`devlin2018bert`. Training starts, as BPE does, from single characters and merges pairs, but it does not merge the most frequent pair. It merges the pair that most increases the likelihood of the training data {cite}`kudo2018subword`. Google never published its training algorithm; the score below is the reconstruction in the Hugging Face course {cite}`huggingface2026wordpiece`, which merges the pair with the highest
 
 $$\operatorname{score}(\text{pair}) = \frac{\operatorname{count}(\text{pair})}{\operatorname{count}(\text{first piece}) \cdot \operatorname{count}(\text{second piece})}.$$
 
@@ -361,7 +361,7 @@ Subword tokens (9): ['The', ' transformer', ' architecture', ' revolution', 'ize
 
 ### Linguistic Bias
 
-Tokenization can introduce linguistic biases. A tokenizer trained mostly on English text spends more tokens on other languages, so the same content costs more compute and fits less into the context window. Larger vocabularies trained on more languages narrow the gap; the Japanese greeting below takes 10 tokens in GPT-2's encoding, 4 in `cl100k_base` and 2 in `o200k_base`:
+Tokenization can introduce linguistic biases. A tokenizer trained mostly on English text spends more tokens on other languages, so the same content costs more compute and fits less into the context window {cite}`petrov2023language`. Larger vocabularies trained on more languages narrow the gap; the Japanese greeting below takes 10 tokens in GPT-2's encoding, 4 in `cl100k_base` and 2 in `o200k_base`:
 
 ```python
 # network
@@ -489,7 +489,7 @@ print(mistral_template(messages))
 <s>[INST] Hello, how are you? [/INST]I'm doing great. How can I help you today?</s> [INST] I'd like to show off how chat templating works! [/INST]
 ```
 
-The output is the string the [chat templating documentation](https://huggingface.co/docs/transformers/main/en/chat_templating) shows for this conversation. The model's reply is generated after the final `[/INST]`, and generation stops when the model emits `</s>`.
+The output is the string the chat templating documentation {cite}`huggingface2026chattemplates` shows for this conversation. The model's reply is generated after the final `[/INST]`, and generation stops when the model emits `</s>`.
 
 (sec-tdd-token-ids-embeddings)=
 
@@ -498,6 +498,7 @@ The output is the string the [chat templating documentation](https://huggingface
 Each token maps to a unique integer ID:
 
 ```python
+# pseudo-code: the splitting and special-token helpers are not defined here
 class Tokenizer:
     def __init__(self, vocab):
         self.vocab = vocab
@@ -527,7 +528,7 @@ Common vocabulary sizes and their trade-offs:
 
 - **Small (1K-8K)**: character-like; used for code-only or single-domain models
 - **Medium (32K-50K)**: GPT-2 (50k), the original LLaMA (32k); the usual choice for research-scale models
-- **Large (100K-150K)**: GPT-4's `cl100k_base` (~100k), Llama 3 (128k), Qwen (~150k); better compression of multilingual text and code
+- **Large (100K-150K)**: GPT-4's `cl100k_base` (~100k), Llama 3 (128k), Qwen (~152k); better compression of multilingual text and code
 - **Very large (250K+)**: Gemma (256k) and multilingual models; the embedding and output matrices become a noticeable share of a small model's parameters
 
 (sec-tdd-efficiency-considerations)=

@@ -248,3 +248,41 @@ def test_committed_notebook_embeds_every_plot():
         assert cell_images >= cell_shows, f"cell with {cell_shows} plots has {cell_images} images"
         shows, images = shows + cell_shows, images + cell_images
     assert images >= shows >= 10
+
+
+def test_embedding_to_position_power_ratios_match_the_prose():
+    """Xavier init scaled by sqrt(d) leaves position (|V|+d)/(4d) times stronger; N(0,1) scaled makes tokens 2d times stronger."""
+    import math as _math
+    import pathlib as _pathlib
+
+    V, d = 50_000, 512
+    torch.manual_seed(0)
+    w = torch.empty(V, d)
+    torch.nn.init.xavier_uniform_(w)
+    token_power = (w * _math.sqrt(d)).pow(2).mean().item()
+    pos = torch.arange(1024).unsqueeze(1).float()
+    div = torch.exp(torch.arange(0, d, 2).float() * (-_math.log(10000.0) / d))
+    pe = torch.zeros(1024, d)
+    pe[:, 0::2], pe[:, 1::2] = torch.sin(pos * div), torch.cos(pos * div)
+    pe_power = pe.pow(2).mean().item()
+    assert round(pe_power / token_power, 1) == 24.7
+    normal_power = (torch.randn(V, d) * _math.sqrt(d)).pow(2).mean().item()
+    assert abs(normal_power / pe_power - 2 * d) < 0.02 * 2 * d
+    page = (_pathlib.Path(__file__).resolve().parents[1] / "chapters/01-foundations/index.md").read_text(encoding="utf-8")
+    assert r"(|\mathcal{V}| + d)/(4d) \approx 24.7" in page and "$2d = 1{,}024$" in page
+
+
+def test_notebook_bpe_cell_uses_the_chapter_corpus_and_merge_count():
+    import json as _json
+    import pathlib as _pathlib
+
+    root = _pathlib.Path(__file__).resolve().parents[1] / "chapters/01-foundations"
+    page = (root / "index.md").read_text(encoding="utf-8")
+    nb = _json.loads((root / "examples/attention_mechanisms_demo.ipynb").read_text(encoding="utf-8"))
+    corpus = 'corpus = ["hello", "world", "hello", "help", "held"]'
+    assert corpus in page and "num_merges=4" in page
+    cell = next(c for c in nb["cells"] if c["cell_type"] == "code" and corpus in "".join(c["source"]))
+    assert "range(4)" in "".join(cell["source"])
+    out = "".join("".join(o.get("text", "")) for o in cell.get("outputs", []))
+    for a, b in (("h", "e"), ("he", "l"), ("hel", "l"), ("hell", "o")):
+        assert f"Merged '{a}' + '{b}'" in out
