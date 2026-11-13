@@ -672,14 +672,14 @@ The appeal is that one scoring function replaces dozens of rules. The problems a
 - Short, formulaic text (boilerplate again) scores well because it is predictable.
 - The reference corpus's biases, including which topics and demographics Wikipedia covers, become the filter's biases.
 
-{cite:t}`marion2023less` tested several pruning criteria and found that keeping the *middle* of the perplexity distribution, rather than the head, gave the best downstream models at a fixed token budget, for the reference models they tested. The extremes are both suspicious: the most predictable text is boilerplate and the least predictable is noise. {numref}`fig-ch4-perplexity-terciles` shows CCNet's head, middle and tail split on real pages.
+{cite:t}`marion2023less` tested several pruning criteria and found that keeping the *middle* of the perplexity distribution, rather than the head, gave the best downstream models at a fixed token budget, for the reference models they tested. The extremes are both suspicious: the most predictable text is boilerplate and the least predictable is noise. {numref}`fig-ch4-perplexity-terciles` shows the mechanics of CCNet's head, middle and tail split on real pages, under a deliberately tiny reference model; the listing after it shows, on three controlled documents, why the head is not simply the best text.
 
 ```{figure} figures/perplexity-terciles.*
 :name: fig-ch4-perplexity-terciles
 :alt: Histogram of the perplexity of 4,707 English web pages on a log scale, colored into three equal-count thirds with cuts near 4,770 and 7,786.
 :width: 100%
 
-Perplexity of the same 4,707 pages (`figures/data/wet_stats.json`) under the add-0.5 unigram model of the listing below, trained on 20 English Wikipedia articles (10,774 words), split at its terciles into CCNet's head, middle and tail of 1,569 pages each. The values are large because the reference vocabulary is small, so many web words get the unknown-word probability; only the ranking matters. The distribution is roughly log-normal, so the thirds are wide in perplexity even though they are equal in count.
+Perplexity of the same 4,707 pages (`figures/data/wet_stats.json`) under the add-0.5 unigram model of the listing below, trained on 20 English Wikipedia articles (10,774 words), split at its terciles into CCNet's head, middle and tail of 1,569 pages each. The distribution is roughly log-normal, so the thirds are wide in perplexity even though they are equal in count; that is what the figure shows. It does not show what a production CCNet model would place in each third. With a 10,774-word reference most web words fall back on the unknown-word probability, so the score here mostly measures how many of a page's words lie outside that small vocabulary; the perplexity values, the cut points and which page lands in which third would all differ under a 5-gram model trained on the whole of Wikipedia.
 ```
 
 A smoothed unigram model is enough to see how the ranking behaves. Perplexity ({ref}`sec-ch1-perplexity`) of a document with tokens $x_1, \dots, x_T$ under a model $p_\theta$ is
