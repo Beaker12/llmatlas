@@ -163,6 +163,15 @@ def figure_failures(chapter_dir, min_figures):
                 failures.append(f"figures/{dot.name}: no line in figures/SOURCES.sha256")
             elif recorded[dot.name] != actual:
                 failures.append(f"figures/{dot.name}: hash differs from figures/SOURCES.sha256 (re-render and record the new hash)")
+            for suffix in (".svg", ".pdf"):
+                if not dot.with_suffix(suffix).exists():
+                    failures.append(f"figures/{dot.stem}{suffix}: missing, but figures/{dot.name} is its source")
+        script = figures_dir / "make_figures.py"
+        if script.exists():
+            code = script.read_text(encoding="utf-8")
+            for dot in sorted(figures_dir.glob("*.dot")):
+                if re.search(rf"""["']{re.escape(dot.stem)}(?:\.(?:svg|pdf))?["']""", code):
+                    failures.append(f"figures/{dot.stem}: has a .dot source but make_figures.py also writes it (schematics are rendered from Graphviz)")
     if count < min_figures:
         failures.append(f"index.md:L1: {count} figures, at least {min_figures} required")
     return failures
@@ -179,6 +188,8 @@ def regeneration_failures(chapter_dir, out_dir):
             return [f"figures/make_figures.py: exit {done.returncode}: {done.stderr.strip().splitlines()[-1:]}"]
         for svg in sorted(Path(out_dir).glob("*.svg")):
             written.add(svg.name)
+            if svg.with_suffix(".dot").name in {d.name for d in figures_dir.glob("*.dot")}:
+                failures.append(f"figures/{svg.name}: has a .dot source but make_figures.py also writes it")
             committed = figures_dir / svg.name
             if not committed.exists():
                 failures.append(f"figures/{svg.name}: written by make_figures.py but not committed")
@@ -363,3 +374,27 @@ def test_the_sample_chapter_regenerates_byte_for_byte(tmp_path):
 def test_a_plotting_fence_edited_without_regenerating_is_reported(tmp_path):
     chapter = copy(tmp_path, "plt.plot([1, 2, 3])", "plt.plot([1, 2, 5])")
     only(regeneration_failures(chapter, tmp_path / "out"), "figures/ramp.svg: differs from the committed file")
+
+
+def _with_dot(tmp_path, name, pdf):
+    chapter = copy(tmp_path)
+    figures = chapter / "figures"
+    (figures / f"{name}.dot").write_text("digraph g { a -> b }\n", encoding="utf-8")
+    digest = hashlib.sha256((figures / f"{name}.dot").read_bytes()).hexdigest()
+    (figures / "SOURCES.sha256").write_text(f"{digest}  {name}.dot\n", encoding="utf-8")
+    (figures / f"{name}.svg").write_text("<svg/>", encoding="utf-8")
+    if pdf:
+        (figures / f"{name}.pdf").write_bytes(b"%PDF")
+    return chapter
+
+
+def test_a_figure_with_a_dot_source_and_a_script_is_reported(tmp_path):
+    chapter = _with_dot(tmp_path, "ramp", pdf=True)
+    failures = figure_failures(chapter, 2)
+    assert any("make_figures.py also writes it" in f for f in failures), failures
+
+
+def test_a_dot_without_its_pdf_is_reported(tmp_path):
+    chapter = _with_dot(tmp_path, "flow", pdf=False)
+    failures = figure_failures(chapter, 2)
+    assert any("flow.pdf: missing" in f for f in failures), failures

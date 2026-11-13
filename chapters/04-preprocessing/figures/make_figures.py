@@ -372,47 +372,11 @@ def suffix_array(out):
     save(fig, out, "suffix-array")
 
 
-def pipeline_map_shuffle(out):
-    """Schematic of section 9.2: two per-document maps around one global deduplication step."""
-    from matplotlib.patches import FancyBboxPatch
-
-    fig, ax = plt.subplots(figsize=(7.4, 3.6))
-    ax.set_axis_off()
-    panels = (  # x of the left edge, title, edge color, fill
-        (0.0, "Map 1:\nper document", BLUE, "#ebf8ff"),
-        (3.55, "Global step:\nsees every shard", ORANGE, "#fffaf0"),
-        (7.1, "Map 2:\nper document, again", GREEN, "#f0fff4"),
-    )
-    for x, title, edge, fill in panels:
-        ax.add_patch(FancyBboxPatch((x, 0), 2.9, 3.3, boxstyle="round,pad=0.02,rounding_size=0.12",
-                                    fc=fill, ec=edge, lw=1.2))
-        ax.text(x + 1.45, 2.92, title, ha="center", va="center", fontsize=9.5, fontweight="bold")
-
-    def box(x, y, w, h, text, fc="white", ec="#4a5568"):
-        ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.02,rounding_size=0.08",
-                                    fc=fc, ec=ec, lw=0.9))
-        ax.text(x + w / 2, y + h / 2, text, ha="center", va="center", fontsize=9, linespacing=1.3)
-
-    box(0.15, 1.35, 2.6, 1.1, "shard 1\nextract → language ID\n→ quality rules\n→ MinHash signature")
-    box(0.15, 0.25, 2.6, 0.75, "other shards\nsame stages")
-    box(3.7, 0.25, 2.6, 2.2, "shuffle by band bucket\n($b$ keys per document)\n↓\nunion-find over\ncandidate pairs\n↓\n"
-        "list of documents\nto drop", fc="#feebc8", ec="#9c4221")
-    box(7.25, 1.35, 2.6, 1.1, "shard 1\ndrop listed duplicates\n→ PII redaction\n→ decontamination")
-    box(7.25, 0.25, 2.6, 0.75, "other shards\nsame stages")
-    arrow = dict(arrowstyle="-|>", color="#4a5568", lw=1.0, mutation_scale=11)
-    for y in (1.9, 0.62):
-        ax.annotate("", xy=(3.7, 1.35), xytext=(2.75, y), arrowprops=arrow)
-        ax.annotate("", xy=(7.25, y), xytext=(6.3, 1.35), arrowprops=arrow)
-    ax.set_xlim(-0.05, 10.05)
-    ax.set_ylim(-0.05, 3.35)
-    save(fig, out, "pipeline-map-shuffle")
-
-
 def main(out):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     for make in (retention_funnel, page_blocks, unicode_forms, gopher_stats, perplexity_terciles, pareto_keep,
-                 minhash_bands, lsh_curves, dedup_scope, suffix_array, pipeline_map_shuffle):
+                 minhash_bands, lsh_curves, dedup_scope, suffix_array):
         make(out)
 
 
