@@ -75,6 +75,15 @@ $$\frac{\partial p_i}{\partial z_j} = p_i(\delta_{ij} - p_j), \qquad \text{so fo
 
 This is the identity behind the attention gradient in Section 3.3 and behind cross-entropy's gradient $p_j - \delta_{j x_i}$ (take $g_j = -\delta_{j x_i}/p_j$ for the target token $x_i$). It also explains saturation: if one $p_i \approx 1$ then every factor $p_i(\delta_{ij} - p_j)$ is near zero, and no gradient flows through that softmax.
 
+{numref}`fig-ch2-softmax-saturation` shows how fast the gradient through one softmax output vanishes as its logit pulls ahead.
+
+```{figure} figures/softmax-saturation.*
+:name: fig-ch2-softmax-saturation
+:alt: Log-scale plot of the softmax derivative p1 times one minus p1 against the logit gap, for 2 and 64 logits; at gap 8 it is 0.00034 for 2 logits and 0.02 for 64.
+
+The diagonal softmax derivative $\partial p_1/\partial z_1 = p_1(1 - p_1)$ when logit $z_1$ leads all the others by the same gap. It peaks at 0.25 where $p_1 = 0.5$ and then falls by about a factor $e$ per unit of gap. At a gap of 8, the standard deviation of unscaled scores at $d_k = 64$, it is 0.00034 with 2 logits and 0.02 with 64. Computed from the formula above by `figures/make_figures.py`.
+```
+
 (sec-ch2-norms-conditioning-scale-matters)=
 
 ### 0.3 Norms, conditioning and why scale matters
@@ -221,6 +230,15 @@ Training by maximum likelihood is the same as minimizing this divergence from th
 $$\mathcal{L}(\theta) = -\mathbb{E}_{x \sim p_{\text{data}}}[\log p_\theta(x)] = H(p_{\text{data}}) + D_{KL}(p_{\text{data}} \,\|\, p_\theta).$$
 
 The entropy of the data does not depend on $\theta$, so any change of $\theta$ that lowers the loss lowers the KL divergence by exactly the same amount, and the loss can never fall below $H(p_{\text{data}})$, which is reached only when $p_\theta = p_{\text{data}}$. For a worked case take $p = (0.5, 0.25, 0.25)$ and $q = (0.25, 0.5, 0.25)$. In bits, $H(p) = 0.5 \cdot 1 + 0.25 \cdot 2 + 0.25 \cdot 2 = 1.5$, $H(p, q) = 0.5 \cdot 2 + 0.25 \cdot 1 + 0.25 \cdot 2 = 1.75$, and $D_{KL}(p \,\|\, q) = 0.5 \log_2 2 + 0.25 \log_2 0.5 + 0 = 0.25 = 1.75 - 1.5$.
+
+{numref}`fig-ch2-cross-entropy-decomposition` draws the worked example, with two more choices of $q$ for comparison.
+
+```{figure} figures/cross-entropy-decomposition.*
+:name: fig-ch2-cross-entropy-decomposition
+:alt: Stacked horizontal bars: each cross-entropy H(p, q) is the entropy H(p) = 1.5 bits plus a KL segment of 0, 0.085 and 0.25 bits for three choices of q.
+
+Cross-entropy splits into the entropy of $p$, the same for every model, and the KL divergence, the only part a model can reduce. The distributions are the worked example above, $p = (0.5, 0.25, 0.25)$, with $q = p$, a uniform $q$ and $q = (0.25, 0.5, 0.25)$; values in bits computed by `figures/make_figures.py`.
+```
 
 (sec-ch2-mutual-information)=
 
@@ -457,6 +475,15 @@ eta=0.037, beta_mom=0.9: |theta| after 200 steps = 0.000161
 eta=0.039, beta_mom=0.9: |theta| after 200 steps = 2.58e+24
 ```
 
+{numref}`fig-ch2-optimizer-trajectories` shows the three update rules on the Rosenbrock function, with momentum's learning rate inside the bound above along its whole path.
+
+```{figure} figures/optimizer-trajectories.*
+:name: fig-ch2-optimizer-trajectories
+:alt: Left: paths of SGD, SGD with momentum and Adam on Rosenbrock contours from (-1, -1) to the minimum at (1, 1); momentum overshoots to about (2, 3.7). Right: loss against iteration on a log scale.
+
+SGD ($\eta = 10^{-3}$), SGD with momentum ($\eta = 5 \times 10^{-4}$, $\beta_{\text{mom}} = 0.9$) and Adam ($\eta = 10^{-2}$) on the Rosenbrock function, 10,000 steps from $(-1, -1)$. Momentum overshoots far up the valley wall before it settles; plain SGD creeps along the valley floor and still has a loss of about $3 \times 10^{-5}$ at the end. From the notebook section {ref}`nb-math-rosenbrock`, by executing its cell tagged `figure:optimizer-trajectories`.
+```
+
 (sec-ch2-adam-optimizer)=
 
 #### Adam Optimizer
@@ -538,6 +565,15 @@ step   1000: lr 0.0001747
 step   4000: lr 0.0006988
 step  16000: lr 0.0003494
 step 100000: lr 0.0001398
+```
+
+{numref}`fig-ch2-lr-schedules` compares the schedules on one set of settings.
+
+```{figure} figures/lr-schedules.*
+:name: fig-ch2-lr-schedules
+:alt: Log-scale learning rate against step for linear warm-up with cosine decay, inverse square root decay and constant after warm-up; all three rise linearly for 1,000 steps to 0.001.
+
+The three schedules with the notebook's settings: peak $\eta_{\max} = 10^{-3}$ after 1,000 warm-up steps, cosine decay to $\eta_{\min} = 10^{-5}$ at step 10,000. On the logarithmic axis the linear warm-up looks steep at the start and flat near its end. From the notebook section {ref}`nb-math-schedules`, by executing its cell tagged `figure:lr-schedules`.
 ```
 
 (sec-ch2-gradient-clipping)=
@@ -759,6 +795,15 @@ $$\frac{\partial h^{(l+1)}}{\partial h^{(l)}} = I + \frac{\partial F(h^{(l)})}{\
 
 The identity term gives every layer a direct path for the gradient, so a deep stack no longer multiplies a long chain of possibly small Jacobians {cite}`he2016deep`. It does not by itself bound the gradient's magnitude: where normalization sits relative to the residual branch matters, and the original post-LN transformer needs learning-rate warm-up precisely because its gradients at initialization are not well behaved, which is why most later models normalize before each sublayer (pre-LN) {cite}`xiong2020layer`.
 
+{numref}`fig-ch2-gradient-flow-depth` measures the effect: the same stack with and without the fixes.
+
+```{figure} figures/gradient-flow-depth.*
+:name: fig-ch2-gradient-flow-depth
+:alt: Gradient norm against depth through 12 linear layers on a log scale: without LayerNorm at std 0.02 it falls from about 100 at the output to about 0.000002 at the input; the other three variants stay near 100.
+
+Gradient norm at each depth of a stack of 12 linear layers ($d = 128$). With weights of standard deviation 0.02 and nothing else, each layer shrinks the gradient and it falls by nearly eight orders of magnitude; Xavier scaling, LayerNorm or a residual connection each keeps it near its output value. From the notebook section {ref}`nb-math-layernorm`, by executing its cell tagged `figure:gradient-flow-depth`.
+```
+
 (sec-ch2-pre-post-ln)=
 
 #### Pre-LN versus Post-LN
@@ -768,6 +813,15 @@ The original transformer normalizes after adding the branch (post-LN); most late
 $$\text{post-LN: } h^{(l+1)} = \operatorname{LN}\left(h^{(l)} + F(h^{(l)})\right), \qquad \text{pre-LN: } h^{(l+1)} = h^{(l)} + F\left(\operatorname{LN}(h^{(l)})\right).$$
 
 In pre-LN the residual stream is never normalized on its way through the stack, so $\partial h^{(l+1)} / \partial h^{(l)} = I + \partial F(\operatorname{LN}(h^{(l)}))/\partial h^{(l)}$ keeps the identity term of {ref}`sec-ch2-residual-connections`, and the gradient reaching layer $l$ contains the output gradient unchanged. In post-LN every block's output passes through a LayerNorm Jacobian ({ref}`sec-ch2-layer-normalization-mathematics`), which divides by the standard deviation of $h^{(l)} + F(h^{(l)})$, so there is no path on which the gradient passes untouched. {cite:t}`xiong2020layer` make the difference quantitative at initialization: for post-LN "the scale of the gradients to the last FFN layer is of order $\mathcal{O}(d\sqrt{\ln d})$ which is independent of $L$", while for pre-LN it is $\mathcal{O}(d\sqrt{\ln d / L})$, because the residual stream entering the final LayerNorm grows with depth and the normalization divides the gradients of all parameters by about $\sqrt{L}$. For a 24-layer model that factor is $\sqrt{24} = 4.899$: the post-LN gradients near the output are about five times larger relative to pre-LN, which is why post-LN needs warm-up ({ref}`sec-ch2-linear-warmup`) and pre-LN can often do without it.
+
+{numref}`fig-ch2-pre-post-ln` puts the two arrangements side by side.
+
+```{figure} figures/pre-post-ln.*
+:name: fig-ch2-pre-post-ln
+:alt: Two block diagrams. Pre-LN: h(l) goes through LN and F to an addition, and a green identity path goes straight to the addition. Post-LN: h(l) and F(h(l)) are added and the sum, including the red residual path, passes through LN.
+
+One block in each arrangement, drawn forward; the gradient runs back along the same edges. In pre-LN (top) the identity path reaches the addition untouched, so its Jacobian is $I$; in post-LN (bottom) the residual path also passes through $\operatorname{LN}$ and its Jacobian. Schematic of the two equations above.
+```
 
 (sec-ch2-layer-normalization-mathematics)=
 
@@ -834,6 +888,15 @@ where $(G \odot A)\mathbf{1}\mathbf{1}^\top$ broadcasts each row's sum of $G \od
 $$\frac{\partial \mathcal{L}}{\partial Q} = \frac{1}{\sqrt{d_k}}\frac{\partial \mathcal{L}}{\partial S} K, \qquad \frac{\partial \mathcal{L}}{\partial K} = \frac{1}{\sqrt{d_k}}\left(\frac{\partial \mathcal{L}}{\partial S}\right)^\top Q, \qquad \frac{\partial \mathcal{L}}{\partial V} = A^\top \frac{\partial \mathcal{L}}{\partial O}$$
 
 The $A \odot (\cdot)$ factor is why saturated attention (one weight near 1) passes almost no gradient to the other positions, and why the scores are divided by $\sqrt{d_k}$ ({ref}`sec-ch2-sqrt-dk`).
+
+{numref}`fig-ch2-attention-graph` lays the forward values and the backward products out as one graph.
+
+```{figure} figures/attention-graph.*
+:name: fig-ch2-attention-graph
+:alt: Computation graph: Q and K feed S, S feeds A, A and V feed O. Below each forward node, dashed red arrows run from dL/dO back to G and dL/dV, from G to dL/dS, and from dL/dS to dL/dQ and dL/dK.
+
+Scaled dot-product attention as a computation graph. The top nodes are the forward values with their shapes; below each is the vector-Jacobian product the backward pass computes there, and the dashed arrows run the way the gradient flows. Schematic of the equations above.
+```
 
 ```python
 import math
@@ -989,6 +1052,15 @@ $$\mathcal{L}(D) = \left(\frac{D_c}{D}\right)^{\alpha_D}$$
 
 with $\alpha_D \approx 0.095$ and $D_c \approx 5.4 \times 10^{13}$ tokens. Kaplan et al. fit these laws on models from 768 to 1.5 billion non-embedding parameters and datasets from 22 million to 23 billion tokens, so applying them to larger models is an extrapolation.
 
+{numref}`fig-ch2-kaplan-power-laws` plots both laws and marks how far each fit reaches.
+
+```{figure} figures/kaplan-power-laws.*
+:name: fig-ch2-kaplan-power-laws
+:alt: Two log-log plots of loss against N and against D, straight lines; the fitted ranges 768 to 1.5 billion parameters and 22 million to 23 billion tokens are shaded, with dashed extrapolation beyond.
+
+The parameter and data laws with the constants above: $N_c = 8.8 \times 10^{13}$, $\alpha_N = 0.076$ and $D_c = 5.4 \times 10^{13}$, $\alpha_D = 0.095$. A power law is a straight line on log-log axes; the shaded bands are the ranges Kaplan et al. fit, and the dashed lines are extrapolation. Constants from {cite:t}`kaplan2020scaling`, curves computed by `figures/make_figures.py`.
+```
+
 (sec-ch2-flops)=
 
 #### Training Compute per Token
@@ -1051,6 +1123,15 @@ Chinchilla scaling implies that many large models are "undertrained"—better pe
 
 Because $a_N \approx a_D \approx 0.5$, the compute-optimal ratio $D^*/N^*$ is roughly the same at every budget, and Hoffmann et al.'s Table 3 puts it near 20 tokens per parameter: 20.2 billion tokens for 1 billion parameters, 205.1 billion for 10 billion, 1.5 trillion for 67 billion and 3.7 trillion for 175 billion {cite}`hoffmann2022training`, ratios of 20.2, 20.5, 22.4 and 21.1. Chinchilla itself, 70 billion parameters on 1.4 trillion tokens, sits at 20. With $C \approx 6ND$ ({ref}`sec-ch2-flops`) the rule fixes both sizes from the budget alone. GPT-3's 175 billion parameters would on this rule call for about 3.5 trillion training tokens (Table 3's own projection is 3.7 trillion).
 
+{numref}`fig-ch2-allocation-lines` shows how far the two prescriptions part once the budget moves away from Chinchilla's.
+
+```{figure} figures/allocation-lines.*
+:name: fig-ch2-allocation-lines
+:alt: Two log-log plots against compute: optimal parameters and optimal tokens for Kaplan's exponents 0.73 and 0.27 and Chinchilla's 0.50 and 0.50, crossing at Chinchilla's size, with four Table 3 points on the Chinchilla lines.
+
+Compute-optimal parameters $N^*$ (left) and tokens $D^*$ (right) under Kaplan's exponents and Chinchilla's. Both lines are drawn through Chinchilla's own size (70 billion parameters, 1.4 trillion tokens, $C = 6ND$); the dots are the four rows of Table 3 quoted above. Exponents and points from {cite:t}`kaplan2020scaling` and {cite:t}`hoffmann2022training`; the common anchor is this figure's choice.
+```
+
 (sec-ch2-computational-complexity)=
 
 ### 4.3 Computational Complexity
@@ -1088,6 +1169,15 @@ n=  2048, d=12288: attention is 2.7% of the per-layer work
 n=  8192, d= 4096: attention is 25.0% of the per-layer work
 n= 24576, d= 4096: attention is 50.0% of the per-layer work
 n=131072, d= 4096: attention is 84.2% of the per-layer work
+```
+
+{numref}`fig-ch2-attention-crossover` plots the share over the whole range of sequence lengths.
+
+```{figure} figures/attention-crossover.*
+:name: fig-ch2-attention-crossover
+:alt: Attention's share of per-layer work against sequence length for d = 4,096 and d = 12,288; each crosses 50 percent at n = 6d, and GPT-3 at n = 2,048 is at 2.7 percent.
+
+Attention's share of the per-layer multiply-adds, $2n^2d/(12nd^2 + 2n^2d)$, against sequence length. Each curve crosses one half at $n = 6d$; GPT-3 at its context of 2,048 tokens sits at 2.7%. Computed by `figures/make_figures.py` from the `attention_share` listing above.
 ```
 
 (sec-ch2-memory-requirements)=
@@ -1148,6 +1238,16 @@ activations (batch 8, no recomputation): 2203 GB
 
 Weights and optimizer state alone are close to three terabytes, which is why a 175B-parameter model is trained across hundreds of accelerators with the parameters, gradients and optimizer state sharded between them.
 
+{numref}`fig-ch2-memory-stack` breaks the total down.
+
+```{figure} figures/memory-stack.*
+:name: fig-ch2-memory-stack
+:alt: Stacked bar of GPT-3 training memory: fp16 weights 349 GB, fp16 gradients 349 GB, fp32 master weights 698 GB, Adam moments 1,397 GB and activations 2,203 GB, 4,996 GB in total.
+:width: 90%
+
+Training memory of the GPT-3 175B configuration with mixed precision and Adam, batch 8 of 2,048 tokens, no activation recomputation. The Adam moments alone take more memory than the weights, gradients and master copy together. Computed by `figures/make_figures.py` from the `estimate_memory_usage` listing above.
+```
+
 ```{admonition} Scaling Laws Visualization
 :class: note
 The notebook section {ref}`nb-math-scaling` plots the Kaplan parameter, data and compute laws (with the sizes of GPT-2, GPT-3 and Llama 2 70B marked on the parameter curve as extrapolations of the fit, not measured losses) and the Chinchilla allocation derived from $C \approx 6ND$ {cite}`kaplan2020scaling` and $D = 20N$, and {ref}`nb-math-memory` computes parameter counts, training memory and FLOPs per step for the GPT-2 and GPT-3 model sizes, asserting that the 175B configuration comes out at 175B.
@@ -1186,6 +1286,15 @@ for dtype in (torch.float32, torch.float16, torch.bfloat16):
 torch.float32   bits 32, max 3.403e+38, smallest normal 1.175e-38, eps 1.192e-07
 torch.float16   bits 16, max 6.55e+04, smallest normal 6.104e-05, eps 0.0009766
 torch.bfloat16  bits 16, max 3.39e+38, smallest normal 1.175e-38, eps 0.007812
+```
+
+{numref}`fig-ch2-float-formats` draws the table.
+
+```{figure} figures/float-formats.*
+:name: fig-ch2-float-formats
+:alt: Top: bit layouts of fp32 (1 sign, 8 exponent, 23 mantissa bits), fp16 (1, 5, 10) and bf16 (1, 8, 7). Bottom: on a log axis, fp32 and bf16 span 1e-38 to 3e38 while fp16 spans only 6.1e-5 to 65,504.
+
+Bit layouts (top) and normal ranges (bottom) of the three formats. bf16 keeps fp32's 8 exponent bits and so its range, and pays with mantissa bits; fp16 spends more bits on the mantissa and covers about 9 decades instead of about 76. Values from the table above, as reported by `torch.finfo`.
 ```
 
 (sec-ch2-log-sum-exp)=
