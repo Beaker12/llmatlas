@@ -81,6 +81,37 @@ def test_repeated_spans_returns_one_maximal_span_when_the_repeat_is_longer_than_
     assert repeated_spans(tokens, 4) == [(10, 18)]
 
 
+def test_repeated_spans_keeps_the_earliest_run_whole_when_occurrences_overlap():
+    # R4-08: periodic text is the chapter's spam example; the earliest min_len-token run survives intact.
+    repeated_spans = run("def repeated_spans")["repeated_spans"]
+    assert repeated_spans(("buy now " * 40).split(), 50) == [(50, 80)]
+    assert repeated_spans(list("aaaaaa"), 2) == [(2, 6)]
+
+
+def test_adjacent_pair_scans_fail_as_the_page_says():
+    # R4-01: with copies at 0, 7, 14 followed by m, z, p the later-position rule leaves two copies; the
+    # second-in-array rule leaves one, and it is the latest when the copies sort latest first.
+    def survivors(tokens, rule):
+        n, m = len(tokens), 6
+        sa = sorted(range(n), key=lambda i: tokens[i:])
+        starts = {i for i in range(n) if tokens[i : i + m] == tokens[:m]}
+        marked = {max(a, b) if rule == "later" else b for a, b in zip(sa, sa[1:]) if a in starts and b in starts}
+        return sorted(starts - marked)
+
+    body = "a b c d e f".split()
+    assert survivors(body + ["m"] + body + ["z"] + body + ["p"], "later") == [0, 7]
+    assert survivors(body + ["z"] + body + ["p"] + body + ["m"], "second") == [14]
+    repeated_spans = run("def repeated_spans")["repeated_spans"]
+    assert repeated_spans(body + ["m"] + body + ["z"] + body + ["p"], 6) == [(7, 13), (14, 20)]
+
+
+def test_encoding_and_simhash_listings_hold_their_own_assertions():
+    # R4-04, R4-05: the listings assert their claims; executing them is the test.
+    run("def decode_page")
+    ns = run("def simhash")
+    assert ns["d_ham"](ns["fp"]["base"], ns["fp"]["edited"]) == 6
+
+
 def test_repetition_stats_divides_by_len_text_and_measures_paragraphs_as_datatrove_does():
     # C4-16 / D18: datatrove's GopherRepetitionFilter divides every character count by len(text) and
     # counts duplicate paragraphs (split on blank lines) as well as duplicate lines.

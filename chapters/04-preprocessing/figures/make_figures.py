@@ -134,7 +134,12 @@ def unicode_forms(out):
             changed = t != s
             ax.add_patch(Rectangle((col_x[j + 2] - 0.02, y - 0.42), 1.14, 0.84,
                                    color="#fefcbf" if changed else "#f7fafc", ec="#4a5568", lw=0.6))
-            ax.text(col_x[j + 2] + 0.55, y + 0.14, t, fontsize=13, ha="center", va="center")
+            cx = col_x[j + 2] + 0.55
+            if t == "fi":  # two letters set apart, so the font cannot draw its ligature
+                for dx, letter in ((-0.07, "f"), (0.07, "i")):
+                    ax.text(cx + dx, y + 0.14, letter, fontsize=13, ha="center", va="center")
+            else:
+                ax.text(cx, y + 0.14, t, fontsize=13, ha="center", va="center")
             ax.text(col_x[j + 2] + 0.55, y - 0.25, " ".join(f"{ord(c):04X}" for c in t), fontsize=8,
                     ha="center", va="center", family="DejaVu Sans Mono")
     ax.text(col_x[0], -0.25, "Shaded cells differ from the input. Code points are hexadecimal (U+ omitted).",
