@@ -73,7 +73,7 @@ The `Build and deploy book` workflow runs the full suite with `LLMATLAS_OFFLINE=
 - `LLMATLAS_OFFLINE=1`: notebooks and figure scripts read the copies committed in the chapter's `examples/data/` or `figures/data/` directory instead of the network. The notebook tests, `make notebooks`, the figure scripts and the build workflow set it.
 - `LLMATLAS_LIVE=1`: set by the weekly `Live checks` workflow to mark a live run. Live tests are selected with `-m live`, not by this variable.
 - `LLMATLAS_USER_AGENT`: the User-Agent header for network requests made by the chapter 3 and 6 notebooks, `tools/fetch_arch_samples.py` and `tools/verify_arxiv.py`, each of which has its own default.
-- `LLMATLAS_WRITE_DATA=1`: lets a fenced example that measures data from the network also save it under the chapter's `figures/data/` directory, from which `make_figures.py` draws the plot. Without it the example only prints.
+- `LLMATLAS_WRITE_DATA=1`: makes the network example in chapter 1's tokenization deep-dive, which prints token counts per language for several encodings, also write them to `tokens_per_language.json` in the current directory. Run it from `chapters/01-foundations/figures/data/`, where `make_figures.py` reads that file for its plot. Without the variable the example only prints.
 
 ### Re-executing a notebook for commit
 
