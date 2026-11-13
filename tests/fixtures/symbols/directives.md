@@ -5,9 +5,7 @@
 
 The answer is $\kappa_{sol}$.
 
-$$
-\rho_{sol} = 1
-$$
+$$\rho_{sol} = 1$$
 
 ```python
 answer = "$\nu_{code}$"
