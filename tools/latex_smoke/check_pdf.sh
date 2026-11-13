@@ -38,7 +38,14 @@ done
 
 embedded=$(pdffonts "$pdf" | tail -n +3 | awk '$(NF-4) == "yes" {print $1}' | tr -d ' ')
 for want in "$cjk" "$arabic"; do
-  if grep -qiF -- "${want// /}" <<<"$embedded"; then
+  # A TrueType collection (Ubuntu's fonts-noto-cjk ships NotoSansCJK-Regular.ttc) is embedded under the PostScript
+  # name of one of its faces, which need not carry the region suffix of the family asked for: "Noto Sans CJK SC"
+  # may appear as NotoSansCJKsc-Regular, NotoSansCJKjp-Regular or NotoSansCJK-Regular. For a family ending in a
+  # two-letter region the name is therefore matched without the region, followed by an optional region code and a
+  # style ("-Regular") or the end of the name. The glyph check below (samples.txt) still proves the SC glyphs render.
+  base=$(sed -E 's/ [A-Z]{2}$//' <<<"$want")
+  if grep -qiF -- "${want// /}" <<<"$embedded" ||
+     { [ "$base" != "$want" ] && grep -qiE -- "^([A-Z]{6}\+)?${base// /}([a-z]{2})?(-|$)" <<<"$embedded"; }; then
     echo "ok: font $want is embedded"
   else
     echo "FAIL: font $want is not embedded"
