@@ -269,7 +269,7 @@ The four merges of the listing on its corpus (hello twice, world, help, held), d
 **Other subword algorithms**:
 
 1. **Original BPE** {cite}`sennrich2015neural`: merges the most frequent adjacent pair
-1. **WordPiece** {cite}`wu2016google`: Google's variant that merges the pair which most increases the training corpus likelihood
+1. **WordPiece** {cite}`schuster2012japanese`: Google's variant, later used in its translation system {cite}`wu2016google`, that merges the pair which most increases the training corpus likelihood
 1. **Unigram LM** {cite}`kudo2018subword`: starts from a large candidate vocabulary and prunes it, keeping the segmentation with the highest probability
 1. **SentencePiece** {cite}`kudo2018sentencepiece` is a *toolkit*, not an algorithm: it implements both BPE and unigram on raw text without pre-tokenization
 
@@ -402,7 +402,7 @@ RMS of a sinusoidal encoding:    0.707
 
 #### Embedding Sharing and Tying
 
-Many architectures share the input embedding matrix with the output projection {cite}`press2017using` (GPT-2, T5, Gemma do; the LLaMA and Mistral families keep them separate):
+Many architectures share the input embedding matrix with the output projection {cite}`press2017using` (GPT-2, T5 and Gemma do; Mistral 7B keeps them separate, and in the Llama family the larger models keep them separate while the 1B and 3B models of Llama 3.2 share them {cite}`meta2024llama32card`):
 
 ```python
 # pseudo-code: `TransformerStack` stands for the model body; illustrates weight tying only
@@ -468,7 +468,7 @@ Attention by itself does not see the order of its inputs, so positional informat
 - "The cat sat on the mat"
 - "The mat sat on the cat"
 
-Without positional information and without a mask, self-attention treats each sentence as a multiset of tokens: permuting the inputs permutes the outputs in the same way and changes nothing else, so these two sentences, which hold the same tokens, get the same set of output vectors. A causal decoder is not completely order-blind even without positions, because its mask lets position $m$ attend to exactly $m$ earlier-or-equal tokens; but that is a weak signal, and every model below supplies positions explicitly.
+Without positional information and without a mask, self-attention treats each sentence as a multiset of tokens: permuting the inputs permutes the outputs in the same way and changes nothing else, so these two sentences, which hold the same tokens, get the same set of output vectors. A causal decoder is not completely order-blind even without positions, because its mask lets position $m$ attend to exactly $m + 1$ tokens, positions $0$ to $m$; but that is a weak signal, and every model below supplies positions explicitly.
 
 The sinusoidal and learned schemes below both add a position vector to each token vector, as in {numref}`fig-ch1-embedding-composition`.
 
@@ -500,7 +500,7 @@ where:
 - Deterministic (same encoding for same position)
 - Bounded values (between -1 and 1)
 - Different frequencies for different dimensions
-- Defined for any position, so a model *can* be run past its training length, although in practice quality degrades quickly there
+- Defined for any position, so a model *can* be run past its training length, although in practice quality degrades quickly there {cite}`press2022train`
 
 ```python
 import torch
@@ -566,7 +566,7 @@ position 0: [0.0, 1.0, 0.0, 1.0]
 ```{figure} figures/sinusoidal-heatmap.*
 :name: fig-ch1-sinusoidal-heatmap
 :width: 83%
-:alt: Heatmap of 64 dimensions by 100 positions: the lowest dimensions alternate red and blue every few positions, higher dimensions change ever more slowly, and the top rows are almost constant.
+:alt: Heatmap of 64 dimensions by 100 positions: the lowest dimensions alternate red and blue every few positions, higher dimensions change ever more slowly, and the bottom rows, the highest dimensions, are almost constant.
 
 The encoding table the listing prints, $m < 100$ and $d = 64$, drawn by its first plot. Each pair of dimensions is a sine and cosine whose wavelength grows with the dimension index.
 ```
@@ -624,13 +624,15 @@ class LearnedPositionalEmbedding(nn.Module):
 
 Instead of adding absolute positions to the input, a relative scheme makes attention depend on the offset $m - m'$ between the query position $m$ and the key position $m'$. {cite:t}`shaw2018self` add learned relative-position *vectors* to the keys and values. T5 {cite}`raffel2019exploring` simplifies this to one learned scalar per head, added to the attention score of every query-key pair:
 
-$$S_{mm'} = \frac{q_m \cdot k_{m'}}{\sqrt{d_k}} + \operatorname{rb}(\operatorname{bucket}(m - m'))$$
+$$S_{mm'} = q_m \cdot k_{m'} + \operatorname{rb}(\operatorname{bucket}(m - m'))$$
+
+T5 does not divide the dot product by $\sqrt{d_k}$; its reference implementation in the `transformers` library {cite}`wolf2020transformers` sets the score scale of `T5Attention` to 1.
 
 The function $\operatorname{bucket}$ maps an offset to one of 32 buckets. Small offsets get a bucket each; larger ones share buckets whose width grows logarithmically, up to an offset of 128, beyond which all offsets share the last bucket. In the encoder, which attends in both directions, half of the buckets are for keys before or at the query and half for keys after it. For keys at or before the query, offsets 0 to 7 have their own buckets, and an offset $8 \le m - m' < 128$ goes to bucket
 
 $$8 + \left\lfloor 8 \, \frac{\ln\big((m - m')/8\big)}{\ln 16} \right\rfloor,$$
 
-so offset 12 lands in bucket $8 + \lfloor 8 \times 0.146 \rfloor = 9$, offset 16 in bucket 10, offset 64 in bucket 14, and every offset from 128 on in bucket 15. A key after the query uses the same rule on $m' - m$ plus 16. A causal decoder never sees keys after the query, so it spends all 32 buckets on the past: offsets 0 to 15 exactly, then 16 log-spaced buckets up to 128. The table $\operatorname{rb}$ holds one scalar per bucket and head, and it is *shared across all layers*: T5 computes the bias once, in the first layer, and adds the same $n_h \times n \times n$ tensor in every layer {cite}`raffel2019exploring`. With $n_h = 8$ heads the whole model spends $32 \times 8 = 256$ parameters on position.
+so offset 12 lands in bucket $8 + \lfloor 8 \times 0.146 \rfloor = 9$, offset 16 in bucket 10, offset 64 in bucket 14, and every offset from 128 on in bucket 15. A key after the query uses the same rule on $m' - m$ plus 16. A causal decoder never sees keys after the query, so it spends all 32 buckets on the past: offsets 0 to 15 exactly, then 16 log-spaced buckets up to 128. The table $\operatorname{rb}$ holds one scalar per bucket and head, and within a stack it is *shared across all layers*: T5 computes the bias once in the first layer of the encoder and once in the first layer of the decoder, and adds the same $n_h \times n \times n$ tensor in every layer of that stack {cite}`raffel2019exploring`. T5-small's released configuration has 32 buckets and $n_h = 8$ heads, so each stack spends $32 \times 8 = 256$ parameters on position and the encoder-decoder model $2 \times 256 = 512$.
 
 ```python
 import math
@@ -701,7 +703,7 @@ bias shape: (8, 16, 16) | parameters: 256
 
 #### Rotary Position Embedding (RoPE)
 
-Rotary position embedding {cite}`su2021roformer` is used by LLaMA, Mistral, Qwen and Gemma. It has no parameters, and like the relative bias it acts *inside* attention: it rotates the queries and keys, never the values or the input embeddings. Split a query or key row vector of width $d_k$ into $d_k/2$ consecutive pairs $(x_{2i}, x_{2i+1})$, $0 \le i < d_k/2$, and rotate pair $i$ at position $m$ by the angle $m\,\omega_i$, with the frequencies $\omega_i = b^{-2i/d_k}$ of the sinusoidal encoding and base $b = 10000$. As a matrix, the rotation at position $m$ is block diagonal:
+Rotary position embedding {cite}`su2021roformer` is used by LLaMA, Mistral, Qwen and Gemma. It has no parameters, and like the relative bias it acts *inside* attention: it rotates the queries and keys, never the values or the input embeddings. Split a query or key row vector of width $d_k$ into $d_k/2$ consecutive pairs $(q_{2i}, q_{2i+1})$ (for a key, $(k_{2i}, k_{2i+1})$), $0 \le i < d_k/2$, and rotate pair $i$ at position $m$ by the angle $m\,\omega_i$, with the frequencies $\omega_i = b^{-2i/d_k}$ of the sinusoidal encoding and base $b = 10000$. As a matrix, the rotation at position $m$ is block diagonal:
 
 ```{math}
 :label: eq-ch1-rope
@@ -788,7 +790,7 @@ The worked number above with $d_k = 2$ and $\omega_0 = 1$: the rotated query and
 
 #### Which Scheme Models Use
 
-Most open-weight models since 2022 use RoPE {cite}`su2021roformer`; a few use ALiBi {cite}`press2022train`. Both encode relative position inside attention without per-position parameters; learned absolute embeddings are now mostly found in BERT- and GPT-2-era models. The parameters each scheme adds are plotted in {ref}`sec-tdd-position-encoding-trade-offs`.
+Most open-weight models since 2022 use RoPE {cite}`su2021roformer`; a few use ALiBi {cite}`press2022train`. ALiBi adds no vector and learns nothing: each head adds to the score of query $m$ and key $m' \le m$ the penalty $-a_h (m - m')$, a fixed slope times the distance, so that attention fades with distance. With 8 heads the slopes are $1/2, 1/4, \dots, 1/2^8$, and the bias is not divided by $\sqrt{d_k}$; models trained on 512 tokens kept their perplexity on longer inputs, where sinusoidal, rotary and T5 positions degraded {cite}`press2022train`. Both encode relative position inside attention without per-position parameters; learned absolute embeddings are now mostly found in BERT- and GPT-2-era models. The parameters each scheme adds are plotted in {ref}`sec-tdd-position-encoding-trade-offs`.
 
 ```{admonition} Embeddings and Positional Encoding
 :class: note
@@ -815,7 +817,7 @@ The milestones this section discusses (sources in the text). Left, each mileston
 
 ### 3.1 From n-grams to Neural Language Models
 
-For decades a language model was an **n-gram** model: the probability of the next word given the previous $n - 1$ words, estimated by counting how often each sequence of $n$ words occurs in a corpus. Counting cannot generalize to sequences it has never seen, and almost every long sequence is unseen. Bengio et al. put a number on this "curse of dimensionality": to model 10 consecutive words from a vocabulary of 100,000 there are "potentially $100{,}000^{10} - 1 = 10^{50} - 1$ free parameters" {cite}`bengio2003neural`. Their answer was the **neural language model**: give every word a learned vector, a "distributed representation", and let a neural network map the vectors of the context words to the next-word distribution, so that what is learned about one sentence transfers to sentences with similar words. The embedding tables of {ref}`sec-ch1-embedding-spaces` descend from this idea. The difference in size is the whole argument:
+For decades a language model was an **n-gram** model: the probability of the next word given a fixed number of previous words (two in a trigram model), estimated by counting how often each such sequence of words occurs in a corpus. Counting cannot generalize to sequences it has never seen, and almost every long sequence is unseen. Bengio et al. put a number on this "curse of dimensionality": to model 10 consecutive words from a vocabulary of 100,000 there are "potentially $100{,}000^{10} - 1 = 10^{50} - 1$ free parameters" {cite}`bengio2003neural`. Their answer was the **neural language model**: give every word a learned vector, a "distributed representation", and let a neural network map the vectors of the context words to the next-word distribution, so that what is learned about one sentence transfers to sentences with similar words. The embedding tables of {ref}`sec-ch1-embedding-spaces` descend from this idea. The difference in size is the whole argument:
 
 ```python
 vocab, context = 100_000, 10
@@ -918,7 +920,7 @@ Self-attention computes a weighted representation of the input sequence, where w
 
    $$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right)V$$
 
-The scaling factor $\sqrt{d_k}$, where $d_k$ is the per-head key dimension, keeps the dot products at unit variance so the softmax does not saturate {cite}`vaswani2017attention`.
+The scaling factor $\sqrt{d_k}$, where $d_k$ is the per-head key dimension, keeps the dot products at unit variance so the softmax does not saturate, assuming the components of $q$ and $k$ are independent with mean 0 and variance 1 (their dot product then has variance $d_k$) {cite}`vaswani2017attention`.
 
 {numref}`fig-ch1-scaled-dot-product-attention` follows the shapes through the formula.
 
@@ -1036,40 +1038,40 @@ import torch.nn.functional as F
 
 class ScaledDotProductAttention(nn.Module):
     """Scaled Dot-Product Attention mechanism."""
-    
+
     def __init__(self, dropout: float = 0.1):
         super().__init__()
         self.dropout = nn.Dropout(dropout)
-        
-    def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, 
+
+    def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor,
                 mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             query: [batch_size, seq_len, d_k]
-            key: [batch_size, seq_len, d_k]  
+            key: [batch_size, seq_len, d_k]
             value: [batch_size, seq_len, d_v]
-            mask: [batch_size, seq_len, seq_len] or None
-            
+            mask: True where attention is allowed, broadcastable to the scores (e.g. [batch, heads, n_q, n_k]), or None
+
         Returns:
             output: [batch_size, seq_len, d_v]
             attention_weights: [batch_size, seq_len, seq_len]
         """
         d_k = query.size(-1)
-        
+
         # Compute attention scores
         scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
-        
+
         # Apply mask if provided (for causal attention)
         if mask is not None:
             scores = scores.masked_fill(mask == 0, torch.finfo(scores.dtype).min)
-        
+
         # Apply softmax to get attention weights
         attention_weights = F.softmax(scores, dim=-1)
         attention_weights = self.dropout(attention_weights)
-        
+
         # Apply attention to values
         output = torch.matmul(attention_weights, value)
-        
+
         return output, attention_weights
 
 
@@ -1165,7 +1167,7 @@ Layer normalization {cite}`ba2016layer` stabilizes training by normalizing input
 
 $$\text{LayerNorm}(x) = \gamma \odot \frac{x - \mu}{\sigma} + \beta$$
 
-where $\mu$ and $\sigma$ are the mean and standard deviation computed across the feature dimension (with a small $\epsilon$ added inside the square root of $\sigma$ for numerical stability), and $\gamma$, $\beta$ are learned per-feature scale and shift.
+where $\mu$ and $\sigma$ are the mean and standard deviation computed across the feature dimension (for numerical stability $\sigma = \sqrt{\operatorname{Var} + \epsilon}$, with a small $\epsilon$ added to the variance under the square root), and $\gamma$, $\beta$ are learned per-feature scale and shift.
 
 (sec-ch1-residual-connections)=
 
@@ -1201,13 +1203,13 @@ import torch.nn as nn
 
 class TransformerBlock(nn.Module):
     """Complete transformer block with attention and feed-forward layers."""
-    
+
     def __init__(self, d_model: int, num_heads: int, d_ff: int, dropout: float = 0.1):
         super().__init__()
         self.attention = MultiHeadAttention(d_model, num_heads, dropout)
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
-        
+
         # Feed-forward network
         self.feed_forward = nn.Sequential(
             nn.Linear(d_model, d_ff),
@@ -1215,24 +1217,24 @@ class TransformerBlock(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(d_ff, d_model)
         )
-        
+
         self.dropout = nn.Dropout(dropout)
-        
+
     def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         # Multi-head attention with residual connection and layer norm
         attn_output, _ = self.attention(x, x, x, mask)
         x = self.norm1(x + self.dropout(attn_output))
-        
+
         # Feed-forward with residual connection and layer norm
         ff_output = self.feed_forward(x)
         x = self.norm2(x + self.dropout(ff_output))
-        
+
         return x
 ```
 
 ```{admonition} Transformer Architecture Implementation
 :class: tip
-The notebook ({ref}`nb-attn-transformer`) assembles one post-LN transformer block from multi-head attention, a position-wise feed-forward network, layer normalization and residual connections, and shows what layer normalization does to activations of different scales. It does not train a model; that is left as an exercise.
+The notebook ({ref}`nb-attn-transformer`) assembles one post-LN transformer block from multi-head attention, a position-wise feed-forward network, layer normalization and residual connections, and shows what layer normalization does to activations of different scales. The notebook's language-model section ({ref}`nb-attn-lm`) then trains a small character-level model and checks that its loss falls.
 ```
 
 (sec-ch1-end-to-end)=
@@ -1578,7 +1580,7 @@ At generation time there is no true sequence. The model computes the distributio
 
 - **Greedy** decoding takes the most probable token every time. It is deterministic and tends to repeat itself in long text.
 - **Temperature** $\tau$ divides the logits before the softmax, $\text{softmax}(z/\tau)$. $\tau < 1$ sharpens the distribution toward greedy, $\tau > 1$ flattens it toward uniform, and $\tau = 1$ samples from the model's own distribution.
-- **Top-k** sampling keeps only the $k_{top}$ most probable tokens, renormalizes and samples; Fan et al. sampled "from the $k = 10$ most likely candidates" {cite}`fan2018hierarchical`.
+- **Top-k** sampling keeps only the $k_{top}$ most probable tokens, renormalizes and samples; {cite:t}`fan2018hierarchical` sampled from the $k_{top} = 10$ most likely candidates.
 - **Top-p** (nucleus) sampling keeps the smallest set of most probable tokens whose total probability reaches $p_{top}$, so the number kept adapts to how confident the model is {cite}`holtzman2020curious`.
 
 The listing applies each rule to the same five logits:
@@ -1623,6 +1625,8 @@ top-p, p = 0.9  the=0.455 a=0.276 cat=0.167 dog=0.102 pizza=0.000
 ```
 
 Halving the temperature raises the top token from 0.445 to 0.643. Top-k with $k_{top} = 2$ keeps "the" and "a" and rescales them by $1/(0.445 + 0.270)$. Top-p with $p_{top} = 0.9$ needs four tokens, because the first three hold only $0.445 + 0.270 + 0.164 = 0.879$; on a more confident distribution the same $p_{top}$ would keep fewer. In practice temperature is combined with top-k or top-p, and the chosen token is then drawn from the result.
+
+Each pass of the loop runs the model on the whole sequence so far, but under the causal mask the keys and values of the earlier positions do not change when a token is appended: the key and value at position $m$ depend only on the tokens at positions $0$ to $m$. Implementations therefore keep them in a **key-value (KV) cache**, which holds, for every layer and every key/value head, one key vector and one value vector per token read or generated so far. Each new token computes its own query, key and value, appends its key and value to the cache and attends over the cache, so the projections and the feed-forward network run for one position instead of the whole prefix; only the attention step still reads every cached position. The price is memory that grows with the sequence: with $L$ layers, key/value width $n_h d_k$ and 2-byte numbers the cache takes $2 \times L \times n_h d_k \times 2$ bytes per token, which for GPT-2 small ($L = 12$, $n_h d_k = 768$) is 36,864 bytes per token and 37,748,736 bytes for a full context of 1,024 tokens. {ref}`sec-ch6-inference-drives-design` compares the cache sizes of modern models.
 
 {numref}`fig-ch1-autoregressive-loop` summarizes the generation loop that any of these rules plugs into.
 
@@ -1704,8 +1708,10 @@ The notebook ({ref}`nb-attn-lm`) builds the causal mask, applies it inside atten
 - An embedding table maps each id to a vector of width $d$. Attention by itself ignores order, so position enters as an added sinusoidal or learned vector, as a bias on the scores (T5, ALiBi) or as a rotation of the queries and keys (RoPE), whose scores depend only on the offset $m' - m$ ({ref}`sec-ch1-rope`).
 - Language modeling went from n-gram counts through recurrent networks to the transformer, whose attention lets every position read any other in a single step; pretraining at scale and instruction tuning followed ({ref}`sec-ch1-historical-context`).
 - Scaled dot-product attention computes $\text{softmax}(QK^\top/\sqrt{d_k})\,V$: every row of weights is positive and sums to 1, and each output is a weighted average of the value vectors. The scores take $\mathcal{O}(n^2)$ memory per head ({ref}`sec-ch1-attention-complexity`). Multi-head attention runs several such maps on slices of width $d_k$ and concatenates them.
-- A transformer block adds an attention sublayer and a feed-forward sublayer to a residual stream, each with a normalization. With biases and $d_{ff} = 4d$ a block holds $12d^2 + 13d$ parameters, which gives GPT-2 small its 124,439,808 ({ref}`sec-ch1-parameter-count`).
+- A transformer block adds an attention sublayer and a feed-forward sublayer to a residual stream, each with a normalization. With biases and $d_{ff} = 4d$ a block holds $12d^2 + 13d$ parameters, which gives GPT-2 small its 124,439,808 ({ref}`sec-ch1-parameter-count`, worked in {ref}`sec-ch1-exercise-7`).
 - A decoder-only model is trained under a causal mask to minimize the mean negative log-likelihood of the next token. Perplexity, $\exp(\mathcal{L})$, compares models that share a tokenizer; bits per byte compares models that do not ({ref}`sec-ch1-perplexity`).
+- An encoder such as BERT is trained instead with the masked-language-model objective: some input tokens are hidden or replaced, and the loss is the mean negative log-likelihood of the original tokens at those positions only ({ref}`sec-ch1-masked-lm`).
+- Text is generated one token at a time: greedy decoding takes the most probable token, while temperature, top-k and top-p sampling trade fidelity for variety; a KV cache keeps the keys and values of earlier positions so that each step processes only the new token ({ref}`sec-ch1-decoding`).
 
 (sec-ch1-exercises)=
 

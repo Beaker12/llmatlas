@@ -19,3 +19,5 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\mathcal{L}_{MLM}$ | masked-language-model loss, mean over the masked positions | C1-13, `sec-ch1-masked-lm` |  |  |
 | $\tilde{x}$ | corrupted input sequence of the masked-language-model objective | C1-13, `sec-ch1-masked-lm` |  |  |
 | $n_{ctx}$ | context length (number of learned position embeddings) | C1-13, `sec-ch1-parameter-count` |  |  |
+| $a_h$ | ALiBi slope of head $h$ | fix round 1, `sec-ch1-positional-encodings` |  |  |
+

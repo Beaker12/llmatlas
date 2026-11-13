@@ -446,3 +446,11 @@ def test_exercise_9_rope_offset():
         assert abs(float(qr @ kr.T) - expected) < 1e-5
     # a different offset gives a different score, so the check can fail
     assert abs(float(apply_rope(q, torch.tensor([0])) @ apply_rope(k, torch.tensor([2])).T) - expected) > 0.1
+
+
+def test_main_page_kv_cache_and_t5_bias_numbers():
+    # KV cache of GPT-2 small: keys and values, 12 layers, width 768, 2-byte numbers
+    per_token = 2 * 12 * 768 * 2
+    assert per_token == 36_864 and per_token * 1024 == 37_748_736
+    # T5-small: 32 buckets x 8 heads per stack, one table in the encoder and one in the decoder
+    assert 32 * 8 == 256 and 2 * 32 * 8 == 512
