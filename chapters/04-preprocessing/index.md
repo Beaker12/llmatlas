@@ -108,7 +108,7 @@ Most published pipelines are a variation of the following sequence. The order ma
 | PII and toxicity        | Microseconds to milliseconds | Modifies rather than drops | Final text            |
 | Decontamination         | Microseconds              | Under 1%          | Benchmark set                    |
 
-The percentages compound. A document that survives language identification with probability 0.3, quality rules with 0.7 and deduplication with 0.6 has about a one in eight chance of being trained on. That factor of eight is not what turns petabytes of crawl into terabytes of corpus: most of that reduction happens before any filter runs, at text extraction, because a WARC record stores the whole HTTP response (headers, markup, scripts and styles) and the visible text extracted from it is a small part of those bytes. {numref}`fig-ch4-retention-funnel` shows the same compounding in a published pipeline.
+The percentages compound. A document that survives language identification with probability 0.3, quality rules with 0.7 and deduplication with 0.6 has about a one in eight chance of being trained on. That factor of eight is not what turns petabytes of crawl into terabytes of corpus. Measured in bytes, most of that reduction happens before any filter runs, at text extraction: a WARC record stores the whole HTTP response (headers, markup, scripts and styles), and a Common Crawl snapshot of about 90 TB of compressed WARC files yields about 7 TB of compressed extracted text, under a tenth of the bytes ({ref}`sec-ch3-snapshots-segments-files`). The funnel below does not show that drop, because it counts documents for its first three stages, extraction included, and tokens after that, never bytes. {numref}`fig-ch4-retention-funnel` shows the same compounding in a published pipeline.
 
 ```{figure} figures/retention-funnel.*
 :name: fig-ch4-retention-funnel
@@ -137,7 +137,7 @@ A boilerplate remover works from the structure of the page rather than its words
 
 The output of extraction is plain text with paragraph breaks preserved. Whether to keep anything else (headings as Markdown, tables as rows, lists as bullets) is a choice that propagates all the way to the model's output format. Pipelines that aim at code or mathematics keep more structure than pipelines that aim at prose.
 
-{cite:t}`kohlschutter2010boilerplate` study boilerplate detection from shallow text features, that is, from cheap statistics of the text rather than from the page's layout or a model of its content. The listing below uses two such statistics, measured per block: it compares a WET-style extraction, which keeps every visible text node, with an extractor that keeps only blocks of at least 15 words whose link density is at most 0.3, on one small news page.
+{cite:t}`kohlschutter2010boilerplate` study boilerplate detection from shallow text features, that is, from cheap statistics of the text rather than from the page's layout or a model of its content. The listing below uses two such statistics, measured per block, and word count takes the place of the text density defined above: the listing's parser keeps only the text of each block and does not count tag characters, so the number of words is the cheap measure of how much prose a block holds. It compares a WET-style extraction, which keeps every visible text node, with an extractor that keeps only blocks of at least 15 words whose link density is at most 0.3, on one small news page.
 
 ```python
 from html.parser import HTMLParser
@@ -846,9 +846,12 @@ def train_logreg(X: np.ndarray, y: np.ndarray, steps: int = 500, lr: float = 1.0
 
 
 def classifier_score(text: str, w: np.ndarray, b: float) -> float:
-    """Mean predicted probability of 'reference-like' over the document's windows."""
-    X = np.array([hashed_features(t) for t in windows(text)])
-    return float(np.mean(1.0 / (1.0 + np.exp(-(X @ w + b)))))
+    """Predicted probability of 'reference-like', averaged over the document's windows with each window
+    weighted by its word count, so a short tail window counts in proportion to its length."""
+    parts = windows(text)
+    X = np.array([hashed_features(t) for t in parts])
+    sizes = np.array([max(1, len(t.split())) for t in parts], dtype=float)
+    return float(np.average(1.0 / (1.0 + np.exp(-(X @ w + b))), weights=sizes))
 
 
 # GPT-3's setup in miniature: curated text is the positive class, raw crawl the negative class.
@@ -1193,7 +1196,7 @@ which is a steep S-curve whose threshold, the similarity at which it is steepest
 Banding two MinHash signatures (illustrative values) with $n_{hash} = 16$, $b = 4$ and $r = 4$. Green positions hold the same minimum in both documents, red ones differ. Twelve of the sixteen agree, so the signature estimates $J \approx 0.75$. A band is hashed as a whole, so bands 1, 3 and 4, each with at least one differing position, land in different buckets; band 2 matches in all four rows, and one matching band is enough to make the pair a candidate.
 ```
 
-Gopher {cite}`rae2021scaling` used 13-word shingles and removed one document of any pair with Jaccard similarity above 0.8; it does not report the number of hash functions. {cite:t}`lee2022deduplicating` used 5-word shingles and a 9,000-value signature. They write the candidate probability as $1-(1-s^{b})^{r}$ with their $b = 20$ and $r = 450$, so their $b$ is the exponent, the rows per band, and their $r$ is the number of bands: in this page's symbols, $b = 450$ bands of $r = 20$ rows. They chose the setting "so as to make sure a collision at the desired Jaccard index threshold of 0.8 had a high probability of occurring", and then confirmed each candidate pair by requiring edit similarity above 0.8. RefinedWeb {cite}`penedo2023refinedweb` used "the same parameters as Lee et al. (2022)", described as signatures "split into r buckets, each with b minhashes", and dropped the verification step. The listing computes what those bandings do.
+Gopher {cite}`rae2021scaling` used 13-word shingles and removed one document of any pair with Jaccard similarity above 0.8; it does not report the number of hash functions. {cite:t}`lee2022deduplicating` used 5-word shingles and a 9,000-value signature. They write the candidate probability as $1-(1-s^{b})^{r}$ with their $b = 20$ and $r = 450$, so their $b$ is the exponent, the rows per band, and their $r$ is the number of bands: in this page's symbols, $b = 450$ bands of $r = 20$ rows. They chose the setting "so as to make sure a collision at the desired Jaccard index threshold of 0.8 had a high probability of occurring", and then confirmed each candidate pair by requiring edit similarity above 0.8. RefinedWeb {cite}`penedo2023refinedweb` used "the same parameters as Lee et al. (2022)", described as signatures "split into r buckets, each with b minhashes", and dropped the verification step. FineWeb used 5-word shingles with 112 hash functions in 14 bands of 8 rows, which it describes as targeting documents at least 75% similar. The listing computes what those bandings do.
 
 ```python
 def banding_probability(J: float, b: int, r: int) -> float:
@@ -1209,7 +1212,9 @@ settings = {  # name: (bands b, rows per band r), in this page's symbols
 for name, (b, r) in settings.items():
     probs = ", ".join(f"J={J}: {banding_probability(J, b, r):.3f}" for J in (0.7, 0.75, 0.8, 0.9))
     print(f"{name:<29} b={b:>3} r={r:>3} threshold {(1 / b) ** (1 / r):.3f}; {probs}")
-# RefinedWeb: "with similarity 0.75 or 0.8 will be marked as duplicates will be 76% and 99.4%"
+# RefinedWeb: "This means that for each document, we compute a total of 9000 minhashes, and that the probability
+# that a document pair with similarity 0.75 or 0.8 will be marked as duplicates will be 76% and 99.4%
+# (respectively), diminishing rapidly for smaller similarity values."
 assert round(banding_probability(0.75, 450, 20), 2) == 0.76
 assert round(banding_probability(0.8, 450, 20), 3) == 0.995
 ```
@@ -1223,7 +1228,7 @@ FineWeb                       b= 14 r=  8 threshold 0.719; J=0.7: 0.565, J=0.75:
 Lee's numbers, roles swapped  b= 20 r=450 threshold 0.993; J=0.7: 0.000, J=0.75: 0.000, J=0.8: 0.000, J=0.9: 0.000
 ```
 
-At 450 bands of 20 rows the curve's threshold is about 0.74, and the probabilities at $J = 0.75$ and $0.8$ are the "76% and 99.4%" that RefinedWeb reports (the second rounds to 0.995 here). The banding is set a little below the 0.8 target, so that almost every pair above it becomes a candidate, and pairs between about 0.7 and 0.8 get through as well (30% of pairs at $J = 0.7$): Lee et al. remove those with the edit-similarity check, while RefinedWeb, which skips that check, removes them too. Lee et al.'s second run, 40 bands of 20 rows (800 hashes) for a target of 0.9, puts the threshold near 0.83. Read with the roles swapped, the same two numbers would give a threshold of 0.993 and a curve that catches almost nothing below near-identical copies. FineWeb used 5-word shingles with 112 hash functions in 14 bands of 8 rows, which it describes as targeting documents at least 75% similar: a pair at $J = 0.75$ becomes a candidate with probability $1 - (1 - 0.75^8)^{14} \approx 0.77$, and the curve crosses 0.5 near $J = 0.69$. Dolma relied on exact matching of URLs, documents and paragraphs through a Bloom filter rather than MinHash. The implementation below uses a universal hash family $h_i(\chi) = (a_{i,1} \chi + a_{i,0}) \bmod P$ over the 32-bit integer id $\chi$ of a shingle, with $P$ a large prime, which is what most production implementations do.
+At 450 bands of 20 rows the curve's threshold is about 0.74, and the probabilities at $J = 0.75$ and $0.8$ are the "76% and 99.4%" that RefinedWeb reports (the second rounds to 0.995 here). The banding is set a little below the 0.8 target, so that almost every pair above it becomes a candidate; pairs below the target become candidates too (30% of pairs at $J = 0.7$). The two pipelines treat a candidate pair differently. Lee et al. "identify two documents as duplicates if they are matched by the MinHash algorithm and their edit similarity is greater than 0.8", so a candidate pair whose edit similarity is lower keeps both documents. RefinedWeb has no such check: every candidate pair counts as a duplicate, the pairs are joined into clusters, and it removes "all but one of the documents in each cluster". Lee et al.'s second run, 40 bands of 20 rows (800 hashes) for a target of 0.9, puts the threshold near 0.83. Read with the roles swapped, the same two numbers would give a threshold of 0.993 and a curve that catches almost nothing below near-identical copies. At FineWeb's 14 bands of 8 rows a pair at $J = 0.75$ becomes a candidate with probability $1 - (1 - 0.75^8)^{14} \approx 0.77$, and the curve crosses 0.5 near $J = 0.69$. Dolma relied on exact matching of URLs, documents and paragraphs through a Bloom filter rather than MinHash. The implementation below uses a universal hash family $h_i(\chi) = (a_{i,1} \chi + a_{i,0}) \bmod P$ over the 32-bit integer id $\chi$ of a shingle, with $P$ a large prime, which is what most production implementations do.
 
 ```python
 import hashlib

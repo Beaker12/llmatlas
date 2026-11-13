@@ -185,3 +185,18 @@ def test_solution_7_epochs_are_budget_over_retained_tokens():
     assert epochs[2e9] == pytest.approx({"unfiltered": 0.2, "filtered": 2 / 8.2})
     assert epochs[20e9] == pytest.approx({"unfiltered": 2.0, "filtered": 20 / 8.2})
     assert (round(2 / 8.2, 3), round(20 / 8.2, 2)) == (0.244, 2.44)
+
+
+def test_classifier_score_weights_windows_by_word_count():
+    """A 21-word document is a 20-word window and a 1-word tail; the tail weighs 1/21, not 1/2."""
+    import numpy as np
+
+    ns = run("def classifier_score(")
+    w, b = ns["w"], ns["b"]
+    text = " ".join(["the council approved the new library after months of public consultation about"] * 2).split()
+    doc = " ".join(text[:21])
+    parts = ns["windows"](doc)
+    assert [len(p.split()) for p in parts] == [20, 1]
+    probs = [1.0 / (1.0 + np.exp(-(ns["hashed_features"](p) @ w + b))) for p in parts]
+    assert abs(ns["classifier_score"](doc, w, b) - (20 * probs[0] + probs[1]) / 21) < 1e-12
+    assert abs(probs[0] - probs[1]) > 1e-3  # the two windows score differently, so the weighting matters
