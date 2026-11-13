@@ -1,7 +1,7 @@
 {
  "description": "Final training loss (mean of the last 20 of 400 steps) of the Section 7 model, per arm and seed; written by tools/build_architecture_notebook.py --sweep.",
  "torch": "2.15.0+cpu",
- "train_cell_sha256": "029ccea6ac5a753876cf025f0880ccfa7c611b70f0639504166e449b39f7c260",
+ "train_cell_sha256": "f9bddb8240348196ac791ec965d0ee8d26f9ef8067a41cae77b13a1702c793da",
  "seeds": [
   0,
   1,

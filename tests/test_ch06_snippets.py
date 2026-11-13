@@ -50,7 +50,7 @@ NOT_A_RESULT: dict[str, str] = {
         "norm_claims in the sweep and summary cells",
     r"trains both arrangements side by side at three learning rates":
         "describes the experiment's settings (three learning rates), states no result",
-    r"trains a six-layer post-norm and pre-norm model from the same seeds at three learning rates":
+    r"trains a six-layer post-norm and pre-norm model\s+from\s+the same seeds at three learning rates":
         "the numbers are settings (depth, number of rates, 'two lower rates'); the outcome is qualitative and "
         "asserted by norm_claims",
     r"asserts the identities above to \$10\^\{-9\}\$":
