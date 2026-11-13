@@ -1810,8 +1810,8 @@ A corpus is thousands of shards, each a compressed JSONL file of documents with 
 
 ```{figure} figures/pipeline-map-shuffle.*
 :name: fig-ch4-pipeline-map-shuffle
-:alt: Three shards pass through a first map of per-document stages, converge on a single global step that shuffles by band bucket and runs union-find, and fan out to a second per-document map.
-:width: 100%
+:alt: Shard 1 and the other shards pass through a first map of per-document stages, converge on a single global step that shuffles by band bucket and runs union-find, and fan out to a second per-document map.
+:width: 460px
 
 The shape of a distributed pipeline, a schematic of the stages in {ref}`sec-ch4-operation-order`. Every stage in the two maps reads one document and needs nothing else, so shards run anywhere in parallel. Deduplication is the one exception: each document's $b$ band hashes are shuffled so that equal buckets meet, candidate pairs are resolved into clusters with union-find, and the resulting list of documents to drop is applied in the second map.
 ```

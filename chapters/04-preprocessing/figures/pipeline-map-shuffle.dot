@@ -4,15 +4,14 @@ digraph pipeline_map_shuffle {
   edge  [color="#4a5568", penwidth=1.3, arrowsize=0.8];
 
   subgraph cluster_map1 {
-    label="Map 1: one document at a time, no coordination"; fontname="DejaVu Sans"; fontsize=12;
+    label="Map 1: one document at a time"; fontname="DejaVu Sans"; fontsize=12;
     style="rounded,filled"; fillcolor="#ebf8ff"; color="#2b6cb0";
-    m3 [label="shard 3\nsame stages", fillcolor="#ffffff", color="#2d3748", penwidth=1.6];
-    m2 [label="shard 2\nsame stages", fillcolor="#ffffff", color="#2d3748", penwidth=1.6];
+    m2 [label="other shards\nsame stages", fillcolor="#ffffff", color="#2d3748", penwidth=1.6];
     m1 [label="shard 1\nextract → language ID → quality rules\n→ MinHash signature", fillcolor="#ffffff", color="#2d3748", penwidth=1.6];
   }
 
   subgraph cluster_global {
-    label="Global step: the only one that sees every shard"; fontname="DejaVu Sans"; fontsize=12;
+    label="Global step: sees every shard"; fontname="DejaVu Sans"; fontsize=12;
     style="rounded,filled"; fillcolor="#fffaf0"; color="#c05621";
     g [label="shuffle by band bucket\n(b keys per document)\n↓\nunion-find over candidate pairs\n↓\nlist of documents to drop", fillcolor="#feebc8", color="#9c4221", penwidth=2.0];
   }
@@ -20,11 +19,10 @@ digraph pipeline_map_shuffle {
   subgraph cluster_map2 {
     label="Map 2: one document at a time again"; fontname="DejaVu Sans"; fontsize=12;
     style="rounded,filled"; fillcolor="#f0fff4"; color="#2f855a";
-    f3 [label="shard 3\nsame stages", fillcolor="#ffffff", color="#2d3748", penwidth=1.6];
-    f2 [label="shard 2\nsame stages", fillcolor="#ffffff", color="#2d3748", penwidth=1.6];
+    f2 [label="other shards\nsame stages", fillcolor="#ffffff", color="#2d3748", penwidth=1.6];
     f1 [label="shard 1\ndrop listed duplicates\n→ PII redaction → decontamination", fillcolor="#ffffff", color="#2d3748", penwidth=1.6];
   }
 
-  m3 -> g; m2 -> g; m1 -> g;
-  g -> f3; g -> f2; g -> f1;
+  m2 -> g; m1 -> g;
+  g -> f2; g -> f1;
 }

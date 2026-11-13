@@ -130,7 +130,7 @@ def unicode_forms(out):
             ax.add_patch(Rectangle((col_x[j + 2] - 0.02, y - 0.42), 1.14, 0.84,
                                    color="#fefcbf" if changed else "#f7fafc", ec="#4a5568", lw=0.6))
             ax.text(col_x[j + 2] + 0.55, y + 0.14, t, fontsize=13, ha="center", va="center")
-            ax.text(col_x[j + 2] + 0.55, y - 0.25, " ".join(f"{ord(c):04X}" for c in t), fontsize=7.5,
+            ax.text(col_x[j + 2] + 0.55, y - 0.25, " ".join(f"{ord(c):04X}" for c in t), fontsize=8,
                     ha="center", va="center", family="DejaVu Sans Mono")
     ax.text(col_x[0], -0.25, "Shaded cells differ from the input. Code points are hexadecimal (U+ omitted).",
             fontsize=8.5, color="#4a5568")
@@ -328,8 +328,8 @@ def suffix_array(out):
         in_lic = (first_copy <= i < first_copy + min_len) or (start <= i < end)
         fc = "#fed7d7" if start <= i < end else ("#fefcbf" if in_lic else "#ffffff")
         top.add_patch(Rectangle((x, y * 2.1), 0.96, 1.9, fc=fc, ec="#4a5568", lw=0.6))
-        top.text(x + 0.48, y * 2.1 + 1.65, str(i), ha="center", va="center", fontsize=7, color="#4a5568")
-        top.text(x + 0.48, y * 2.1 + 0.08, tok, ha="center", va="bottom", rotation=90, fontsize=7.5)
+        top.text(x + 0.48, y * 2.1 + 1.65, str(i), ha="center", va="center", fontsize=8, color="#4a5568")
+        top.text(x + 0.48, y * 2.1 + 0.08, tok, ha="center", va="bottom", rotation=90, fontsize=8)
     top.text(-0.15, 3.05, "document a", ha="right", va="center", fontsize=8.5)
     top.text(-0.15, 0.95, "document b", ha="right", va="center", fontsize=8.5)
     top.add_patch(Rectangle((0, 4.25), 0.6, 0.4, fc="#fefcbf", ec="#4a5568", lw=0.6))
