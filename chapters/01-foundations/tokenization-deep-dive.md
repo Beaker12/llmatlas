@@ -232,7 +232,7 @@ base vocabulary: 256 | remapped: 68 | é becomes Ã©
 
 ### Tiktoken (OpenAI's Tokenizer)
 
-OpenAI's `tiktoken` library runs the byte-level BPE of {ref}`sec-tdd-byte-level-bpe` with the vocabularies of its models: `gpt2` (50,257 entries), `cl100k_base` (used by GPT-4) and `o200k_base`. Each encoding pairs a merge table with its own pre-tokenization pattern and a few special tokens such as `<|endoftext|>`. The listing downloads `cl100k_base` and splits a short string that mixes prose and code. Each `# network` listing on the page carries the same download helper, so that it runs on its own:
+OpenAI's `tiktoken` library runs the byte-level BPE of {ref}`sec-tdd-byte-level-bpe` with the vocabularies of its models: `gpt2` (50,257 entries), `cl100k_base` and `o200k_base`; the library's `MODEL_TO_ENCODING` table (`tiktoken/model.py`) maps `gpt-4` to `cl100k_base` and `gpt-4o` to `o200k_base`. Each encoding pairs a merge table with its own pre-tokenization pattern and a few special tokens such as `<|endoftext|>`. The listing downloads `cl100k_base` and splits a short string that mixes prose and code. Each `# network` listing on the page carries the same download helper, so that it runs on its own:
 
 ```python
 # network
@@ -361,7 +361,7 @@ def get_encoding(name):
     return tiktoken.get_encoding(name)
 
 
-# The same greeting in five languages, counted by three OpenAI encodings (2019, 2023, 2024)
+# The same greeting in five languages, counted by the encodings of GPT-2, GPT-4 and GPT-4o
 texts = {
     "English": "Hello world",
     "French": "Bonjour le monde",
@@ -537,7 +537,7 @@ A larger vocabulary shortens every sequence, most of all for the languages and s
 | `gpt2` (GPT-2) | 50,257 | `n_vocab`, printed in {ref}`sec-tdd-hard-inputs` |
 | `cl100k_base` (GPT-4) | 100,277 | `n_vocab`, printed in {ref}`sec-tdd-hard-inputs` |
 | Llama 3 | 128K: 100K tokens from `tiktoken` plus 28K for other languages | {cite}`grattafiori2024llama` |
-| `o200k_base` | 200,019 | `n_vocab`, printed in {ref}`sec-tdd-hard-inputs` |
+| `o200k_base` (GPT-4o) | 200,019 | `n_vocab`, printed in {ref}`sec-tdd-hard-inputs` |
 | Gemma 2 | 256k, inherited from Gemini | {cite}`gemma2024gemma2` |
 
 The cost shows in Gemma 2's parameter table: its 27B model spends 1,180,237,824 parameters on the embedding against 26,047,480,320 on everything else, about 4.3% of the total {cite}`gemma2024gemma2`. {ref}`sec-tdd-exercise-4` works out the cost for a model of width 4,096.
@@ -669,7 +669,9 @@ for label in ["German", "Turkish", "Chinese", "Legal", "URL", "Code", "Digits", 
         pieces = [encodings[n].decode([i]) for i in encodings[n].encode(samples[label])]
         # show a space as · and a newline as \n so that whitespace tokens can be seen and counted
         shown = [p.replace(" ", "·").replace("\n", "\\n") for p in pieces]
-        print(f"{label:<9} {n:<12} {'|'.join(shown)}")
+        print(f"{label} / {n}:")
+        for j in range(0, len(shown), 16):  # 16 pieces per line, so that long rows fit a printed page
+            print("    " + "|".join(shown[j : j + 16]))
 ```
 
 % output
@@ -688,33 +690,69 @@ Code                 49           28           28
 Digits                3            3            3
 Decimal               8            7            7
 ISO date              6            6            6
-German    gpt2         Don|aud|amp|fs|ch|if|ff|ah|r|ts|ges|ells|cha|ft|sk|ap|it|ä|n
-German    cl100k_base  D|ona|ud|amp|fs|ch|if|ff|ah|rt|sg|es|ellschaft|sk|ap|it|än
-German    o200k_base   D|ona|ud|amp|fsch|if|ff|ahr|ts|gesellschaft|skap|it|än
-Turkish   gpt2         ev|ler|im|iz|de
-Turkish   cl100k_base  ev|ler|im|iz|de
-Turkish   o200k_base   ev|ler|imiz|de
-Chinese   gpt2         �|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�
-Chinese   cl100k_base  我|�|�|�|�|学|�|�|自|然|语|言|处理
-Chinese   o200k_base   我|喜欢|学习|自然|语言|处理
-Legal     gpt2         The|·aforementioned|·clause|·notwithstanding|·the|·here|to|fore|·provisions
-Legal     cl100k_base  The|·aforementioned|·clause|·notwithstanding|·the|·her|et|of|ore|·provisions
-Legal     o200k_base   The|·aforementioned|·clause|·notwithstanding|·the|·her|et|of|ore|·provisions
-URL       gpt2         https|://|www|.|example|.|com|/|path|/|to|/|page|?|param|=|value
-URL       cl100k_base  https|://|www|.example|.com|/path|/to|/page|?|param|=value
-URL       o200k_base   https|://|www|.example|.com|/path|/to|/page|?|param|=value
-Code      gpt2         def|·fib|on|acci|(|n|):|\n|·|·|·|·if|·n|·<=|·1|:|\n|·|·|·|·|·|·|·|·return|·n|\n|·|·|·|·return|·fib|on|acci|(|n|-|1|)|·+|·fib|on|acci|(|n|-|2|)|\n
-Code      cl100k_base  def|·fibonacci|(n|):\n|···|·if|·n|·<=|·|1|:\n|·······|·return|·n|\n|···|·return|·fibonacci|(n|-|1|)|·+|·fibonacci|(n|-|2|)\n
-Code      o200k_base   def|·fibonacci|(n|):\n|···|·if|·n|·<=|·|1|:\n|·······|·return|·n|\n|···|·return|·fibonacci|(n|-|1|)|·+|·fibonacci|(n|-|2|)\n
-Digits    gpt2         123|45|678
-Digits    cl100k_base  123|456|78
-Digits    o200k_base   123|456|78
-Decimal   gpt2         1|,|234|,|5|67|.|89
-Decimal   cl100k_base  1|,|234|,|567|.|89
-Decimal   o200k_base   1|,|234|,|567|.|89
-ISO date  gpt2         20|23|-|12|-|25
-ISO date  cl100k_base  202|3|-|12|-|25
-ISO date  o200k_base   202|3|-|12|-|25
+German / gpt2:
+    Don|aud|amp|fs|ch|if|ff|ah|r|ts|ges|ells|cha|ft|sk|ap
+    it|ä|n
+German / cl100k_base:
+    D|ona|ud|amp|fs|ch|if|ff|ah|rt|sg|es|ellschaft|sk|ap|it
+    än
+German / o200k_base:
+    D|ona|ud|amp|fsch|if|ff|ahr|ts|gesellschaft|skap|it|än
+Turkish / gpt2:
+    ev|ler|im|iz|de
+Turkish / cl100k_base:
+    ev|ler|im|iz|de
+Turkish / o200k_base:
+    ev|ler|imiz|de
+Chinese / gpt2:
+    �|�|�|�|�|�|�|�|�|�|�|�|�|�|�|�
+    �|�|�|�|�|�|�|�|�|�
+Chinese / cl100k_base:
+    我|�|�|�|�|学|�|�|自|然|语|言|处理
+Chinese / o200k_base:
+    我|喜欢|学习|自然|语言|处理
+Legal / gpt2:
+    The|·aforementioned|·clause|·notwithstanding|·the|·here|to|fore|·provisions
+Legal / cl100k_base:
+    The|·aforementioned|·clause|·notwithstanding|·the|·her|et|of|ore|·provisions
+Legal / o200k_base:
+    The|·aforementioned|·clause|·notwithstanding|·the|·her|et|of|ore|·provisions
+URL / gpt2:
+    https|://|www|.|example|.|com|/|path|/|to|/|page|?|param|=
+    value
+URL / cl100k_base:
+    https|://|www|.example|.com|/path|/to|/page|?|param|=value
+URL / o200k_base:
+    https|://|www|.example|.com|/path|/to|/page|?|param|=value
+Code / gpt2:
+    def|·fib|on|acci|(|n|):|\n|·|·|·|·if|·n|·<=|·1|:
+    \n|·|·|·|·|·|·|·|·return|·n|\n|·|·|·|·return|·fib
+    on|acci|(|n|-|1|)|·+|·fib|on|acci|(|n|-|2|)
+    \n
+Code / cl100k_base:
+    def|·fibonacci|(n|):\n|···|·if|·n|·<=|·|1|:\n|·······|·return|·n|\n|···
+    ·return|·fibonacci|(n|-|1|)|·+|·fibonacci|(n|-|2|)\n
+Code / o200k_base:
+    def|·fibonacci|(n|):\n|···|·if|·n|·<=|·|1|:\n|·······|·return|·n|\n|···
+    ·return|·fibonacci|(n|-|1|)|·+|·fibonacci|(n|-|2|)\n
+Digits / gpt2:
+    123|45|678
+Digits / cl100k_base:
+    123|456|78
+Digits / o200k_base:
+    123|456|78
+Decimal / gpt2:
+    1|,|234|,|5|67|.|89
+Decimal / cl100k_base:
+    1|,|234|,|567|.|89
+Decimal / o200k_base:
+    1|,|234|,|567|.|89
+ISO date / gpt2:
+    20|23|-|12|-|25
+ISO date / cl100k_base:
+    202|3|-|12|-|25
+ISO date / o200k_base:
+    202|3|-|12|-|25
 ```
 
 (sec-tdd-cross-lingual-tokenization)=

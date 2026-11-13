@@ -454,3 +454,28 @@ def test_main_page_kv_cache_and_t5_bias_numbers():
     assert per_token == 36_864 and per_token * 1024 == 37_748_736
     # T5-small: 32 buckets x 8 heads per stack, one table in the encoder and one in the decoder
     assert 32 * 8 == 256 and 2 * 32 * 8 == 512
+
+
+def test_rescore_r1_numbers():
+    """Numbers added in the re-score fixes: GELU, dropout scaling, embedding sizes, sinusoid offsets, beam search."""
+    gelu = torch.nn.GELU()
+    assert round(gelu(torch.tensor(1.0)).item(), 3) == 0.841
+    assert round(gelu(torch.tensor(-1.0)).item(), 3) == -0.159
+    # dropout: survivors scaled by 1/(1 - p) in training, identity in evaluation mode
+    torch.manual_seed(0)
+    drop = torch.nn.Dropout(0.1)
+    y = drop(torch.ones(10_000))
+    assert set(torch.unique(y).tolist()) <= {0.0, 1 / 0.9} or torch.allclose(torch.unique(y), torch.tensor([0.0, 1 / 0.9]))
+    drop.eval()
+    assert torch.equal(drop(torch.ones(5)), torch.ones(5))
+    # embedding sizes in the vocabulary paragraph and the weight-tying list
+    assert 50_000 * 4_096 == 204_800_000 and 50_257 * 768 == 38_597_376
+    # sinusoidal encoding: pair i at m' is pair i at m rotated by (m' - m) * omega_i
+    d, m, m2 = 16, 5, 12
+    for i in range(d // 2):
+        w = 10000 ** (-2 * i / d)
+        a = (m2 - m) * w
+        rot = np.array([[math.cos(a), -math.sin(a)], [math.sin(a), math.cos(a)]])
+        assert np.allclose(np.array([math.sin(m * w), math.cos(m * w)]) @ rot, [math.sin(m2 * w), math.cos(m2 * w)])
+    # beam search toy: greedy 0.5 * 0.4, width 2 finds 0.4 * 0.9
+    assert round(0.5 * 0.4, 2) == 0.20 and round(0.4 * 0.9, 2) == 0.36
