@@ -381,3 +381,30 @@ def test_exercise_8_schedule_clipping_accumulation():
     assert steps == [4, 8, 10] and divisors == [4] * 8 + [2] * 2
     s = exercise_text(8)
     assert "2.605 \\times 10^{-4}" in s and "1.65 \\times 10^{-4}" in s and "(0.6, 0.8)" in s
+
+
+def test_condition_number_rate_and_rosenbrock_minimum():
+    """sec-ch2-stability-condition: (cond - 1)/(cond + 1) per step at eta = 2/(lambda_max + lambda_min)."""
+    assert round(99 / 101, 4) == 0.9802 and round(math.log(10) / math.log(101 / 99)) == 115
+    assert round(math.log(10) / math.log(3), 1) == 2.1
+    lo, hi = np.linalg.eigvalsh(np.array([[802.0, -400.0], [-400.0, 200.0]]))
+    cond = hi / lo
+    assert round(hi, 1) == 1001.6 and round(lo, 3) == 0.399 and round(cond) == 2508
+    rate = (cond - 1) / (cond + 1)
+    assert round(rate, 4) == 0.9992 and round(math.log(10) / -math.log(rate), -2) == 2900
+    for eta in (2 / (hi + lo),):  # both extreme directions shrink by the same factor
+        assert math.isclose(abs(1 - eta * lo), abs(1 - eta * hi)) and math.isclose(abs(1 - eta * lo), rate)
+    text = CH02.read_text(encoding="utf-8")
+    assert "$99/101 = 0.9802$" in text and "1001.6 and 0.399" in text and "= 2508$" in text
+
+
+def test_mutual_information_worked_table():
+    """sec-ch2-mutual-information: MI = H(Y) - H(Y | X) = 1 - 0.7219 = 0.2781 bits."""
+    P = np.array([[0.4, 0.1], [0.1, 0.4]])
+    px, py = P.sum(1), P.sum(0)
+    mi = sum(P[i, j] * math.log2(P[i, j] / (px[i] * py[j])) for i in range(2) for j in range(2))
+    hy = -sum(p * math.log2(p) for p in py)
+    hyx = -sum(P[i, j] * math.log2(P[i, j] / px[i]) for i in range(2) for j in range(2))
+    assert hy == 1.0 and round(hyx, 4) == 0.7219 and round(mi, 4) == 0.2781 and math.isclose(mi, hy - hyx)
+    text = CH02.read_text(encoding="utf-8")
+    assert "= 0.7219$ bits" in text and "0.2781$ bits" in text

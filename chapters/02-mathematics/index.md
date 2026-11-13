@@ -91,6 +91,8 @@ The diagonal softmax derivative $\partial p_i/\partial z_i = p_i(1 - p_i)$ when 
 
 The operator norm $\|W\|_2$ is the largest factor by which $W$ can stretch a vector. A stack of $L$ layers multiplies these factors, which is why gradients vanish or explode geometrically with depth unless each layer is kept near norm 1, by initialization scale ({ref}`sec-ch2-initialization-strategies`), by normalization ({ref}`sec-ch2-layer-normalization-mathematics`) or by residual connections ({ref}`sec-ch2-residual-connections`). The notebook section {ref}`nb-math-layernorm` measures the effect of each on a stack of linear layers.
 
+How unevenly a matrix stretches is measured by its **condition number**, the ratio of its largest to its smallest stretch, $\operatorname{cond} = \sigma_{\max}/\sigma_{\min}$ in terms of singular values ({ref}`sec-ch2-svd-low-rank`). For a symmetric positive definite matrix, such as the Hessian of a loss near a minimum, the singular values are the eigenvalues and $\operatorname{cond} = \lambda_{\max}/\lambda_{\min}$. A large $\operatorname{cond}$ means the loss is steep in some directions and nearly flat in others, and {ref}`sec-ch2-stability-condition` shows that gradient descent then needs about $\operatorname{cond}$ steps to make progress along the flat ones.
+
 (sec-ch2-svd-low-rank)=
 
 ### 0.4 Singular value decomposition and low rank
@@ -162,8 +164,6 @@ closed form p * (g - <g, p>) equals it: True
 
 ### 1.1 Foundations of Language Modeling
 
-Language modeling is fundamentally a probabilistic task—predicting the likelihood of word sequences. Understanding the mathematical foundations provides insight into why LLMs work and how to improve them.
-
 (sec-ch2-probability-distributions-over-sequences)=
 
 #### Probability Distributions Over Sequences
@@ -172,7 +172,7 @@ Given a vocabulary $\mathcal{V}$ and sequence $x = (x_1, x_2, ..., x_n)$, langua
 
 $$p(x) = \prod_{i=1}^{n} p(x_i \mid x_{<i})$$
 
-This autoregressive factorization enables tractable modeling of exponentially large sequence spaces.
+This autoregressive factorization is the chain rule of probability, $p(x_1, x_2) = p(x_1)\,p(x_2 \mid x_1)$, applied $n - 1$ times, so it is exact and loses nothing. What it buys is tractability: instead of one distribution over $|\mathcal{V}|^n$ sequences, the model needs only a distribution over $|\mathcal{V}|$ next tokens for each context.
 
 (sec-ch2-cross-entropy-loss)=
 
@@ -251,9 +251,15 @@ Cross-entropy splits into the entropy of $p$, the same for every model, and the 
 
 $$\operatorname{MI}(\mathrm{X}; \mathrm{Y}) = \sum_{x, x'} p(x, x') \log \frac{p(x, x')}{p(x)\,p(x')}$$
 
-where $x$ ranges over the values of $\mathrm{X}$ and $x'$ over the values of $\mathrm{Y}$.
+where $x$ ranges over the values of $\mathrm{X}$ and $x'$ over the values of $\mathrm{Y}$. It is zero exactly when the two variables are independent.
 
-Mutual information is the quantity that language modeling implicitly exploits: a context that shares a lot of information with the next token makes that token predictable.
+The **conditional entropy** $H(\mathrm{Y} \mid \mathrm{X}) = -\sum_{x, x'} p(x, x') \log p(x' \mid x)$ is the uncertainty left in $\mathrm{Y}$ once $\mathrm{X}$ is known, averaged over $\mathrm{X}$. Writing $p(x, x')/(p(x)\,p(x')) = p(x' \mid x)/p(x')$ in the definition above splits mutual information into
+
+$$\operatorname{MI}(\mathrm{X}; \mathrm{Y}) = H(\mathrm{Y}) - H(\mathrm{Y} \mid \mathrm{X}),$$
+
+the reduction in uncertainty about $\mathrm{Y}$ that knowing $\mathrm{X}$ brings. Take two binary variables that agree 80% of the time, $p(0, 0) = p(1, 1) = 0.4$ and $p(0, 1) = p(1, 0) = 0.1$. Each is uniform, so $H(\mathrm{Y}) = 1$ bit; given $\mathrm{X}$, $\mathrm{Y}$ equals it with probability 0.8, so $H(\mathrm{Y} \mid \mathrm{X}) = -0.8 \log_2 0.8 - 0.2 \log_2 0.2 = 0.7219$ bits, and $\operatorname{MI} = 0.2781$ bits, the same value the double sum gives.
+
+This is the sense in which language modeling exploits mutual information. With $\mathrm{Y}$ the next token and $\mathrm{X}$ its context, the lowest per-token loss any model can reach is the conditional entropy $H(\mathrm{Y} \mid \mathrm{X})$, the data's own uncertainty given the context, and the loss of a real model is the cross-entropy, which exceeds it by a KL divergence ({ref}`sec-ch2-cross-entropy-kl-divergence`). A context that carries more information about the next token, a larger $\operatorname{MI}$, lowers that floor below the $H(\mathrm{Y})$ of a model that ignores the context.
 
 (sec-ch2-temperature)=
 
@@ -388,8 +394,6 @@ The notebook section {ref}`nb-math-information-theory` implements entropy, cross
 
 ### 2.1 Gradient Descent and Variants
 
-Optimization lies at the heart of LLM training. Understanding the mathematical properties of different optimizers explains their behavior during training.
-
 (sec-ch2-stochastic-gradient-descent)=
 
 #### Stochastic Gradient Descent
@@ -434,7 +438,13 @@ Why can the learning rate not simply be made large? Near a minimum the loss is c
 
 $$0 < \eta < \frac{2}{\lambda_{\max}}.$$
 
-At $\eta = 1/\lambda_{\max}$ one step lands on the minimum; between $1/\lambda_{\max}$ and $2/\lambda_{\max}$ the iterates overshoot and oscillate but still shrink; beyond $2/\lambda_{\max}$ each step multiplies the error by more than one in magnitude and training diverges. Directions of smaller curvature converge more slowly at the same $\eta$, which is the conditioning problem of {ref}`sec-ch2-norms-conditioning-scale-matters`. For $\lambda_{\max} = 100$ the limit is $\eta < 0.02$.
+At $\eta = 1/\lambda_{\max}$ one step lands on the minimum; between $1/\lambda_{\max}$ and $2/\lambda_{\max}$ the iterates overshoot and oscillate but still shrink; beyond $2/\lambda_{\max}$ each step multiplies the error by more than one in magnitude and training diverges. For $\lambda_{\max} = 100$ the limit is $\eta < 0.02$.
+
+Directions of smaller curvature converge more slowly at the same $\eta$. Along the flattest direction, with curvature $\lambda_{\min}$, the same step multiplies the error by $1 - \eta\lambda_{\min}$, which is close to 1 when $\eta$ must stay below $2/\lambda_{\max}$. The best single $\eta$ balances the two extreme directions, $1 - \eta\lambda_{\min} = -(1 - \eta\lambda_{\max})$, so $\eta = 2/(\lambda_{\max} + \lambda_{\min})$, and both then shrink by
+
+$$\frac{\lambda_{\max} - \lambda_{\min}}{\lambda_{\max} + \lambda_{\min}} = \frac{\operatorname{cond} - 1}{\operatorname{cond} + 1}$$
+
+per step, where $\operatorname{cond} = \lambda_{\max}/\lambda_{\min}$ is the condition number of the Hessian ({ref}`sec-ch2-norms-conditioning-scale-matters`). For $\operatorname{cond} = 100$ the factor is $99/101 = 0.9802$, and reducing the error tenfold takes $\ln 10/\ln(101/99) = 115$ steps; for $\operatorname{cond} = 2$ it takes 2.1 steps. The Rosenbrock function of {numref}`fig-ch2-optimizer-trajectories` has the Hessian $\begin{pmatrix} 802 & -400 \\ -400 & 200 \end{pmatrix}$ at its minimum $(1, 1)$, with eigenvalues 1001.6 and 0.399 and $\operatorname{cond} = 2508$: at the best fixed step the error shrinks by a factor of 0.9992 per step, about 2,900 steps per factor of ten, which is why plain SGD creeps along the valley floor. Momentum builds up speed along the direction that stays downhill from step to step, and Adam rescales each coordinate's step by its own gradient history, so neither is held to this rate.
 
 (sec-ch2-momentum)=
 
@@ -517,8 +527,6 @@ The alternative, L2 regularization, adds $\lambda\theta_t$ to the gradient $g_t$
 (sec-ch2-learning-rate-scheduling)=
 
 ### 2.2 Learning Rate Scheduling
-
-Effective training requires careful learning rate management:
 
 (sec-ch2-linear-warmup)=
 
@@ -769,8 +777,6 @@ w after a batch of 8, then one of 2:     0.2887
 
 ### 3.1 Gradient Flow in Deep Networks
 
-Understanding how gradients flow through transformer architectures reveals why certain design choices (layer normalization, residual connections) are crucial for training stability.
-
 (sec-ch2-reverse-mode)=
 
 #### Reverse-Mode Automatic Differentiation
@@ -910,8 +916,6 @@ every row of the Jacobian sums to zero: True
 
 ### 3.3 Attention Gradient Analysis
 
-The attention mechanism's gradients reveal how learning occurs:
-
 For scaled dot-product attention write the scores, weights and output as
 
 $$S = QK^\top/\sqrt{d_k}, \qquad A = \mathrm{softmax}(S), \qquad O = AV$$
@@ -993,15 +997,15 @@ dQ, dK, dV match autograd: True
 
 The remaining pieces of a transformer are a feed-forward layer, the embedding lookup and the output head, and each has a short backward rule built from the VJPs of {ref}`sec-ch2-vjp`.
 
-**Feed-forward layer.** For one position, $z_{ff} = x W_{up}$ and $y = \operatorname{act}(z_{ff})\,W_{down}$. Given $g = \partial \mathcal{L}/\partial y$, the backward pass runs the forward pass in reverse:
+**Feed-forward layer.** For one position, $z_{\text{ff}} = x W_{\text{up}}$ and $y = \operatorname{act}(z_{\text{ff}})\,W_{\text{down}}$. Given $g = \partial \mathcal{L}/\partial y$, the backward pass runs the forward pass in reverse:
 
-$$\frac{\partial \mathcal{L}}{\partial W_{down}} = \operatorname{act}(z_{ff})^\top g, \qquad \frac{\partial \mathcal{L}}{\partial z_{ff}} = \left(g W_{down}^\top\right) \odot \operatorname{act}'(z_{ff}), \qquad \frac{\partial \mathcal{L}}{\partial W_{up}} = x^\top \frac{\partial \mathcal{L}}{\partial z_{ff}}, \qquad \frac{\partial \mathcal{L}}{\partial x} = \frac{\partial \mathcal{L}}{\partial z_{ff}} W_{up}^\top.$$
+$$\frac{\partial \mathcal{L}}{\partial W_{\text{down}}} = \operatorname{act}(z_{\text{ff}})^\top g, \qquad \frac{\partial \mathcal{L}}{\partial z_{\text{ff}}} = \left(g W_{\text{down}}^\top\right) \odot \operatorname{act}'(z_{\text{ff}}), \qquad \frac{\partial \mathcal{L}}{\partial W_{\text{up}}} = x^\top \frac{\partial \mathcal{L}}{\partial z_{\text{ff}}}, \qquad \frac{\partial \mathcal{L}}{\partial x} = \frac{\partial \mathcal{L}}{\partial z_{\text{ff}}} W_{\text{up}}^\top.$$
 
 For a sequence the same products are taken with one row per position, and the weight gradients sum over the positions.
 
 **Embedding.** The embedding of token $x_i$ is row $x_i$ of $W_E$, so the gradient of $W_E$ is zero except in the rows of tokens that occur, and the row of a token that occurs at several positions is the sum of $\partial \mathcal{L} / \partial h^{(0)}_i$ over those positions. This is the sparse gradient of {ref}`sec-ch2-adam-optimizer`.
 
-**Output head.** The logits at position $i$ are $z_i = h_i W_{out}$ (a row vector of $|\mathcal{V}|$ entries), and the loss is the mean cross-entropy over $T$ positions. By {ref}`sec-ch2-softmax-jacobian`, $\partial \mathcal{L}/\partial z_{ij} = (p_{ij} - \delta_{j x_i})/T$ for entry $j$ of $z_i$, where $x_i$ here stands for the target, the token to be predicted at position $i$, and $\partial \mathcal{L}/\partial W_{out} = \sum_i h_i^\top \partial \mathcal{L}/\partial z_i$, a sum of outer products over positions. With $T = 3$ and a model that gives the target probability 0.2, that logit's gradient is $(0.2 - 1)/3 = -0.2667$.
+**Output head.** The logits at position $i$ are $z_i = h_i W_{\text{out}}$ (a row vector of $|\mathcal{V}|$ entries), and the loss is the mean cross-entropy over $T$ positions. By {ref}`sec-ch2-softmax-jacobian`, $\partial \mathcal{L}/\partial z_{ij} = (p_{ij} - \delta_{j x_i})/T$ for entry $j$ of $z_i$, where $x_i$ here stands for the target, the token to be predicted at position $i$, and $\partial \mathcal{L}/\partial W_{\text{out}} = \sum_i h_i^\top \partial \mathcal{L}/\partial z_i$, a sum of outer products over positions. With $T = 3$ and a model that gives the target probability 0.2, that logit's gradient is $(0.2 - 1)/3 = -0.2667$.
 
 The listing builds a three-token sequence through an embedding, a feed-forward layer with $\operatorname{act} = \tanh$ and an output head, applies these rules by hand and compares them with autograd.
 
@@ -1067,7 +1071,7 @@ The notebook section {ref}`nb-math-backprop` implements scaled dot-product atten
 
 ### 4.1 The Scaling Hypothesis
 
-Empirical observations reveal predictable relationships between model size, compute, and performance. These **scaling laws** guide resource allocation and model design decisions.
+**Scaling laws** are empirical fits of a model's loss as a power law in its parameter count, its training tokens or its training compute, each measured with the other two not limiting.
 
 (sec-ch2-parameter-scaling)=
 
@@ -1156,7 +1160,7 @@ where 1.69 is the loss no model or dataset size removes. At $N = 70 \times 10^9$
 
 #### Implications for Training
 
-Chinchilla scaling implies that many large models are "undertrained"—better performance could be achieved with smaller models trained on more data. This has significant implications for training efficiency and inference costs.
+Hoffmann et al. conclude that many large models of the time were "undertrained" {cite}`hoffmann2022training`: at the same compute, a smaller model trained on more tokens reaches a lower loss. A smaller model is also cheaper to run, so the shift lowers inference cost as well.
 
 Because $a_N \approx a_D \approx 0.5$, the compute-optimal ratio $D^*/N^*$ is roughly the same at every budget, and Hoffmann et al.'s Table 3, which gives the projections of their first approach, puts it near 20 tokens per parameter: 20.2 billion tokens for 1 billion parameters, 205.1 billion for 10 billion, 1.5 trillion for 67 billion and 3.7 trillion for 175 billion {cite}`hoffmann2022training`, ratios of 20.2, 20.5, 22.4 and 21.1. Chinchilla itself, 70 billion parameters on 1.4 trillion tokens, sits at 20. With $C \approx 6ND$ ({ref}`sec-ch2-flops`) the rule fixes both sizes from the budget alone. GPT-3's 175 billion parameters would on this rule call for about 3.5 trillion training tokens (Table 3's own projection is 3.7 trillion).
 
@@ -1223,7 +1227,7 @@ Attention's share of the per-layer multiply-adds, $2n^2d/(12nd^2 + 2n^2d)$, agai
 
 Training memory has three parts:
 
-- **Parameters**: $\approx 12 L d^2 + |\mathcal{V}| d$ where $L$ is the number of layers (each layer holds $4d^2$ attention and $8d^2$ feed-forward weights) and $|\mathcal{V}| d$ is the embedding table. The $8d^2$ assumes the dense $4d$-wide feed-forward layer; a gated layer such as SwiGLU ({ref}`sec-ch1-modern-block`) has three $d \times d_{ff}$ matrices, so it keeps the same $8d^2$ parameters with $d_{ff} = 8d/3$, 10,923 at $d = 4096$
+- **Parameters**: $\approx 12 L d^2 + |\mathcal{V}| d$ where $L$ is the number of layers (each layer holds $4d^2$ attention and $8d^2$ feed-forward weights) and $|\mathcal{V}| d$ is the embedding table. The $8d^2$ assumes the dense $4d$-wide feed-forward layer; a gated layer such as SwiGLU ({ref}`sec-ch1-modern-block`) has three $d \times d_{\text{ff}}$ matrices, so it keeps the same $8d^2$ parameters with $d_{\text{ff}} = 8d/3$, 10,923 at $d = 4096$
 - **Activations**: $\mathcal{O}(B \cdot n \cdot d \cdot L)$ for the residual stream, plus the $\mathcal{O}(B \cdot n_h \cdot n^2 \cdot L)$ attention scores and the $4d$-wide feed-forward intermediates, where $B$ is batch size and $n_h$ the number of heads; without activation recomputation (below) each layer stores about $B\,n\,d\,(34 + 5\,n_h\,n/d)$ bytes {cite}`korthikanti2022reducing`
 - **Optimizer and gradient state**: with mixed precision and Adam, each parameter costs about 16 bytes in total: a 2-byte weight, a 2-byte gradient, a 4-byte fp32 master copy and two 4-byte Adam moments {cite}`rajbhandari2020zero`
 
@@ -1301,7 +1305,7 @@ The notebook section {ref}`nb-math-scaling` plots the Kaplan parameter, data and
 
 ### 5.1 Floating Point Precision
 
-Training large models requires careful attention to numerical precision. The three formats in use differ in how they split their bits between the exponent, which sets the range, and the mantissa, which sets the precision:
+The three floating-point formats used in training differ in how they split their bits between the exponent, which sets the range, and the mantissa, which sets the precision:
 
 | Format | Sign | Exponent | Mantissa | Largest value | Smallest normal value | Machine epsilon |
 |---|---|---|---|---|---|---|
@@ -1369,13 +1373,13 @@ softmax: [0.7311, 0.2689]
 
 #### Mixed Precision Training
 
-**FP16** (half precision) reduces memory and increases speed but can cause numerical instability. **Mixed precision** {cite}`micikevicius2017mixed` uses FP16 for most operations but FP32 for loss computation and gradient updates.
+**fp16** (half precision) halves the memory of fp32 and runs faster on hardware with fp16 arithmetic, but its narrow range lets small gradients underflow to zero and large values overflow. **Mixed precision** {cite}`micikevicius2017mixed` uses fp16 for most operations but fp32 for loss computation and gradient updates.
 
 (sec-ch2-loss-scaling)=
 
 #### Loss Scaling
 
-To prevent gradient underflow in FP16, gradients are scaled up during backpropagation and scaled down before parameter updates:
+To prevent gradient underflow in fp16, gradients are scaled up during backpropagation and scaled down before parameter updates:
 
 $$\mathrm{loss}_{\text{scaled}} = \mathrm{loss} \times \zeta$$
 
@@ -1440,8 +1444,6 @@ LayerNorm of a constant vector: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 (sec-ch2-initialization-strategies)=
 
 ### 5.2 Initialization Strategies
-
-Proper initialization is crucial for stable training:
 
 (sec-ch2-xavier-glorot-initialization)=
 

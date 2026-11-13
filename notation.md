@@ -201,7 +201,7 @@ layer computes $xW$.
 | $\alpha_C$ | Kaplan's compute exponent (written $\alpha_C^{\min}$) | {ref}`sec-ch2-compute-scaling` |
 | $D_{KL}$ | Kullback-Leibler divergence | {ref}`sec-ch2-cross-entropy-kl-divergence` |
 | $\delta$ | Kronecker delta | {ref}`sec-ch2-softmax-jacobian` |
-| $\delta_{jx_i}$ | the one-hot target: the Kronecker delta at the target token, 1 when $j = x_i$ and 0 otherwise (`tools/list_symbols.py` keeps the subscript because $x_i$ is not a running index) | {ref}`sec-ch2-softmax-jacobian` |
+| $\delta_{jx_i}$ | the one-hot target: the Kronecker delta at the target token, 1 when $j = x_i$ and 0 otherwise (the subscript names the target token $x_i$, so it is part of the symbol) | {ref}`sec-ch2-softmax-jacobian` |
 | $\eta$ | learning rate ($\eta_t$ at step $t$) | {ref}`sec-ch2-learning-objectives` |
 | $\eta_{\max}$ | peak learning rate | {ref}`sec-ch2-linear-warmup` |
 | $\eta_{\min}$ | final learning rate | {ref}`sec-ch2-cosine-annealing` |
@@ -220,6 +220,9 @@ layer computes $xW$.
 | $\theta_y$ | second of the two parameters of the Rosenbrock function (exercise 2) | {ref}`sec-ch2-exercises` |
 | $z_{ff}$ | pre-activation of the feed-forward hidden layer | {ref}`sec-ch2-ffn-embedding-head-gradients` |
 | $x_i$ | feature $i$ of a layer's input row vector $x$ (LayerNorm and RMSNorm, {ref}`sec-ch2-layer-normalization-mathematics` and {ref}`sec-ch2-epsilon-placement`; the book-wide $x_i$ is the token at position $i$, and the page says which is meant) | {ref}`sec-ch2-layer-normalization-mathematics` |
+| $\lambda_{\min}$ | smallest eigenvalue of the Hessian (beside the book-wide $\lambda_{\max}$) | {ref}`sec-ch2-stability-condition` |
+| $\sigma_{\max}$ | largest singular value of a matrix | {ref}`sec-ch2-norms-conditioning-scale-matters` |
+| $\sigma_{\min}$ | smallest singular value of a matrix | {ref}`sec-ch2-norms-conditioning-scale-matters` |
 | $\mathrm{X}$ | a random variable | {ref}`sec-ch2-mutual-information` |
 | $\mathrm{Y}$ | a second random variable | {ref}`sec-ch2-mutual-information` |
 
