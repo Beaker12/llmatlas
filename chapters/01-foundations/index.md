@@ -1833,13 +1833,13 @@ Take $d_k = 2$, so that the single pair has frequency $b^0 = 1$ and $\mathcal{R}
 **Start Here - Intuitive Explanations:**
 
 1. [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/) by Jay Alammar - Visual explanations of transformer concepts
-1. [Attention? Attention!](https://lilianweng.github.io/posts/2018-06-24-attention/) by Lilian Weng - Comprehensive attention mechanisms guide
+1. [Attention? Attention!](https://lilianweng.github.io/posts/2018-06-24-attention/) {cite}`weng2018attention` - A survey of attention mechanisms up to and including the transformer
 1. [Andrej Karpathy's Neural Networks: Zero to Hero](https://karpathy.ai/zero-to-hero.html) - Video series building transformers from scratch
 
 **Mathematical Foundations:**
 
-1. [Understanding Large Language Models](https://magazine.sebastianraschka.com/p/understanding-large-language-models) by Sebastian Raschka
-1. [Linear Algebra](https://www.deeplearningbook.org/contents/linear_algebra.html) - Deep Learning Book Chapter 2
+1. [Understanding Large Language Models](https://magazine.sebastianraschka.com/p/understanding-large-language-models) {cite}`raschka2023understanding` - A reading list of the papers behind LLMs
+1. [Linear Algebra](https://www.deeplearningbook.org/contents/linear_algebra.html), chapter 2 of *Deep Learning* {cite}`goodfellow2016deep`
 
 (sec-ch1-further-reading-foundational-papers)=
 
@@ -1855,15 +1855,15 @@ Take $d_k = 2$, so that the single pair has frequency $b^0 = 1$ and $\mathcal{R}
 
 **Code Implementations:**
 
-- [The Annotated Transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html) - Line-by-line implementation with explanations
-- [Hugging Face Transformers](https://huggingface.co/docs/transformers/index) - Production-ready transformer implementations
+- [The Annotated Transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html) {cite}`rush2018annotated` - Line-by-line implementation with explanations
+- [Hugging Face Transformers](https://huggingface.co/docs/transformers/index) {cite}`wolf2020transformers` - A library of pretrained transformer implementations
 - [minGPT](https://github.com/karpathy/minGPT) by Andrej Karpathy - Minimal GPT implementation for learning
 
 **Interactive Learning:**
 
-- [Transformer Explainer](https://poloclub.github.io/transformer-explainer/) - Interactive visualization tool
+- [Transformer Explainer](https://poloclub.github.io/transformer-explainer/) {cite}`cho2024transformer` - Interactive visualization of GPT-2 running in the browser
 - [Tiktokenizer](https://tiktokenizer.vercel.app/) - Explore how GPT and other tokenizers split text
-- [BertViz](https://github.com/jessevig/bertviz) - Visualize attention in BERT and GPT models
+- [BertViz](https://github.com/jessevig/bertviz) {cite}`vig2019multiscale` - Visualize attention in BERT and GPT models
 
 (sec-ch1-further-reading-advanced-topics-recent-research)=
 
@@ -1891,7 +1891,7 @@ Take $d_k = 2$, so that the single pair has frequency $b^0 = 1$ and $\mathcal{R}
 ### Books and Comprehensive Resources
 
 1. **[Natural Language Processing with Transformers](https://github.com/nlp-with-transformers/notebooks)** by Lewis Tunstall, Leandro von Werra, and Thomas Wolf
-1. **[Deep Learning](https://www.deeplearningbook.org/)** by Ian Goodfellow, Yoshua Bengio, and Aaron Courville - Mathematical foundations
+1. **[Deep Learning](https://www.deeplearningbook.org/)** {cite}`goodfellow2016deep` - Mathematical foundations
 1. **[Speech and Language Processing](https://web.stanford.edu/~jurafsky/slp3/)** by Dan Jurafsky and James H. Martin - NLP fundamentals
 
 (sec-ch1-further-reading-practical-learning-projects)=
