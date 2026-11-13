@@ -12,7 +12,7 @@ import pytest
 from tests._compare import compare_output
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check, tracked
 from tests._pages import pages as chapter_pages
-from tools.fences import python_fences as shared_python_fences
+from tools.fences import is_python, python_fences as shared_python_fences
 
 PSEUDO_MARKER = re.compile(r"# pseudo-code(?![\w-])")
 NETWORK_MARKER = re.compile(r"# network(?![\w-])")
@@ -60,7 +60,10 @@ ANY_MARKER = re.compile(r"\s*%\s*output", re.I)  # a marker, possibly mistyped (
 
 
 def run_fence(code, timeout):
-    env = {**os.environ, "MPLBACKEND": "Agg", "PYTHONIOENCODING": "utf-8"}
+    # One math-library thread: the listings are small, and a busy host oversubscribed by many threads can make
+    # a fraction of a second of work take minutes.
+    env = {**os.environ, "MPLBACKEND": "Agg", "PYTHONIOENCODING": "utf-8", "OMP_NUM_THREADS": "1",
+           "MKL_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1"}
     with tempfile.TemporaryDirectory() as cwd:
         return subprocess.run(
             [sys.executable, "-W", "error", "-W", "ignore:FigureCanvasAgg is non-interactive", "-"],
@@ -82,7 +85,7 @@ def marker_failures(text, name):
     for n, line in enumerate(text.splitlines(), start=1):
         if fence is not None:
             if line.startswith("```"):
-                fence, after_python = None, fence == "python"
+                fence, after_python = None, is_python(fence)
             continue
         if line.startswith("```"):
             fence, after_python = line[3:].strip(), False
@@ -288,6 +291,14 @@ def test_an_output_marker_not_after_a_python_fence_is_reported(tmp_path, before)
     assert len(failures) == 1 and "not directly after a python fence" in failures[0]
 
 
+def test_a_fence_runs_with_one_math_library_thread(monkeypatch):
+    """Listings are small: one BLAS/OpenMP thread keeps their run time independent of how busy the host is (a
+    many-threaded torch matmul on a loaded host can take minutes and hit the timeout)."""
+    monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
+    proc = run_fence("import os\nprint(os.environ['OMP_NUM_THREADS'], os.environ['MKL_NUM_THREADS'])\n", 60)
+    assert proc.stdout.split() == ["1", "1"]
+
+
 def test_a_fence_that_prints_nothing_is_reported(tmp_path):
     page = page_of(tmp_path, "```python\nx = 1 + 1\n```\n\n% output\n\n```text\n2\n```\n")
     assert check_page(page) == ["index.md:L1: prints nothing; print a key result and show it in a '% output' block"]
@@ -309,6 +320,23 @@ def test_a_pseudo_code_fence_that_runs_as_written_is_reported(tmp_path):
                   "```python\n# pseudo-code\ndef f(x):\n    ...\n```\n",
                   "```python\n# pseudo-code\nfor step in training:\n    update(step)\n```\n"):
         assert check_page(page_of(tmp_path, legal)) == []
+
+
+@pytest.mark.parametrize("info", ["py", "python3", "python title=\"demo.py\"", "py3", "{code-block} python"])
+def test_a_python_like_info_string_is_held_to_the_python_rules(tmp_path, info):
+    """A fence tagged py, python3 or python with options is a python listing: it gets every fence rule."""
+    assert [f["info"] for f in shared_python_fences(f"```{info}\nprint(2)\n```\n")] == [info]
+    page = page_of(tmp_path, f"```{info}\nprint(2)\n```\n\nProse.\n")
+    assert check_page(page) == ["index.md:L1: no '% output' block after the fence"]
+    shown = page_of(tmp_path, f"```{info}\nprint(2)\n```\n\n% output\n\n```text\n2\n```\n")
+    assert check_page(shown) == []
+    silent = page_of(tmp_path, f"```{info}\nx = 2\n```\n\n% output\n\n```text\n2\n```\n")
+    assert check_page(silent) == ["index.md:L1: prints nothing; print a key result and show it in a '% output' block"]
+
+
+@pytest.mark.parametrize("info", ["text", "pycon", "pythonic", "json", "{code-block} text"])
+def test_other_info_strings_are_not_python(info):
+    assert shared_python_fences(f"```{info}\nprint(2)\n```\n") == []
 
 
 @pytest.mark.parametrize("chapter_dir", CHAPTER_DIRS, ids=CHAPTER_IDS)

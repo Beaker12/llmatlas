@@ -22,10 +22,11 @@ from tools.book_files import bib_files as book_bib_files
 from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check
 from tests._pages import blank_code, blank_inline_code, line_of, pages
 
-ET_AL = re.compile(r"et al\.,?\s+\{cite\}")
+ET_AL = re.compile(r"\bet al(?:\.|\b),?\s+\{cite\}")
 PLAIN_CITE = re.compile(r"\{cite\}`([^`\n]+)`")
 HAND_GAP = 15
-HAND = re.compile(r"\b(?P<first>[A-Z][\w\-]*)(?:\s+et\s+al\.|\s+and\s+(?P<second>[A-Z][\w\-]*))(?P<poss>['’]s)?"
+NAME = r"(?![a-z])[^\W\d_][\w\-]*"  # a word whose first letter is not ASCII lower case; isupper() checks the rest
+HAND = re.compile(r"\b(?P<first>%s)(?:\s+et\s+al(?:\.|\b)|\s+and\s+(?P<second>%s))(?P<poss>['’]s)?" % (NAME, NAME) +
                   r"(?P<gap>[^.;!?{]{0,%d}?)\{cite(?::[pt])?\}`(?P<keys>[^`\n]+)`" % HAND_GAP)
 QUOTES = "\"“”"
 BEFORE = re.compile(r"([^\W\d_][\w\-]*)(?:['\u2019]s)?\s*$")
@@ -102,7 +103,8 @@ def citation_failures(chapter_dir, files=None):
                                     f"{{cite}}`{key}`; use {{cite:t}}")
         for m in HAND.finditer(text):
             quoted = any(q in m.group("gap") or text[m.start() - 1:m.start()] == q for q in QUOTES)
-            if m.group("poss") or quoted or m.end("gap") in reported:
+            capitals = all(n[0].isupper() for n in (m.group("first"), m.group("second")) if n)
+            if m.group("poss") or quoted or not capitals or m.end("gap") in reported:
                 continue
             names = {fold(n) for n in (m.group("first"), m.group("second")) if n}
             same = [k for k in (k.strip() for k in m.group("keys").split(","))
@@ -189,3 +191,23 @@ def test_a_possessive_a_quotation_another_work_or_a_distant_role_passes(tmp_path
             "Smith et al. reported this long before the later study {cite}`smith2020x`.\n")
     chapter, files = chapter_with(tmp_path, text)
     assert citation_failures(chapter, files) == []
+
+
+def test_et_al_without_its_period_is_reported(tmp_path):
+    text = ("Smith et al {cite}`smith2020x` found it.\n"
+            "Smith et al (2020) {cite:p}`smith2020x` found it.\n"
+            "Smith et also {cite:p}`smith2020x` is not a name.\n")
+    chapter, files = chapter_with(tmp_path, text)
+    failures = citation_failures(chapter, files)
+    assert [f.split(": ")[0] for f in failures] == ["index.md:L1", "index.md:L2"]
+    assert failures[0] == "index.md:L1: 'et al.' followed by plain {cite}; use {cite:t}"
+
+
+def test_a_surname_with_a_non_ascii_capital_is_reported(tmp_path):
+    text = ("Ünal et al. (2020) {cite:p}`smith2020x` found it.\n"
+            "Ünal and Smith {cite:t}`smith2020x` found it.\n"
+            "Ünal's {cite:p}`smith2020x` result and the ünal and smith {cite:p}`smith2020x` words pass.\n")
+    chapter, files = chapter_with(tmp_path, text)
+    failures = citation_failures(chapter, files)
+    assert [f.split(": ")[0] for f in failures] == ["index.md:L1", "index.md:L2"]
+    assert "hand-written 'Ünal and Smith'" in failures[1]

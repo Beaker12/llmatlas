@@ -80,6 +80,7 @@ def test_the_sample_chapter_passes_every_page_check():
     ("Demo {cite:t}`demo2020` that", "Sample {cite}`demo2020` that", "citations", "surname 'Sample' before {cite}`demo2020`"),
     ("shows the ramp", "shows the ramp of $\\chi$", "notation", "symbol '\\\\chi' is in neither"),
     ("shows the ramp", "shows the ramp in $O(n)$", "notation", "banned 'O(' (Asymptotic order"),
+    ("shows the ramp.", "shows the ramp.\n\n```{math}\ny = \\chi\n```\n", "notation", "symbol '\\\\chi' is in neither"),
     ("shows the ramp", "shows the ramp, where $d$ is the width, where $d$ is the depth", "notation",
      "'d' defined as 'the depth', but as 'the width'"),
 ])

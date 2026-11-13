@@ -26,6 +26,6 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $n_{items}$ | items inserted into a Bloom filter | C4-22, sec-ch4-exact-deduplication |  |
 | $n_{bits}$ | bits in a Bloom filter's array | C4-22, sec-ch4-exact-deduplication |  |
 | $n_{probe}$ | hash functions of a Bloom filter (bits set per inserted item) | acceptance fix round 1, sec-ch4-exact-deduplication |  |
-| $n_{fp}$ | bits in a SimHash fingerprint | acceptance fix round 1, sec-ch4-dedup-scope |  |
-| $d_{Ham}$ | Hamming distance between two SimHash fingerprints | C4-22, sec-ch4-dedup-scope |  |
+| $n_{fp}$ | bits in a SimHash fingerprint | acceptance fix round 1, sec-ch4-near-duplicate-detection-minhash-lsh |  |
+| $d_{Ham}$ | Hamming distance between two SimHash fingerprints | C4-22, sec-ch4-near-duplicate-detection-minhash-lsh |  |
 | $\epsilon_{dup}$ | SemDeDup's distance margin: documents at cosine similarity at least $1 - \epsilon_{dup}$ are duplicates | index.md:L1476 (sec-ch4-semantic-deduplication) | $\epsilon$ at L1476 |  |
