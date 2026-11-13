@@ -137,7 +137,7 @@ for repo, source in SOURCES.items():
 ''')
 
 md(r"""
-The three gated models, transcribed from their papers. Gemma 2's head dimension (256) is larger than $d_{model}/n_{heads}$, and its embeddings are tied.
+The three gated models, transcribed from their papers. Gemma 2's head dimension (256) is larger than $d/n_h$, and its embeddings are tied.
 """)
 code(r'''
 PAPER_CONFIGS = {
@@ -423,7 +423,7 @@ for n_kv in (4, 2, 1):
 ''')
 
 md(r"""
-A simplified multi-head latent attention layer. Only a small latent $c_t$ and a shared rotary key are cached. The reference expands the latent into full keys and values and runs ordinary attention; the decoding path never builds them, because the key up-projection is absorbed into the query and the value up-projection is applied after the weighted sum. This is a simplified layer (no query compression, one rotary key), not DeepSeek's implementation.
+A simplified multi-head latent attention layer. Only a small latent $c_i$ and a shared rotary key are cached. The reference expands the latent into full keys and values and runs ordinary attention; the decoding path never builds them, because the key up-projection is absorbed into the query and the value up-projection is applied after the weighted sum. This is a simplified layer (no query compression, one rotary key), not DeepSeek's implementation.
 """)
 code(r'''
 class MiniMLA(nn.Module):
