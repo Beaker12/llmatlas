@@ -861,6 +861,121 @@ assert flags == [False, False, True, False, True]
 
 Exact matching over the whole document misses the common case where two copies differ by a date, a byline or a trailing menu. The usual mitigation is to hash a normalized key: lowercase, punctuation removed, digits replaced by a placeholder. Even then, near-duplicates need their own method.
 
+At the scale of paragraphs rather than documents, the global set of hashes no longer fits in memory, and Dolma {cite}`soldaini2024dolma` replaces it with a Bloom filter {cite}`bloom1970space`: a bit array of $n_{bits}$ bits, all zero at the start, and $n_{hash}$ hash functions. Inserting an item sets the $n_{hash}$ bits its hashes point to; an item is reported as seen when all $n_{hash}$ of its bits are set. A Bloom filter never misses an item it has seen, but it can report an unseen item as seen. After $n_{items}$ insertions a given bit is still zero with probability $(1 - 1/n_{bits})^{n_{hash} n_{items}} \approx e^{-n_{hash} n_{items} / n_{bits}}$, so an unseen item is a false positive with probability
+
+$$\Pr[\text{false positive}] \approx \left(1 - e^{-n_{hash} n_{items} / n_{bits}}\right)^{n_{hash}}$$
+
+which is smallest at $n_{hash} = (n_{bits} / n_{items}) \ln 2$. About 9.6 bits per item and 7 hash functions give a 1% false-positive rate, whatever the size of the items. In deduplication a false positive deletes a paragraph that was not a duplicate, so the rate is the fraction of unique text lost.
+
+```python
+import hashlib
+import math
+
+
+class BloomFilter:
+    """A bit array of n_bits bits and n_hash hash functions; no false negatives, some false positives."""
+
+    def __init__(self, n_bits: int, n_hash: int):
+        self.n_bits, self.n_hash = n_bits, n_hash
+        self.bits = bytearray((n_bits + 7) // 8)
+
+    def _positions(self, item: str):
+        digest = hashlib.sha256(item.encode("utf-8")).digest()
+        h1, h2 = int.from_bytes(digest[:8], "little"), int.from_bytes(digest[8:16], "little")
+        return [(h1 + i * h2) % self.n_bits for i in range(self.n_hash)]  # double hashing
+
+    def add(self, item: str):
+        for p in self._positions(item):
+            self.bits[p // 8] |= 1 << (p % 8)
+
+    def __contains__(self, item: str) -> bool:
+        return all(self.bits[p // 8] >> (p % 8) & 1 for p in self._positions(item))
+
+
+n_items, n_bits, n_hash = 10_000, 96_000, 7
+bloom = BloomFilter(n_bits, n_hash)
+for i in range(n_items):
+    bloom.add(f"paragraph {i}")
+assert all(f"paragraph {i}" in bloom for i in range(n_items))  # every inserted item is found
+
+measured = sum(f"other paragraph {i}" in bloom for i in range(20_000)) / 20_000
+predicted = (1 - math.exp(-n_hash * n_items / n_bits)) ** n_hash
+best_n_hash = n_bits / n_items * math.log(2)
+print(f"false-positive rate: measured {measured:.4f}, predicted {predicted:.4f}")
+print(f"bits per item {n_bits / n_items:.1f}, best n_hash {best_n_hash:.2f}")
+assert abs(measured - predicted) < 0.003
+```
+
+% output
+
+```text
+false-positive rate: measured 0.0099, predicted 0.0100
+bits per item 9.6, best n_hash 6.65
+```
+
+Dolma deduplicates the web subset of its corpus at the paragraph level this way, which tagged 19.1% of its UTF-8 characters for removal {cite}`soldaini2024dolma`.
+
+Deduplicating units smaller than a document removes the boilerplate that survives extraction: the newsletter footer, the license header, the disclaimer repeated on every page of a site. C4 {cite}`raffel2019exploring` used sentences as the unit: it "discarded all but one of any three-sentence span occurring more than once in the data set". Dolma used paragraphs. The listing implements both rules on three documents that share a footer.
+
+```python
+import re
+
+
+def sentences(text: str) -> list:
+    return [s for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s]
+
+
+def dedup_three_sentence_spans(docs: list) -> list:
+    """C4's rule: keep the first occurrence of any three-sentence span and delete later ones."""
+    seen, out = set(), []
+    for doc in docs:
+        sents = sentences(doc)
+        drop = set()
+        for i in range(len(sents) - 2):
+            span = tuple(sents[i : i + 3])
+            if span in seen:
+                drop.update(range(i, i + 3))
+            seen.add(span)
+        out.append(" ".join(s for j, s in enumerate(sents) if j not in drop))
+    return out
+
+
+def dedup_paragraphs(docs: list) -> list:
+    """Dolma-style: delete any paragraph (blank-line separated) already seen in an earlier document."""
+    seen, out = set(), []
+    for doc in docs:
+        kept = []
+        for para in doc.split("\n\n"):
+            if para.strip() not in seen:
+                kept.append(para)
+                seen.add(para.strip())
+        out.append("\n\n".join(kept))
+    return out
+
+
+FOOTER = "Subscribe to our newsletter. Follow us on social media. All rights reserved."
+docs = [
+    "The council approved the library. Work starts in spring. It opens in two years.\n\n" + FOOTER,
+    "Fishing boats stayed in harbor. A storm was forecast. The market closed early.\n\n" + FOOTER,
+    "Prices rose in March. Rents rose faster. Wages did not keep up.\n\n" + FOOTER,
+]
+spans = dedup_three_sentence_spans(docs)
+paras = dedup_paragraphs(docs)
+for name, out in (("three-sentence spans", spans), ("paragraphs", paras)):
+    print(f"{name}: {[len(sentences(d)) for d in out]} sentences per document")
+assert all(FOOTER not in d for d in spans[1:]) and FOOTER in spans[0]
+assert paras[1:] == [docs[1].split("\n\n")[0], docs[2].split("\n\n")[0]]
+```
+
+% output
+
+```text
+three-sentence spans: [6, 3, 3] sentences per document
+paragraphs: [6, 3, 3] sentences per document
+```
+
+Both rules keep the footer in the first document and delete it from the others, and both leave each document's own sentences alone. They differ on partial matches: a span rule catches three repeated sentences inside an otherwise new paragraph, which a paragraph rule misses, and a paragraph rule catches a repeated one- or two-sentence paragraph, which a three-sentence span rule misses. Either rule can leave a document that no longer reads as a whole, which is why pipelines run the document-level quality filters again afterwards or drop documents that lose too much.
+
 (sec-ch4-dedup-scope)=
 
 ### 5.3 Near-duplicate detection with MinHash and LSH

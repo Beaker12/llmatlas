@@ -11,7 +11,7 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\mathcal{X}$ | shingle set of the first document | index.md:L607 | $A$ at L607-L613 |
 | $\mathcal{Y}$ | shingle set of the second document | index.md:L607 | $B$ at L607-L613 |
 | $h$ | MinHash hash function (h_i the i-th) | index.md:L609 |  |
-| $n_{hash}$ | number of MinHash hash functions (signature length) | index.md:L613 | $k$ at L613, L615 |
+| $n_{hash}$ | number of hash functions: MinHash signature length, and the hash count of a Bloom filter (sec-ch4-exact-deduplication) | index.md:L613 | $k$ at L613, L615 |
 | $b$ | number of LSH bands | index.md:L615 |  |
 | $r$ | rows per LSH band | index.md:L615 |  |
 | $a$ | coefficients of hash function $h_i$, written $a_{i,1}$ and $a_{i,0}$ | index.md:L621 | $a_i$, $b_i$ at L621 |
@@ -23,6 +23,6 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $n$ | order of an n-gram | index.md:L378 |  |
 | $x_T$ | last token of a $T$-token text | index.md:L462 | $w_N$ at L462 |
 | $T_{idx}$ | tokens indexed by a suffix array | index.md:L722 | $N$ at L722 |
-| $n_{items}$ | items inserted into a Bloom filter | reserved: C4-22 |  |
-| $n_{bits}$ | bits in a Bloom filter or a SimHash fingerprint | reserved: C4-22 |  |
-| $d_{Ham}$ | Hamming distance between two SimHash fingerprints | reserved: C4-22 |  |
+| $n_{items}$ | items inserted into a Bloom filter | C4-22, sec-ch4-exact-deduplication |  |
+| $n_{bits}$ | bits in a Bloom filter or a SimHash fingerprint | C4-22, sec-ch4-exact-deduplication and sec-ch4-dedup-scope |  |
+| $d_{Ham}$ | Hamming distance between two SimHash fingerprints | C4-22, sec-ch4-dedup-scope |  |
