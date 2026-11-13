@@ -481,6 +481,7 @@ def attend(q, k, v, window=None):
     return F.softmax(scores, dim=-1) @ v
 
 
+torch.set_default_dtype(torch.float64)  # float32 sums round differently per CPU kernel set
 torch.manual_seed(0)
 n, d_k, n_win = 64, 16, 8
 kinds = ["local"] * 5 + ["global"]
@@ -505,7 +506,7 @@ for t in range(n):
         h = h + F.softmax(scores, dim=-1) @ torch.stack(values)
     steps.append(h)
 
-assert torch.allclose(torch.stack(steps), full, atol=1e-5)
+assert torch.allclose(torch.stack(steps), full, atol=1e-10)
 cached = sum(len(keys) + len(values) for keys, values in cache) * d_k
 assert cached == (1 * n + 5 * min(n, n_win)) * 2 * d_k
 print("decoding with eviction equals the masked full pass")
