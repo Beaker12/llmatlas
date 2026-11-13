@@ -36,11 +36,30 @@ SYNC_EXEMPT: dict[str, str] = {}  # name -> reason it may differ between the cha
 
 # (chapter regex, notebook-output regex, comparator); each regex has exactly one capture group.
 # Comparator: eq, gt, lt or approx:<rel>, applied as `chapter_value <op> notebook_value`.
-RESULT_CLAIMS: list[tuple[str, str, str]] = []
+RESULT_CLAIMS: list[tuple[str, str, str]] = [
+    (r"element counts of all (\d+) downloadable checkpoints", r"reproduced exactly for (\d+) models", "eq"),
+    (r"multi-head cache is (\d+) times Llama 3\.1 8B's", r"multi-head cache is (\d+) times Llama 3\.1 8B's", "eq"),
+    (r"auxiliary loss is near (\d+) for a balanced router", r"load-balancing loss (\S+) balanced", "approx:0.1"),
+]
 
 # regex over a sentence -> one-line reason; such a sentence links a notebook and mentions a number but states
 # no result, so the notebook-link check (rule c of test_notebook_prose.py) does not flag it
-NOT_A_RESULT: dict[str, str] = {}
+NOT_A_RESULT: dict[str, str] = {
+    r"post-norm fails without warm-up only at the highest of three rates":
+        "'three' counts the sweep's learning rates, a setting; the result is qualitative and asserted by "
+        "norm_claims in the sweep and summary cells",
+    r"trains both arrangements side by side at three learning rates":
+        "describes the experiment's settings (three learning rates), states no result",
+    r"trains a six-layer post-norm and pre-norm model from the same seeds at three learning rates":
+        "the numbers are settings (depth, number of rates, 'two lower rates'); the outcome is qualitative and "
+        "asserted by norm_claims",
+    r"asserts the identities above to \$10\^\{-9\}\$":
+        "the only numbers are the assertion's tolerance and symbol subscripts; the identities are asserted in "
+        "the rope cell",
+    r"KV cache per token, all layers, bf16, in KiB":
+        "caption's unit definition (1 KiB = 1,024 bytes) and model facts (61 layers, 128 heads, 4 key/value "
+        "heads) from the configurations; its one result, the factor 4, is a RESULT_CLAIMS entry",
+}
 
 MIN_FIGURES: int = 12
 # Units the notation check's banned phrases may match, declared on purpose: unit regex -> reason.
@@ -223,6 +242,18 @@ def test_norm_sweep_records_the_current_training_cell():
     assert [(a["lr"], a["warmup"]) for a in recorded["arms"]] == [
         (lr, w) for lr in (3e-3, 1e-3, 3e-4) for w in (0, 100)]
     assert all(len(a["pre"]) == len(a["post"]) == 5 for a in recorded["arms"])
+
+
+def test_norm_sweep_caption_counts():
+    """The fig-ch6-norm-sweep caption: without warm-up post-norm is below pre-norm in every seed at the two lower
+    rates and fails (stays above 3.0 nats) in every seed at 3e-3, where pre-norm trains (below 2.5); with the
+    100-step warm-up, post-norm at 3e-3 trains in four seeds and fails in one."""
+    arms = {(a["lr"], a["warmup"]): a for a in json.loads(SWEEP.read_text(encoding="utf-8"))["arms"]}
+    for lr in (1e-3, 3e-4):
+        assert all(post < pre for pre, post in zip(arms[(lr, 0)]["pre"], arms[(lr, 0)]["post"]))
+    assert all(v > 3.0 for v in arms[(3e-3, 0)]["post"]) and all(v < 2.5 for v in arms[(3e-3, 0)]["pre"])
+    warm = arms[(3e-3, 100)]["post"]
+    assert (sum(v < 2.5 for v in warm), sum(v > 3.0 for v in warm)) == (4, 1)
 
 
 @pytest.mark.live

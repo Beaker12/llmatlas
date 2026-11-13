@@ -41,8 +41,10 @@ CELLS: list[tuple[str, str]] = []
 TAGS: dict[int, list[str]] = {}  # cell index -> metadata tags; `figure:<slug>` marks a plot the chapter shows
 
 
-def md(text: str) -> None:
+def md(text: str, tags: tuple[str, ...] = ()) -> None:
     CELLS.append(("markdown", text.strip("\n")))
+    if tags:
+        TAGS[len(CELLS) - 1] = list(tags)
 
 
 def code(text: str, tags: tuple[str, ...] = ()) -> None:
@@ -54,12 +56,12 @@ def code(text: str, tags: tuple[str, ...] = ()) -> None:
 md(r"""
 # Modern Architectures Demo
 
-**Purpose**: This notebook builds the pieces of Chapter 6 and checks each against an independent reference: the parameter count of ten real models from their configuration files (seven downloaded, three transcribed from papers), a grouped-query attention layer, a KV cache, a simplified latent cache, rotary-frequency scaling, a mixture-of-experts router, and a seeded comparison of post-norm and pre-norm training. Every section ends in assertions, so a silent change to any formula fails the notebook.
+**Purpose**: This notebook builds the pieces of Chapter 6 and checks each against an independent reference: the parameter count of twelve real models from their configuration files (eight downloaded, four transcribed from papers), a grouped-query attention layer, a KV cache, a simplified latent cache, rotary-frequency scaling, a mixture-of-experts router, and a seeded comparison of post-norm and pre-norm training. Every section ends in assertions, so a silent change to any formula fails the notebook.
 
 **Data**: model configurations are read from the Hugging Face hub at pinned commits when a network is available, and from copies committed in `data/` otherwise; set `LLMATLAS_OFFLINE=1` to skip the network. Both sources are verified against the committed checksums, so the results do not depend on which one is used, and the configuration cell prints the same label either way (the source of each file is kept in `SOURCES`). The training text is Jane Austen's *Pride and Prejudice*, public domain, from Project Gutenberg.
 """)
 
-md("## 1. Setup")
+md("## Setup")
 code(r'''
 import hashlib
 import json
@@ -101,9 +103,9 @@ def sha256(raw):
 
 md(r"""
 (nb-arch-configs)=
-## 2. Real Configurations and Exact Parameter Counts
+## Real Configurations and Exact Parameter Counts
 
-Seven ungated models are read from their pinned commits (`data/pins.json`). Each file is checked against `data/checksums.json`, whether it came from the hub or from the committed copy. Three gated models (Llama 3.1 8B and 70B, Gemma 2 9B) cannot be downloaded without an account; their architectures are transcribed from their papers and checked against the exact parameter totals the hub publishes for them.
+The ungated models are read from their pinned commits (`data/pins.json`). Each file is checked against `data/checksums.json`, whether it came from the hub or from the committed copy. The gated models, Llama 3.1 in its smaller and larger size and the Gemma models, cannot be downloaded without an account; their architectures are transcribed from their papers and checked against the exact parameter totals the hub publishes for them, or, for the multimodal Gemma model, against its paper's table.
 """)
 code(r'''
 PINS = json.loads((DATA / "pins.json").read_text())
@@ -141,7 +143,7 @@ for repo in PINS:
 
 md(r"""
 The four gated models, transcribed from their papers, except Gemma 2's vocabulary and Gemma 3's layer shapes, which come from Google's reference implementation (the paper gives the counts but not the shapes); Gemma 3 is the text decoder of a multimodal model. Gemma 2's vocabulary: the paper's Table 1 lists 256,128 entries, the released checkpoint has 256,000 rows, and the hub's total is reproduced with 256,000. Gemma 2's head dimension (256) is larger than $d/n_h$, and its embeddings are tied.
-""")
+""", tags=("static-numbers",))  # literature constants: the paper's and the checkpoint's vocabulary and head sizes
 code(r'''
 PAPER_CONFIGS = {
     "meta-llama/Llama-3.1-8B": {
@@ -171,7 +173,7 @@ code(fence(CH06, "def count_params"))
 code(fence(CH06, "def kv_cache_elements_per_token"))
 
 md(r"""
-Three checks, each catching a different kind of mistake. First, against the checkpoint: the element counts were read from the tensor shapes in each safetensors header (`tools/fetch_arch_samples.py`), which does not depend on whether a model is stored in float32, BF16 or FP8. Second, against the hub's published total for the gated models. Third, against each vendor's own published figure, in that vendor's convention for "active" parameters; the other convention must miss.
+The checks below each catch a different kind of mistake. First, against the checkpoint: the element counts were read from the tensor shapes in each safetensors header (`tools/fetch_arch_samples.py`), which does not depend on whether a model is stored in `float32`, `BF16` or `FP8`. Second, against the hub's published total for the gated models. Third, against each vendor's own published figure, in that vendor's convention for "active" parameters; the other convention must miss.
 """)
 code(r'''
 CHECKPOINT = json.loads((DATA / "checkpoint_counts.json").read_text())
@@ -231,7 +233,7 @@ assert {"qwen2", "mixtral", "deepseek_v2", "deepseek_v3"} <= kinds
 ''')
 
 md(r"""
-The derived columns used in the chapter: embedding share, feed-forward share (dense models), and the bf16 KV-cache bytes per token for every layer.
+The derived columns used in the chapter: embedding share, feed-forward share (dense models), and the KV-cache bytes per token over all layers in `bf16`.
 """)
 code(r'''
 rows = []
@@ -282,9 +284,9 @@ plt.show()
 
 md(r"""
 (nb-arch-block)=
-## 3. The Block: RMSNorm, Grouped-Query Attention, SwiGLU
+## The Block: RMSNorm, Grouped-Query Attention, SwiGLU
 
-`RMSNorm`, `SwiGLU`, `PreLNBlock` and `apply_rope` below are copied from Chapter 1. The new piece is the attention layer, which supports any number of key/value heads (`n_kv_heads = n_heads` is multi-head attention, `1` is multi-query) and exposes `project` and `attend` separately so the cache section can reuse them.
+`RMSNorm`, `SwiGLU`, `PreLNBlock` and `apply_rope` below are copied from the foundations chapter ({ref}`sec-ch1-modern-block`, {ref}`sec-ch1-rope`). The new piece is the attention layer, which supports any number of key/value heads (`n_kv_heads = n_heads` is multi-head attention, `1` is multi-query) and exposes `project` and `attend` separately so the cache section can reuse them.
 """)
 code(fence(CH01, "class RMSNorm"))
 code(function(CH01, "apply_rope"))
@@ -416,7 +418,7 @@ print(f"TinyLM has {measured:,} parameters, as count_params predicts")
 
 md(r"""
 (nb-arch-kvcache)=
-## 4. The KV Cache
+## The KV Cache
 
 Decoding one token at a time with a cache must give the same logits as running the whole sequence at once. The loop below is the cache in its simplest form: every layer appends the new token's keys and values, and the query attends to everything stored (no mask is needed, because the cache holds only the past).
 """)
@@ -525,9 +527,9 @@ print(f"latent decoding equals the expanded attention; cache {per_token} element
 
 md(r"""
 (nb-arch-rope)=
-## 5. Rotary Positions and Longer Contexts
+## Rotary Positions and Longer Contexts
 
-First the two defining properties of RoPE, for the function copied from Chapter 1: rotation preserves norms, and a query-key product depends only on the offset. Then the frequency arithmetic of the chapter, in float64: the NTK-aware base $b' = b\, s^{d/(d-2)}$ leaves the highest frequency alone and divides the lowest by exactly the scale $s$.
+First the defining properties of RoPE, for the function copied from the foundations chapter ({ref}`sec-ch1-rope`): rotation preserves norms, and a query-key product depends only on the offset. Then the frequency arithmetic of the chapter, in `float64`: the NTK-aware base $b' = b\, s_{ctx}^{d_k/(d_k-2)}$ leaves the highest frequency alone and divides the lowest by exactly the scale $s_{ctx}$ (the variable `s` below).
 """)
 code(r'''
 torch.manual_seed(2)
@@ -584,9 +586,9 @@ plt.show()
 
 md(r"""
 (nb-arch-moe)=
-## 6. A Mixture-of-Experts Router
+## A Mixture-of-Experts Router
 
-The router from the chapter, run on 4,096 random tokens with 8 experts and top-2 routing. Each row of the router weight has unit norm, so no expert is favored at initialization, and the dispatch fraction of an expert is its share of the routed slots (they sum to one).
+The router from the chapter, run on a batch of random tokens; the token count `T`, the number of experts `E` and the number each token is routed to, `K`, are set in the cell below. Each row of the router weight has unit norm, so no expert is favored at initialization, and the dispatch fraction of an expert is its share of the routed slots (they sum to one).
 """)
 code(fence(CH06, "def route_top_k"))
 code(r'''
@@ -657,7 +659,7 @@ plt.show()
 ''')
 
 md(r"""
-A full layer, checked against a per-token reference that follows Mixtral's formulation literally: take the top-2 router *logits*, then apply a softmax over just those two. The chapter's router renormalizes the full softmax over the selected pair, which is the same thing. The layer is then placed in a small model, and its total and active parameters are compared with `count_params`.
+A full layer, checked against a per-token reference that follows Mixtral's formulation literally: take the router's largest *logits*, as many as the layer routes each token to, then apply a softmax over just those. The chapter's router renormalizes the full softmax over the selected experts, which is the same thing. The layer is then placed in a small model, and its total and active parameters are compared with `count_params`.
 """)
 code(r'''
 class MoELayer(nn.Module):
@@ -737,12 +739,12 @@ def norm_claims(arms):
 
 md(r"""
 (nb-arch-train)=
-## 7. Post-Norm Against Pre-Norm
+## Post-Norm Against Pre-Norm
 
 A six-layer byte-level model (about 0.3 million parameters) is trained on the first 150 KB of *Pride and Prejudice*, once with each norm placement, for 400 steps of 8 sequences of 64 bytes. A model that has only learned byte frequencies sits near a loss of 3.11 nats; anything clearly lower means it is using context. For each of five seeds both variants see the same batches. The score is the mean training loss over the last 20 steps. Everything is single-threaded and deterministic, so a seed reproduces exactly.
 
 The comparison is a sweep over three learning rates ($3 \times 10^{-3}$, $10^{-3}$, $3 \times 10^{-4}$), each with no warm-up and with a linear warm-up over the first 100 steps: six arms of ten runs. **Live:** the $3 \times 10^{-3}$, no-warm-up arm is trained below. **Loaded:** the other five arms are read from `data/norm_sweep.json`, which `tools/build_architecture_notebook.py --sweep` wrote by running this notebook's own training cell; the file records that cell's SHA-256 and the torch version, and `--sweep --check` recomputes every arm.
-""")
+""", tags=("static-numbers",))  # experiment settings: model size, data, steps, rates, seeds
 TRAIN_CELL = r'''
 raw = (DATA / "pride_and_prejudice_150k.txt").read_bytes()
 assert sha256(raw) == CHECKSUMS["pride_and_prejudice_150k.txt"]
@@ -819,7 +821,7 @@ plt.show()
 md(r"""
 ### The sweep: one live arm, five loaded
 
-The row marked *live* is the ten runs above; the other five rows are *loaded* from `data/norm_sweep.json`. Each statement printed after the table is asserted on these numbers.
+The row marked *live* is the runs above; the other rows are *loaded* from `data/norm_sweep.json`. Each statement printed after the table is asserted on these numbers.
 """)
 code(CLAIMS_CELL)
 code(r'''
@@ -861,15 +863,29 @@ plt.show()
 ''')
 
 md(r"""
-## 8. Summary
+## Summary
 
-- The parameter counter reproduces the stored tensors of seven checkpoints and the published totals of three more, exactly, and the vendors' own "active" figures only under the convention each vendor uses.
-- Grouped-query attention is multi-head attention with shared key/value weights; the cache is smaller by exactly the ratio of head counts, and decoding with it equals the full pass.
-- A latent cache stores `d_c + d_rope` numbers per token and gives the same attention output as the expanded keys and values.
-- NTK-aware scaling keeps the highest rotation frequency and divides the lowest by the scale; interpolation keeps the low frequencies within one position's rotation of the angles seen in training.
-- A top-k router with an auxiliary loss distributes tokens evenly when it is balanced; capacity limits drop the overflow of a router that is not.
-- Post-norm fails at the highest learning rate where pre-norm still trains: at $3 \times 10^{-3}$ without warm-up it stays at the byte-frequency loss in every seed, and warm-up lets it train there in some seeds but not in all. At $10^{-3}$ and $3 \times 10^{-4}$ it ends lower than pre-norm in every seed, with and without warm-up. The experiment shows post-norm's sensitivity to the learning rate, not a lower loss for pre-norm.
+The summary below is printed from the results computed above; each line is asserted.
 """)
+code(r'''
+assert all(COUNTS[repo]["total"] == CHECKPOINT[repo]["elements_counted"] for repo in PINS)
+assert all(COUNTS[repo]["total"] == HUB_TOTALS[repo]["elements_total"] for repo in exact)
+print(f"checkpoint element counts reproduced exactly for {len(PINS)} models, hub totals for {len(exact)} gated models;")
+print(f"  Gemma 3 12B text decoder: {non_embedding / 1e6:,.0f}M non-embedding parameters, as in the paper")
+smallest, largest = min(kv_bytes, key=kv_bytes.get), max(kv_bytes, key=kv_bytes.get)
+ratio = kv_bytes["allenai/OLMo-2-1124-7B"] / kv_bytes["meta-llama/Llama-3.1-8B"]
+assert ratio == 4 and kv_bytes[smallest] < kv_bytes["deepseek-ai/DeepSeek-V3"] < kv_bytes[largest]
+print(f"KV cache per token in bf16: {kv_bytes[smallest]:,} bytes ({smallest}) to {kv_bytes[largest]:,} ({largest});"
+      f" OLMo 2 7B's multi-head cache is {ratio:.0f} times Llama 3.1 8B's")
+assert per_token < full
+print(f"latent cache: {per_token} numbers per token per layer against {full} for the expanded heads")
+assert 0.95 < aux_balanced < 1.1 < 2 < aux_biased
+print(f"router: load-balancing loss {aux_balanced:.3f} balanced, {aux_biased:.3f} biased toward one expert")
+for claim, holds in norm_claims(ARMS).items():
+    assert holds, claim
+    print(f"norm placement: {claim}")
+''')
+
 
 
 def build() -> None:
