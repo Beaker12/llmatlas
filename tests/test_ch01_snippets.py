@@ -286,3 +286,116 @@ def test_notebook_bpe_cell_uses_the_chapter_corpus_and_merge_count():
     out = "".join("".join(o.get("text", "")) for o in cell.get("outputs", []))
     for a, b in (("h", "e"), ("he", "l"), ("hel", "l"), ("hell", "o")):
         assert f"Merged '{a}' + '{b}'" in out
+
+
+# --- Exercises (sec-ch1-exercises): every numerical answer of the solutions -----------------------------------
+
+def _close(a, b, digits=4):
+    return abs(a - b) <= 0.5 * 10 ** (-digits) + 1e-12
+
+
+def test_exercise_1_bpe_merges():
+    ns = {}
+    exec(ch01_fence("class SimpleBPE").split("# Example usage")[0], ns)  # noqa: S102
+    bpe = ns["SimpleBPE"]()
+    bpe.train(["low"] * 5 + ["lower"] * 2 + ["newest"] * 6 + ["widest"] * 3, num_merges=3)
+    assert bpe.merges == [("e", "s"), ("es", "t"), ("est", "</w>")]
+    assert bpe.encode("lowest") == ["l", "o", "w", "est</w>"]
+    # the counts the solution lists for the first round
+    counts = {}
+    for w, f in {"low": 5, "lower": 2, "newest": 6, "widest": 3}.items():
+        sym = list(w) + ["</w>"]
+        for pair in zip(sym, sym[1:]):
+            counts[pair] = counts.get(pair, 0) + f
+    assert counts == {("l", "o"): 7, ("o", "w"): 7, ("w", "</w>"): 5, ("w", "e"): 8, ("e", "r"): 2,
+                      ("r", "</w>"): 2, ("n", "e"): 6, ("e", "w"): 6, ("e", "s"): 9, ("s", "t"): 9,
+                      ("t", "</w>"): 9, ("w", "i"): 3, ("i", "d"): 3, ("d", "e"): 3}
+
+
+def test_exercise_2_attention_2x2():
+    Q = torch.tensor([[1.0, 0.0], [1.0, 1.0]])
+    K = torch.tensor([[2.0, 0.0], [0.0, 2.0]])
+    V = torch.tensor([[1.0, 2.0], [3.0, 0.0]])
+    scores = Q @ K.T / math.sqrt(2)
+    w = torch.softmax(scores, dim=-1)
+    out = w @ V
+    assert torch.allclose(scores, torch.tensor([[1.4142, 0.0], [1.4142, 1.4142]]), atol=5e-5)
+    assert torch.allclose(w, torch.tensor([[0.8044, 0.1956], [0.5, 0.5]]), atol=5e-5)
+    assert torch.allclose(out, torch.tensor([[1.3911, 1.6089], [2.0, 1.0]]), atol=5e-5)
+    assert _close(math.exp(1.4142), 4.113, 3) and _close(1 + math.exp(1.4142), 5.113, 3)
+
+
+def test_exercise_3_uniform_perplexity():
+    loss = -math.log(1 / 50257)
+    assert _close(loss, 10.82, 2)
+    assert round(math.exp(loss)) == 50257
+
+
+def test_exercise_4_masked_scores():
+    row = torch.tensor([1.0, 2.0, 3.0])
+    allowed = torch.tensor([True, True, False])  # query 2 of 3 sees keys 1 and 2
+    w = torch.softmax(row.masked_fill(~allowed, float("-inf")), dim=-1)
+    assert torch.allclose(w, torch.tensor([0.2689, 0.7311, 0.0]), atol=5e-5) and w[2] == 0
+    n = 1024
+    hidden = int((~torch.tril(torch.ones(n, n, dtype=torch.bool))).sum())
+    assert hidden == n * (n - 1) // 2 == 523_776 and n * n == 1_048_576
+    none = torch.zeros(3, dtype=torch.bool)
+    assert torch.isnan(torch.softmax(row.masked_fill(~none, float("-inf")), dim=-1)).all()
+    uniform = torch.softmax(row.masked_fill(~none, torch.finfo(torch.float32).min), dim=-1)
+    assert torch.allclose(uniform, torch.full((3,), 1 / 3))
+    # the finite minimum still gives an exactly zero weight when some key is allowed
+    assert torch.softmax(row.masked_fill(~allowed, torch.finfo(torch.float32).min), dim=-1)[2] == 0
+    # the chapter's attention listing uses the finite fill the solution explains
+    assert "masked_fill(mask == 0, torch.finfo(scores.dtype).min)" in ch01_fence("class ScaledDotProductAttention")
+
+
+def test_exercise_5_temperature():
+    z = torch.tensor([2.0, 1.0, 0.0])
+    assert torch.allclose(torch.softmax(z, -1), torch.tensor([0.6652, 0.2447, 0.0900]), atol=5e-5)
+    assert torch.allclose(torch.softmax(z / 0.5, -1), torch.tensor([0.8668, 0.1173, 0.0159]), atol=5e-5)
+    assert _close(math.exp(2) + math.exp(1) + 1, 11.11, 2) and _close(math.exp(4) + math.exp(2) + 1, 62.99, 2)
+    assert _close(math.exp(4), 54.60, 2) and _close(math.exp(1), 2.718, 3) and _close(math.exp(2), 7.389, 3)
+    assert torch.softmax(z / 0.01, -1)[0] > 0.9999
+
+
+def test_exercise_6_bits_per_byte():
+    assert _close(math.exp(2.0), 7.389, 3)
+    bpb = 0.25 * 2.0 / math.log(2)
+    assert _close(bpb, 0.7213)
+    loss_b = 3 * bpb * math.log(2)
+    assert _close(loss_b, 1.5, 6) and _close(math.exp(loss_b), 4.482, 3)
+
+
+def test_exercise_7_gpt2_small_parameters():
+    ns = {}
+    exec(ch01_fence("def count_parameters").split("print(")[0], ns)  # noqa: S102
+    count = ns["count_parameters"]
+    assert count(50257, 768, 12, 1024, tied=True) == 124_439_808
+    assert count(50257, 768, 12, 1024, tied=False) == 163_037_184
+    assert 50257 * 768 == 38_597_376 and 1024 * 768 == 786_432
+    assert 12 * 768**2 == 7_077_888 and 13 * 768 == 9_984 and 12 * (12 * 768**2 + 13 * 768) == 85_054_464
+    assert round(100 * (38_597_376 + 786_432) / 124_439_808) == 32
+
+
+def test_exercise_8_score_memory():
+    n, heads = 4096, 32
+    assert n * n == 16_777_216 and heads * n * n == 536_870_912
+    assert 2 * heads * n * n == 1_073_741_824 == 2**30
+    assert 2 * heads * (2 * n) ** 2 == 4 * 2**30
+
+
+def test_exercise_9_rope_offset():
+    ns = {}
+    exec(ch01_fence("def apply_rope").split("# Usage inside attention")[0], ns)  # noqa: S102
+    apply_rope = ns["apply_rope"]
+    q = torch.tensor([[1.0, 2.0]], dtype=torch.float64)
+    k = torch.tensor([[3.0, -1.0]], dtype=torch.float64)
+    expected = math.cos(1) + 7 * math.sin(1)
+    assert _close(expected, 6.4306) and _close(math.cos(1), 0.5403) and _close(7 * math.sin(1), 5.8903)
+    assert float(q @ k.T) == 1.0
+    for m in (0, 4):
+        qr = apply_rope(q, torch.tensor([m]))   # d_k = 2: the single frequency is base**0 = 1
+        kr = apply_rope(k, torch.tensor([m + 1]))
+        assert abs(float(qr @ kr.T) - expected) < 1e-5
+    # a different offset gives a different score, so the check can fail
+    assert abs(float(apply_rope(q, torch.tensor([0])) @ apply_rope(k, torch.tensor([2])).T) - expected) > 0.1

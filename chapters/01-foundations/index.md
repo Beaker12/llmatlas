@@ -2,17 +2,33 @@
 
 Large language models are transformer networks trained on very large text corpora to predict the next token. This chapter establishes the foundational concepts necessary to understand how these models work, their historical development, and the principles behind their performance.
 
+(sec-ch1-chapter-overview)=
+
+## Chapter Overview
+
+A language model reads text as a sequence of integer token ids and outputs, at every position, a probability distribution over the next token. The chapter follows that path in order:
+
+- **Tokenization** ({ref}`sec-ch1-tokenization`) cuts text into pieces from a fixed vocabulary, such as "un", "happ" and "iness", and maps each to an id. Subword pieces keep the vocabulary to tens or hundreds of thousands of entries while still spelling out any word.
+- **Embeddings and positions** ({ref}`sec-ch1-embeddings-positional-encoding`) turn each id into a vector and give the model a way to tell positions apart.
+- **Historical context** ({ref}`sec-ch1-historical-context`) traces language modeling from n-gram counts and recurrent networks to the transformer and the pretrained models built on it.
+- **Attention** ({ref}`sec-ch1-attention-mechanisms`) lets every position compute a weighted average of the others, with weights that depend on how well their vectors match.
+- **The transformer** ({ref}`sec-ch1-transformer-architecture`) stacks blocks of attention and feed-forward layers on a residual stream, and its parameters can be counted from four numbers.
+- **The language-modeling objective** ({ref}`sec-ch1-language-modeling-objective`) trains the stack to predict each next token under a causal mask, and perplexity and bits per byte measure how well it does.
+
+A companion page, {doc}`tokenization-deep-dive`, goes further into tokenizers used in practice.
+
 (sec-ch1-learning-objectives)=
 
 ## Learning Objectives
 
-By the end of this chapter, you will understand:
+By the end of this chapter, you will be able to:
 
-- How tokenization transforms text into numerical representations
-- The mechanics of attention mechanisms and their role in language understanding
-- The transformer architecture and its key components
-- The language modeling objective and evaluation metrics
-- The historical evolution from RNNs to modern transformers
+- Train byte-pair-encoding merges on a small corpus by hand and in code, and explain why byte-level vocabularies never need an unknown token
+- Compare sinusoidal, learned, relative-bias and rotary position schemes, and show that RoPE scores depend only on the offset between positions
+- Place the transformer in the history of language modeling, from n-grams and recurrent networks to pretrained, instruction-tuned models
+- Compute scaled dot-product and multi-head attention by hand, including the causal mask, and state their cost in time and memory
+- Assemble a transformer block and a whole decoder-only model with their tensor shapes, and count their parameters
+- Define the next-token loss, perplexity and bits per byte, convert between them, and choose a decoding rule
 
 (sec-ch1-hands-on-learning)=
 
@@ -26,25 +42,7 @@ The notebook provides executable, assertion-checked code for:
 - Token embeddings with sinusoidal, learned, relative-bias and rotary positions ({ref}`nb-attn-positional`)
 - Scaled dot-product and multi-head attention with attention maps ({ref}`nb-attn-attention`)
 - A post-LN transformer block ({ref}`nb-attn-transformer`)
-- The causal mask and the next-token objective with perplexity ({ref}`nb-attn-lm`)
-
-(sec-ch1-chapter-overview)=
-
-## Chapter Overview
-
-Large Language Models (LLMs) like ChatGPT work by understanding and generating text through several key processes that can be understood through everyday analogies:
-
-**Tokenization** is like breaking down a sentence into meaningful chunks - imagine reading a book where you recognize not just individual letters, but common word parts, whole words, and phrases. LLMs break text into "tokens" (pieces like "un-", "happy", "ness") that help them understand meaning more efficiently than processing character by character.
-
-**Embeddings** convert these text pieces into numerical representations - think of it like giving each word or word-part a unique mathematical "fingerprint" that captures its meaning. Similar words get similar fingerprints, allowing the model to understand that "happy" and "joyful" are related concepts.
-
-**Attention Mechanisms** are like a sophisticated highlighting system that helps the model focus on the most relevant parts of text when making predictions. When processing "The cat sat on the mat," the attention mechanism helps the model understand that "cat" is the subject performing the action "sat," similar to how you naturally emphasize important words when reading.
-
-**Transformers** are the overall architecture that combines all these elements - like a highly efficient assembly line where multiple "workers" (attention heads) simultaneously analyze different aspects of the text (grammar, meaning, context) and combine their insights to understand and generate language.
-
-**Language Modeling** is the training process where the model learns to predict the next word in a sentence by reading millions of examples. It's like learning to complete sentences by reading vast amounts of text and developing an intuition for how language flows naturally.
-
-These components work together to create models that can understand context, maintain coherent conversations, and generate human-like text by learning statistical patterns from enormous amounts of text data.
+- The causal mask, the next-token objective with perplexity, and a short character-level training run ({ref}`nb-attn-lm`)
 
 (sec-ch1-tokenization)=
 
@@ -165,7 +163,7 @@ tokens = char_tokenize(text)
 
 #### Byte Pair Encoding (BPE)
 
-Byte pair encoding began as a data-compression technique by Philip Gage (1994); {cite:t}`sennrich2015neural` adapted it to word segmentation. It starts from characters and iteratively merges the most frequent adjacent pair:
+Byte pair encoding began as a data-compression technique {cite}`gage1994new` that, in the words of {cite:t}`sennrich2015neural`, "iteratively replaces the most frequent pair of bytes in a sequence with a single, unused byte"; they adapted it to word segmentation. It starts from characters and iteratively merges the most frequent adjacent pair:
 
 ```python
 class SimpleBPE:
@@ -1539,7 +1537,7 @@ def create_causal_mask(seq_length: int) -> torch.Tensor:
     return mask == 0  # True for allowed positions, False for masked
 ```
 
-For the four inputs of the next listing the mask is {numref}`fig-ch1-causal-mask`.
+For the four inputs of the next listing the mask is {numref}`fig-ch1-causal-mask`. Mathematically a masked score is $-\infty$, so that its weight $e^{-\infty}$ is exactly 0. The attention listings fill masked scores with `torch.finfo(scores.dtype).min`, the most negative finite number, instead: the weight still underflows to exactly 0, and a row whose keys are all masked (a padding query) gets uniform weights instead of the NaN that $-\infty - (-\infty)$ gives inside the softmax ({ref}`sec-ch1-exercises` works both cases).
 
 ```{figure} figures/causal-mask.*
 :name: fig-ch1-causal-mask
@@ -1697,17 +1695,131 @@ Perplexities of models with the same tokenizer, such as checkpoints of one train
 The notebook ({ref}`nb-attn-lm`) builds the causal mask, applies it inside attention, adds a language-model head, and computes cross-entropy and perplexity for an untrained model so you can see what "no better than guessing" looks like. Optimization, schedules and gradient flow are in the Chapter 2 notebook ({ref}`nb-math-optimizers`, {ref}`nb-math-backprop`).
 ```
 
+(sec-ch1-summary)=
+
+## Summary
+
+- A tokenizer turns text into integer ids. Byte-level BPE starts from the 256 byte values and adds merged pieces in the order they were learned from the training text, so every string round-trips and frequent words become single tokens ({ref}`sec-ch1-tokenization`).
+- An embedding table maps each id to a vector of width $d$. Attention by itself ignores order, so position enters as an added sinusoidal or learned vector, as a bias on the scores (T5, ALiBi) or as a rotation of the queries and keys (RoPE), whose scores depend only on the offset $m' - m$ ({ref}`sec-ch1-rope`).
+- Language modeling went from n-gram counts through recurrent networks to the transformer, whose attention lets every position read every earlier one in a single step; pretraining at scale and instruction tuning followed ({ref}`sec-ch1-historical-context`).
+- Scaled dot-product attention computes $\text{softmax}(QK^\top/\sqrt{d_k})\,V$: every row of weights is positive and sums to 1, and each output is a weighted average of the value vectors. The scores take $\mathcal{O}(n^2)$ memory per head ({ref}`sec-ch1-attention-complexity`). Multi-head attention runs several such maps on slices of width $d_k$ and concatenates them.
+- A transformer block adds an attention sublayer and a feed-forward sublayer to a residual stream, each with a normalization. With biases and $d_{ff} = 4d$ a block holds $12d^2 + 13d$ parameters, which gives GPT-2 small its 124,439,808 ({ref}`sec-ch1-parameter-count`).
+- A decoder-only model is trained under a causal mask to minimize the mean negative log-likelihood of the next token. Perplexity, $\exp(\mathcal{L})$, compares models that share a tokenizer; bits per byte compares models that do not ({ref}`sec-ch1-perplexity`).
+
 (sec-ch1-exercises)=
 
 ## Exercises
 
-1. **Tokenization Analysis**: Compare BPE and unigram tokenization (both available in SentencePiece) on multilingual text. How do vocabulary sizes affect model performance?
+The exercises are graded: level 1 applies one definition by hand, level 2 combines two ideas, level 3 asks for a short proof. The test suite checks every numerical answer.
 
-1. **Attention Visualization**: Implement attention map visualization and analyze patterns in a small transformer model.
+(sec-ch1-exercise-1)=
 
-1. **Positional Encoding Experiment**: Compare sinusoidal, learned, and relative positional encodings on a language modeling task.
+### Exercise 1: Two BPE merges by hand (level 1)
 
-1. **Architecture Comparison**: Implement encoder-only, decoder-only, and encoder-decoder variants. When might each be preferred?
+A corpus holds the word "low" 5 times, "lower" 2 times, "newest" 6 times and "widest" 3 times. Split each word into characters followed by the end-of-word symbol `</w>`, as `SimpleBPE` does. Count every adjacent pair, weighted by word frequency, and find the first two merges. When several pairs tie, take the one that occurs first in the corpus, which is what `max` does in `SimpleBPE.train`. What is the third merge, and how is "lowest" segmented after three merges?
+
+```{admonition} Solution 1
+:class: dropdown
+The pair counts are: (l, o) 5 + 2 = 7; (o, w) 7; (w, `</w>`) 5; (w, e) 2 + 6 = 8; (e, r) 2; (r, `</w>`) 2; (n, e) 6; (e, w) 6; (e, s) 6 + 3 = 9; (s, t) 9; (t, `</w>`) 9; (w, i) 3; (i, d) 3; (d, e) 3. Three pairs tie at 9 and (e, s) occurs first, in "newest", so **merge 1 is (e, s)**. The words become n e w es t `</w>` and w i d es t `</w>`, which gives (es, t) 9 and (t, `</w>`) 9, with (es, t) first: **merge 2 is (es, t)**. The only pair left at 9 is (est, `</w>`), so **merge 3 is (est, `</w>`)**. "lowest" then splits as l, o, w, est`</w>`: the suffix learned from "newest" and "widest" applies to a word the corpus never contained, while "low" stays in pieces because (l, o), at 7, never reached the top. Training `SimpleBPE` on this corpus for three merges gives the same list.
+```
+
+(sec-ch1-exercise-2)=
+
+### Exercise 2: A 2×2 attention output (level 1)
+
+With $n = 2$ and $d_k = 2$, let the rows of $Q$ be $(1, 0)$ and $(1, 1)$, the rows of $K$ be $(2, 0)$ and $(0, 2)$, and the rows of $V$ be $(1, 2)$ and $(3, 0)$. Compute the scores $QK^\top/\sqrt{d_k}$, the attention weights and the output.
+
+```{admonition} Solution 2
+:class: dropdown
+$QK^\top$ has rows $(2, 0)$ and $(2, 2)$; dividing by $\sqrt{2}$ gives the scores $(1.4142, 0)$ and $(1.4142, 1.4142)$. Row 1: $e^{1.4142} = 4.113$, so the weights are $4.113/5.113 = 0.8044$ and $1/5.113 = 0.1956$. Row 2 has equal scores, so its weights are $(0.5, 0.5)$. The outputs are $0.8044\,(1, 2) + 0.1956\,(3, 0) = (1.3911, 1.6089)$ and $0.5\,(1, 2) + 0.5\,(3, 0) = (2, 1)$. Query 2 matches both keys equally and gets the plain average of the values; query 1 points along key 1 and is pulled toward value 1.
+```
+
+(sec-ch1-exercise-3)=
+
+### Exercise 3: The perplexity of a uniform model (level 1)
+
+A model assigns probability $1/|\mathcal{V}|$ to every token of a vocabulary of $|\mathcal{V}| = 50{,}257$ at every position. What are its loss $\mathcal{L}$ in nats per token and its perplexity, on any text?
+
+```{admonition} Solution 3
+:class: dropdown
+Every term of the loss is $-\log(1/|\mathcal{V}|) = \ln |\mathcal{V}|$, so the mean over the $T$ tokens is $\mathcal{L} = \ln 50{,}257 = 10.82$ nats per token, whatever the text. The perplexity is $\exp(\mathcal{L}) = |\mathcal{V}| = 50{,}257$: the model is as uncertain as a uniform choice among all 50,257 tokens, which is the reading of perplexity given in {ref}`sec-ch1-perplexity`.
+```
+
+(sec-ch1-exercise-4)=
+
+### Exercise 4: Masked scores (level 2)
+
+In a sequence of $n = 3$ tokens, query 2 has the scores $(1, 2, 3)$ against keys 1, 2 and 3. (a) Which key does the causal mask hide from it, and what are its attention weights? (b) How many scores does the causal mask hide in a sequence of $n = 1{,}024$ tokens? (c) If every key of a row is masked, what does `torch.softmax` return when the masked scores are $-\infty$, and what when they are `torch.finfo(torch.float32).min`?
+
+```{admonition} Solution 4
+:class: dropdown
+(a) Key 3 comes after query 2, so its score becomes $-\infty$ and its weight $e^{-\infty} = 0$. The other two scores give $e^1/(e^1 + e^2) = 1/(1 + e) = 0.2689$ and $e/(1 + e) = 0.7311$: the weights are $(0.2689, 0.7311, 0)$.
+
+(b) The mask hides the entries above the diagonal of the $n \times n$ score matrix, $n(n - 1)/2 = 1{,}024 \times 1{,}023 / 2 = 523{,}776$ of them, just under half of the $1{,}048{,}576$ scores.
+
+(c) `torch.softmax` subtracts the row maximum before it exponentiates. With every score $-\infty$ the maximum is $-\infty$, and $-\infty - (-\infty)$ is NaN, so all three weights are NaN. With the finite minimum every score is the same number, the differences are 0, and the weights are uniform, $(1/3, 1/3, 1/3)$. This is why the chapter's listings use the finite value: a padding query whose keys are all masked produces a harmless average instead of a NaN that spreads through the batch.
+```
+
+(sec-ch1-exercise-5)=
+
+### Exercise 5: Temperature (level 2)
+
+The logits over a three-token vocabulary are $z = (2, 1, 0)$. Compute the sampling distribution $\text{softmax}(z/\tau)$ for $\tau = 1$ and for $\tau = 0.5$, and say what happens to the probability of the most likely token as $\tau \to 0$.
+
+```{admonition} Solution 5
+:class: dropdown
+For $\tau = 1$: $e^2 = 7.389$, $e^1 = 2.718$ and $e^0 = 1$ sum to 11.11, giving $(0.6652, 0.2447, 0.0900)$. For $\tau = 0.5$ the logits double to $(4, 2, 0)$: $e^4 = 54.60$, $e^2 = 7.389$ and $1$ sum to 62.99, giving $(0.8668, 0.1173, 0.0159)$. Halving the temperature doubles every gap between logits, so every ratio of two probabilities is squared: the ratio of the first two goes from $e^1 = 2.718$ to $e^2 = 7.389$. As $\tau \to 0$ the gaps grow without bound and the top token's probability goes to 1: sampling becomes greedy decoding.
+```
+
+(sec-ch1-exercise-6)=
+
+### Exercise 6: From perplexity to bits per byte (level 2)
+
+A model's loss on a test text is 2.0 nats per token, and its tokenizer produces one token per 4.0 UTF-8 bytes of that text on average. (a) What are its perplexity and its bits per byte? (b) A second model has the same bits per byte with a tokenizer that produces one token per 3.0 bytes. What are its loss and its perplexity?
+
+```{admonition} Solution 6
+:class: dropdown
+(a) The perplexity is $e^{2.0} = 7.389$. With $T/n_{bytes} = 1/4$, bits per byte is $\frac{1}{4} \cdot \frac{2.0}{\ln 2} = 0.7213$.
+
+(b) The same bits per byte with $T/n_{bytes} = 1/3$ needs $\frac{1}{3} \cdot \frac{\mathcal{L}}{\ln 2} = 0.7213$, so $\mathcal{L} = 3 \times 0.7213 \times \ln 2 = 1.5$ nats per token and a perplexity of $e^{1.5} = 4.482$. The second model looks better by perplexity (4.482 against 7.389) although both predict the text equally well: its tokens are shorter, so each is easier to guess.
+```
+
+(sec-ch1-exercise-7)=
+
+### Exercise 7: GPT-2 small's parameters (level 2)
+
+GPT-2 small has $|\mathcal{V}| = 50{,}257$, $d = 768$, $L = 12$ blocks, $n_{ctx} = 1{,}024$ learned positions {cite}`radford2019language`. Assume biases, LayerNorm, $d_{ff} = 4d$ and an output layer tied to $W_E$. Count its parameters with the formula of {ref}`sec-ch1-parameter-count`, and say how many it would have with an untied output layer.
+
+```{admonition} Solution 7
+:class: dropdown
+Token embeddings: $50{,}257 \times 768 = 38{,}597{,}376$. Positions: $1{,}024 \times 768 = 786{,}432$. One block: $12 \times 768^2 + 13 \times 768 = 7{,}077{,}888 + 9{,}984 = 7{,}087{,}872$, and twelve blocks hold $85{,}054{,}464$. The final LayerNorm adds $2 \times 768 = 1{,}536$. The total is $38{,}597{,}376 + 786{,}432 + 85{,}054{,}464 + 1{,}536 = 124{,}439{,}808$, and `count_parameters(50257, 768, 12, 1024, tied=True)` returns the same number. An untied output layer would add another $768 \times 50{,}257 = 38{,}597{,}376$, for $163{,}037{,}184$. In this small model the two embedding tables are 32% of the total, so the $12Ld^2$ estimate that serves for GPT-3 would be far off here.
+```
+
+(sec-ch1-exercise-8)=
+
+### Exercise 8: The memory of the score matrix (level 2)
+
+A layer with 32 heads attends over $n = 4{,}096$ tokens and stores its attention weights in fp16, 2 bytes per number. How many bytes do the weights of one layer take for one sequence? What happens when $n$ doubles?
+
+```{admonition} Solution 8
+:class: dropdown
+Each head has $n^2 = 4{,}096^2 = 16{,}777{,}216$ weights, so 32 heads hold $536{,}870{,}912$ numbers, or $1{,}073{,}741{,}824$ bytes: exactly 1 GiB per layer and sequence. Doubling $n$ multiplies the count by four, to 4 GiB. This quadratic memory is what FlashAttention avoids by never storing the full matrix ({ref}`sec-ch1-attention-complexity`).
+```
+
+(sec-ch1-exercise-9)=
+
+### Exercise 9: RoPE's offset property from two rules (level 3)
+
+Take $d_k = 2$, so that the single pair has frequency $b^0 = 1$ and $\mathcal{R}_m$ of {eq}`eq-ch1-rope` is the rotation by angle $m$. (a) Multiply out $\mathcal{R}_m \mathcal{R}_{m'}$ and show that it equals $\mathcal{R}_{m + m'}$; show that $\mathcal{R}_m^\top = \mathcal{R}_{-m}$. (b) Use only these two rules, with no further trigonometry, to show that the score $\tilde{q}_m \tilde{k}_{m'}^\top$ depends on $m$ and $m'$ only through $m' - m$. (c) With $q = (1, 2)$ and $k = (3, -1)$, compute the score at $m = 0$, $m' = 1$ and at $m = 4$, $m' = 5$.
+
+```{admonition} Solution 9
+:class: dropdown
+(a) The top-left entry of $\mathcal{R}_m \mathcal{R}_{m'}$ is $\cos m \cos m' - \sin m \sin m' = \cos(m + m')$ and the bottom-left entry is $\sin m \cos m' + \cos m \sin m' = \sin(m + m')$; the other two entries follow in the same way, so the product is $\mathcal{R}_{m + m'}$. Transposing $\mathcal{R}_m$ swaps the signs of its two sine entries, and since $\cos(-m) = \cos m$ and $\sin(-m) = -\sin m$, that is $\mathcal{R}_{-m}$.
+
+(b) $\tilde{q}_m \tilde{k}_{m'}^\top = q\,\mathcal{R}_m^\top \mathcal{R}_{m'}\,k^\top = q\,\mathcal{R}_{-m} \mathcal{R}_{m'}\,k^\top = q\,\mathcal{R}_{m' - m}\,k^\top$: the first step is the second rule, the second step the first rule with $-m$ in place of $m$. Only $m' - m$ is left.
+
+(c) Both pairs have offset 1, so both scores are $q\,\mathcal{R}_1 k^\top$. $\mathcal{R}_1 k^\top = (3\cos 1 + \sin 1,\; 3\sin 1 - \cos 1)^\top$, and the dot product with $q = (1, 2)$ is $3\cos 1 + \sin 1 + 6\sin 1 - 2\cos 1 = \cos 1 + 7\sin 1 = 0.5403 + 5.8903 = 6.4306$. The unrotated score $q k^\top$ is $3 - 2 = 1$. `apply_rope` gives 6.4306 at both pairs of positions.
+```
 
 (sec-ch1-further-reading)=
 
