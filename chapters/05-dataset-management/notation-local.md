@@ -12,5 +12,6 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\Pi$ | keyed bijection on example indices that fixes the within-epoch order | reserved: C5-08 |  |
 | $n_{ex}$ | number of examples in an epoch | reserved: C5-08 |  |
 | $n_{loader}$ | DataLoader worker processes per rank | reserved: C5-11 |  |
+| $\alpha$ | significance level of the drift test | index.md, sec-ch5-canaries-drift |  |
 
 The per-source count of documents drawn by step $t$ (C5-08) is the operator $\operatorname{drawn}_s(t)$, not a symbol.

@@ -8,7 +8,7 @@ A pretraining corpus is not a file. It is tens of thousands of shards, produced 
 
 By the end of this chapter, you will understand:
 
-- The storage formats used for training data (JSON Lines, Parquet, tar shards, tokenized binaries) and when each is the right choice
+- The storage formats used for training data (JSON Lines, Parquet and Arrow, tokenized binaries), how each is written and read, and when each is the right choice; and to describe the streaming shard formats, WebDataset tar shards and Mosaic's MDS
 - How a dataset version is defined by content hashes and a manifest, and how to diff and verify versions
 - How documents are tokenized, packed into fixed-length sequences and masked so that unrelated documents do not attend to each other
 - How sources are mixed by weight and temperature, with epoch caps, and how a sampler is made deterministic and resumable
@@ -28,7 +28,7 @@ The accompanying notebook, [Dataset Management Demo](examples/dataset_management
 - Sharding across ranks and showing that the global batch is independent of the world size ({ref}`nb-dm-distributed`)
 - Dataset statistics, a data contract, and a data card generated from the manifest ({ref}`nb-dm-governance`)
 
-Everything runs on a CPU in seconds and uses only the standard library, NumPy and, for the plots, Matplotlib.
+Everything runs on a CPU in seconds and uses only the standard library, NumPy, PyArrow for the Parquet and Arrow files and, for the plots, Matplotlib.
 
 (sec-ch5-chapter-overview)=
 
@@ -93,6 +93,66 @@ Those numbers drive the design choices in the rest of the chapter: shards rather
 Most pipelines use two of these: a text format for everything up to and including the released corpus, and a tokenized binary for training. The text format is what gets versioned and documented; the binary is derived from it and the tokenizer, and is rebuilt rather than versioned.
 
 The Hugging Face hub converts hosted corpora to Parquet for its viewer and `datasets` streams Parquet, JSON Lines and other formats from the hub without downloading everything {cite}`lhoest2021datasets`. The Megatron-LM codebase {cite}`shoeybi2019megatron` (the paper is about model parallelism; the data format lives in the repository), GPT-NeoX and their descendants train from an indexed binary format, a flat array of token ids alongside an array of document offsets. Mosaic's streaming format and WebDataset shards exist for the case where training reads directly from object storage and sequential throughput matters more than random access.
+
+A Parquet file is a sequence of row groups, each holding one compressed chunk per column, followed by a footer with the schema, the location of every column chunk and per-chunk statistics such as each column's minimum and maximum; the footer is written last so that the file can be written in one pass {cite}`apache2026parquet`. A reader opens the footer first, and two savings follow. Column projection reads only the chunks of the columns asked for, so a query over `num_tokens` never decompresses `text`. Predicate push-down skips any row group whose statistics show it cannot match. The listing writes 1,000 documents in four row groups and reads the long ones back: the footer rules out three of the four row groups before any data is read. The same table written as an Arrow IPC file is the layout Hugging Face `datasets` caches on disk: memory-mapping it gives typed columns with no decoding step {cite}`apache2026arrow`.
+
+```python
+import tempfile
+from pathlib import Path
+
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+# 1,000 documents written in order of length, as a build that sorts by length would write them
+n = 1000
+table = pa.table({
+    "id": [f"doc{i:04d}" for i in range(n)],
+    "source": ["code" if i % 4 == 0 else "web" for i in range(n)],
+    "num_tokens": [10 + i for i in range(n)],
+    "text": [" ".join(["word"] * (10 + i)) for i in range(n)],
+})
+
+with tempfile.TemporaryDirectory() as tmp:
+    path = Path(tmp) / "part-00000.parquet"
+    pq.write_table(table, path, row_group_size=250, compression="zstd")
+
+    # The footer alone: schema, row groups, and per-column min and max for every row group
+    pf = pq.ParquetFile(path)
+    meta = pf.metadata
+    col = pf.schema_arrow.get_field_index("num_tokens")
+    bounds = [(meta.row_group(g).column(col).statistics.min, meta.row_group(g).column(col).statistics.max)
+              for g in range(meta.num_row_groups)]
+    print(f"{meta.num_rows} rows, {meta.num_row_groups} row groups, {meta.num_columns} columns")
+    print("num_tokens min and max per row group:", bounds)
+
+    # Predicate push-down by hand: only row groups whose range can hold num_tokens >= 900 are read,
+    # and only two of the four columns (column projection)
+    wanted = [g for g, (lo, hi) in enumerate(bounds) if hi >= 900]
+    long_docs = pf.read_row_groups(wanted, columns=["id", "num_tokens"])
+    long_docs = long_docs.filter(pa.compute.greater_equal(long_docs["num_tokens"], 900))
+    print(f"row groups read: {wanted}, columns read: {long_docs.column_names}, rows kept: {long_docs.num_rows}")
+    assert wanted == [3] and long_docs.num_rows == 110
+    # The library does the same from a filter expression
+    assert pq.read_table(path, columns=["id"], filters=[("num_tokens", ">=", 900)]).num_rows == 110
+
+    # Arrow IPC file: memory-mapped, read without decoding or copying the column buffers
+    arrow_path = Path(tmp) / "cache.arrow"
+    with pa.OSFile(str(arrow_path), "wb") as sink, pa.ipc.new_file(sink, table.schema) as writer:
+        writer.write_table(table)
+    with pa.memory_map(str(arrow_path), "r") as source:
+        cached = pa.ipc.open_file(source).read_all()
+        assert cached.equals(table)
+        print(f"Arrow cache: {cached.num_rows} rows, {cached.nbytes:,} bytes of buffers mapped from disk")
+```
+
+% output
+
+```text
+1000 rows, 4 row groups, 4 columns
+num_tokens min and max per row group: [(10, 259), (260, 509), (510, 759), (760, 1009)]
+row groups read: [3], columns read: ['id', 'num_tokens'], rows kept: 110
+Arrow cache: 1000 rows, 2,576,750 bytes of buffers mapped from disk
+```
 
 (sec-ch5-sharding)=
 
@@ -284,6 +344,77 @@ Git works for source code because a commit is a hash of a tree of hashes of file
 - A **manifest** lists the shards of a version by path, hash and size. The manifest is small enough to keep in Git.
 - The **version root** is the hash of the manifest, or a Merkle root over the shard hashes, so that one short string identifies the whole dataset.
 
+A Merkle root does more than name the version. Pair the shard hashes, hash each pair, and repeat up to a single root: changing any one shard changes every hash on its path and so the root, and anyone who holds the root can check that a shard belongs to the version from the shard's hash and one sibling hash per level, four hashes for ten shards and about 20 for a million, without the rest of the manifest. Prefixing leaves and inner nodes with different bytes keeps a leaf from being passed off as an inner node.
+
+```python
+import hashlib
+
+
+def _leaf(shard_hash: str) -> bytes:
+    return hashlib.sha256(b"\x00" + bytes.fromhex(shard_hash)).digest()  # 0x00: a leaf
+
+
+def _node(left: bytes, right: bytes) -> bytes:
+    return hashlib.sha256(b"\x01" + left + right).digest()  # 0x01: an inner node
+
+
+def merkle_levels(shard_hashes):
+    """Every level of the tree, leaves first; an unpaired last node is carried up unchanged."""
+    levels = [[_leaf(h) for h in shard_hashes]]
+    while len(levels[-1]) > 1:
+        level = levels[-1]
+        up = [_node(level[i], level[i + 1]) for i in range(0, len(level) - 1, 2)]
+        if len(level) % 2:
+            up.append(level[-1])
+        levels.append(up)
+    return levels
+
+
+def merkle_root(shard_hashes) -> str:
+    return merkle_levels(shard_hashes)[-1][0].hex()
+
+
+def inclusion_proof(shard_hashes, index: int):
+    """The sibling hashes from leaf `index` to the root, each with the side it sits on."""
+    proof = []
+    for level in merkle_levels(shard_hashes)[:-1]:
+        sibling = index ^ 1
+        if sibling < len(level):
+            proof.append(("left" if sibling < index else "right", level[sibling].hex()))
+        index //= 2
+    return proof
+
+
+def verify_inclusion(shard_hash: str, proof, root: str) -> bool:
+    h = _leaf(shard_hash)
+    for side, sibling in proof:
+        h = _node(bytes.fromhex(sibling), h) if side == "left" else _node(h, bytes.fromhex(sibling))
+    return h.hex() == root
+
+
+shards = [hashlib.sha256(f"shard {i}".encode()).hexdigest() for i in range(10)]
+root = merkle_root(shards)
+proof = inclusion_proof(shards, 6)
+print(f"root of 10 shards: {root[:16]}..., proof for shard 6: {len(proof)} hashes")
+assert verify_inclusion(shards[6], proof, root)
+assert not verify_inclusion(shards[7], proof, root)  # the proof is for shard 6 only
+
+# Change one shard: the root changes, and the old proof no longer verifies against the new root
+edited = list(shards)
+edited[6] = hashlib.sha256(b"shard 6, refiltered").hexdigest()
+assert merkle_root(edited) != root and not verify_inclusion(shards[6], proof, merkle_root(edited))
+# Order matters: the root commits to the sequence of shards, not just their set
+assert merkle_root(shards[::-1]) != root
+print(f"after editing shard 6: {merkle_root(edited)[:16]}..., old proof valid: {verify_inclusion(shards[6], proof, merkle_root(edited))}")
+```
+
+% output
+
+```text
+root of 10 shards: 56270bb62a689fd8..., proof for shard 6: 4 hashes
+after editing shard 6: 667b16bc86d691d8..., old proof valid: False
+```
+
 Because shards are stored by hash, two versions that share most of their shards share the storage, and the diff between them is the diff between their manifests. A corpus rebuilt with one filter changed differs in the shards that filter touched and nowhere else, and the manifest diff says exactly which. This holds only if shard membership is stable: a document must land in the same shard in both builds. Shards cut by running count do not have that property, since removing one document shifts every later shard by one; shards cut by source and by a hash of the document identifier do, which is why pipelines bucket by key rather than by count.
 
 ```python
@@ -340,6 +471,65 @@ A dataset tag is the thing a training configuration references. A configuration 
 ### 3.3 Lineage
 
 Each version records how it was made: the versions of its inputs, the pipeline code commit, the configuration, and the tokenizer if it is a tokenized build. This forms a directed graph from raw sources through cleaned corpora to tokenized datasets to models, and it is the graph that answers the questions that come up later: which models were trained on data that included this document, which runs would change if this filter were fixed, and whether two experiments differ in their data or only in their seeds. Tools such as DVC store the graph as pipeline stages with declared inputs and outputs; others store it as metadata on each version. Either way the graph is only as good as the discipline of never producing a version outside it.
+
+A lineage record is small. The listing below writes one per version: the output's root hash, the root of each input, the pipeline commit, the configuration and the tokenizer hash, all covered by a hash of the record. Verification recomputes that hash and checks that every input is a known version; the graph query that removal needs ({ref}`sec-ch5-removal`) is a walk from an input to everything built from it.
+
+```python
+import hashlib
+import json
+
+
+def lineage_record(output_root: str, inputs: dict, code_commit: str, config: dict, tokenizer_hash=None) -> dict:
+    """How a version was made; the record hash covers every field, so an edited record is detected."""
+    record = {"output": output_root, "inputs": dict(sorted(inputs.items())), "code": code_commit,
+              "config": config, "tokenizer": tokenizer_hash}
+    body = json.dumps(record, sort_keys=True, separators=(",", ":"))
+    return {**record, "record_hash": hashlib.sha256(body.encode()).hexdigest()}
+
+
+def verify_record(record: dict, known_roots: set) -> list:
+    """Problems with a record: a hash that does not match its fields, or an input that is not a known version."""
+    fields = {k: v for k, v in record.items() if k != "record_hash"}
+    problems = []
+    if lineage_record(**{"output_root": fields["output"], "inputs": fields["inputs"], "code_commit": fields["code"],
+                         "config": fields["config"], "tokenizer_hash": fields["tokenizer"]})["record_hash"] != record["record_hash"]:
+        problems.append("record hash does not match its contents")
+    problems += [f"unknown input {name}={root}" for name, root in record["inputs"].items() if root not in known_roots]
+    return problems
+
+
+def descendants(records, root: str) -> set:
+    """Every version built, directly or indirectly, from `root`."""
+    found, frontier = set(), {root}
+    while frontier:
+        frontier = {r["output"] for r in records if set(r["inputs"].values()) & frontier} - found
+        found |= frontier
+    return found
+
+
+raw = {"cc-2024-10": "r-cc10", "wiki-2024-03": "r-wiki"}
+cleaned = lineage_record("c-v1.2.0", raw, code_commit="9f3c2e1", config={"min_words": 50, "lang": "en"})
+tokens = lineage_record("t-v1.2.0", {"corpus": "c-v1.2.0"}, code_commit="9f3c2e1", config={"seq_len": 4096},
+                        tokenizer_hash="tok-5d41")
+model = lineage_record("m-run17", {"data": "t-v1.2.0"}, code_commit="a77b0c4", config={"seed": 17})
+records = [cleaned, tokens, model]
+known = {"r-cc10", "r-wiki", "c-v1.2.0", "t-v1.2.0"}
+
+assert all(verify_record(r, known) == [] for r in records)
+tampered = {**tokens, "config": {"seq_len": 8192}}
+assert verify_record(tampered, known) == ["record hash does not match its contents"]
+affected = descendants(records, "r-wiki")
+print("record for t-v1.2.0:", json.dumps({k: tokens[k] for k in ("inputs", "code", "tokenizer")}))
+print("versions built from wiki-2024-03:", sorted(affected))
+assert affected == {"c-v1.2.0", "t-v1.2.0", "m-run17"}
+```
+
+% output
+
+```text
+record for t-v1.2.0: {"inputs": {"corpus": "c-v1.2.0"}, "code": "9f3c2e1", "tokenizer": "tok-5d41"}
+versions built from wiki-2024-03: ['c-v1.2.0', 'm-run17', 't-v1.2.0']
+```
 
 ```{admonition} Versions and Diffs
 :class: note
@@ -856,6 +1046,50 @@ Two monitoring practices borrowed from other fields:
 
 - **Canaries.** Insert a handful of unique, random strings into the corpus at known positions and with known repetition counts. After training, test whether the model can complete them. Canaries measure memorization directly {cite}`carlini2019secret`, and a canary that appears in a version where it should not have is proof that an upstream shard leaked.
 - **Drift.** Compare every statistic in Section 7.1 between consecutive versions and flag changes beyond a threshold. Most data bugs (an extractor update that drops tables, a language-identification model update that rejects more of one language, a source that silently went offline) show up as a drift in a per-source statistic before they show up in a loss curve.
+
+A drift check needs a statistic and a threshold fixed before the comparison. For a length distribution, the two-sample Kolmogorov-Smirnov statistic, the largest gap between the two empirical distribution functions, has a large-sample critical value at significance level $\alpha$ of $\sqrt{-\ln(\alpha / 2) / 2}$ times the square root of the sum of the two sample sizes over their product. With 20,000 documents on each side and $\alpha = 0.001$ that is 0.0195. The listing compares a version with an unchanged rebuild and with a build in which an extractor update dropped the tables from 15% of documents: the first stays under the threshold and the second is flagged. On corpora of millions of documents the threshold becomes so small that real but harmless changes cross it, so in practice it is paired with a minimum effect size, such as a change in mean length of more than a few percent.
+
+```python
+import numpy as np
+
+
+def ks_statistic(a, b) -> float:
+    """Largest gap between the empirical distribution functions of two samples."""
+    a, b = np.sort(a), np.sort(b)
+    grid = np.concatenate([a, b])
+    return float(np.max(np.abs(np.searchsorted(a, grid, side="right") / a.size
+                               - np.searchsorted(b, grid, side="right") / b.size)))
+
+
+def ks_threshold(n: int, m: int, alpha: float = 0.001) -> float:
+    """Large-sample critical value of the two-sample statistic at level alpha."""
+    return float(np.sqrt(-np.log(alpha / 2) / 2) * np.sqrt((n + m) / (n * m)))
+
+
+rng = np.random.default_rng(7)
+v1 = rng.lognormal(mean=6.0, sigma=1.0, size=20_000).astype(int) + 1   # document lengths in tokens, version 1
+v2_same = rng.lognormal(mean=6.0, sigma=1.0, size=20_000).astype(int) + 1  # a rebuild with nothing changed
+v2_bug = v2_same.copy()
+tables = rng.random(v2_bug.size) < 0.15   # an extractor update drops the tables from 15% of documents ...
+v2_bug[tables] = (v2_bug[tables] * 0.6).astype(int) + 1  # ... which removes 40% of their tokens
+
+limit = ks_threshold(v1.size, v2_same.size)
+d_same, d_bug = ks_statistic(v1, v2_same), ks_statistic(v1, v2_bug)
+print(f"threshold at alpha = 0.001: {limit:.4f}")
+print(f"unchanged rebuild: D = {d_same:.4f}, flagged {d_same > limit}")
+print(f"tables dropped:    D = {d_bug:.4f}, flagged {d_bug > limit}")
+print(f"mean length {v1.mean():.4g} -> {v2_bug.mean():.4g} tokens")
+assert d_same < limit < d_bug
+```
+
+% output
+
+```text
+threshold at alpha = 0.001: 0.0195
+unchanged rebuild: D = 0.0049, flagged False
+tables dropped:    D = 0.0356, flagged True
+mean length 656.2 -> 617.9 tokens
+```
 
 ```{admonition} Statistics and Contracts
 :class: note
