@@ -1225,8 +1225,10 @@ def dedup_three_sentence_spans(docs: list) -> list:
 
 
 def dedup_paragraphs(docs: list) -> list:
-    """Dolma-style: delete any paragraph (blank-line separated) seen in an earlier
-    one."""
+    """Dolma-style: delete any paragraph already seen in an earlier document.
+
+    Paragraphs are separated by blank lines.
+    """
     seen, out = set(), []
     for doc in docs:
         kept = []
