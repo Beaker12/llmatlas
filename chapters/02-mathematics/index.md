@@ -80,8 +80,7 @@ This is the identity behind the attention gradient in {ref}`sec-ch2-attention-gr
 
 ```{figure} figures/softmax-saturation.*
 :name: fig-ch2-softmax-saturation
-:alt: Log-scale plot of the softmax derivative p1 times one minus p1 against the logit
-  gap, for 2 and 64 logits; at gap 8 it is 0.00034 for 2 logits and 0.02 for 64.
+:alt: Log-scale plot of the softmax derivative p1 times one minus p1 against the logit gap, for 2 and 64 logits; at gap 8 it is 0.00034 for 2 logits and 0.02 for 64.
 
 The diagonal softmax derivative $\partial p_i/\partial z_i = p_i(1 - p_i)$ when logit
 $z_i$ leads all the others by the same gap. It peaks at 0.25 where $p_i = 0.5$ and then
@@ -250,8 +249,7 @@ This pair happens to give the same value both ways, $D_{KL}(q \,\|\, p) = 0.25$ 
 
 ```{figure} figures/cross-entropy-decomposition.*
 :name: fig-ch2-cross-entropy-decomposition
-:alt: Stacked horizontal bars: each cross-entropy H(p, q) is the entropy H(p) = 1.5 bits
-  plus a KL segment of 0, 0.085 and 0.25 bits for three choices of q.
+:alt: Stacked horizontal bars: each cross-entropy H(p, q) is the entropy H(p) = 1.5 bits plus a KL segment of 0, 0.085 and 0.25 bits for three choices of q.
 
 Cross-entropy splits into the entropy of $p$, the same for every model, and the KL
 divergence, the only part a model can reduce. The distributions are the worked example
@@ -520,9 +518,7 @@ eta=0.039, beta_mom=0.9: |theta| after 200 steps = 2.58e+24
 
 ```{figure} figures/optimizer-trajectories.*
 :name: fig-ch2-optimizer-trajectories
-:alt: Left: paths of SGD (dashed), SGD with momentum and Adam on Rosenbrock contours
-  from (-1, -1) to the minimum at (1, 1); momentum runs past the minimum along the
-  valley to about (1.96, 3.69). Right: loss against iteration on a log scale.
+:alt: Left: paths of SGD (dashed), SGD with momentum and Adam on Rosenbrock contours from (-1, -1) to the minimum at (1, 1); momentum runs past the minimum along the valley to about (1.96, 3.69). Right: loss against iteration on a log scale.
 
 SGD ($\eta = 10^{-3}$), SGD with momentum ($\eta = 5 \times 10^{-4}$,
 $\beta_{\text{mom}} = 0.9$) and Adam ($\eta = 10^{-2}$) on the Rosenbrock function,
@@ -620,9 +616,7 @@ step 100000: lr 0.0001398
 
 ```{figure} figures/lr-schedules.*
 :name: fig-ch2-lr-schedules
-:alt: Log-scale learning rate against step for linear warm-up with cosine decay, inverse
-  square root decay and constant after warm-up; all three rise linearly for 1,000 steps
-  to 0.001.
+:alt: Log-scale learning rate against step for linear warm-up with cosine decay, inverse square root decay and constant after warm-up; all three rise linearly for 1,000 steps to 0.001.
 
 The three schedules with the notebook's settings: peak $\eta_{\max} = 10^{-3}$ after
 1,000 warm-up steps, cosine decay to $\eta_{\min} = 10^{-5}$ at step 10,000. On the
@@ -908,10 +902,7 @@ The identity term gives every layer a direct path for the gradient, so a deep st
 
 ```{figure} figures/gradient-flow-depth.*
 :name: fig-ch2-gradient-flow-depth
-:alt: Gradient norm against depth through 12 linear layers on a log scale: without
-  LayerNorm at std 0.02 it falls from about 100 at the output to about 0.000002 at the
-  input; the Xavier and LayerNorm variants stay near 100, and the residual variant rises
-  to about 330 at the input.
+:alt: Gradient norm against depth through 12 linear layers on a log scale: without LayerNorm at std 0.02 it falls from about 100 at the output to about 0.000002 at the input; the Xavier and LayerNorm variants stay near 100, and the residual variant rises to about 330 at the input.
 
 Gradient norm at each depth of a stack of 12 linear layers ($d = 128$). With weights of
 standard deviation 0.02 and nothing else, each layer shrinks the gradient and it falls
@@ -936,9 +927,7 @@ In pre-LN the residual stream is never normalized on its way through the stack, 
 
 ```{figure} figures/pre-post-ln.*
 :name: fig-ch2-pre-post-ln
-:alt: Two block diagrams. Pre-LN: h(l) goes through LN and F to an addition, and a green
-  identity path goes straight to the addition. Post-LN: h(l) and F(h(l)) are added and
-  the sum, including the red residual path, passes through LN.
+:alt: Two block diagrams. Pre-LN: h(l) goes through LN and F to an addition, and a green identity path goes straight to the addition. Post-LN: h(l) and F(h(l)) are added and the sum, including the red residual path, passes through LN.
 
 One block in each arrangement, drawn forward; the gradient runs back along the same
 edges. In pre-LN (top) the identity path reaches the addition untouched, so its Jacobian
@@ -1021,9 +1010,7 @@ The $A \odot (\cdot)$ factor is why saturated attention (one weight near 1) pass
 
 ```{figure} figures/attention-graph.*
 :name: fig-ch2-attention-graph
-:alt: Computation graph: Q and K feed S, S feeds A, A and V feed O. Below each forward
-  node, dashed red arrows run from dL/dO back to G and dL/dV, from G to dL/dS, and from
-  dL/dS to dL/dQ and dL/dK.
+:alt: Computation graph: Q and K feed S, S feeds A, A and V feed O. Below each forward node, dashed red arrows run from dL/dO back to G and dL/dV, from G to dL/dS, and from dL/dS to dL/dQ and dL/dK.
 
 Scaled dot-product attention as a computation graph. The top nodes are the forward
 values with their shapes; below each is the vector-Jacobian product the backward pass
@@ -1197,9 +1184,7 @@ with $\alpha_D \approx 0.095$ and $D_c \approx 5.4 \times 10^{13}$ tokens. Kapla
 
 ```{figure} figures/kaplan-power-laws.*
 :name: fig-ch2-kaplan-power-laws
-:alt: Two log-log plots of loss against N and against D, straight lines; the fitted
-  ranges 768 to 1.5 billion parameters and 22 million to 23 billion tokens are shaded,
-  with dashed extrapolation beyond.
+:alt: Two log-log plots of loss against N and against D, straight lines; the fitted ranges 768 to 1.5 billion parameters and 22 million to 23 billion tokens are shaded, with dashed extrapolation beyond.
 
 The parameter and data laws with the constants above: $N_c = 8.8 \times 10^{13}$,
 $\alpha_N = 0.076$ and $D_c = 5.4 \times 10^{13}$, $\alpha_D = 0.095$. A power law is a
@@ -1275,10 +1260,7 @@ Because $a_N \approx a_D \approx 0.5$, the compute-optimal ratio $D^*/N^*$ is ro
 
 ```{figure} figures/allocation-lines.*
 :name: fig-ch2-allocation-lines
-:alt: Two log-log plots against compute: optimal parameters and optimal tokens for
-  Kaplan's exponents 0.73 and 0.27 and Chinchilla's 0.50 and 0.50, crossing at
-  Chinchilla's size, with the four Table 3 points on the Chinchilla lines; the 67
-  billion point sits inside the hollow star.
+:alt: Two log-log plots against compute: optimal parameters and optimal tokens for Kaplan's exponents 0.73 and 0.27 and Chinchilla's 0.50 and 0.50, crossing at Chinchilla's size, with the four Table 3 points on the Chinchilla lines; the 67 billion point sits inside the hollow star.
 
 Compute-optimal parameters $N^*$ (left) and tokens $D^*$ (right) under Kaplan's
 exponents and Chinchilla's. Both lines are drawn through Chinchilla's own size (70
@@ -1334,8 +1316,7 @@ n=131072, d= 4096: attention is 84.2% of the per-layer work
 
 ```{figure} figures/attention-crossover.*
 :name: fig-ch2-attention-crossover
-:alt: Attention's share of per-layer work against sequence length for d = 4,096 and d =
-  12,288; each crosses 50 percent at n = 6d, and GPT-3 at n = 2,048 is at 2.7 percent.
+:alt: Attention's share of per-layer work against sequence length for d = 4,096 and d = 12,288; each crosses 50 percent at n = 6d, and GPT-3 at n = 2,048 is at 2.7 percent.
 
 Attention's share of the per-layer multiply-adds, $2n^2d/(12nd^2 + 2n^2d)$, against
 sequence length. Each curve crosses one half at $n = 6d$; GPT-3 at its context of 2,048
@@ -1412,9 +1393,7 @@ Weights and optimizer state alone are close to three terabytes, which is why a 1
 
 ```{figure} figures/memory-stack.*
 :name: fig-ch2-memory-stack
-:alt: Stacked bar of GPT-3 training memory: fp16 weights 349 GB, fp16 gradients 349 GB,
-  fp32 master weights 698 GB, Adam moments 1,397 GB and activations 2,203 GB, 4,996 GB
-  in total.
+:alt: Stacked bar of GPT-3 training memory: fp16 weights 349 GB, fp16 gradients 349 GB, fp32 master weights 698 GB, Adam moments 1,397 GB and activations 2,203 GB, 4,996 GB in total.
 :width: 90%
 
 Training memory of the GPT-3 175B configuration with mixed precision and Adam, batch 8
@@ -1473,9 +1452,7 @@ torch.bfloat16  bits 16, max 3.39e+38, smallest normal 1.175e-38, eps 0.007812
 
 ```{figure} figures/float-formats.*
 :name: fig-ch2-float-formats
-:alt: Top: bit layouts of fp32 (1 sign, 8 exponent, 23 mantissa bits), fp16 (1, 5, 10)
-  and bf16 (1, 8, 7). Bottom: on a log axis, fp32 and bf16 span 1e-38 to 3e38 while fp16
-  spans only 6.1e-5 to 65,504.
+:alt: Top: bit layouts of fp32 (1 sign, 8 exponent, 23 mantissa bits), fp16 (1, 5, 10) and bf16 (1, 8, 7). Bottom: on a log axis, fp32 and bf16 span 1e-38 to 3e38 while fp16 spans only 6.1e-5 to 65,504.
 
 Bit layouts (top) and normal ranges (bottom) of the three formats. bf16 keeps fp32's 8
 exponent bits and so its range, and pays with mantissa bits; fp16 spends more bits on

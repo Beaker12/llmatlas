@@ -72,10 +72,7 @@ Reproducing a model means reproducing the third from the second, which means the
 
 ```{figure} figures/lineage.*
 :name: fig-ch5-lineage
-:alt: A flow from Sources to Processed corpus v1.0 (both blue, versioned and stored),
-  then to Tokenized build (green, derived), which also takes the tokenizer by hash, then
-  to Training stream (orange, recomputed), which also takes the packing method, mixture
-  weights, data seed and steps, then to the model checkpoint.
+:alt: A flow from Sources to Processed corpus v1.0 (both blue, versioned and stored), then to Tokenized build (green, derived), which also takes the tokenizer by hash, then to Training stream (orange, recomputed), which also takes the packing method, mixture weights, data seed and steps, then to the model checkpoint.
 
 The lineage of a model's data. Only the sources and the processed corpus are stored and
 versioned. The tokenized build can be rebuilt from the corpus and the tokenizer. The
@@ -117,10 +114,7 @@ The two streaming formats differ in how a reader finds a sample, as {numref}`fig
 ```{figure} figures/wds-mds.*
 :width: 75%
 :name: fig-ch5-wds-mds
-:alt: Top: a WebDataset tar shard whose members are 000000.txt, 000000.json, 000001.txt,
-  000001.json in order, grouped into samples by their shared key. Bottom: an MDS
-  directory in which index.json lists the shards, and each shard.00000.mds file begins
-  with a sample count, an offsets array and a JSON config, followed by the samples.
+:alt: Top: a WebDataset tar shard whose members are 000000.txt, 000000.json, 000001.txt, 000001.json in order, grouped into samples by their shared key. Bottom: an MDS directory in which index.json lists the shards, and each shard.00000.mds file begins with a sample count, an offsets array and a JSON config, followed by the samples.
 
 Shard layouts of the two streaming formats. A WebDataset shard is an ordinary tar file.
 A sample is the run of consecutive members that share a key, so the shard is read from
@@ -440,11 +434,7 @@ document 1: [7552, 5001, 8441, 9177, 8494, 0]
 
 ```{figure} figures/token-layout.*
 :name: fig-ch5-token-layout
-:alt: A table with four rows. The offsets row marks positions 0, 4, 10 and 12. The token
-  row holds twelve uint16 ids: 5001, 4854, 9514, 0 for "the cat sat"; 7552, 5001, 8441,
-  9177, 8494, 0 for "on the mat and slept"; 7977, 0 for "fin". Below it, the JSON
-  sidecar records dtype uint16, tokenizer hash toy-v1 and three documents, and a box
-  reads document 1 as tokens[4 : 10].
+:alt: A table with four rows. The offsets row marks positions 0, 4, 10 and 12. The token row holds twelve uint16 ids: 5001, 4854, 9514, 0 for "the cat sat"; 7552, 5001, 8441, 9177, 8494, 0 for "on the mat and slept"; 7977, 0 for "fin". Below it, the JSON sidecar records dtype uint16, tokenizer hash toy-v1 and three documents, and a box reads document 1 as tokens[4 : 10].
 
 The listing's three documents on disk. `demo.bin` is the flat token array, with EOD id 0
 ending each document. `demo.idx.npy` holds the offsets [0, 4, 10, 12], one more than the
@@ -699,10 +689,7 @@ one byte of shard_006 changed: 53619d808ca6a9e0..., old proof valid: False
 
 ```{figure} figures/merkle.*
 :name: fig-ch5-merkle
-:alt: A binary hash tree over shards 0 to 9 in path order. Shard 6 and its path, hash of
-  shards 6–7, 4–7, 0–7 and the root, are orange. The four sibling hashes, shard 7, hash
-  of 4–5, hash of 0–3 and hash of 8–9, are blue. The hash of shards 8–9 joins the root
-  directly. The root reads v1 f4471612 and v2 53619d80.
+:alt: A binary hash tree over shards 0 to 9 in path order. Shard 6 and its path, hash of shards 6–7, 4–7, 0–7 and the root, are orange. The four sibling hashes, shard 7, hash of 4–5, hash of 0–3 and hash of 8–9, are blue. The hash of shards 8–9 joins the root directly. The root reads v1 f4471612 and v2 53619d80.
 
 The Merkle tree of the listing's ten shards, in path order. Changing one byte of shard 6
 (v1 to v2) changes only its leaf, the hashes on its path and the root (orange), the root
@@ -719,10 +706,7 @@ Because shards are stored by hash, two versions that share most of their shards 
 ```{figure} figures/sharding-deletion.*
 :width: 75%
 :name: fig-ch5-sharding-deletion
-:alt: Two panels, each showing three v1 shards above three v2 shards after document d1
-  is deleted. Cut by running count, all three v2 shards differ from v1 because every
-  later document moves up by one. Bucketed by hash of the document id, only shard 1, the
-  one that held d1, differs.
+:alt: Two panels, each showing three v1 shards above three v2 shards after document d1 is deleted. Cut by running count, all three v2 shards differ from v1 because every later document moves up by one. Bucketed by hash of the document id, only shard 1, the one that held d1, differs.
 
 Deleting document d1 from twelve. Cut by count, four per shard: every later document
 moves up one place, so all three shards get new hashes and the manifest diff says
@@ -1108,10 +1092,7 @@ best-fit packing: 108 sequences, 0.86% padding
 
 ```{figure} figures/packing-schematic.*
 :name: fig-ch5-packing-schematic
-:alt: Three stacks of token grids, each sixteen cells wide. Concatenate and chunk fills
-  three rows with documents D1 to D6 in order and cuts D2 across the first and second
-  rows. Pad gives each of the six documents its own row, with 48 gray padding cells in
-  total. Best-fit pack fills three rows exactly, D6 with D5, D1 with D3, and D4 with D2.
+:alt: Three stacks of token grids, each sixteen cells wide. Concatenate and chunk fills three rows with documents D1 to D6 in order and cuts D2 across the first and second rows. Pad gives each of the six documents its own row, with 48 gray padding cells in total. Best-fit pack fills three rows exactly, D6 with D5, D1 with D3, and D4 with D2.
 
 The same six documents (11, 7, 5, 9, 3 and 13 tokens, each counting its end-of-document
 token) at sequence length $n = 16$. Each colored cell is one token and gray cells are
@@ -1124,9 +1105,7 @@ and each later one in the fullest sequence that still has room for it.
 
 ```{figure} figures/packing-histogram.*
 :name: fig-ch5-packing-histogram
-:alt: A histogram of documents ending in each packed sequence. Most of the 177 sequences
-  hold two to six documents, a handful hold none, and a long tail runs out to one
-  sequence holding 68 documents.
+:alt: A histogram of documents ending in each packed sequence. Most of the 177 sequences hold two to six documents, a handful hold none, and a long tail runs out to one sequence holding 68 documents.
 
 The number of documents that end in each of the notebook's 177 best-fit packed
 sequences, at sequence length 512. This is a different corpus from the listing above. A
@@ -1191,10 +1170,7 @@ On a full packed sequence the mask becomes a staircase of small triangles along 
 
 ```{figure} figures/document-mask.*
 :name: fig-ch5-document-mask
-:alt: Two black-and-white mask images. On the left is the full 512 by 512 mask, a thin
-  staircase of black triangles along the diagonal with a red box around the first 64
-  positions. On the right is a zoom of that box, showing six triangles, one per
-  document, with white everywhere between them.
+:alt: Two black-and-white mask images. On the left is the full 512 by 512 mask, a thin staircase of black triangles along the diagonal with a red box around the first 64 positions. On the right is a zoom of that box, showing six triangles, one per document, with white everywhere between them.
 
 The document-causal mask for the notebook's fullest packed sequence: 68 documents in 512
 positions. Black means the query position may attend to the key position. Plain causal
@@ -1277,10 +1253,7 @@ Given weights $w_s$ that sum to one, the sampler draws each document's source wi
 
 ```{figure} figures/temperature.*
 :name: fig-ch5-temperature
-:alt: A grouped bar chart with one group each for code, web and wiki and four bars per
-  group for temperatures 0.5, 1, 2 and 4. As temperature rises, web falls from about
-  0.82 to 0.40 while code and wiki rise. A black tick over each bar marks its target.
-  With 600 draws per group the bars lie within a few hundredths of their ticks.
+:alt: A grouped bar chart with one group each for code, web and wiki and four bars per group for temperatures 0.5, 1, 2 and 4. As temperature rises, web falls from about 0.82 to 0.40 while code and wiki rise. A black tick over each bar marks its target. With 600 draws per group the bars lie within a few hundredths of their ticks.
 
 The fraction of 600 draws from each source (bars) against the tempered target $p_s$
 (black ticks). The weights are web 0.6, wiki 0.25 and code 0.15. At $\tau = 0.5$ the
@@ -1292,9 +1265,7 @@ bar at $\tau = 0.5$).
 
 ```{figure} figures/epoch-cap.*
 :name: fig-ch5-epoch-cap
-:alt: Cumulative documents drawn from web, wiki and code over 3,000 draws. The wiki line
-  rises until it reaches its cap of 480 at step 1,901 and then stays flat, while web and
-  code keep rising. Dotted lines mark the wiki cap at 480 and the code cap at 800.
+:alt: Cumulative documents drawn from web, wiki and code over 3,000 draws. The wiki line rises until it reaches its cap of 480 at step 1,901 and then stays flat, while web and code keep rising. Dotted lines mark the wiki cap at 480 and the code cap at 800.
 
 Cumulative draws per source in the notebook's capped sampler: weights 0.6, 0.25 and 0.15
 for web, wiki and code, which have 600, 120 and 200 documents, and a cap of four epochs.
@@ -1743,11 +1714,7 @@ buffer 20,000: 19.34 shards in a batch of 64
 
 ```{figure} figures/shuffle.*
 :name: fig-ch5-shuffle
-:alt: Four shards feed step 1, visiting shards in a seeded order (2, 0, 3, 1), then step
-  2, permuting documents within each shard, then a shuffle buffer of a few thousand
-  documents that emits a random slot and refills it, then the training batches. Beside
-  the buffer, a dashed box for step 3, a global permutation that needs random access,
-  connects to the batches as the ideal the buffer approximates.
+:alt: Four shards feed step 1, visiting shards in a seeded order (2, 0, 3, 1), then step 2, permuting documents within each shard, then a shuffle buffer of a few thousand documents that emits a random slot and refills it, then the training batches. Beside the buffer, a dashed box for step 3, a global permutation that needs random access, connects to the batches as the ideal the buffer approximates.
 
 Three granularities of shuffling in a streaming loader. Shard order and within-shard
 order are cheap. The shuffle buffer then mixes documents from neighboring shards. A
@@ -1952,11 +1919,7 @@ shard assignment, step 3, 2 vs 4 ranks: [12, 13, 14, 15] [6, 7, 22, 23]
 
 ```{figure} figures/ranks.*
 :name: fig-ch5-ranks
-:alt: Two panels for step 3 with a global batch of 8. Shard assignment: with 2 ranks,
-  rank 0 reads documents 12–15 and rank 1 reads 28–31; with 4 ranks, the ranks read 6,
-  7; 22, 23; 38, 39; and 54, 55, so the global batch differs. Global indexing: with 2
-  ranks and with 4 the ranks split samples 24–31 among themselves, so the global batch
-  is the same.
+:alt: Two panels for step 3 with a global batch of 8. Shard assignment: with 2 ranks, rank 0 reads documents 12–15 and rank 1 reads 28–31; with 4 ranks, the ranks read 6, 7; 22, 23; 38, 39; and 54, 55, so the global batch differs. Global indexing: with 2 ranks and with 4 the ranks split samples 24–31 among themselves, so the global batch is the same.
 
 The documents in the global batch at step 3 ($B = 8$, ten shards of 16 documents) for 2
 and 4 ranks. Under shard assignment, each rank walks its own shards, so the set of
@@ -2329,12 +2292,7 @@ Requests to remove content arrive after release: an opt-out, a takedown, a disco
 ```{figure} figures/removal.*
 :width: 75%
 :name: fig-ch5-removal
-:alt: A flow from a removal request for document alpha to step 1, locate via the
-  document index at (v1.0, s0) and (v1.1, s0), step 2, cut v1.2 without alpha with a
-  manifest diff naming s0 and the reason recorded, and step 3, record every model
-  trained on v1.0 or v1.1 from the lineage graph. The flow ends at a policy decision
-  outside the data system, with three outcomes: retrain, machine unlearning, or
-  disclose.
+:alt: A flow from a removal request for document alpha to step 1, locate via the document index at (v1.0, s0) and (v1.1, s0), step 2, cut v1.2 without alpha with a manifest diff naming s0 and the reason recorded, and step 3, record every model trained on v1.0 or v1.1 from the lineage graph. The flow ends at a policy decision outside the data system, with three outcomes: retrain, machine unlearning, or disclose.
 
 The removal workflow for the document `alpha` of the listing below. The data system
 answers the three steps exactly: where the document is, which shards a new version

@@ -466,9 +466,7 @@ Arabic               12           10            4
 ```{figure} figures/tokens-per-language.*
 :name: fig-ch1-tokens-per-language
 :width: 83%
-:alt: Grouped bars for English, French, Spanish, Japanese and Arabic. English is 18
-  tokens per 100 characters in all three encodings; Japanese falls from 143 in gpt2 to
-  57 in cl100k_base and 29 in o200k_base; Arabic from 92 to 77 to 31.
+:alt: Grouped bars for English, French, Spanish, Japanese and Arabic. English is 18 tokens per 100 characters in all three encodings; Japanese falls from 143 in gpt2 to 57 in cl100k_base and 29 in o200k_base; Arabic from 92 to 77 to 31.
 
 Tokens per 100 characters for the five greetings above, from the counts the listing
 prints (saved in `figures/data/tokens_per_language.json`). The greetings are 7 to 16
@@ -1327,9 +1325,7 @@ most frequent: that 12, the 10, we 10, to 8, here 8
 ```{figure} figures/word-frequency.*
 :name: fig-ch1-word-frequency
 :width: 84%
-:alt: Log-log scatter of word frequency against rank for the 140 distinct words of the
-  Gettysburg Address: 12 occurrences for the most frequent word, falling more slowly
-  than a dashed line of slope −1 to a flat tail of 93 words that occur once.
+:alt: Log-log scatter of word frequency against rank for the 140 distinct words of the Gettysburg Address: 12 occurrences for the most frequent word, falling more slowly than a dashed line of slope −1 to a flat tail of 93 words that occur once.
 
 The listing's plot for its fixed sample, the 268 words of the Gettysburg Address split
 into lowercase words of letters only; `figures/make_figures.py` runs the listing to draw
@@ -1435,9 +1431,7 @@ no parameters: sinusoidal, RoPE, ALiBi
 ```{figure} figures/position-parameter-cost.*
 :name: fig-ch1-position-parameter-cost
 :width: 77%
-:alt: Log-log plot over maximum lengths 128 to 4096. A dashed flat line for the token
-  embedding sits at 16.4 million; the learned absolute line rises from about 65 thousand
-  to 2.1 million; the T5 relative bias line stays flat at 512.
+:alt: Log-log plot over maximum lengths 128 to 4096. A dashed flat line for the token embedding sits at 16.4 million; the learned absolute line rises from about 65 thousand to 2.1 million; the T5 relative bias line stays flat at 512.
 
 The listing's plot on logarithmic axes, at T5-small's sizes. Learned absolute positions
 grow in proportion to the maximum length, from 65,536 parameters at 128 to 2,097,152 at
