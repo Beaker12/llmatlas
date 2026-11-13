@@ -1582,7 +1582,7 @@ At $C = 5.88 \times 10^{23}$, $C/6 = 9.8 \times 10^{22}$ and $N^* = 3.25 \times 
 **Learning Rate and Initialization:**
 
 - {cite}`zhang2019fixup`: Advanced initialization strategies without normalization ([arXiv:1901.09321](https://arxiv.org/abs/1901.09321))
-- [Cyclical Learning Rates](https://arxiv.org/abs/1506.01186) - Practical learning rate scheduling
+- {cite}`smith2017cyclical`: Cyclical learning rates, a practical learning-rate schedule ([arXiv:1506.01186](https://arxiv.org/abs/1506.01186))
 - [On the difficulty of training recurrent neural networks](https://proceedings.mlr.press/v28/pascanu13.html) {cite}`pascanu2013difficulty` - Gradient flow analysis
 
 (sec-ch2-further-reading-numerical-methods-efficiency)=
@@ -1605,8 +1605,8 @@ At $C = 5.88 \times 10^{23}$, $C/6 = 9.8 \times 10^{22}$ and $N^* = 3.25 \times 
 ### Scaling Laws and Empirical Analysis
 
 - {cite}`hestness2017deep`: Early observations of scaling behavior ([arXiv:1712.00409](https://arxiv.org/abs/1712.00409))
-- [Scaling Laws for Autoregressive Generative Modeling](https://arxiv.org/abs/2010.14701) - Extensions beyond language
-- [Beyond neural scaling laws: beating power law scaling via data pruning](https://arxiv.org/abs/2206.14486) - Data efficiency perspectives
+- {cite}`henighan2020scaling`: Scaling laws beyond language, for images, video, multimodal data and mathematics ([arXiv:2010.14701](https://arxiv.org/abs/2010.14701))
+- {cite}`sorscher2022beyond`: Data pruning that beats power-law scaling in data ([arXiv:2206.14486](https://arxiv.org/abs/2206.14486))
 
 ______________________________________________________________________
 
