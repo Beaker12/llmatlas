@@ -735,7 +735,7 @@ bias shape: (8, 16, 16) | parameters: 256
 
 #### Rotary Position Embedding (RoPE)
 
-Rotary position embedding {cite}`su2021roformer` is used by LLaMA, Mistral, Qwen and Gemma. It has no parameters, and like the relative bias it acts *inside* attention: it rotates the queries and keys, never the values or the input embeddings. Split a query or key row vector of width $d_k$ into $d_k/2$ consecutive pairs $(q_{2i}, q_{2i+1})$ (for a key, $(k_{2i}, k_{2i+1})$), $0 \le i < d_k/2$, and rotate pair $i$ at position $m$ by the angle $m\,\omega_i$, with the frequencies $\omega_i = b^{-2i/d_k}$ of the sinusoidal encoding and base $b = 10000$. As a matrix, the rotation at position $m$ is block diagonal:
+Rotary position embedding {cite}`su2021roformer` is used by LLaMA, Mistral, Qwen and Gemma. It has no parameters, and like the relative bias it acts *inside* attention: it rotates the queries and keys, never the values or the input embeddings. Split a query or key row vector of width $d_k$ into $d_k/2$ consecutive pairs of components: pair $i$ is components $2i$ and $2i+1$ of the row (counting from 0), $0 \le i < d_k/2$. Rotate pair $i$ at position $m$ by the angle $m\,\omega_i$, with the frequencies $\omega_i = b^{-2i/d_k}$ of the sinusoidal encoding and base $b = 10000$. As a matrix, the rotation at position $m$ is block diagonal:
 
 ```{math}
 :label: eq-ch1-rope
@@ -768,8 +768,8 @@ import torch
 def apply_rope(x: torch.Tensor, positions: torch.Tensor, base: float = 10000.0) -> torch.Tensor:
     """Rotary position embedding (Su et al., 2021), applied to queries and keys.
 
-    x: [..., seq, d]; positions: [seq]. Consecutive pairs of features are rotated by an
-    angle m * omega_i, where m is the position and omega_i = base^(-2i/d). Because a rotation
+    x: [..., seq, d]; positions: [seq]. Pair i of features (features 2i and 2i+1 of the last
+    dimension) is rotated by the angle m * omega_i, where m is the position and omega_i = base^(-2i/d). Because a rotation
     preserves norms and q_m . k_m' then depends only on m - m', RoPE encodes relative position
     without any parameters.
     """
@@ -1423,9 +1423,9 @@ The three differ in which positions may attend to which, as {numref}`fig-ch1-mas
 ```{figure} figures/mask-patterns.*
 :name: fig-ch1-mask-patterns
 :width: 96%
-:alt: Four grids of allowed query-key pairs: encoder-only is fully dark; decoder-only is dark on and below the diagonal; the encoder-decoder's cross-attention grid, three target queries by four source keys, is fully dark; its self-attention grid, three target queries by three target keys, is dark on and below the diagonal.
+:alt: Four grids of allowed query-key pairs: encoder-only is fully dark; decoder-only is dark on and below the diagonal; the encoder-decoder's masked self-attention grid, three target queries by three target keys, is dark on and below the diagonal; its cross-attention grid, three target queries by four source keys, is fully dark.
 
-Allowed (dark) and masked (light) query-key pairs for four source tokens s1 to s4 and three target tokens t1 to t3. The decoder of an encoder-decoder has two attention sublayers, each with its own softmax: cross-attention over the source keys, then masked self-attention over the target keys, so it gets two grids.
+Allowed (dark) and masked (light) query-key pairs for four source tokens s1 to s4 and three target tokens t1 to t3. The decoder of an encoder-decoder has two attention sublayers, each with its own softmax: masked self-attention over the target keys, then cross-attention over the source keys, so it gets two grids, in that order.
 ```
 
 (sec-ch1-masked-lm)=

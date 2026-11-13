@@ -210,14 +210,15 @@ def mask_panel(ax, allowed, rows, cols, title):
 
 
 # Mask patterns of the three variants (sec-ch1-architectural-variants): 4 source and 3 target tokens. The decoder of an
-# encoder-decoder has two attention sublayers, each with its own softmax, so it gets two grids.
+# encoder-decoder has two attention sublayers, each with its own softmax, so it gets two grids, drawn in the order the
+# decoder applies them: masked self-attention first, then cross-attention.
 def mask_patterns(out):
     src, tgt = ["s1", "s2", "s3", "s4"], ["t1", "t2", "t3"]
-    fig, axes = plt.subplots(1, 4, figsize=(8.4, 3.1), gridspec_kw={"width_ratios": [4, 4, 4, 3]})
+    fig, axes = plt.subplots(1, 4, figsize=(8.4, 3.1), gridspec_kw={"width_ratios": [4, 4, 3, 4]})
     mask_panel(axes[0], np.ones((4, 4), bool), src, src, "Encoder-only:\nevery pair")
     mask_panel(axes[1], np.tril(np.ones((4, 4), bool)), src, src, "Decoder-only:\nearlier or equal")
-    mask_panel(axes[2], np.ones((3, 4), bool), tgt, src, "Enc-dec cross-attn.:\nevery source key")
-    mask_panel(axes[3], np.tril(np.ones((3, 3), bool)), tgt, tgt, "Enc-dec self-attn.:\nearlier or equal")
+    mask_panel(axes[2], np.tril(np.ones((3, 3), bool)), tgt, tgt, "Enc-dec self-attn.:\nearlier or equal")
+    mask_panel(axes[3], np.ones((3, 4), bool), tgt, src, "Enc-dec cross-attn.:\nevery source key")
     for ax in axes:
         ax.set_xlabel("Key", fontsize=11)
     axes[0].set_ylabel("Query", fontsize=11)
