@@ -54,6 +54,7 @@ INTERFACE_LABELS: dict[str, str] = {}
 PAGE = ROOT / "chapters" / "05-dataset-management" / "index.md"
 SOLUTION = re.compile(r"^`{4}\{admonition\} Solution (\d+)\n(.*?)^`{4}$", re.S | re.M)
 LISTING = re.compile(r"^```python\n(.*?)^```$", re.S | re.M)
+SHOWN = re.compile(r"^```\n\n% output\n\n```text\n(.*?)^```$", re.S | re.M)  # exact output after the listing
 ANSWERS = {
     1: [r"608,751 tokens in 2,000 documents", r"uint16 binary +2\.00 bytes per token", r"uint32 binary +4\.00 bytes"],
     2: [r"kept 850 at 0\.30 and 838 at 0\.27: 12 documents removed", r"count layout: 16 of 17 shards changed",
@@ -61,7 +62,8 @@ ANSWERS = {
     3: [r"mean    100: chunking splits 2\.4% of documents; best-fit pads 0\.04% and splits 0\.0%",
         r"mean  1,000: chunking splits 23\.2% of documents; best-fit pads 0\.03% and splits 1\.6%",
         r"mean 10,000: chunking splits 84\.0% of documents; best-fit pads 0\.48% and splits 66\.5%"],
-    4: [r"removes 62\.0% of the causal attention pairs", r"changes the context of 75\.6% of the tokens"],
+    4: [r"removes 62\.0% of the causal attention pairs", r"changes the context of 75\.6% of the tokens",
+        r"seed 0, gap \(causal - mask\) +-0\.48 .*\+0\.51", r"seed 1, gap \(causal - mask\) +-0\.64 .*\+0\.55"],
     5: [r"agrees with iterating at 1000 random steps", r"step 5,000: \{'code': 750, 'web': 3500, 'wiki': 750\}",
         r"step 12,345: \{'code': 2586, 'web': 7173, 'wiki': 2586\}"],
     6: [r"global indexing : 0 samples seen twice, 0 never seen", r"shard assignment: 16,000 samples seen twice, 16,000"],
@@ -70,7 +72,7 @@ ANSWERS = {
 }
 # Numbers the prose of each answer states, which must also appear in the listing's printed output
 STATED = {2: ["16 of the 17", "12 of the 64"], 3: ["2.4%", "23.2%", "1.6%", "0.03%", "84.0%", "66.5%"],
-          4: ["62.0%", "75.6%"], 5: ["7,173", "2,586"], 6: ["16,000"], 7: ["2,900"]}
+          4: ["62.0%", "75.6%", "+0.45", "+0.55", "4.70", "4.84"], 5: ["7,173", "2,586"], 6: ["16,000"], 7: ["2,900"]}
 
 
 def solutions() -> dict:
@@ -86,8 +88,14 @@ def test_exercise_answer(n):
     body = solutions()[n]
     listings = LISTING.findall(body)
     assert len(listings) == 1, f"solution {n} should hold one listing"
-    run = subprocess.run([sys.executable, "-W", "error", "-c", listings[0]], capture_output=True, text=True,
-                         timeout=600, env={**os.environ, "MPLBACKEND": "Agg"})
+    shown = SHOWN.search(body)
+    if shown:
+        # An exact `% output` block: tests/test_fences.py runs this listing and compares its output with the block,
+        # so the answers are checked against the block instead of running the listing a second time.
+        run = subprocess.CompletedProcess([], 0, stdout=shown.group(1), stderr="")
+    else:
+        run = subprocess.run([sys.executable, "-W", "error", "-c", listings[0]], capture_output=True, text=True,
+                             timeout=600, env={**os.environ, "MPLBACKEND": "Agg"})
     assert run.returncode == 0, run.stderr[-2000:]
     for pattern in ANSWERS[n]:
         assert re.search(pattern, run.stdout), f"solution {n}: {pattern!r} not in\n{run.stdout}"

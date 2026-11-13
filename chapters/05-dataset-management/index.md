@@ -1883,12 +1883,12 @@ uint32 binary    4.00 bytes per token, every document read back in 2 ms
 The binaries cost exactly 2 and 4 bytes per token, plus 8 bytes of offset per document. Compressed text lands close to the `uint16` binary, because gzip removes most of the redundancy of words and JSON. The sizes are therefore close, and the difference is the read: on the run shown the binary is read back about a hundred times faster, and the text pays its cost again on every epoch, because it is parsed and tokenized again on every pass. Inspectability stops being worth its cost as soon as the data is read more than once by a training loop. Keep the text as the versioned record and derive the binary from it, as {ref}`sec-ch5-formats-used` recommends. The `uint32` binary doubles the size for no gain unless the vocabulary exceeds 65,536 entries.
 ````
 
-1. **Manifest diff.** Build 1,000 documents of ten lines each in which the last $k$ lines, for $k$ from 0 to 5 and with $k = 3$ in 1% of documents, repeat the first, so that the duplicate-line fraction computed by Chapter 4's `repetition_stats` is $k/10$. Keep the documents that pass that filter's threshold of 0.30, then tighten the threshold by 10% to 0.27. Write both versions in two layouts, 50 documents per shard in order and 64 buckets chosen by a hash of the document id, and diff the manifests. How many shards changed in each layout, and could you have predicted which ones?
+1. **Manifest diff.** Build 1,000 documents of ten lines each in which the last lines repeat the first, from none to five of them and exactly three in 1% of documents, so that the duplicate-line fraction computed by Chapter 4's `repetition_stats` is the number of repeated lines divided by ten. Keep the documents that pass that filter's threshold of 0.30, then tighten the threshold by 10% to 0.27. Write both versions in two layouts, 50 documents per shard in order and 64 buckets chosen by a hash of the document id, and diff the manifests. How many shards changed in each layout, and could you have predicted which ones?
 
 ````{admonition} Solution 2
 :class: dropdown
 
-The duplicate-line fraction takes only the values 0, 0.1, ..., 0.5, so tightening the threshold from 0.30 to 0.27 removes exactly the documents with $k = 3$; a 10% looser threshold, 0.33, keeps exactly the documents that 0.30 keeps, because no document's fraction lies between the two. The listing reuses the statistic of Chapter 4's `repetition_stats` and hashes each shard's JSON Lines bytes as in {ref}`sec-ch5-sharding`.
+The duplicate-line fraction takes only the values 0, 0.1, ..., 0.5, so tightening the threshold from 0.30 to 0.27 removes exactly the documents with three repeated lines; a 10% looser threshold, 0.33, keeps exactly the documents that 0.30 keeps, because no document's fraction lies between the two. The listing reuses the statistic of Chapter 4's `repetition_stats` and hashes each shard's JSON Lines bytes as in {ref}`sec-ch5-sharding`.
 
 ```python
 import hashlib
@@ -2010,7 +2010,7 @@ mean 10,000: chunking splits 84.0% of documents; best-fit pads 0.48% and splits 
 At a mean of 100 tokens, chunking splits only 2.4% of documents, so packing buys little. At 1,000 it splits 23.2%, while best-fit splits only the 1.6% of documents longer than the sequence, for 0.03% padding: this is where packing pays. At 10,000 most documents are longer than the sequence and are split by either method, 84.0% against 66.5%, and the gain shrinks again. Packing stops being worth its complexity when documents are either much shorter than the sequence or mostly longer than it.
 ````
 
-1. **The mask's effect.** Count how much of the causal attention the document mask removes when documents averaging 1,000 tokens are concatenated and cut into 4,096-token sequences, and how many tokens have a different context with the mask than without it. Then train two small models on those sequences, with and without the mask, using the `TinyLM` model and the `train` loop of the [Chapter 6 notebook](../06-architectures/examples/architecture_demo.ipynb), and compare the loss on the first tokens of each document, which are the ones the mask changes.
+1. **The mask's effect.** Count how much of the causal attention the document mask removes when documents averaging 1,000 tokens are concatenated and cut into 4,096-token sequences, and how many tokens have a different context with the mask than without it. Then train two small decoders, like the `TinyLM` of the [Chapter 6 notebook](../06-architectures/examples/architecture_demo.ipynb) but scaled down to train on a CPU in seconds, on such sequences with and without the mask, from the same initial weights and on the same batches, and compare their held-out loss by the position of the token within its document.
 
 ````{admonition} Solution 4
 :class: dropdown
@@ -2032,6 +2032,89 @@ for k in range(n_seq):
     changed += SEQ_LEN - int(pieces[0])  # every token after the first document boundary
 print(f"{n_seq} sequences: the mask removes {1 - kept / (n_seq * causal_pairs):.1%} of the causal attention pairs")
 print(f"and changes the context of {changed / (n_seq * SEQ_LEN):.1%} of the tokens")
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+torch.set_num_threads(1)  # small matrices: one thread is fastest and the run is repeatable
+
+# Training comparison, with the exercise's 4,096 and 1,000 scaled down by 64 so that it runs on a CPU in seconds
+VOCAB, SEQ, MEAN_DOC, EOD = 64, 64, 16, 0
+
+
+def make_batch(rng, n):
+    """n sequences cut from a stream of documents; each document repeats its own random pattern."""
+    stream = []
+    while len(stream) < n * (SEQ + 1):
+        period, length = int(rng.integers(3, 9)), int(rng.geometric(1 / MEAN_DOC))
+        stream += np.resize(rng.integers(1, VOCAB, size=period), length).tolist() + [EOD]
+    x = torch.tensor(stream[: n * (SEQ + 1)]).view(n, SEQ + 1)
+    return x[:, :-1], x[:, 1:]
+
+
+def segments(x):
+    """Document index of each position within its sequence; the EOD belongs to the document it ends."""
+    ends = (x == EOD).long()
+    return torch.cumsum(ends, 1) - ends
+
+
+class TinyDecoder(nn.Module):
+    """Two pre-norm layers; attention is causal, and with doc_mask also limited to the token's own document."""
+
+    def __init__(self, d=32, layers=2, heads=4):
+        super().__init__()
+        self.heads = heads
+        self.tok, self.pos = nn.Embedding(VOCAB, d), nn.Embedding(SEQ, d)
+        layer = nn.TransformerEncoderLayer(d, heads, 4 * d, dropout=0.0, batch_first=True, norm_first=True)
+        self.body = nn.TransformerEncoder(layer, layers, enable_nested_tensor=False)
+        self.out = nn.Linear(d, VOCAB)
+
+    def forward(self, x, doc_mask):
+        allowed = torch.ones(SEQ, SEQ, dtype=torch.bool).tril().expand(x.shape[0], SEQ, SEQ)
+        if doc_mask:
+            seg = segments(x)
+            allowed = allowed & (seg[:, :, None] == seg[:, None, :])
+        blocked = ~allowed.repeat_interleave(self.heads, 0)  # True where attention is not allowed
+        return self.out(self.body(self.tok(x) + self.pos(torch.arange(SEQ)), mask=blocked))
+
+
+def train(doc_mask, seed, steps=200):
+    torch.manual_seed(seed)  # the same initial weights ...
+    model = TinyDecoder()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=3e-3)
+    rng = np.random.default_rng(100 + seed)  # ... and the same batches for both models
+    for _ in range(steps):
+        x, y = make_batch(rng, 16)
+        loss = F.cross_entropy(model(x, doc_mask).reshape(-1, VOCAB), y.reshape(-1))
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+    return model
+
+
+x, y = make_batch(np.random.default_rng(2), 128)  # held out
+seg = segments(x)
+index = torch.arange(SEQ).expand_as(seg)
+starts = torch.ones_like(seg, dtype=torch.bool)
+starts[:, 1:] = seg[:, 1:] != seg[:, :-1]
+position = index - torch.where(starts, index, 0).cummax(1).values  # position of the input token in its document
+changed = seg > 0  # tokens after the first document boundary: the only ones whose context the mask changes
+buckets = [(0, 0), (1, 3), (4, 7), (8, 15), (16, SEQ)]
+loss_by = {}
+for seed in (0, 1):
+    for doc_mask in (False, True):
+        model = train(doc_mask, seed)
+        with torch.no_grad():
+            loss = F.cross_entropy(model(x, doc_mask).reshape(-1, VOCAB), y.reshape(-1), reduction="none").view_as(seg)
+        loss_by[seed, doc_mask] = [loss[changed & (position >= lo) & (position <= hi)].mean().item() for lo, hi in buckets]
+print("held-out loss by position in document:   0    1-3    4-7   8-15    16+")
+for (seed, doc_mask), row in loss_by.items():
+    print(f"seed {seed}, {'document mask' if doc_mask else 'causal only':13s}            " + " ".join(f"{v:6.2f}" for v in row))
+for seed in (0, 1):
+    gap = [a - b for a, b in zip(loss_by[seed, False], loss_by[seed, True])]
+    print(f"seed {seed}, gap (causal - mask)              " + " ".join(f"{g:+6.2f}" for g in gap))
+    assert gap[0] < 0 and min(gap[2], gap[3]) > 0.3  # chance at the first token; the mask helps once copying starts
 ```
 
 % output
@@ -2039,9 +2122,16 @@ print(f"and changes the context of {changed / (n_seq * SEQ_LEN):.1%} of the toke
 ```text
 995 sequences: the mask removes 62.0% of the causal attention pairs
 and changes the context of 75.6% of the tokens
+held-out loss by position in document:   0    1-3    4-7   8-15    16+
+seed 0, causal only                4.22   4.23   4.10   3.99   3.89
+seed 0, document mask              4.70   4.34   3.64   3.49   3.48
+seed 1, causal only                4.19   4.23   4.10   3.99   3.90
+seed 1, document mask              4.84   4.33   3.66   3.45   3.47
+seed 0, gap (causal - mask)               -0.48  -0.11  +0.46  +0.51  +0.41
+seed 1, gap (causal - mask)               -0.64  -0.10  +0.45  +0.55  +0.43
 ```
 
-The mask removes 62.0% of the causal attention pairs and changes the context of 75.6% of the tokens: every token after the first document boundary of its sequence. The change is largest for a document's first tokens, which without the mask see up to several thousand tokens of an unrelated document and with it see only the document's own tokens. For the training comparison, replace the causal mask in `TinyLM`'s attention by the document mask built from the end-of-document positions, train both models with the same seed and number of steps, and average the held-out loss at each position within a document: position 0, 1, 2 and so on. The listing asserts only the mask counts; the loss comparison is yours to run, and its result is not given here. What to expect: the gap between the two curves should be largest at the first positions, where the unmasked model conditions on an unrelated document, and should shrink with the position, because a token far into a document has most of its useful context inside the document either way. A gap that does not shrink with the position points to a difference between the two runs other than the mask, such as the seed or the data order.
+The mask removes 62.0% of the causal attention pairs and changes the context of 75.6% of the tokens: every token after the first document boundary of its sequence. The change is largest for a document's first tokens, which without the mask see up to several thousand tokens of an unrelated document and with it see only the document's own tokens. For the training comparison the listing scales the setting down by 64, to 64-token sequences and documents averaging 16 tokens, and trains a two-layer decoder for 200 steps with and without the document mask, from the same initial weights and on the same batches, for two seeds. Each document repeats a random pattern of three to eight tokens, so its first tokens cannot be predicted and its later tokens can be copied from earlier in the same document, while nothing in an earlier document helps. The held-out loss is averaged by the position of the token in its document, over the tokens whose context the mask changes. Measured this way, the mask does not help at a document's first token: there the masked model sees nothing but that token and is worse than chance (4.70 and 4.84 against ln 63 ≈ 4.14), while the unmasked model stays near chance, so the gap is negative (−0.48 and −0.64). The gain appears as soon as the document has something to copy: from position 4 on, the unmasked model's loss is higher by +0.45 to +0.55 in both seeds, because its attention also reaches the previous document's pattern, and the gap stays near +0.4 beyond position 16 in documents this short. The same signs in both seeds, which the listing asserts, show that the gaps come from the mask and not the seed. The expectation that the gap is largest at a document's very first tokens is therefore wrong as stated: it is largest at the first positions the model can predict from the document itself.
 ````
 
 1. **Seeking across mixture phases.** The `StrideSampler` of {ref}`sec-ch5-determinism-resumption` seeks in constant work for one fixed mixture, but runs often change the mixture partway through. Extend its cursors $\operatorname{drawn}_s(t)$ to a schedule of two phases: weights 0.7, 0.15 and 0.15 for web, wiki and code until step 5,000, then 0.5, 0.25 and 0.25. Verify the closed form against iteration: seeking to step $t$ and iterating to it must agree at a thousand random steps.
