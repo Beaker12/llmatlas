@@ -61,9 +61,14 @@ A language model computes with numbers, so text is first split by **tokenization
 ```{figure} figures/tokenization_pipeline.*
 :name: fig-ch1-tokenization-pipeline
 :width: 87%
-:alt: Five stages from top to bottom: normalization, pre-tokenization, subword model, vocabulary lookup and embedding lookup, each beside its result for the text The cat sat: three chunks, the tokens The, cat and sat, the ids 464, 3797 and 3332, and a 3 by 768 matrix.
+:alt: Five stages from top to bottom: normalization, pre-tokenization, subword model,
+  vocabulary lookup and embedding lookup, each beside its result for the text The cat
+  sat: three chunks, the tokens The, cat and sat, the ids 464, 3797 and 3332, and a 3 by
+  768 matrix.
 
-From text to the model's input. Left, the stages; right, what each gives for "The cat sat" with GPT-2's tokenizer (ids from tiktoken's `gpt2` encoding; Ġ is how GPT-2's vocabulary writes a leading space; $d = 768$ is the smallest GPT-2).
+From text to the model's input. Left, the stages; right, what each gives for "The cat
+sat" with GPT-2's tokenizer (ids from tiktoken's `gpt2` encoding; Ġ is how GPT-2's
+vocabulary writes a leading space; $d = 768$ is the smallest GPT-2).
 ```
 
 (sec-ch1-token-definition)=
@@ -260,7 +265,8 @@ corpus = ["hello", "world", "hello", "help", "held"]
 bpe = SimpleBPE()
 bpe.train(corpus, num_merges=4)
 print(f"Merges: {bpe.merges}")
-print(f"Tokens: {bpe.encode('helper')}")  # an unseen word splits into learned subwords and characters
+# an unseen word splits into learned subwords and characters
+print(f"Tokens: {bpe.encode('helper')}")
 ```
 
 % output
@@ -275,9 +281,14 @@ Tokens: ['hel', 'p', 'e', 'r', '</w>']
 ```{figure} figures/bpe-merges.*
 :name: fig-ch1-bpe-merges
 :width: 82%
-:alt: Five rows of boxed symbols for the words hello, world, help and held, each ending in an end-of-word marker. Row by row the highlighted symbol grows from he to hel to hell to hello, while world never changes.
+:alt: Five rows of boxed symbols for the words hello, world, help and held, each ending
+  in an end-of-word marker. Row by row the highlighted symbol grows from he to hel to
+  hell to hello, while world never changes.
 
-The four merges of the listing on its corpus (hello twice, world, help, held), drawn by `figures/make_figures.py` from the listing's own `SimpleBPE`. Each row is the corpus after one more merge; the symbol just created is highlighted. Merge 1 picks h + e over e + l, which also occurs 4 times, because `max` returns the first pair counted.
+The four merges of the listing on its corpus (hello twice, world, help, held), drawn by
+`figures/make_figures.py` from the listing's own `SimpleBPE`. Each row is the corpus
+after one more merge; the symbol just created is highlighted. Merge 1 picks h + e over
+e + l, which also occurs 4 times, because `max` returns the first pair counted.
 ```
 
 **Other subword algorithms**:
@@ -296,10 +307,12 @@ SentencePiece {cite}`kudo2018sentencepiece` treats text as raw Unicode sequences
 ```python
 import os
 import tempfile
+import textwrap
 
 import sentencepiece as spm
 
-# A small corpus: a few English sentences repeated, plus one line of Chinese the model will rarely see.
+# A small corpus: a few English sentences repeated, plus one line of Chinese
+# the model will rarely see.
 sentences = [
     "Hello, world! Tokenizers turn text into integers.",
     "The quick brown fox jumps over the lazy dog.",
@@ -317,7 +330,8 @@ with tempfile.TemporaryDirectory() as tmp:
         vocab_size=400,  # includes the 256 byte pieces that byte_fallback reserves
         model_type="bpe",  # or "unigram"
         character_coverage=0.9995,
-        byte_fallback=True,  # characters outside the learned set become UTF-8 byte pieces, not <unk>
+        # characters outside the learned set become UTF-8 byte pieces, not <unk>
+        byte_fallback=True,
         normalization_rule_name="identity",
         num_threads=1,
         minloglevel=2,
@@ -327,16 +341,19 @@ with tempfile.TemporaryDirectory() as tmp:
 text = "Hello, world! 你好世界"
 pieces = sp.encode_as_pieces(text)
 ids = sp.encode_as_ids(text)
-assert sp.decode_ids(ids) == text  # lossless, because unseen characters fall back to bytes
+# lossless, because unseen characters fall back to bytes
+assert sp.decode_ids(ids) == text
 assert sp.unk_id() not in ids
-print(f"Pieces: {pieces}")
+print(textwrap.fill(f"Pieces: {pieces}", width=88, subsequent_indent="        "))
 print(f"{len(ids)} ids; decoded text equals the input: {sp.decode_ids(ids) == text}")
 ```
 
 % output
 
 ```text
-Pieces: ['▁He', 'llo', ',', '▁w', 'orld', '!', '▁', '<0xE4>', '<0xBD>', '<0xA0>', '<0xE5>', '<0xA5>', '<0xBD>', '<0xE4>', '<0xB8>', '<0x96>', '<0xE7>', '<0x95>', '<0x8C>']
+Pieces: ['▁He', 'llo', ',', '▁w', 'orld', '!', '▁', '<0xE4>', '<0xBD>', '<0xA0>',
+        '<0xE5>', '<0xA5>', '<0xBD>', '<0xE4>', '<0xB8>', '<0x96>', '<0xE7>', '<0x95>',
+        '<0x8C>']
 19 ids; decoded text equals the input: True
 ```
 
@@ -353,7 +370,10 @@ For vocabulary construction, special tokens, cross-lingual issues and a full tok
 
 ```{admonition} Tokenization Implementation
 :class: tip
-The notebook's tokenization section ({ref}`nb-attn-tokenization`) builds a tiny word-level vocabulary and runs the BPE merge loop step by step, printing the splits after every merge. For WordPiece, unigram, byte-level BPE and SentencePiece in practice, see {ref}`sec-tdd-subword-algorithms`.
+The notebook's tokenization section ({ref}`nb-attn-tokenization`) builds a tiny
+word-level vocabulary and runs the BPE merge loop step by step, printing the splits
+after every merge. For WordPiece, unigram, byte-level BPE and SentencePiece in practice,
+see {ref}`sec-tdd-subword-algorithms`.
 ```
 
 (sec-ch1-embeddings-positional-encoding)=
@@ -419,7 +439,8 @@ RMS of a sinusoidal encoding:    0.707
 Many architectures share the input embedding matrix with the output projection {cite}`press2017using`. GPT-2's released code computes the output scores with its token-embedding matrix `wte` {cite}`radford2019language`, and Gemma 2's architecture table lists "Tied embedding: yes" for all three sizes {cite}`gemma2024gemma2`. Mistral 7B keeps the two separate (its released configuration sets `tie_word_embeddings` to false) {cite}`jiang2023mistral`, and so does the original LLaMA, whose reference code builds them as separate modules {cite}`touvron2023llama`; by contrast, the Llama 3.2 model card marks "Shared Embeddings: Yes" for its 1B and 3B text models {cite}`meta2024llama32card`:
 
 ```python
-# pseudo-code: `TransformerStack` stands for the model body; illustrates weight tying only
+# pseudo-code: `TransformerStack` stands for the model body;
+# illustrates weight tying only
 class TransformerWithTiedEmbeddings(nn.Module):
     def __init__(self, vocab_size, d_model):
         super().__init__()
@@ -463,13 +484,16 @@ For subword tokens, embeddings must compose meaningfully:
 # pseudo-code: `embedding_matrix` and `token_to_id` come from a trained model
 # Example: How "unhappiness" might be tokenized and embedded
 text = "unhappiness"
-tokens = ["un", "h", "appiness"]  # tiktoken's gpt2, cl100k_base and o200k_base all give this split
+# tiktoken's gpt2, cl100k_base and o200k_base all give this split
+tokens = ["un", "h", "appiness"]
 
 # Each token gets its own embedding
-token_embeddings = [embedding_matrix[token_to_id[t]] for t in tokens]  # 3 vectors of size [d_model]
+# 3 vectors of size [d_model]
+token_embeddings = [embedding_matrix[token_to_id[t]] for t in tokens]
 
 # The model sees these as separate tokens in sequence
-# The split does not follow the morphemes un + happi + ness; the model must still learn that "un" negates
+# The split does not follow the morphemes un + happi + ness;
+# the model must still learn that "un" negates
 # This happens through attention and context
 ```
 
@@ -489,9 +513,12 @@ The sinusoidal and learned schemes below both add a position vector to each toke
 ```{figure} figures/embedding_composition.*
 :name: fig-ch1-embedding-composition
 :width: 94%
-:alt: Token ids go through a lookup in the token embedding matrix and positions go through a positional encoding; the two n by d results are added to give the input X.
+:alt: Token ids go through a lookup in the token embedding matrix and positions go
+  through a positional encoding; the two n by d results are added to give the input X.
 
-Absolute positions are added to the token embeddings before the first block. RoPE instead acts inside attention ({ref}`sec-ch1-rope`), and the relative bias adds to the attention scores.
+Absolute positions are added to the token embeddings before the first block. RoPE
+instead acts inside attention ({ref}`sec-ch1-rope`), and the relative bias adds to the
+attention scores.
 ```
 
 (sec-ch1-sinusoidal-positions)=
@@ -545,7 +572,10 @@ def create_sinusoidal_encoding(max_seq_len, d_model):
 def visualize_positional_encoding(max_seq_len=100, d_model=64):
     """Visualize positional encodings."""
     pe = create_sinusoidal_encoding(max_seq_len, d_model)
-    print(f"encoding table: {tuple(pe.shape)}, values from {pe.min():.4f} to {pe.max():.4f}")
+    print(
+        f"encoding table: {tuple(pe.shape)}, "
+        f"values from {pe.min():.4f} to {pe.max():.4f}"
+    )
     print(f"position 0: {pe[0, :4].tolist()}")
 
     plt.figure(figsize=(7, 3.6))
@@ -556,7 +586,8 @@ def visualize_positional_encoding(max_seq_len=100, d_model=64):
     plt.ylabel("Dimension")
     plt.show()
 
-    # Show how encoding changes with position: the frequency falls as the dimension grows
+    # Show how encoding changes with position:
+    # the frequency falls as the dimension grows
     plt.figure(figsize=(6, 3.2))
     for dim, style in ((0, "-"), (8, "--"), (16, "-."), (32, ":")):
         plt.plot(pe[:50, dim].numpy(), linestyle=style, label=f"Dimension {dim}")
@@ -582,17 +613,24 @@ position 0: [0.0, 1.0, 0.0, 1.0]
 ```{figure} figures/sinusoidal-heatmap.*
 :name: fig-ch1-sinusoidal-heatmap
 :width: 83%
-:alt: Heatmap of 64 dimensions by 100 positions: the lowest dimensions alternate red and blue every few positions, higher dimensions change ever more slowly, and the bottom rows, the highest dimensions, are almost constant.
+:alt: Heatmap of 64 dimensions by 100 positions: the lowest dimensions alternate red and
+  blue every few positions, higher dimensions change ever more slowly, and the bottom
+  rows, the highest dimensions, are almost constant.
 
-The encoding table the listing prints, $m < 100$ and $d = 64$, drawn by its first plot. Each pair of dimensions is a sine and cosine whose wavelength grows with the dimension index.
+The encoding table the listing prints, $m < 100$ and $d = 64$, drawn by its first plot.
+Each pair of dimensions is a sine and cosine whose wavelength grows with the dimension
+index.
 ```
 
 ```{figure} figures/sinusoidal-lines.*
 :name: fig-ch1-sinusoidal-lines
 :width: 98%
-:alt: Four curves over positions 0 to 49: dimension 0 oscillates fast, dimension 8 more slowly, dimension 16 completes less than one cycle and dimension 32 rises almost linearly.
+:alt: Four curves over positions 0 to 49: dimension 0 oscillates fast, dimension 8 more
+  slowly, dimension 16 completes less than one cycle and dimension 32 rises almost
+  linearly.
 
-The listing's second plot: dimensions 0, 8, 16 and 32 over the first 50 positions. Their angular frequencies are 1, 0.32, 0.1 and 0.01 radians per position.
+The listing's second plot: dimensions 0, 8, 16 and 32 over the first 50 positions. Their
+angular frequencies are 1, 0.32, 0.1 and 0.01 radians per position.
 ```
 
 Position 0 is $(0, 1, 0, 1, \dots)$ because $\sin 0 = 0$ and $\cos 0 = 1$, and every entry stays within $[-1, 1]$.
@@ -676,30 +714,33 @@ import torch
 import torch.nn as nn
 
 
-def relative_position_bucket(offset, bidirectional=True, num_buckets=32, max_distance=128):
-    """T5's bucket for the offset m - m' between query position m and key position m'."""
+def relative_position_bucket(
+    offset, bidirectional=True, num_buckets=32, max_distance=128
+):
+    """T5's bucket for the offset m - m' of query position m and key position m'."""
     buckets = torch.zeros_like(offset)
     n = offset
     if bidirectional:
         num_buckets //= 2
-        buckets = buckets + (n < 0).long() * num_buckets  # keys after the query use the upper half
+        # keys after the query use the upper half
+        buckets = buckets + (n < 0).long() * num_buckets
         n = n.abs()
     else:
         n = n.clamp(min=0)  # a causal model only sees keys at or before the query
     max_exact = num_buckets // 2
     is_small = n < max_exact
-    log_spaced = max_exact + (
-        torch.log(n.float() / max_exact) / math.log(max_distance / max_exact) * (num_buckets - max_exact)
-    ).long()
+    log_ratio = torch.log(n.float() / max_exact) / math.log(max_distance / max_exact)
+    log_spaced = max_exact + (log_ratio * (num_buckets - max_exact)).long()
     log_spaced = log_spaced.clamp(max=num_buckets - 1)
     return buckets + torch.where(is_small, n, log_spaced)
 
 
 class RelativePositionBias(nn.Module):
-    """T5 relative position bias: one learned scalar per (bucket, head), added to the attention scores.
+    """T5 relative position bias: one learned scalar per (bucket, head).
 
-    T5-style scalar bias (Shaw et al. use vectors). A model builds one instance and passes its output to
-    every layer, so the table is shared across layers.
+    The scalars are added to the attention scores. T5-style scalar bias (Shaw et al.
+    use vectors). A model builds one instance and passes its output to every layer, so
+    the table is shared across layers.
     """
 
     def __init__(self, num_heads, num_buckets=32, max_distance=128, bidirectional=True):
@@ -711,17 +752,22 @@ class RelativePositionBias(nn.Module):
 
     def forward(self, seq_len):
         positions = torch.arange(seq_len)
-        offset = positions[:, None] - positions[None, :]  # [seq, seq], entry (m, m') = m - m'
-        buckets = relative_position_bucket(offset, self.bidirectional, self.num_buckets, self.max_distance)
+        # [seq, seq], entry (m, m') = m - m'
+        offset = positions[:, None] - positions[None, :]
+        buckets = relative_position_bucket(
+            offset, self.bidirectional, self.num_buckets, self.max_distance
+        )
         return self.table(buckets).permute(2, 0, 1)  # [heads, seq, seq]
 
 
 offsets = torch.tensor([0, 1, 7, 8, 12, 16, 64, 127, 128, 1000, -1, -12])
 print("offset m - m':      ", offsets.tolist())
 print("encoder bucket:     ", relative_position_bucket(offsets).tolist())
-print("decoder bucket:     ", relative_position_bucket(offsets, bidirectional=False).tolist())
+decoder_buckets = relative_position_bucket(offsets, bidirectional=False)
+print("decoder bucket:     ", decoder_buckets.tolist())
 rpb = RelativePositionBias(num_heads=8)
-bias = rpb(seq_len=16)  # inside T5's attention: scores = Q @ K.transpose(-2, -1) + bias, with no 1/sqrt(d_k)
+# inside T5's attention: scores = Q @ K.transpose(-2, -1) + bias, with no 1/sqrt(d_k)
+bias = rpb(seq_len=16)
 print("bias shape:", tuple(bias.shape), "| parameters:", rpb.table.weight.numel())
 ```
 
@@ -749,7 +795,8 @@ Rotary position embedding {cite}`su2021roformer` is used by LLaMA {cite}`touvron
 & & & \cos m\omega_{d_k/2-1} & -\sin m\omega_{d_k/2-1} \\
 & & & \sin m\omega_{d_k/2-1} & \cos m\omega_{d_k/2-1}
 \end{pmatrix},
-\qquad \tilde{q}_m = q_m \mathcal{R}_m^\top, \quad \tilde{k}_{m'} = k_{m'} \mathcal{R}_{m'}^\top
+\qquad \tilde{q}_m = q_m \mathcal{R}_m^\top,
+\quad \tilde{k}_{m'} = k_{m'} \mathcal{R}_{m'}^\top
 ```
 
 The score between the rotated query and key is $\tilde{q}_m \tilde{k}_{m'}^\top = q_m \mathcal{R}_m^\top \mathcal{R}_{m'} k_{m'}^\top$. Block-diagonal matrices multiply block by block, so it is enough to look at one $2 \times 2$ block. Write $\varphi = m\omega_i$ and $\varphi' = m'\omega_i$. The transpose of a rotation by $\varphi$ is the rotation by $-\varphi$, and the angle-difference formulas $\cos\varphi\cos\varphi' + \sin\varphi\sin\varphi' = \cos(\varphi' - \varphi)$ and $\cos\varphi\sin\varphi' - \sin\varphi\cos\varphi' = \sin(\varphi' - \varphi)$ give
@@ -768,13 +815,15 @@ The score depends on the two positions only through the offset $m' - m$: shiftin
 import torch
 
 
-def apply_rope(x: torch.Tensor, positions: torch.Tensor, base: float = 10000.0) -> torch.Tensor:
+def apply_rope(
+    x: torch.Tensor, positions: torch.Tensor, base: float = 10000.0
+) -> torch.Tensor:
     """Rotary position embedding (Su et al., 2021), applied to queries and keys.
 
-    x: [..., seq, d]; positions: [seq]. Pair i of features (features 2i and 2i+1 of the last
-    dimension) is rotated by the angle m * omega_i, where m is the position and omega_i = base^(-2i/d). Because a rotation
-    preserves norms and q_m . k_m' then depends only on m - m', RoPE encodes relative position
-    without any parameters.
+    x: [..., seq, d]; positions: [seq]. Pair i of features (features 2i and 2i+1 of
+    the last dimension) is rotated by the angle m * omega_i, where m is the position
+    and omega_i = base^(-2i/d). Because a rotation preserves norms and q_m . k_m' then
+    depends only on m - m', RoPE encodes relative position without any parameters.
     """
     d = x.size(-1)
     inv_freq = 1.0 / (base ** (torch.arange(0, d, 2).float() / d))   # [d/2]
@@ -793,13 +842,16 @@ q, k = torch.randn(64), torch.randn(64)
 
 
 def rotated_score(m, m_prime):
-    return (apply_rope(q[None], torch.tensor([m])) @ apply_rope(k[None], torch.tensor([m_prime])).T).item()
+    q_rot = apply_rope(q[None], torch.tensor([m]))
+    k_rot = apply_rope(k[None], torch.tensor([m_prime]))
+    return (q_rot @ k_rot.T).item()
 
 
 print(f"score at (3, 5):   {rotated_score(3, 5):.2f}")
 print(f"score at (10, 12): {rotated_score(10, 12):.2f}")
 print(f"score at (3, 6):   {rotated_score(3, 6):.2f}")
-print(f"norm before and after rotation: {q.norm():.3f} {apply_rope(q[None], torch.tensor([7])).norm():.3f}")
+q_at_7 = apply_rope(q[None], torch.tensor([7]))
+print(f"norm before and after rotation: {q.norm():.3f} {q_at_7.norm():.3f}")
 ```
 
 % output
@@ -816,9 +868,12 @@ norm before and after rotation: 8.370 8.370
 ```{figure} figures/rope-rotation.*
 :name: fig-ch1-rope-rotation
 :width: 80%
-:alt: Two unit circles. In each, a query arrow and a key arrow are separated by an arc labeled 2: on the left at angles 3 and 5, on the right at angles 10 and 12.
+:alt: Two unit circles. In each, a query arrow and a key arrow are separated by an arc
+  labeled 2: on the left at angles 3 and 5, on the right at angles 10 and 12.
 
-The worked number above with $d_k = 2$ and $\omega_0 = 1$: the rotated query and key at $m = 3, m' = 5$ (left) and $m = 10, m' = 12$ (right) point in different directions, but the angle between them is the same, so the score is the same.
+The worked number above with $d_k = 2$ and $\omega_0 = 1$: the rotated query and key at
+$m = 3, m' = 5$ (left) and $m = 10, m' = 12$ (right) point in different directions, but
+the angle between them is the same, so the score is the same.
 ```
 
 (sec-ch1-position-scheme-choice)=
@@ -829,7 +884,10 @@ Most open-weight models since 2022 use RoPE {cite}`su2021roformer`; a few use AL
 
 ```{admonition} Embeddings and Positional Encoding
 :class: note
-The notebook ({ref}`nb-attn-positional`) visualizes sinusoidal and learned encodings, implements a learned relative-position bias and a rotary (RoPE) transform, and asserts RoPE's defining properties: rotation preserves vector norms, and query-key dot products depend only on the relative offset.
+The notebook ({ref}`nb-attn-positional`) visualizes sinusoidal and learned encodings,
+implements a learned relative-position bias and a rotary (RoPE) transform, and asserts
+RoPE's defining properties: rotation preserves vector norms, and query-key dot products
+depend only on the relative offset.
 ```
 
 (sec-ch1-historical-context)=
@@ -843,9 +901,15 @@ The pieces of the previous two sections, and the attention of the next, were not
 ```{figure} figures/history-timeline.*
 :name: fig-ch1-history-timeline
 :width: 86%
-:alt: A vertical year axis from 1995 to 2025 with a dot per milestone, each joined by a leader line to a row of text: LSTM in 1997 and the neural language model in 2003, then word2vec, seq2seq and attention in 2013 to 2014, the transformer in 2017, ELMo, GPT and BERT in 2018, GPT-2, T5 and BART in 2019, GPT-3 in 2020, InstructGPT and ChatGPT in 2022, LLaMA and Mistral 7B in 2023 and Llama 3 in 2024.
+:alt: A vertical year axis from 1995 to 2025 with a dot per milestone, each joined by a
+  leader line to a row of text: LSTM in 1997 and the neural language model in 2003, then
+  word2vec, seq2seq and attention in 2013 to 2014, the transformer in 2017, ELMo, GPT
+  and BERT in 2018, GPT-2, T5 and BART in 2019, GPT-3 in 2020, InstructGPT and ChatGPT
+  in 2022, LLaMA and Mistral 7B in 2023 and Llama 3 in 2024.
 
-The milestones this section discusses (sources in the text). Left, each milestone's year on a time axis to scale; right, one row per milestone. Fifteen of the seventeen fall after 2012.
+The milestones this section discusses (sources in the text). Left, each milestone's year
+on a time axis to scale; right, one row per milestone. Fifteen of the seventeen fall
+after 2012.
 ```
 
 (sec-ch1-ngram-neural-lm)=
@@ -931,7 +995,9 @@ Unlike an RNN, which processes a sequence one position after another, attention 
 
 ```{admonition} Interactive Exploration
 :class: note
-The notebook implements scaled dot-product and multi-head attention in eval mode, asserts that every row of attention weights sums to one, and plots per-head attention maps and entropies ({ref}`nb-attn-attention`).
+The notebook implements scaled dot-product and multi-head attention in eval mode,
+asserts that every row of attention weights sums to one, and plots per-head attention
+maps and entropies ({ref}`nb-attn-attention`).
 ```
 
 (sec-ch1-self-attention-fundamentals)=
@@ -955,9 +1021,13 @@ The scaling factor $\sqrt{d_k}$, where $d_k$ is the per-head key dimension, keep
 ```{figure} figures/scaled_dot_product_attention.*
 :name: fig-ch1-scaled-dot-product-attention
 :width: 82%
-:alt: X feeds three projections Q, K and V; Q and K give the n by n scores divided by the square root of d_k, an optional mask adds minus infinity, the softmax gives weights A, and A times V gives the n by d_v output O.
+:alt: X feeds three projections Q, K and V; Q and K give the n by n scores divided by
+  the square root of d_k, an optional mask adds minus infinity, the softmax gives
+  weights A, and A times V gives the n by d_v output O.
 
-Scaled dot-product attention with the shape of every intermediate. The $n \times n$ score and weight matrices are what makes attention quadratic in $n$ ({ref}`sec-ch1-attention-complexity`).
+Scaled dot-product attention with the shape of every intermediate. The $n \times n$
+score and weight matrices are what makes attention quadratic in $n$
+({ref}`sec-ch1-attention-complexity`).
 ```
 
 (sec-ch1-attention-worked-example)=
@@ -1004,9 +1074,12 @@ output:
 ```{figure} figures/attention-worked-example.*
 :name: fig-ch1-attention-worked-example
 :width: 86%
-:alt: Two 3 by 3 heatmaps. Scores: 0.7071 where two tokens share a coordinate, 0 between tokens 1 and 2, 1.4142 for token 3 with itself. Weights: rows 0.4011, 0.1978, 0.4011; 0.1978, 0.4011, 0.4011; 0.2483, 0.2483, 0.5035.
+:alt: Two 3 by 3 heatmaps. Scores: 0.7071 where two tokens share a coordinate, 0 between
+  tokens 1 and 2, 1.4142 for token 3 with itself. Weights: rows 0.4011, 0.1978, 0.4011;
+  0.1978, 0.4011, 0.4011; 0.2483, 0.2483, 0.5035.
 
-The listing's scores and weights. The softmax keeps the order of each row's scores but makes them positive and sum to 1; the zero score still gets weight 0.1978.
+The listing's scores and weights. The softmax keeps the order of each row's scores but
+makes them positive and sum to 1; the zero score still gets weight 0.1978.
 ```
 
 (sec-ch1-attention-complexity)=
@@ -1018,7 +1091,8 @@ The score matrix $QK^\top$ has one entry for every pair of positions, $n \times 
 ```python
 for n in (1_024, 8_192, 131_072):
     scores = n * n  # one score per (query, key) pair, per head and layer
-    print(f"n = {n:>7,}: {scores:>14,} scores, {4 * scores / 2**20:>9,.0f} MiB in fp32 per head")
+    mib = 4 * scores / 2**20
+    print(f"n = {n:>7,}: {scores:>14,} scores, {mib:>9,.0f} MiB in fp32 per head")
 ```
 
 % output
@@ -1050,9 +1124,13 @@ with $d_k = d_v = d/n_h$, so the heads together cost as much as one head of widt
 ```{figure} figures/multi_head_attention.*
 :name: fig-ch1-multi-head-attention
 :width: 84%
-:alt: X is projected to Q, K and V of width d, the columns are split into n_h heads of width d_k, each head runs attention, the heads are concatenated back to width d and multiplied by W_O.
+:alt: X is projected to Q, K and V of width d, the columns are split into n_h heads of
+  width d_k, each head runs attention, the heads are concatenated back to width d and
+  multiplied by W_O.
 
-Multi-head attention: one projection of width $d$, split into $n_h$ heads of $d_k = d/n_h$ columns, attention in each head, concatenation and the output projection $W_O$.
+Multi-head attention: one projection of width $d$, split into $n_h$ heads of
+$d_k = d/n_h$ columns, attention in each head, concatenation and the output projection
+$W_O$.
 ```
 
 ```python
@@ -1071,14 +1149,20 @@ class ScaledDotProductAttention(nn.Module):
         super().__init__()
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor,
-                mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             query: [batch_size, seq_len, d_k]
             key: [batch_size, seq_len, d_k]
             value: [batch_size, seq_len, d_v]
-            mask: True where attention is allowed, broadcastable to the scores (e.g. [batch, heads, n_q, n_k]), or None
+            mask: True where attention is allowed, broadcastable to the scores
+                (e.g. [batch, heads, n_q, n_k]), or None
 
         Returns:
             output: [batch_size, seq_len, d_v]
@@ -1106,8 +1190,9 @@ class ScaledDotProductAttention(nn.Module):
 class MultiHeadAttention(nn.Module):
     """Multi-head attention with n_h heads of width d_k = d_model / n_h.
 
-    w_q holds the per-head matrices W_Q^(i) side by side as its columns (likewise w_k and w_v), so
-    splitting X W_Q into n_h blocks of d_k columns gives X W_Q^(i) for every head at once.
+    w_q holds the per-head matrices W_Q^(i) side by side as its columns (likewise w_k
+    and w_v), so splitting X W_Q into n_h blocks of d_k columns gives X W_Q^(i) for
+    every head at once.
     """
 
     def __init__(self, d_model: int, num_heads: int, dropout: float = 0.1):
@@ -1118,7 +1203,8 @@ class MultiHeadAttention(nn.Module):
         self.num_heads = num_heads
         self.d_k = d_model // num_heads
 
-        # Linear projections for Q, K, V (all heads at once) and the output projection W_O
+        # Linear projections for Q, K, V (all heads at once)
+        # and the output projection W_O
         self.w_q = nn.Linear(d_model, d_model)
         self.w_k = nn.Linear(d_model, d_model)
         self.w_v = nn.Linear(d_model, d_model)
@@ -1126,26 +1212,36 @@ class MultiHeadAttention(nn.Module):
 
         self.attention = ScaledDotProductAttention(dropout)
 
-    def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor,
-                mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """query: [batch, n_q, d_model]; key and value: [batch, n_k, d_model].
 
-        mask: True where attention is allowed, broadcastable to [batch, heads, n_q, n_k]; a causal
-        mask is [n_q, n_k], a padding mask [batch, 1, 1, n_k].
-        Returns the output [batch, n_q, d_model] and the weights [batch, heads, n_q, n_k].
+        mask: True where attention is allowed, broadcastable to
+        [batch, heads, n_q, n_k]; a causal mask is [n_q, n_k], a padding mask
+        [batch, 1, 1, n_k].
+        Returns the output [batch, n_q, d_model] and the weights
+        [batch, heads, n_q, n_k].
         """
         batch_size, n_q, n_k = query.size(0), query.size(1), key.size(1)
 
-        # 1. Project, then split the d_model columns into heads: [batch, heads, length, d_k]
-        Q = self.w_q(query).view(batch_size, n_q, self.num_heads, self.d_k).transpose(1, 2)
-        K = self.w_k(key).view(batch_size, n_k, self.num_heads, self.d_k).transpose(1, 2)
-        V = self.w_v(value).view(batch_size, n_k, self.num_heads, self.d_k).transpose(1, 2)
+        # 1. Project, then split the d_model columns into heads:
+        #    [batch, heads, length, d_k]
+        h, d_k = self.num_heads, self.d_k
+        Q = self.w_q(query).view(batch_size, n_q, h, d_k).transpose(1, 2)
+        K = self.w_k(key).view(batch_size, n_k, h, d_k).transpose(1, 2)
+        V = self.w_v(value).view(batch_size, n_k, h, d_k).transpose(1, 2)
 
         # 2. Attention in every head at once
         attn_output, attn_weights = self.attention(Q, K, V, mask)
 
         # 3. Concatenate the heads and apply W_O
-        attn_output = attn_output.transpose(1, 2).contiguous().view(batch_size, n_q, self.d_model)
+        attn_output = attn_output.transpose(1, 2).contiguous()
+        attn_output = attn_output.view(batch_size, n_q, self.d_model)
         return self.w_o(attn_output), attn_weights
 
 
@@ -1154,7 +1250,8 @@ mha = MultiHeadAttention(d_model=64, num_heads=8).eval()
 x, memory = torch.randn(2, 5, 64), torch.randn(2, 7, 64)
 out, weights = mha(x, x, x)  # self-attention
 print("self-attention: ", tuple(out.shape), tuple(weights.shape))
-out, weights = mha(x, memory, memory)  # queries from x, keys and values from a longer sequence
+# queries from x, keys and values from a longer sequence
+out, weights = mha(x, memory, memory)
 print("cross-attention:", tuple(out.shape), tuple(weights.shape))
 ```
 
@@ -1254,7 +1351,9 @@ class TransformerBlock(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         # Multi-head attention with residual connection and layer norm
         attn_output, _ = self.attention(x, x, x, mask)
         x = self.norm1(x + self.dropout(attn_output))
@@ -1268,7 +1367,11 @@ class TransformerBlock(nn.Module):
 
 ```{admonition} Transformer Architecture Implementation
 :class: tip
-The notebook ({ref}`nb-attn-transformer`) assembles one post-LN transformer block from multi-head attention, a position-wise feed-forward network, layer normalization and residual connections, and shows what layer normalization does to activations of different scales. The notebook's language-model section ({ref}`nb-attn-lm`) then trains a small character-level model and checks that its loss falls.
+The notebook ({ref}`nb-attn-transformer`) assembles one post-LN transformer block from
+multi-head attention, a position-wise feed-forward network, layer normalization and
+residual connections, and shows what layer normalization does to activations of
+different scales. The notebook's language-model section ({ref}`nb-attn-lm`) then trains
+a small character-level model and checks that its loss falls.
 ```
 
 (sec-ch1-end-to-end)=
@@ -1295,10 +1398,14 @@ vocab_size, d_model, num_heads, num_layers, max_len = 1000, 64, 4, 2, 16
 embed = nn.Embedding(vocab_size, d_model)  # W_E
 positions = nn.Embedding(max_len, d_model)  # learned absolute positions
 blocks = nn.ModuleList(
-    nn.TransformerEncoderLayer(d_model, num_heads, 4 * d_model, dropout=0.0, batch_first=True, norm_first=False)
+    nn.TransformerEncoderLayer(
+        d_model, num_heads, 4 * d_model,
+        dropout=0.0, batch_first=True, norm_first=False,
+    )
     for _ in range(num_layers)
 )
-final_norm = nn.LayerNorm(d_model)  # needed by pre-LN models; kept so the path matches step 4
+# needed by pre-LN models; kept so the path matches step 4
+final_norm = nn.LayerNorm(d_model)
 unembed = nn.Linear(d_model, vocab_size, bias=False)  # W_out
 
 ids = torch.randint(0, vocab_size, (2, 10))  # B = 2 sequences of n = 10 tokens
@@ -1344,12 +1451,14 @@ For the listing's toy model this is $64{,}000 + 1{,}024 + 2 \times 49{,}984 + 12
 
 ```python
 def count_parameters(vocab, d, layers, context, tied):
-    per_block = 12 * d * d + 13 * d  # attention 4d^2 + 4d, FFN (width 4d) 8d^2 + 5d, two LayerNorms 4d
+    # attention 4d^2 + 4d, FFN (width 4d) 8d^2 + 5d, two LayerNorms 4d
+    per_block = 12 * d * d + 13 * d
     embeddings = vocab * d + context * d  # W_E and learned positions
     unembedding = 0 if tied else d * vocab
     return embeddings + layers * per_block + 2 * d + unembedding  # 2d: final LayerNorm
 
-print(f"toy model of the listing above: {count_parameters(1000, 64, 2, 16, tied=False):,}")
+toy = count_parameters(1000, 64, 2, 16, tied=False)
+print(f"toy model of the listing above: {toy:,}")
 gpt3 = count_parameters(50257, 12288, 96, 2048, tied=True)
 print(f"GPT-3 (96 layers, d = 12288):   {gpt3:,} = {gpt3 / 1e9:.1f}B")
 print(f"of which 12 L d^2:              {12 * 96 * 12288**2 / gpt3:.1%}")
@@ -1383,10 +1492,12 @@ n, n_src, d = 3, 5, 4  # 3 target positions, 5 source positions
 H_enc = torch.randn(n_src, d)  # encoder output, computed once per source sentence
 y = torch.randn(n, d)  # decoder states after its own masked self-attention
 W_Q, W_K, W_V = (torch.randn(d, d) / d ** 0.5 for _ in range(3))
-Q, K, V = y @ W_Q, H_enc @ W_K, H_enc @ W_V  # queries from the decoder, keys and values from the encoder
+# queries from the decoder, keys and values from the encoder
+Q, K, V = y @ W_Q, H_enc @ W_K, H_enc @ W_V
 weights = torch.softmax(Q @ K.T / d ** 0.5, dim=-1)
 out = weights @ V
-print("weights:", tuple(weights.shape), "row sums:", [round(s, 4) for s in weights.sum(-1).tolist()])
+row_sums = [round(s, 4) for s in weights.sum(-1).tolist()]
+print("weights:", tuple(weights.shape), "row sums:", row_sums)
 print("output: ", tuple(out.shape))
 ```
 
@@ -1404,9 +1515,14 @@ The decoder's output then goes through the same final normalization and unembedd
 ```{figure} figures/encoder_decoder.*
 :name: fig-ch1-encoder-decoder
 :width: 96%
-:alt: Left, the encoder: source tokens through self-attention and a feed-forward network, repeated block after block, giving the encoder output H_enc. Right, the decoder: target tokens through masked self-attention, cross-attention that takes keys and values from H_enc, and a feed-forward network, repeated block after block, then the next-token distribution.
+:alt: Left, the encoder: source tokens through self-attention and a feed-forward
+  network, repeated block after block, giving the encoder output H_enc. Right, the
+  decoder: target tokens through masked self-attention, cross-attention that takes keys
+  and values from H_enc, and a feed-forward network, repeated block after block, then
+  the next-token distribution.
 
-The encoder-decoder transformer of {cite:t}`vaswani2017attention`. $H_{enc}$ is computed once and feeds the cross-attention of every decoder block.
+The encoder-decoder transformer of {cite:t}`vaswani2017attention`. $H_{enc}$ is computed
+once and feeds the cross-attention of every decoder block.
 ```
 
 (sec-ch1-architectural-variants)=
@@ -1424,9 +1540,15 @@ The three differ in which positions may attend to which, as {numref}`fig-ch1-mas
 ```{figure} figures/mask-patterns.*
 :name: fig-ch1-mask-patterns
 :width: 96%
-:alt: Four grids of allowed query-key pairs: encoder-only is fully dark; decoder-only is dark on and below the diagonal; the encoder-decoder's masked self-attention grid, three target queries by three target keys, is dark on and below the diagonal; its cross-attention grid, three target queries by four source keys, is fully dark.
+:alt: Four grids of allowed query-key pairs: encoder-only is fully dark; decoder-only is
+  dark on and below the diagonal; the encoder-decoder's masked self-attention grid,
+  three target queries by three target keys, is dark on and below the diagonal; its
+  cross-attention grid, three target queries by four source keys, is fully dark.
 
-Allowed (dark) and masked (light) query-key pairs for four source tokens s1 to s4 and three target tokens t1 to t3. The decoder of an encoder-decoder has two attention sublayers, each with its own softmax: masked self-attention over the target keys, then cross-attention over the source keys, so it gets two grids, in that order.
+Allowed (dark) and masked (light) query-key pairs for four source tokens s1 to s4 and
+three target tokens t1 to t3. The decoder of an encoder-decoder has two attention
+sublayers, each with its own softmax: masked self-attention over the target keys, then
+cross-attention over the source keys, so it gets two grids, in that order.
 ```
 
 (sec-ch1-masked-lm)=
@@ -1445,9 +1567,11 @@ import torch
 torch.manual_seed(0)
 n, vocab, mask_id = 10_000, 30_000, 103  # 103 is [MASK] in BERT's vocabulary
 ids = torch.randint(1_000, vocab, (n,))
-chosen = torch.randperm(n)[: int(0.15 * n)]  # 15% of positions become prediction targets
+# 15% of positions become prediction targets
+chosen = torch.randperm(n)[: int(0.15 * n)]
 k = len(chosen)
-to_mask, to_random = chosen[: int(0.8 * k)], chosen[int(0.8 * k): int(0.9 * k)]  # 80% / 10%; the last 10% stay
+# 80% / 10%; the last 10% stay
+to_mask, to_random = chosen[: int(0.8 * k)], chosen[int(0.8 * k): int(0.9 * k)]
 corrupted = ids.clone()
 corrupted[to_mask] = mask_id
 corrupted[to_random] = torch.randint(1_000, vocab, (len(to_random),))
@@ -1492,9 +1616,13 @@ The block above is the 2017 design. Later models change it in some of the follow
 ```{figure} figures/transformer_block_norms.*
 :name: fig-ch1-transformer-block-norms
 :width: 89%
-:alt: Left, post-LN: x goes through multi-head attention, is added to the residual x, then normalized. Right, pre-LN: x is normalized, goes through attention and is added to the unnormalized x.
+:alt: Left, post-LN: x goes through multi-head attention, is added to the residual x,
+  then normalized. Right, pre-LN: x is normalized, goes through attention and is added
+  to the unnormalized x.
 
-Post-LN normalizes the sum, so the residual stream passes through a normalization in every block; pre-LN normalizes only the sublayer's input, so the residual path from input to output is the identity.
+Post-LN normalizes the sum, so the residual stream passes through a normalization in
+every block; pre-LN normalizes only the sublayer's input, so the residual path from
+input to output is the identity.
 ```
 
 Chapter 6 ({doc}`../06-architectures/index`) takes each of these in turn, adds multi-head latent attention, sliding-window attention and mixture-of-experts layers, and counts the parameters and cache of real models.
@@ -1546,7 +1674,10 @@ class PreLNBlock(nn.Module):
 
 
 class SelfAttention(nn.Module):
-    """Causal multi-head attention with the forward(q, k, v) interface PreLNBlock expects."""
+    """Causal multi-head attention.
+
+    Its forward(q, k, v) is the interface PreLNBlock expects.
+    """
 
     def __init__(self, d_model, n_heads):
         super().__init__()
@@ -1562,9 +1693,12 @@ torch.manual_seed(0)
 d_model = 64
 block = PreLNBlock(d_model, SelfAttention(d_model, n_heads=4))
 count = lambda m: sum(p.numel() for p in m.parameters())
-print(f"SwiGLU hidden width: {block.ffn.w1.out_features} (8/3 x {d_model}, rounded down)")
-print(f"SwiGLU parameters: {count(block.ffn):,}; a 4x two-matrix FFN: {2 * d_model * 4 * d_model:,}")
-print(f"attention {count(block.attention):,} + norms {count(block.norm1) + count(block.norm2)} "
+hidden = block.ffn.w1.out_features
+print(f"SwiGLU hidden width: {hidden} (8/3 x {d_model}, rounded down)")
+two_matrix = 2 * d_model * 4 * d_model
+print(f"SwiGLU parameters: {count(block.ffn):,}; a 4x two-matrix FFN: {two_matrix:,}")
+norms = count(block.norm1) + count(block.norm2)
+print(f"attention {count(block.attention):,} + norms {norms} "
       f"+ SwiGLU {count(block.ffn):,} = block {count(block):,}")
 x = torch.randn(2, 5, d_model)
 print("output shape:", tuple(block(x).shape))
@@ -1630,9 +1764,12 @@ For the four inputs of the next listing the mask is {numref}`fig-ch1-causal-mask
 ```{figure} figures/causal-mask.*
 :name: fig-ch1-causal-mask
 :width: 60%
-:alt: A 4 by 4 grid over the tokens bos, the, cat, sat: zeros on and below the diagonal, minus infinity above it.
+:alt: A 4 by 4 grid over the tokens bos, the, cat, sat: zeros on and below the diagonal,
+  minus infinity above it.
 
-The causal mask as it is added to the scores: 0 where a query may attend, $-\infty$ where the key is later, so the softmax gives those keys weight 0. `create_causal_mask(4)` is `True` exactly where this grid shows 0.
+The causal mask as it is added to the scores: 0 where a query may attend, $-\infty$
+where the key is later, so the softmax gives those keys weight 0.
+`create_causal_mask(4)` is `True` exactly where this grid shows 0.
 ```
 
 (sec-ch1-teacher-forcing)=
@@ -1643,7 +1780,8 @@ During training the model never feeds its own predictions back in. The whole tru
 
 ```python
 tokens = ["<bos>", "the", "cat", "sat", "<eos>"]
-inputs, targets = tokens[:-1], tokens[1:]  # the targets are the inputs shifted left by one
+# the targets are the inputs shifted left by one
+inputs, targets = tokens[:-1], tokens[1:]
 for i, target in enumerate(targets):  # BOS is position 0
     print(f"position {i}: sees {inputs[:i + 1]} -> predicts {target!r}")
 ```
@@ -1679,7 +1817,8 @@ logits = torch.tensor([2.0, 1.5, 1.0, 0.5, -1.0])
 
 
 def show(name, probs):
-    print(f"{name:<15}", " ".join(f"{w}={p:.3f}" for w, p in zip(vocab, probs.tolist())))
+    shown = " ".join(f"{w}={p:.3f}" for w, p in zip(vocab, probs.tolist()))
+    print(f"{name:<15}", shown)
 
 
 print("greedy:        ", vocab[int(logits.argmax())])
@@ -1688,12 +1827,14 @@ for tau in (1.0, 0.5, 2.0):
 
 probs = torch.softmax(logits, dim=-1)
 k_top = 2
-top_k = torch.where(logits >= logits.topk(k_top).values[-1], probs, torch.zeros_like(probs))
+kth_largest = logits.topk(k_top).values[-1]
+top_k = torch.where(logits >= kth_largest, probs, torch.zeros_like(probs))
 show("top-k, k = 2", top_k / top_k.sum())
 
 p_top = 0.9
 sorted_p, order = probs.sort(descending=True)
-keep = sorted_p.cumsum(0) - sorted_p < p_top  # keep tokens until the kept mass first reaches p_top
+# keep tokens until the kept mass first reaches p_top
+keep = sorted_p.cumsum(0) - sorted_p < p_top
 nucleus = torch.zeros_like(probs)
 nucleus[order[keep]] = probs[order[keep]]
 show("top-p, p = 0.9", nucleus / nucleus.sum())
@@ -1727,8 +1868,13 @@ second = {
 
 def beam_search(width):
     beams = sorted(((math.log(p), [w]) for w, p in first.items()), reverse=True)[:width]
-    candidates = [(s + math.log(p), seq + [w]) for s, seq in beams for w, p in second[seq[-1]].items()]
-    return max(candidates)  # best two-token sequence among the extensions of the kept prefixes
+    candidates = [
+        (s + math.log(p), seq + [w])
+        for s, seq in beams
+        for w, p in second[seq[-1]].items()
+    ]
+    # best two-token sequence among the extensions of the kept prefixes
+    return max(candidates)
 
 
 for width in (1, 2):
@@ -1752,9 +1898,12 @@ Each pass of the loop runs the model on the whole sequence so far, but under the
 ```{figure} figures/autoregressive_loop.*
 :name: fig-ch1-autoregressive-loop
 :width: 76%
-:alt: The prompt goes into the model, which gives a next-token distribution; a token is chosen; if it is EOS or the length limit is reached generation stops, otherwise the token is appended and the model runs again.
+:alt: The prompt goes into the model, which gives a next-token distribution; a token is
+  chosen; if it is EOS or the length limit is reached generation stops, otherwise the
+  token is appended and the model runs again.
 
-Generation: one forward pass per new token. Training does not loop, because teacher forcing supplies the true tokens ({ref}`sec-ch1-teacher-forcing`).
+Generation: one forward pass per new token. Training does not loop, because teacher
+forcing supplies the true tokens ({ref}`sec-ch1-teacher-forcing`).
 ```
 
 (sec-ch1-training-process)=
@@ -1800,7 +1949,8 @@ n_bytes = 1_000_000  # the same 1 MB evaluation text
 total_nll = 700_000.0  # summed -ln p over the text, in nats, for both models
 for name, T in [("tokenizer A", 250_000), ("tokenizer B", 200_000)]:
     loss = total_nll / T
-    print(f"{name}: {T:,} tokens, loss {loss:.2f} nats/token, perplexity {math.exp(loss):.2f}")
+    ppl = math.exp(loss)
+    print(f"{name}: {T:,} tokens, loss {loss:.2f} nats/token, perplexity {ppl:.2f}")
 print(f"bits per byte, either tokenizer: {total_nll / (n_bytes * math.log(2)):.4f}")
 ```
 
@@ -1816,7 +1966,11 @@ Perplexities of models with the same tokenizer, such as checkpoints of one train
 
 ```{admonition} Language Modeling in Practice
 :class: note
-The notebook ({ref}`nb-attn-lm`) builds the causal mask, applies it inside attention, adds a language-model head, and computes cross-entropy and perplexity for an untrained model so you can see what "no better than guessing" looks like. Optimization, schedules and gradient flow are in the Chapter 2 notebook ({ref}`nb-math-optimizers`, {ref}`nb-math-backprop`).
+The notebook ({ref}`nb-attn-lm`) builds the causal mask, applies it inside attention,
+adds a language-model head, and computes cross-entropy and perplexity for an untrained
+model so you can see what "no better than guessing" looks like. Optimization, schedules
+and gradient flow are in the Chapter 2 notebook ({ref}`nb-math-optimizers`,
+{ref}`nb-math-backprop`).
 ```
 
 (sec-ch1-summary)=
@@ -1846,7 +2000,16 @@ A corpus holds the word "low" 5 times, "lower" 2 times, "newest" 6 times and "wi
 
 ```{admonition} Solution 1
 :class: dropdown
-The pair counts are: (l, o) 5 + 2 = 7; (o, w) 7; (w, `</w>`) 5; (w, e) 2 + 6 = 8; (e, r) 2; (r, `</w>`) 2; (n, e) 6; (e, w) 6; (e, s) 6 + 3 = 9; (s, t) 9; (t, `</w>`) 9; (w, i) 3; (i, d) 3; (d, e) 3. Three pairs tie at 9 and (e, s) occurs first, in "newest", so **merge 1 is (e, s)**. The words become n e w es t `</w>` and w i d es t `</w>`, which gives (es, t) 9 and (t, `</w>`) 9, with (es, t) first: **merge 2 is (es, t)**. The only pair left at 9 is (est, `</w>`), so **merge 3 is (est, `</w>`)**. "lowest" then splits as l, o, w, est`</w>`: the suffix learned from "newest" and "widest" applies to a word the corpus never contained, while "low" stays in pieces because (l, o), at 7, never reached the top. Training `SimpleBPE` on this corpus for three merges gives the same list.
+The pair counts are: (l, o) 5 + 2 = 7; (o, w) 7; (w, `</w>`) 5; (w, e) 2 + 6 = 8; (e,
+r) 2; (r, `</w>`) 2; (n, e) 6; (e, w) 6; (e, s) 6 + 3 = 9; (s, t) 9; (t, `</w>`) 9;
+(w, i) 3; (i, d) 3; (d, e) 3. Three pairs tie at 9 and (e, s) occurs first, in
+"newest", so **merge 1 is (e, s)**. The words become n e w es t `</w>` and w i d es t
+`</w>`, which gives (es, t) 9 and (t, `</w>`) 9, with (es, t) first: **merge 2 is (es,
+t)**. The only pair left at 9 is (est, `</w>`), so **merge 3 is (est, `</w>`)**.
+"lowest" then splits as l, o, w, est`</w>`: the suffix learned from "newest" and
+"widest" applies to a word the corpus never contained, while "low" stays in pieces
+because (l, o), at 7, never reached the top. Training `SimpleBPE` on this corpus for
+three merges gives the same list.
 ```
 
 (sec-ch1-exercise-2)=
@@ -1857,7 +2020,12 @@ With $n = 2$ and $d_k = 2$, let the rows of $Q$ be $(1, 0)$ and $(1, 1)$, the ro
 
 ```{admonition} Solution 2
 :class: dropdown
-$QK^\top$ has rows $(2, 0)$ and $(2, 2)$; dividing by $\sqrt{2}$ gives the scores $(1.4142, 0)$ and $(1.4142, 1.4142)$. Row 1: $e^{1.4142} = 4.113$, so the weights are $4.113/5.113 = 0.8044$ and $1/5.113 = 0.1956$. Row 2 has equal scores, so its weights are $(0.5, 0.5)$. The outputs are $0.8044\,(1, 2) + 0.1956\,(3, 0) = (1.3911, 1.6089)$ and $0.5\,(1, 2) + 0.5\,(3, 0) = (2, 1)$. Query 2 matches both keys equally and gets the plain average of the values; query 1 points along key 1 and is pulled toward value 1.
+$QK^\top$ has rows $(2, 0)$ and $(2, 2)$; dividing by $\sqrt{2}$ gives the scores
+$(1.4142, 0)$ and $(1.4142, 1.4142)$. Row 1: $e^{1.4142} = 4.113$, so the weights are
+$4.113/5.113 = 0.8044$ and $1/5.113 = 0.1956$. Row 2 has equal scores, so its weights
+are $(0.5, 0.5)$. The outputs are $0.8044\,(1, 2) + 0.1956\,(3, 0) = (1.3911, 1.6089)$
+and $0.5\,(1, 2) + 0.5\,(3, 0) = (2, 1)$. Query 2 matches both keys equally and gets the
+plain average of the values; query 1 points along key 1 and is pulled toward value 1.
 ```
 
 (sec-ch1-exercise-3)=
@@ -1868,7 +2036,11 @@ A model assigns probability $1/|\mathcal{V}|$ to every token of a vocabulary of 
 
 ```{admonition} Solution 3
 :class: dropdown
-Every term of the loss is $-\log(1/|\mathcal{V}|) = \ln |\mathcal{V}|$, so the mean over the $T$ tokens is $\mathcal{L} = \ln 50{,}257 = 10.82$ nats per token, whatever the text. The perplexity is $\exp(\mathcal{L}) = |\mathcal{V}| = 50{,}257$: the model is as uncertain as a uniform choice among all 50,257 tokens, which is the reading of perplexity given in {ref}`sec-ch1-perplexity`.
+Every term of the loss is $-\log(1/|\mathcal{V}|) = \ln |\mathcal{V}|$, so the mean over
+the $T$ tokens is $\mathcal{L} = \ln 50{,}257 = 10.82$ nats per token, whatever the
+text. The perplexity is $\exp(\mathcal{L}) = |\mathcal{V}| = 50{,}257$: the model is as
+uncertain as a uniform choice among all 50,257 tokens, which is the reading of
+perplexity given in {ref}`sec-ch1-perplexity`.
 ```
 
 (sec-ch1-exercise-4)=
@@ -1879,11 +2051,20 @@ In a sequence of $n = 3$ tokens, query 2 has the scores $(1, 2, 3)$ against keys
 
 ```{admonition} Solution 4
 :class: dropdown
-(a) Key 3 comes after query 2, so its score becomes $-\infty$ and its weight $e^{-\infty} = 0$. The other two scores give $e^1/(e^1 + e^2) = 1/(1 + e) = 0.2689$ and $e/(1 + e) = 0.7311$: the weights are $(0.2689, 0.7311, 0)$.
+(a) Key 3 comes after query 2, so its score becomes $-\infty$ and its weight
+$e^{-\infty} = 0$. The other two scores give $e^1/(e^1 + e^2) = 1/(1 + e) = 0.2689$ and
+$e/(1 + e) = 0.7311$: the weights are $(0.2689, 0.7311, 0)$.
 
-(b) The mask hides the entries above the diagonal of the $n \times n$ score matrix, $n(n - 1)/2 = 1{,}024 \times 1{,}023 / 2 = 523{,}776$ of them, just under half of the $1{,}048{,}576$ scores.
+(b) The mask hides the entries above the diagonal of the $n \times n$ score matrix,
+$n(n - 1)/2 = 1{,}024 \times 1{,}023 / 2 = 523{,}776$ of them, just under half of the
+$1{,}048{,}576$ scores.
 
-(c) `torch.softmax` subtracts the row maximum before it exponentiates. With every score $-\infty$ the maximum is $-\infty$, and $-\infty - (-\infty)$ is NaN, so all three weights are NaN. With the finite minimum every score is the same number, the differences are 0, and the weights are uniform, $(1/3, 1/3, 1/3)$. This is why the chapter's listings use the finite value: a padding query whose keys are all masked produces a harmless average instead of a NaN that spreads through the batch.
+(c) `torch.softmax` subtracts the row maximum before it exponentiates. With every score
+$-\infty$ the maximum is $-\infty$, and $-\infty - (-\infty)$ is NaN, so all three
+weights are NaN. With the finite minimum every score is the same number, the differences
+are 0, and the weights are uniform, $(1/3, 1/3, 1/3)$. This is why the chapter's
+listings use the finite value: a padding query whose keys are all masked produces a
+harmless average instead of a NaN that spreads through the batch.
 ```
 
 (sec-ch1-exercise-5)=
@@ -1894,7 +2075,13 @@ The logits over a three-token vocabulary are $z = (2, 1, 0)$. Compute the sampli
 
 ```{admonition} Solution 5
 :class: dropdown
-For $\tau = 1$: $e^2 = 7.389$, $e^1 = 2.718$ and $e^0 = 1$ sum to 11.11, giving $(0.6652, 0.2447, 0.0900)$. For $\tau = 0.5$ the logits double to $(4, 2, 0)$: $e^4 = 54.60$, $e^2 = 7.389$ and $1$ sum to 62.99, giving $(0.8668, 0.1173, 0.0159)$. Halving the temperature doubles every gap between logits, so every ratio of two probabilities is squared: the ratio of the first two goes from $e^1 = 2.718$ to $e^2 = 7.389$. As $\tau \to 0$ the gaps grow without bound and the top token's probability goes to 1: sampling becomes greedy decoding.
+For $\tau = 1$: $e^2 = 7.389$, $e^1 = 2.718$ and $e^0 = 1$ sum to 11.11, giving
+$(0.6652, 0.2447, 0.0900)$. For $\tau = 0.5$ the logits double to $(4, 2, 0)$:
+$e^4 = 54.60$, $e^2 = 7.389$ and $1$ sum to 62.99, giving $(0.8668, 0.1173, 0.0159)$.
+Halving the temperature doubles every gap between logits, so every ratio of two
+probabilities is squared: the ratio of the first two goes from $e^1 = 2.718$ to
+$e^2 = 7.389$. As $\tau \to 0$ the gaps grow without bound and the top token's
+probability goes to 1: sampling becomes greedy decoding.
 ```
 
 (sec-ch1-exercise-6)=
@@ -1905,9 +2092,15 @@ A model's loss on a test text is 2.0 nats per token, and its tokenizer produces 
 
 ```{admonition} Solution 6
 :class: dropdown
-(a) The perplexity is $e^{2.0} = 7.389$. With $T/n_{bytes} = 1/4$, bits per byte is $\frac{1}{4} \cdot \frac{2.0}{\ln 2} = 0.7213$.
+(a) The perplexity is $e^{2.0} = 7.389$. With $T/n_{bytes} = 1/4$, bits per byte is
+$\frac{1}{4} \cdot \frac{2.0}{\ln 2} = 0.7213$.
 
-(b) The same bits per byte with $T/n_{bytes} = 1/3$ needs $\frac{1}{3} \cdot \frac{\mathcal{L}}{\ln 2} = 0.7213$, so $\mathcal{L} = 3 \times 0.7213 \times \ln 2 = 1.5$ nats per token and a perplexity of $e^{1.5} = 4.482$. The second model looks better by perplexity (4.482 against 7.389) although both predict the text equally well: its tokens are shorter, so each is easier to guess.
+(b) The same bits per byte with $T/n_{bytes} = 1/3$ needs
+$\frac{1}{3} \cdot \frac{\mathcal{L}}{\ln 2} = 0.7213$, so
+$\mathcal{L} = 3 \times 0.7213 \times \ln 2 = 1.5$ nats per token and a perplexity of
+$e^{1.5} = 4.482$. The second model looks better by perplexity (4.482 against 7.389)
+although both predict the text equally well: its tokens are shorter, so each is easier
+to guess.
 ```
 
 (sec-ch1-exercise-7)=
@@ -1918,7 +2111,15 @@ GPT-2 small has $|\mathcal{V}| = 50{,}257$, $d = 768$, $L = 12$ blocks, $n_{ctx}
 
 ```{admonition} Solution 7
 :class: dropdown
-Token embeddings: $50{,}257 \times 768 = 38{,}597{,}376$. Positions: $1{,}024 \times 768 = 786{,}432$. One block: $12 \times 768^2 + 13 \times 768 = 7{,}077{,}888 + 9{,}984 = 7{,}087{,}872$, and twelve blocks hold $85{,}054{,}464$. The final LayerNorm adds $2 \times 768 = 1{,}536$. The total is $38{,}597{,}376 + 786{,}432 + 85{,}054{,}464 + 1{,}536 = 124{,}439{,}808$, and `count_parameters(50257, 768, 12, 1024, tied=True)` returns the same number. An untied output layer would add another $768 \times 50{,}257 = 38{,}597{,}376$, for $163{,}037{,}184$. In this small model the two embedding tables are 32% of the total, so the $12Ld^2$ estimate that serves for GPT-3 would be far off here.
+Token embeddings: $50{,}257 \times 768 = 38{,}597{,}376$. Positions:
+$1{,}024 \times 768 = 786{,}432$. One block:
+$12 \times 768^2 + 13 \times 768 = 7{,}077{,}888 + 9{,}984 = 7{,}087{,}872$, and twelve
+blocks hold $85{,}054{,}464$. The final LayerNorm adds $2 \times 768 = 1{,}536$. The
+total is $38{,}597{,}376 + 786{,}432 + 85{,}054{,}464 + 1{,}536 = 124{,}439{,}808$, and
+`count_parameters(50257, 768, 12, 1024, tied=True)` returns the same number. An untied
+output layer would add another $768 \times 50{,}257 = 38{,}597{,}376$, for
+$163{,}037{,}184$. In this small model the two embedding tables are 32% of the total, so
+the $12Ld^2$ estimate that serves for GPT-3 would be far off here.
 ```
 
 (sec-ch1-exercise-8)=
@@ -1929,7 +2130,11 @@ A layer with 32 heads attends over $n = 4{,}096$ tokens and stores its attention
 
 ```{admonition} Solution 8
 :class: dropdown
-Each head has $n^2 = 4{,}096^2 = 16{,}777{,}216$ weights, so 32 heads hold $536{,}870{,}912$ numbers, or $1{,}073{,}741{,}824$ bytes: exactly 1 GiB per layer and sequence. Doubling $n$ multiplies the count by four, to 4 GiB. This quadratic memory is what FlashAttention avoids by never storing the full matrix ({ref}`sec-ch1-attention-complexity`).
+Each head has $n^2 = 4{,}096^2 = 16{,}777{,}216$ weights, so 32 heads hold
+$536{,}870{,}912$ numbers, or $1{,}073{,}741{,}824$ bytes: exactly 1 GiB per layer and
+sequence. Doubling $n$ multiplies the count by four, to 4 GiB. This quadratic memory is
+what FlashAttention avoids by never storing the full matrix
+({ref}`sec-ch1-attention-complexity`).
 ```
 
 (sec-ch1-exercise-9)=
@@ -1940,11 +2145,27 @@ Take $d_k = 2$, so that the single pair has frequency $b^0 = 1$ and $\mathcal{R}
 
 ```{admonition} Solution 9
 :class: dropdown
-(a) The top-left entry of $\mathcal{R}_m \mathcal{R}_{m'}$ is $\cos m \cos m' - \sin m \sin m' = \cos(m + m')$ and the bottom-left entry is $\sin m \cos m' + \cos m \sin m' = \sin(m + m')$; the other two entries follow in the same way, so the product is $\mathcal{R}_{m + m'}$. Transposing $\mathcal{R}_m$ swaps the signs of its two sine entries, and since $\cos(-m) = \cos m$ and $\sin(-m) = -\sin m$, that is $\mathcal{R}_{-m}$.
+(a) The top-left entry of $\mathcal{R}_m \mathcal{R}_{m'}$ is
+$\cos m \cos m' - \sin m \sin m' = \cos(m + m')$ and the bottom-left entry is
+$\sin m \cos m' + \cos m \sin m' = \sin(m + m')$; the other two entries follow in the
+same way, so the product is $\mathcal{R}_{m + m'}$. Transposing $\mathcal{R}_m$ swaps
+the signs of its two sine entries, and since $\cos(-m) = \cos m$ and
+$\sin(-m) = -\sin m$, that is $\mathcal{R}_{-m}$.
 
-(b) $\tilde{q}_m \tilde{k}_{m'}^\top = q\,\mathcal{R}_m^\top \mathcal{R}_{m'}\,k^\top = q\,\mathcal{R}_{-m} \mathcal{R}_{m'}\,k^\top = q\,\mathcal{R}_{m' - m}\,k^\top$: the first step is the second rule, the second step the first rule with $-m$ in place of $m$. Only $m' - m$ is left.
+(b)
 
-(c) Both pairs have offset 1, so both scores are $q\,\mathcal{R}_1 k^\top$. $\mathcal{R}_1 k^\top = (3\cos 1 + \sin 1,\; 3\sin 1 - \cos 1)^\top$, and the dot product with $q = (1, 2)$ is $3\cos 1 + \sin 1 + 6\sin 1 - 2\cos 1 = \cos 1 + 7\sin 1 = 0.5403 + 5.8903 = 6.4306$. The unrotated score $q k^\top$ is $3 - 2 = 1$. `apply_rope` gives 6.4306 at both pairs of positions.
+$$\tilde{q}_m \tilde{k}_{m'}^\top = q\,\mathcal{R}_m^\top \mathcal{R}_{m'}\,k^\top
+= q\,\mathcal{R}_{-m} \mathcal{R}_{m'}\,k^\top = q\,\mathcal{R}_{m' - m}\,k^\top :$$
+
+The first step is the second rule, the second step the first rule with $-m$ in place of
+$m$. Only $m' - m$ is left.
+
+(c) Both pairs have offset 1, so both scores are $q\,\mathcal{R}_1 k^\top$.
+$\mathcal{R}_1 k^\top = (3\cos 1 + \sin 1,\; 3\sin 1 - \cos 1)^\top$, and the dot
+product with $q = (1, 2)$ is
+$3\cos 1 + \sin 1 + 6\sin 1 - 2\cos 1 = \cos 1 + 7\sin 1 = 0.5403 + 5.8903 = 6.4306$.
+The unrotated score $q k^\top$ is $3 - 2 = 1$. `apply_rope` gives 6.4306 at both pairs
+of positions.
 ```
 
 (sec-ch1-further-reading)=

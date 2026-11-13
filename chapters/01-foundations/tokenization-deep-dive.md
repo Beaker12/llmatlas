@@ -109,8 +109,8 @@ def wordpiece_scores(splits):
 
 pair_counts, scores = wordpiece_scores(splits)
 frequent, best = max(pair_counts, key=pair_counts.get), max(scores, key=scores.get)
-print(f"BPE would merge:  {frequent} (count {pair_counts[frequent]}, score {scores[frequent]:.4f})")
-print(f"WordPiece merges: {best} (count {pair_counts[best]}, score {scores[best]:.4f})")
+for label, ab in [("BPE would merge: ", frequent), ("WordPiece merges:", best)]:
+    print(f"{label} {ab} (count {pair_counts[ab]}, score {scores[ab]:.4f})")
 
 
 # --- WordPiece encoding: greedy longest match, continuation pieces start with ## ---
@@ -129,12 +129,13 @@ def wordpiece_encode(word, vocab):
 
 
 vocab = {"un", "##happ", "##i", "##ness", "##y", "h", "##a", "##p"}
-print("WordPiece:", wordpiece_encode("unhappiness", vocab), wordpiece_encode("unhappy", vocab),
-      wordpiece_encode("sad", vocab))
+words = ["unhappiness", "unhappy", "sad"]
+print("WordPiece:", *(wordpiece_encode(w, vocab) for w in words))
 
-# --- Unigram LM: Viterbi picks the most probable segmentation; sampling gives others ---
-probs = {"un": 0.08, "happi": 0.02, "ness": 0.06, "happiness": 0.002, "u": 0.03, "n": 0.05,
-         "h": 0.03, "a": 0.06, "p": 0.03, "i": 0.05, "e": 0.08, "s": 0.06, "unh": 0.001}
+# --- Unigram LM: Viterbi picks the most probable segmentation; sampling gives others
+probs = {"un": 0.08, "happi": 0.02, "ness": 0.06, "happiness": 0.002, "unh": 0.001,
+         "u": 0.03, "n": 0.05, "h": 0.03, "a": 0.06, "p": 0.03, "i": 0.05, "e": 0.08,
+         "s": 0.06}
 logp = {piece: math.log(p) for piece, p in probs.items()}
 
 
@@ -146,7 +147,8 @@ def segmentations(text, vocab=logp):
 
 
 def viterbi(text):
-    best = [(0.0, [])] + [(-math.inf, None)] * len(text)  # best[i]: best score and pieces for text[:i]
+    # best[i]: best score and pieces for text[:i]
+    best = [(0.0, [])] + [(-math.inf, None)] * len(text)
     for end in range(1, len(text) + 1):
         for start in range(end):
             piece = text[start:end]
@@ -160,35 +162,53 @@ def viterbi(text):
 score, pieces = viterbi("unhappiness")
 print(f"Unigram Viterbi: {pieces} (log p = {score:.3f})")
 candidates = segmentations("unhappiness")
-assert max(sum(logp[p] for p in seg) for seg in candidates) == score  # Viterbi found the best of all
+# Viterbi found the best of all
+assert max(sum(logp[p] for p in seg) for seg in candidates) == score
 weights = [math.exp(sum(logp[p] for p in seg)) for seg in candidates]
 share = {" ".join(seg): w / sum(weights) for seg, w in zip(candidates, weights)}
-print(f"{len(candidates)} segmentations; P(un happiness) = {share['un happiness']:.3f}, "
+print(f"{len(candidates)} segmentations; "
+      f"P(un happiness) = {share['un happiness']:.3f}, "
       f"P(un happi ness) = {share['un happi ness']:.3f}")
 rng = random.Random(0)
-print("five samples:", [" ".join(rng.choices(candidates, weights)[0]) for _ in range(5)])
+samples = [" ".join(rng.choices(candidates, weights)[0]) for _ in range(5)]
+print("five samples:", ", ".join(samples))
 
-# --- Unigram pruning: a piece's loss is how much the corpus log-likelihood falls without it ---
+# --- Unigram pruning: a piece's loss is how much the corpus log-likelihood
+# falls without it
 corpus = {"unhappiness": 5, "happiness": 3}
 
 
 def log_likelihood(vocab):
-    """Sum over words of count * log P(word), with P(word) summed over its segmentations in `vocab`."""
-    return sum(n * math.log(sum(math.exp(sum(logp[p] for p in seg)) for seg in segmentations(w, vocab)))
-               for w, n in corpus.items())
+    """Sum over words of count * log P(word).
+
+    P(word) is summed over the word's segmentations in `vocab`.
+    """
+    total = 0.0
+    for w, n in corpus.items():
+        segs = segmentations(w, vocab)
+        total += n * math.log(sum(math.exp(sum(logp[p] for p in seg)) for seg in segs))
+    return total
 
 
 full = log_likelihood(set(logp))
-loss = {x: full - log_likelihood(set(logp) - {x}) for x in logp if len(x) > 1}  # single characters stay
+# single characters stay
+loss = {x: full - log_likelihood(set(logp) - {x}) for x in logp if len(x) > 1}
 ranked = sorted(loss, key=loss.get, reverse=True)
 kept, dropped = ranked[: round(0.8 * len(ranked))], ranked[round(0.8 * len(ranked)):]
-assert min(loss[x] for x in kept) > max(loss[x] for x in dropped)  # keep the largest losses
-print("loss:", ", ".join(f"{x} {loss[x]:.3f}" for x in ranked), "| keep the top 80%, drop:", dropped)
+# keep the largest losses
+assert min(loss[x] for x in kept) > max(loss[x] for x in dropped)
+print("loss:", ", ".join(f"{x} {loss[x]:.3f}" for x in ranked))
+print("keep the top 80%, drop:", dropped)
 
 
-# --- Byte-level BPE as in GPT-2: every byte maps to a printable character, so a space shows as G-dot ---
+# --- Byte-level BPE as in GPT-2: every byte maps to a printable character,
+# so a space shows as G-dot
 def bytes_to_unicode():
-    printable = list(range(ord("!"), ord("~") + 1)) + list(range(ord("¡"), ord("¬") + 1)) + list(range(ord("®"), ord("ÿ") + 1))
+    printable = (
+        list(range(ord("!"), ord("~") + 1))
+        + list(range(ord("¡"), ord("¬") + 1))
+        + list(range(ord("®"), ord("ÿ") + 1))
+    )
     chars, extra = printable[:], 0
     for b in range(256):
         if b not in printable:
@@ -199,11 +219,16 @@ def bytes_to_unicode():
 
 
 byte_char = bytes_to_unicode()
-# GPT-2's pre-tokenization pattern with \p{L} and \p{N} narrowed to ASCII letters and digits
-pattern = re.compile(r"""'s|'t|'re|'ve|'m|'ll|'d| ?[A-Za-z]+| ?[0-9]+| ?[^\sA-Za-z0-9]+|\s+(?!\S)|\s+""")
+# GPT-2's pre-tokenization pattern with \p{L} and \p{N} narrowed to ASCII letters
+# and digits
+pattern = re.compile(
+    r"""'s|'t|'re|'ve|'m|'ll|'d"""
+    r"""| ?[A-Za-z]+| ?[0-9]+| ?[^\sA-Za-z0-9]+|\s+(?!\S)|\s+"""
+)
 chunks = pattern.findall("Hello world, it's 2024!")
 print("pre-tokenized:", chunks)
-print("as byte characters:", ["".join(byte_char[b] for b in c.encode("utf-8")) for c in chunks])
+as_chars = ["".join(byte_char[b] for b in c.encode("utf-8")) for c in chunks]
+print("as byte characters:", as_chars)
 remapped = [b for b, ch in byte_char.items() if ord(ch) != b]
 print("base vocabulary:", len(byte_char), "| remapped:", len(remapped), "| é becomes",
       "".join(byte_char[b] for b in "é".encode("utf-8")))
@@ -217,8 +242,9 @@ WordPiece merges: ('##g', '##s') (count 5, score 0.0500)
 WordPiece: ['un', '##happ', '##i', '##ness'] ['un', '##happ', '##y'] ['[UNK]']
 Unigram Viterbi: ['un', 'happiness'] (log p = -8.740)
 12 segmentations; P(un happiness) = 0.613, P(un happi ness) = 0.368
-five samples: ['un happiness', 'un happiness', 'un happiness', 'un happi ness', 'un happiness']
-loss: un 19.976, happiness 7.845, happi 3.761, ness 3.760, unh 0.000 | keep the top 80%, drop: ['unh']
+five samples: un happiness, un happiness, un happiness, un happi ness, un happiness
+loss: un 19.976, happiness 7.845, happi 3.761, ness 3.760, unh 0.000
+keep the top 80%, drop: ['unh']
 pre-tokenized: ['Hello', ' world', ',', ' it', "'s", ' 2024', '!']
 as byte characters: ['Hello', 'Ġworld', ',', 'Ġit', "'s", 'Ġ2024', '!']
 base vocabulary: 256 | remapped: 68 | é becomes Ã©
@@ -243,8 +269,9 @@ import urllib.request
 
 import tiktoken
 
-# tiktoken downloads its encoding files without a User-Agent we can set, so fetch them ourselves into the
-# cache directory tiktoken reads (file name: SHA-1 of the URL) and send LLMATLAS_USER_AGENT.
+# tiktoken downloads its encoding files without a User-Agent we can set, so fetch
+# them ourselves into the cache directory tiktoken reads (file name: SHA-1 of the URL)
+# and send LLMATLAS_USER_AGENT.
 USER_AGENT = os.environ.get("LLMATLAS_USER_AGENT", "Mozilla/5.0 (compatible; reader)")
 BLOB = "https://openaipublic.blob.core.windows.net/"
 FILES = {
@@ -252,7 +279,9 @@ FILES = {
     "cl100k_base": ["encodings/cl100k_base.tiktoken"],
     "o200k_base": ["encodings/o200k_base.tiktoken"],
 }
-CACHE = os.environ.setdefault("TIKTOKEN_CACHE_DIR", os.path.join(tempfile.gettempdir(), "tiktoken-cache"))
+CACHE = os.environ.setdefault(
+    "TIKTOKEN_CACHE_DIR", os.path.join(tempfile.gettempdir(), "tiktoken-cache")
+)
 
 
 def get_encoding(name):
@@ -260,11 +289,16 @@ def get_encoding(name):
     for path in FILES[name]:
         target = os.path.join(CACHE, hashlib.sha1((BLOB + path).encode()).hexdigest())
         if not os.path.exists(target):
-            request = urllib.request.Request(BLOB + path, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(request, timeout=60) as response, open(target, "wb") as f:
-                f.write(response.read())
+            headers = {"User-Agent": USER_AGENT}
+            request = urllib.request.Request(BLOB + path, headers=headers)
+            with urllib.request.urlopen(request, timeout=60) as response:
+                data = response.read()
+            with open(target, "wb") as f:
+                f.write(data)
     return tiktoken.get_encoding(name)
 
+
+import pprint
 
 enc = get_encoding("cl100k_base")  # the GPT-4 encoding
 
@@ -272,7 +306,8 @@ text = "Hello, world! Here's some code: `print('hi')`"
 tokens = enc.encode(text)
 assert enc.decode(tokens) == text  # byte-level BPE is lossless
 print(f"Token count: {len(tokens)}")
-print(f"Pieces: {[enc.decode([i]) for i in tokens]}")
+print("Pieces:")
+pprint.pp([enc.decode([i]) for i in tokens], width=88, compact=True)
 ```
 
 % output
@@ -293,32 +328,45 @@ Pieces: ['Hello', ',', ' world', '!', ' Here', "'s", ' some', ' code', ':', ' `'
 Different tokenization schemes produce different sequence lengths:
 
 ```python
+import pprint
+
 # Example text
 text = "The transformer architecture revolutionized natural language processing."
 
 # Word-level: split on spaces
 word_tokens = text.lower().split()
-print(f"Word tokens ({len(word_tokens)}): {word_tokens}")
+print(f"Word tokens ({len(word_tokens)}):")
+pprint.pp(word_tokens, width=88, compact=True)
 
 # Character-level
 char_tokens = list(text)
-print(f"Character tokens ({len(char_tokens)}): {char_tokens[:20]}...")
+print(f"Character tokens ({len(char_tokens)}), the first 20:")
+pprint.pp(char_tokens[:20], width=88, compact=True)
 
-# Subword: the pieces that tiktoken's gpt2, cl100k_base and o200k_base encodings all give for this sentence
-# (the network listing under "Real Tokenizers on Hard Inputs" prints the count 9 for each)
+# Subword: the pieces that tiktoken's gpt2, cl100k_base and o200k_base encodings all
+# give for this sentence (the network listing under "Real Tokenizers on Hard Inputs"
+# prints the count 9 for each)
 subword_tokens = [
-    "The", " transformer", " architecture", " revolution", "ized", " natural", " language", " processing", ".",
+    "The", " transformer", " architecture", " revolution", "ized",
+    " natural", " language", " processing", ".",
 ]
 assert "".join(subword_tokens) == text
-print(f"Subword tokens ({len(subword_tokens)}): {subword_tokens}")
+print(f"Subword tokens ({len(subword_tokens)}):")
+pprint.pp(subword_tokens, width=88, compact=True)
 ```
 
 % output
 
 ```text
-Word tokens (7): ['the', 'transformer', 'architecture', 'revolutionized', 'natural', 'language', 'processing.']
-Character tokens (72): ['T', 'h', 'e', ' ', 't', 'r', 'a', 'n', 's', 'f', 'o', 'r', 'm', 'e', 'r', ' ', 'a', 'r', 'c', 'h']...
-Subword tokens (9): ['The', ' transformer', ' architecture', ' revolution', 'ized', ' natural', ' language', ' processing', '.']
+Word tokens (7):
+['the', 'transformer', 'architecture', 'revolutionized', 'natural', 'language',
+ 'processing.']
+Character tokens (72), the first 20:
+['T', 'h', 'e', ' ', 't', 'r', 'a', 'n', 's', 'f', 'o', 'r', 'm', 'e', 'r', ' ', 'a',
+ 'r', 'c', 'h']
+Subword tokens (9):
+['The', ' transformer', ' architecture', ' revolution', 'ized', ' natural', ' language',
+ ' processing', '.']
 ```
 
 Self-attention compares every position with every other, so its score matrix has $n^2$ entries for $n$ tokens: $72^2 = 5{,}184$ for the characters, $7^2 = 49$ for the words and $9^2 = 81$ for the subword tokens ({ref}`sec-ch1-attention-complexity`). The character sequence costs 64 times as many attention scores as the subword one, and every per-token cost of the model (the feed-forward layers, the stored keys and values) grows eightfold with its length. Words give the shortest sequence, but a word-level vocabulary needs an entry for every word form and still meets words it has never seen; subwords sit between the two.
@@ -338,8 +386,9 @@ import urllib.request
 
 import tiktoken
 
-# tiktoken downloads its encoding files without a User-Agent we can set, so fetch them ourselves into the
-# cache directory tiktoken reads (file name: SHA-1 of the URL) and send LLMATLAS_USER_AGENT.
+# tiktoken downloads its encoding files without a User-Agent we can set, so fetch
+# them ourselves into the cache directory tiktoken reads (file name: SHA-1 of the URL)
+# and send LLMATLAS_USER_AGENT.
 USER_AGENT = os.environ.get("LLMATLAS_USER_AGENT", "Mozilla/5.0 (compatible; reader)")
 BLOB = "https://openaipublic.blob.core.windows.net/"
 FILES = {
@@ -347,7 +396,9 @@ FILES = {
     "cl100k_base": ["encodings/cl100k_base.tiktoken"],
     "o200k_base": ["encodings/o200k_base.tiktoken"],
 }
-CACHE = os.environ.setdefault("TIKTOKEN_CACHE_DIR", os.path.join(tempfile.gettempdir(), "tiktoken-cache"))
+CACHE = os.environ.setdefault(
+    "TIKTOKEN_CACHE_DIR", os.path.join(tempfile.gettempdir(), "tiktoken-cache")
+)
 
 
 def get_encoding(name):
@@ -355,13 +406,17 @@ def get_encoding(name):
     for path in FILES[name]:
         target = os.path.join(CACHE, hashlib.sha1((BLOB + path).encode()).hexdigest())
         if not os.path.exists(target):
-            request = urllib.request.Request(BLOB + path, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(request, timeout=60) as response, open(target, "wb") as f:
-                f.write(response.read())
+            headers = {"User-Agent": USER_AGENT}
+            request = urllib.request.Request(BLOB + path, headers=headers)
+            with urllib.request.urlopen(request, timeout=60) as response:
+                data = response.read()
+            with open(target, "wb") as f:
+                f.write(data)
     return tiktoken.get_encoding(name)
 
 
-# The same greeting in five languages, counted by the encodings of GPT-2, GPT-4 and GPT-4o
+# The same greeting in five languages, counted by the encodings of GPT-2, GPT-4
+# and GPT-4o
 texts = {
     "English": "Hello world",
     "French": "Bonjour le monde",
@@ -373,16 +428,24 @@ names = ["gpt2", "cl100k_base", "o200k_base"]
 encodings = {name: get_encoding(name) for name in names}
 print(f"{'Language':<10}" + "".join(f"{name:>13}" for name in names))
 for language, text in texts.items():
-    print(f"{language:<10}" + "".join(f"{len(encodings[n].encode(text)):>13}" for n in names))
+    row = "".join(f"{len(encodings[n].encode(text)):>13}" for n in names)
+    print(f"{language:<10}" + row)
 
-# With LLMATLAS_WRITE_DATA=1 (run from the chapter's figures/data directory) also save the counts for the figure
+# With LLMATLAS_WRITE_DATA=1 (run from the chapter's figures/data directory)
+# also save the counts for the figure
 if os.environ.get("LLMATLAS_WRITE_DATA") == "1":
     import json
 
-    counts = {lang: {"characters": len(text), **{n: len(encodings[n].encode(text)) for n in names}}
-              for lang, text in texts.items()}
+    counts = {
+        lang: {
+            "characters": len(text),
+            **{n: len(encodings[n].encode(text)) for n in names},
+        }
+        for lang, text in texts.items()
+    }
     with open("tokens_per_language.json", "w", encoding="utf-8") as f:
-        json.dump({"encodings": names, "counts": counts}, f, indent=1, ensure_ascii=False)
+        data = {"encodings": names, "counts": counts}
+        json.dump(data, f, indent=1, ensure_ascii=False)
 ```
 
 % output
@@ -401,9 +464,13 @@ Arabic               12           10            4
 ```{figure} figures/tokens-per-language.*
 :name: fig-ch1-tokens-per-language
 :width: 83%
-:alt: Grouped bars for English, French, Spanish, Japanese and Arabic. English is 18 tokens per 100 characters in all three encodings; Japanese falls from 143 in gpt2 to 57 in cl100k_base and 29 in o200k_base; Arabic from 92 to 77 to 31.
+:alt: Grouped bars for English, French, Spanish, Japanese and Arabic. English is 18
+  tokens per 100 characters in all three encodings; Japanese falls from 143 in gpt2 to
+  57 in cl100k_base and 29 in o200k_base; Arabic from 92 to 77 to 31.
 
-Tokens per 100 characters for the five greetings above, from the counts the listing prints (saved in `figures/data/tokens_per_language.json`). The greetings are 7 to 16 characters long, so each bar rests on a handful of tokens.
+Tokens per 100 characters for the five greetings above, from the counts the listing
+prints (saved in `figures/data/tokens_per_language.json`). The greetings are 7 to 16
+characters long, so each bar rests on a handful of tokens.
 ```
 
 (sec-tdd-out-of-vocabulary-handling)=
@@ -455,7 +522,10 @@ messages = [
 
 
 def mistral_template(messages):
-    """The format Mistral's instruction-tuned models expect: [INST] ... [/INST] around user turns."""
+    """The format Mistral's instruction-tuned models expect.
+
+    [INST] ... [/INST] goes around user turns.
+    """
     text = "<s>"
     for m in messages:
         if m["role"] == "user":
@@ -465,7 +535,9 @@ def mistral_template(messages):
     return text
 
 
-print(mistral_template(messages))
+# one line per turn for display: a line break after each [/INST] and each </s>
+formatted = mistral_template(messages)
+print(formatted.replace("[/INST]", "[/INST]\n").replace("</s>", "</s>\n"))
 ```
 
 % output
@@ -557,10 +629,14 @@ The same visible text can be stored as different code points. "café" may end in
 ```python
 import unicodedata
 
-texts = ["caf\u00e9", "cafe\u0301", "\ufb01le", "\uff21\uff22\uff23", "x\u00b2", "\u2460", "\u0430"]
+texts = [
+    "caf\u00e9", "cafe\u0301", "\ufb01le", "\uff21\uff22\uff23",
+    "x\u00b2", "\u2460", "\u0430"
+]
 for text in texts:
     nfc, nfkc = (unicodedata.normalize(form, text) for form in ("NFC", "NFKC"))
-    print(f"{ascii(text):<22} length {len(text)} | NFC {ascii(nfc):<16} | NFKC {ascii(nfkc)}")
+    print(f"{ascii(text):<22} length {len(text)} | NFC {ascii(nfc):<16} "
+          f"| NFKC {ascii(nfkc)}")
 
 
 def test_reversibility(encode, decode, texts):
@@ -577,13 +653,17 @@ def from_code_points(ids):
 
 
 tokenizers = {
-    "UTF-8 bytes": (lambda text: list(text.encode("utf-8")), lambda ids: bytes(ids).decode("utf-8")),
+    "UTF-8 bytes": (
+        lambda text: list(text.encode("utf-8")),
+        lambda ids: bytes(ids).decode("utf-8"),
+    ),
     "NFC code points": (code_points("NFC"), from_code_points),
     "NFKC code points": (code_points("NFKC"), from_code_points),
 }
 for name, (encode, decode) in tokenizers.items():
     changed = test_reversibility(encode, decode, texts)
-    print(f"{name:<17} {len(changed)} of {len(texts)} texts changed: {' '.join(ascii(t) for t in changed)}")
+    print(f"{name:<17} {len(changed)} of {len(texts)} texts changed:")
+    print("    " + " ".join(ascii(t) for t in changed))
 ```
 
 % output
@@ -622,8 +702,9 @@ import urllib.request
 
 import tiktoken
 
-# tiktoken downloads its encoding files without a User-Agent we can set, so fetch them ourselves into the
-# cache directory tiktoken reads (file name: SHA-1 of the URL) and send LLMATLAS_USER_AGENT.
+# tiktoken downloads its encoding files without a User-Agent we can set, so fetch
+# them ourselves into the cache directory tiktoken reads (file name: SHA-1 of the URL)
+# and send LLMATLAS_USER_AGENT.
 USER_AGENT = os.environ.get("LLMATLAS_USER_AGENT", "Mozilla/5.0 (compatible; reader)")
 BLOB = "https://openaipublic.blob.core.windows.net/"
 FILES = {
@@ -631,7 +712,9 @@ FILES = {
     "cl100k_base": ["encodings/cl100k_base.tiktoken"],
     "o200k_base": ["encodings/o200k_base.tiktoken"],
 }
-CACHE = os.environ.setdefault("TIKTOKEN_CACHE_DIR", os.path.join(tempfile.gettempdir(), "tiktoken-cache"))
+CACHE = os.environ.setdefault(
+    "TIKTOKEN_CACHE_DIR", os.path.join(tempfile.gettempdir(), "tiktoken-cache")
+)
 
 
 def get_encoding(name):
@@ -639,9 +722,12 @@ def get_encoding(name):
     for path in FILES[name]:
         target = os.path.join(CACHE, hashlib.sha1((BLOB + path).encode()).hexdigest())
         if not os.path.exists(target):
-            request = urllib.request.Request(BLOB + path, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(request, timeout=60) as response, open(target, "wb") as f:
-                f.write(response.read())
+            headers = {"User-Agent": USER_AGENT}
+            request = urllib.request.Request(BLOB + path, headers=headers)
+            with urllib.request.urlopen(request, timeout=60) as response:
+                data = response.read()
+            with open(target, "wb") as f:
+                f.write(data)
     return tiktoken.get_encoding(name)
 
 
@@ -651,11 +737,18 @@ samples = {
     "German": "Donaudampfschifffahrtsgesellschaftskapitän",
     "Turkish": "evlerimizde",
     "Chinese": "我喜欢学习自然语言处理",
-    "English": "The transformer architecture revolutionized natural language processing.",
-    "Medical": "Patient presents with myocardial infarction and diabetes mellitus type 2",
+    "English": (
+        "The transformer architecture revolutionized natural language processing."
+    ),
+    "Medical": (
+        "Patient presents with myocardial infarction and diabetes mellitus type 2"
+    ),
     "Legal": "The aforementioned clause notwithstanding the heretofore provisions",
     "URL": "https://www.example.com/path/to/page?param=value",
-    "Code": "def fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)\n",
+    "Code": (
+        "def fibonacci(n):\n    if n <= 1:\n        return n\n"
+        "    return fibonacci(n-1) + fibonacci(n-2)\n"
+    ),
     "Digits": "12345678",
     "Decimal": "1,234,567.89",
     "ISO date": "2023-12-25",
@@ -663,14 +756,21 @@ samples = {
 print(f"{'vocabulary':<10}" + "".join(f"{encodings[n].n_vocab:>13,}" for n in names))
 print(f"{'tokens':<10}" + "".join(f"{n:>13}" for n in names))
 for label, text in samples.items():
-    print(f"{label:<10}" + "".join(f"{len(encodings[n].encode(text)):>13}" for n in names))
-for label in ["German", "Turkish", "Chinese", "Legal", "URL", "Code", "Digits", "Decimal", "ISO date"]:
+    row = "".join(f"{len(encodings[n].encode(text)):>13}" for n in names)
+    print(f"{label:<10}" + row)
+shown_labels = [
+    "German", "Turkish", "Chinese", "Legal", "URL",
+    "Code", "Digits", "Decimal", "ISO date"
+]
+for label in shown_labels:
     for n in names:
         pieces = [encodings[n].decode([i]) for i in encodings[n].encode(samples[label])]
-        # show a space as · and a newline as \n so that whitespace tokens can be seen and counted
+        # show a space as · and a newline as \n so that whitespace tokens can be seen
+        # and counted
         shown = [p.replace(" ", "·").replace("\n", "\\n") for p in pieces]
         print(f"{label} / {n}:")
-        for j in range(0, len(shown), 16):  # 16 pieces per line, so that long rows fit a printed page
+        # 16 pieces per line, so that long rows fit a printed page
+        for j in range(0, len(shown), 16):
             print("    " + "|".join(shown[j : j + 16]))
 ```
 
@@ -800,14 +900,16 @@ medical_tokens = [
     " 2",
 ]
 
-# GPT-2's encoding (tiktoken "gpt2") splits the medical terms; the network listing above prints 16 tokens
+# GPT-2's encoding (tiktoken "gpt2") splits the medical terms;
+# the network listing above prints 16 tokens
 # for gpt2, 15 for cl100k_base and 12 for o200k_base
 generic_tokens = [
     "Pat", "ient", " presents", " with", " my", "ocard", "ial", " inf", "ar", "ction",
     " and", " diabetes", " mell", "itus", " type", " 2",
 ]
 assert "".join(generic_tokens) == "".join(medical_tokens) == medical_text
-print(f"Domain vocabulary: {len(medical_tokens)} tokens; gpt2: {len(generic_tokens)} tokens")
+print(f"Domain vocabulary: {len(medical_tokens)} tokens; "
+      f"gpt2: {len(generic_tokens)} tokens")
 ```
 
 % output
@@ -825,9 +927,17 @@ Domain vocabulary: 10 tokens; gpt2: 16 tokens
 Every problem in this section comes from the tokenizer, so one answer is to drop it. **Tokenizer-free** (or token-free) models read raw UTF-8 bytes, a vocabulary of 256 values plus a few special ids (ByT5 reserves three: padding, end of sequence and an unused unknown token), with no merges to learn and no text that cannot be encoded. ByT5 is such a model: its authors list the benefits that such models "can process text in any language out of the box, they are more robust to noise, and they minimize technical debt by removing complex and error-prone text preprocessing pipelines" {cite}`xue2022byt5`. The cost is length. "The main drawback of byte-level models is that byte sequences tend to be significantly longer than token sequences", and attention's cost grows with the square of the length ({ref}`sec-ch1-attention-complexity`). The listing counts bytes per character:
 
 ```python
-for text in ["Hello world", "caf\u00e9", "\u3053\u3093\u306b\u3061\u306f\u4e16\u754c", "\u0645\u0631\u062d\u0628\u0627"]:
+samples = [
+    "Hello world",
+    "caf\u00e9",
+    "\u3053\u3093\u306b\u3061\u306f\u4e16\u754c",
+    "\u0645\u0631\u062d\u0628\u0627",
+]
+for text in samples:
     n_chars, n_bytes = len(text), len(text.encode("utf-8"))
-    print(f"{n_chars:>2} characters -> {n_bytes:>2} UTF-8 bytes ({n_bytes / n_chars:.2f} per character)")
+    per_char = n_bytes / n_chars
+    print(f"{n_chars:>2} characters -> {n_bytes:>2} UTF-8 bytes "
+          f"({per_char:.2f} per character)")
 ```
 
 % output
@@ -852,26 +962,33 @@ This section implements a tokenizer end to end. It is byte-level BPE, the scheme
 ### Complete Tokenization Pipeline
 
 ```python
+import pprint
 import re
 from collections import Counter
 from typing import Dict, List, Tuple
 
-# Pre-tokenization in the style of GPT-2: a chunk is an optional leading space followed by letters, digits or
-# punctuation, or a run of whitespace. Joining the chunks gives back the text exactly, so whitespace is kept
+# Pre-tokenization in the style of GPT-2: a chunk is an optional leading space
+# followed by letters, digits or punctuation, or a run of whitespace. Joining the chunks gives back the text exactly, so whitespace is kept
 # inside the tokens instead of being thrown away.
 CHUNK = re.compile(r" ?[^\W\d_]+| ?\d+| ?(?:[^\s\w]|_)+|\s+(?!\S)|\s+")
 
 
 class ComprehensiveTokenizer:
-    """Byte-level BPE: 256 byte tokens, five special tokens, then learned merges. Every text round-trips."""
+    """Byte-level BPE: 256 byte tokens, five special tokens, then learned merges.
+
+    Every text round-trips.
+    """
 
     def __init__(self, vocab_size: int = 300):
         assert vocab_size >= 256 + 5
         self.vocab_size = vocab_size
-        self.vocab: Dict[int, bytes] = {i: bytes([i]) for i in range(256)}  # id -> the bytes it stands for
+        # id -> the bytes it stands for
+        self.vocab: Dict[int, bytes] = {i: bytes([i]) for i in range(256)}
         names = ["<PAD>", "<UNK>", "<BOS>", "<EOS>", "<MASK>"]
-        self.special_tokens = {name: 256 + i for i, name in enumerate(names)}  # ids 256..260
-        self.merges: Dict[Tuple[int, int], int] = {}  # (left id, right id) -> merged id, in training order
+        # ids 256..260
+        self.special_tokens = {name: 256 + i for i, name in enumerate(names)}
+        # (left id, right id) -> merged id, in training order
+        self.merges: Dict[Tuple[int, int], int] = {}
 
     @staticmethod
     def _merge(ids: List[int], pair: Tuple[int, int], new_id: int) -> List[int]:
@@ -886,7 +1003,10 @@ class ComprehensiveTokenizer:
         return out
 
     def train_bpe(self, corpus: List[str], verbose: bool = True) -> None:
-        """Learn vocab_size - 261 merges. Every chunk is counted; nothing is dropped for being rare."""
+        """Learn vocab_size - 261 merges.
+
+        Every chunk is counted; nothing is dropped for being rare.
+        """
         chunk_freq = Counter(c for text in corpus for c in CHUNK.findall(text))
         words = {chunk: list(chunk.encode("utf-8")) for chunk in chunk_freq}
         next_id = 256 + len(self.special_tokens)
@@ -897,19 +1017,24 @@ class ComprehensiveTokenizer:
                     pairs[pair] += chunk_freq[chunk]
             if not pairs:
                 break
-            best = max(pairs, key=lambda p: (pairs[p], -p[0], -p[1]))  # ties go to the smaller ids
+            # ties go to the smaller ids
+            best = max(pairs, key=lambda p: (pairs[p], -p[0], -p[1]))
             self.merges[best] = next_id
             self.vocab[next_id] = self.vocab[best[0]] + self.vocab[best[1]]
-            words = {chunk: self._merge(ids, best, next_id) for chunk, ids in words.items()}
+            words = {
+                chunk: self._merge(ids, best, next_id) for chunk, ids in words.items()
+            }
             next_id += 1
         if verbose:
-            print(f"Training complete. {len(self.merges)} merges, vocabulary size {len(self.vocab) + 5}")
+            print(f"Training complete. {len(self.merges)} merges, "
+                  f"vocabulary size {len(self.vocab) + 5}")
 
     def encode_chunk(self, chunk: str) -> List[int]:
         ids = list(chunk.encode("utf-8"))
         while len(ids) > 1:
             # apply the earliest-learned merge present, as the trainer did
-            pair = min(zip(ids, ids[1:]), key=lambda p: self.merges.get(p, float("inf")))
+            pair = min(zip(ids, ids[1:]),
+                       key=lambda p: self.merges.get(p, float("inf")))
             if pair not in self.merges:
                 break
             ids = self._merge(ids, pair, self.merges[pair])
@@ -922,12 +1047,14 @@ class ComprehensiveTokenizer:
         return ids + [self.special_tokens["<EOS>"]]
 
     def decode(self, ids: List[int]) -> str:
-        data = b"".join(self.vocab[i] for i in ids if i in self.vocab)  # special ids are not in vocab
+        # special ids are not in vocab
+        data = b"".join(self.vocab[i] for i in ids if i in self.vocab)
         return data.decode("utf-8", errors="replace")
 
     def pieces(self, text: str) -> List[str]:
         """The tokens of `text` as strings, for display (special tokens left out)."""
-        return [self.vocab[i].decode("utf-8", errors="replace") for i in self.encode(text)[1:-1]]
+        ids = self.encode(text)[1:-1]
+        return [self.vocab[i].decode("utf-8", errors="replace") for i in ids]
 
 
 sample_corpus = [
@@ -938,18 +1065,27 @@ sample_corpus = [
     "Ask not what your country can do for you",
 ] * 100
 
-tokenizer = ComprehensiveTokenizer(vocab_size=300)  # 39 merges: small enough that words still split
+# 39 merges: small enough that words still split
+tokenizer = ComprehensiveTokenizer(vocab_size=300)
 tokenizer.train_bpe(sample_corpus)
 
-for text in ["The quick brown fox.", "Hello, world!", "two  spaces\nand a newline", "unthinkable", "你好"]:
-    assert tokenizer.decode(tokenizer.encode(text)) == text, text  # exact round trip, including whitespace
-for text in ["The quick brown fox.", "two  spaces\nand a newline", "unthinkable"]:  # the last is unseen
-    print(f"{text!r} -> {tokenizer.pieces(text)}")
+checks = ["The quick brown fox.", "Hello, world!", "two  spaces\nand a newline",
+          "unthinkable", "你好"]
+for text in checks:
+    # exact round trip, including whitespace
+    assert tokenizer.decode(tokenizer.encode(text)) == text, text
+# the last is unseen
+for text in ["The quick brown fox.", "two  spaces\nand a newline", "unthinkable"]:
+    print(f"{text!r} ->")
+    pprint.pp(tokenizer.pieces(text), width=88, compact=True)
 
 
 # --- Measuring the tokenizer on text it was not trained on ---
 def evaluate_tokenization_quality(tokenizer, corpus):
-    """Characters and bytes per token (special ids not counted) and the share of texts that do not round-trip."""
+    """Characters and bytes per token (special ids not counted).
+
+    Also the share of texts that do not round-trip.
+    """
     special = set(tokenizer.special_tokens.values())
     n_chars = n_bytes = n_tokens = errors = 0
     for text in corpus:
@@ -958,12 +1094,18 @@ def evaluate_tokenization_quality(tokenizer, corpus):
         n_bytes += len(text.encode("utf-8"))
         n_tokens += sum(1 for i in ids if i not in special)
         errors += tokenizer.decode(ids) != text
-    return {"chars_per_token": n_chars / n_tokens, "bytes_per_token": n_bytes / n_tokens,
-            "reversibility_errors": errors / len(corpus)}
+    return {
+        "chars_per_token": n_chars / n_tokens,
+        "bytes_per_token": n_bytes / n_tokens,
+        "reversibility_errors": errors / len(corpus),
+    }
 
 
 def analyze_tokenization_efficiency(tokenizer, corpus):
-    """Token lengths in bytes, and how many tokens are single bytes, whole pre-tokenized chunks or parts of one."""
+    """Token lengths in bytes, and how many tokens are of each kind.
+
+    The kinds are single bytes, whole pre-tokenized chunks or parts of one.
+    """
     special = set(tokenizer.special_tokens.values())
     lengths, kinds = Counter(), Counter()
     for text in corpus:
@@ -973,19 +1115,25 @@ def analyze_tokenization_efficiency(tokenizer, corpus):
                 piece = tokenizer.vocab[i]
                 lengths[len(piece)] += 1
                 whole = piece.decode("utf-8", "replace") in chunks
-                kinds["single byte" if len(piece) == 1 else "whole chunk" if whole else "part of a chunk"] += 1
+                if len(piece) == 1:
+                    kinds["single byte"] += 1
+                else:
+                    kinds["whole chunk" if whole else "part of a chunk"] += 1
     return dict(sorted(lengths.items())), dict(kinds)
 
 
 held_out = ["The question is what the fox can do for the dog", "Ask a thousand times"]
-print("held out:", {k: round(v, 3) for k, v in evaluate_tokenization_quality(tokenizer, held_out).items()})
+quality = evaluate_tokenization_quality(tokenizer, held_out)
+print("held out:", {k: round(v, 3) for k, v in quality.items()})
 lengths, kinds = analyze_tokenization_efficiency(tokenizer, held_out)
-print("token lengths in bytes:", lengths, "| kinds:", kinds)
+print("token lengths in bytes:", lengths)
+print("kinds:", kinds)
 for size in (261, 300, 400):
     sized = ComprehensiveTokenizer(vocab_size=size)
     sized.train_bpe(sample_corpus, verbose=False)
     metrics = evaluate_tokenization_quality(sized, held_out)
-    print(f"vocabulary {size}: {len(sized.merges):>3} merges, {metrics['bytes_per_token']:.3f} bytes per token held out")
+    print(f"vocabulary {size}: {len(sized.merges):>3} merges, "
+          f"{metrics['bytes_per_token']:.3f} bytes per token held out")
 ```
 
 % output
@@ -1034,15 +1182,19 @@ import re
 
 def preprocess(text, strategy):
     if strategy == "aggressive":
-        text = re.sub(r"\s+", " ", text)  # collapse every run of whitespace, newlines included
-        text = re.sub(r"\s+([,.!?])", r"\1", text)  # remove the space before punctuation
+        # collapse every run of whitespace, newlines included
+        text = re.sub(r"\s+", " ", text)
+        # remove the space before punctuation
+        text = re.sub(r"\s+([,.!?])", r"\1", text)
     return text.strip()
 
 
 prose = "  Wait , what ?  Really !"
 code = "def f(x):\n    return x + 1\n"
 for strategy in ["conservative", "aggressive"]:
-    print(f"{strategy:<12} {preprocess(prose, strategy)!r:<26} {preprocess(code, strategy)!r}")
+    clean_prose = preprocess(prose, strategy)
+    clean_code = preprocess(code, strategy)
+    print(f"{strategy:<12} {clean_prose!r:<26} {clean_code!r}")
 ```
 
 % output
@@ -1063,7 +1215,10 @@ import matplotlib.pyplot as plt
 
 
 def analyze_token_frequency(corpus, tokenizer):
-    """Count the units tokenizer.encode returns over the corpus, print the counts and plot them by rank."""
+    """Count the units tokenizer.encode returns over the corpus.
+
+    Print the counts and plot them by rank.
+    """
     from collections import Counter
 
     all_tokens = []
@@ -1084,7 +1239,8 @@ def analyze_token_frequency(corpus, tokenizer):
     print(f"Units counted: {total_tokens:,}")
     print(f"Distinct units: {unique_tokens:,}")
     print(
-        f"Distinct units seen fewer than {rare_threshold} times: {rare_tokens:,} ({rare_tokens/unique_tokens:.1%})"
+        f"Distinct units seen fewer than {rare_threshold} times: "
+        f"{rare_tokens:,} ({rare_tokens/unique_tokens:.1%})"
     )
 
     # Plot frequency distribution
@@ -1093,7 +1249,8 @@ def analyze_token_frequency(corpus, tokenizer):
     ranks = range(1, len(frequencies) + 1)
     plt.loglog(ranks, frequencies, marker=".", linestyle="none", label="Observed")
     # Zipf's law: frequency proportional to 1 / rank, a line of slope -1 on log-log axes
-    plt.loglog(ranks, [frequencies[0] / r for r in ranks], linestyle="--", color="gray", label="Slope −1 (Zipf)")
+    zipf = [frequencies[0] / r for r in ranks]
+    plt.loglog(ranks, zipf, linestyle="--", color="gray", label="Slope −1 (Zipf)")
     plt.legend(loc="upper right")
     plt.xlabel("Word rank")
     plt.ylabel("Occurrences")
@@ -1111,26 +1268,32 @@ class WordTokenizer:
         return re.findall(r"[a-z]+", text.lower())
 
 
-# A fixed sample: Lincoln's Gettysburg Address (1863), public domain, as in Project Gutenberg eBook #4
-GETTYSBURG = """Four score and seven years ago, our fathers brought forth upon this continent a new nation:
-conceived in liberty, and dedicated to the proposition that all men are created equal.
+# A fixed sample: Lincoln's Gettysburg Address (1863), public domain,
+# as in Project Gutenberg eBook #4
+GETTYSBURG = """Four score and seven years ago, our fathers brought forth upon this
+continent a new nation: conceived in liberty, and dedicated to the proposition that all
+men are created equal.
 
-Now we are engaged in a great civil war. . .testing whether that nation, or any nation so conceived and so
-dedicated. . . can long endure. We are met on a great battlefield of that war.
+Now we are engaged in a great civil war. . .testing whether that nation, or any nation
+so conceived and so dedicated. . . can long endure. We are met on a great battlefield of
+that war.
 
-We have come to dedicate a portion of that field as a final resting place for those who here gave their lives
-that this nation might live. It is altogether fitting and proper that we should do this.
+We have come to dedicate a portion of that field as a final resting place for those who
+here gave their lives that this nation might live. It is altogether fitting and proper
+that we should do this.
 
-But, in a larger sense, we cannot dedicate. . .we cannot consecrate. . . we cannot hallow this ground. The brave
-men, living and dead, who struggled here have consecrated it, far above our poor power to add or detract. The
-world will little note, nor long remember, what we say here, but it can never forget what they did here.
+But, in a larger sense, we cannot dedicate. . .we cannot consecrate. . . we cannot
+hallow this ground. The brave men, living and dead, who struggled here have consecrated
+it, far above our poor power to add or detract. The world will little note, nor long
+remember, what we say here, but it can never forget what they did here.
 
-It is for us the living, rather, to be dedicated here to the unfinished work which they who fought here have
-thus far so nobly advanced. It is rather for us to be here dedicated to the great task remaining before us. .
-.that from these honored dead we take increased devotion to that cause for which they gave the last full
-measure of devotion. . . that we here highly resolve that these dead shall not have died in vain. . . that this
-nation, under God, shall have a new birth of freedom. . . and that government of the people. . .by the people.
-. .for the people. . . shall not perish from this earth."""
+It is for us the living, rather, to be dedicated here to the unfinished work which they
+who fought here have thus far so nobly advanced. It is rather for us to be here
+dedicated to the great task remaining before us. . .that from these honored dead we take
+increased devotion to that cause for which they gave the last full measure of devotion.
+. . that we here highly resolve that these dead shall not have died in vain. . . that
+this nation, under God, shall have a new birth of freedom. . . and that government of
+the people. . .by the people. . .for the people. . . shall not perish from this earth."""
 
 counts = analyze_token_frequency(GETTYSBURG.split("\n\n"), WordTokenizer())
 print("most frequent:", ", ".join(f"{w} {c}" for w, c in counts.most_common(5)))
@@ -1148,9 +1311,16 @@ most frequent: that 12, the 10, we 10, to 8, here 8
 ```{figure} figures/word-frequency.*
 :name: fig-ch1-word-frequency
 :width: 84%
-:alt: Log-log scatter of word frequency against rank for the 140 distinct words of the Gettysburg Address: 12 occurrences for the most frequent word, falling more slowly than a dashed line of slope −1 to a flat tail of 93 words that occur once.
+:alt: Log-log scatter of word frequency against rank for the 140 distinct words of the
+  Gettysburg Address: 12 occurrences for the most frequent word, falling more slowly
+  than a dashed line of slope −1 to a flat tail of 93 words that occur once.
 
-The listing's plot for its fixed sample, the 268 words of the Gettysburg Address split into lowercase words of letters only; `figures/make_figures.py` runs the listing to draw it. The dashed line has slope −1, Zipf's law anchored at the most frequent word ("that", 12 times). The counts stay above the line (rank 10 has 5 occurrences where the line gives 1.2), and 93 of the 140 distinct words occur once, which makes the flat tail on the right.
+The listing's plot for its fixed sample, the 268 words of the Gettysburg Address split
+into lowercase words of letters only; `figures/make_figures.py` runs the listing to draw
+it. The dashed line has slope −1, Zipf's law anchored at the most frequent word ("that",
+12 times). The counts stay above the line (rank 10 has 5 occurrences where the line
+gives 1.2), and 93 of the 140 distinct words occur once, which makes the flat tail on
+the right.
 ```
 
 {numref}`fig-ch1-word-frequency` shows the plot. A text this short shows the shape only roughly: Zipf's law describes large corpora, and a few hundred words cannot hold a long sequence of ranks with distinct counts. Even here 127 of the 140 distinct words occur fewer than five times. A word-level vocabulary would have to hold this long tail or map it to an unknown token; a subword vocabulary instead spends its entries on frequent strings and spells a rare word from smaller pieces, down to single bytes in a byte-level tokenizer ({ref}`sec-tdd-out-of-vocabulary-handling`).
@@ -1196,21 +1366,31 @@ import matplotlib.pyplot as plt
 
 
 def compare_position_encodings():
-    """Extra parameters each positional scheme adds, as a function of maximum length (T5-small's sizes)."""
+    """Extra parameters each positional scheme adds, by maximum length.
+
+    The sizes are T5-small's.
+    """
     seq_lens = [128, 256, 512, 1024, 2048, 4096]
     d_model, num_heads, num_buckets, num_stacks, vocab = 512, 8, 32, 2, 32_000
     results = {
-        "Token embedding, 32,000 entries": [vocab * d_model for _ in seq_lens],  # for scale; not a position cost
-        "Learned absolute": [n * d_model for n in seq_lens],  # one d-vector per position
-        "Relative bias (T5, 2 stacks)": [num_stacks * num_buckets * num_heads for _ in seq_lens],  # a table per stack
+        # for scale; not a position cost
+        "Token embedding, 32,000 entries": [vocab * d_model for _ in seq_lens],
+        # one d-vector per position
+        "Learned absolute": [n * d_model for n in seq_lens],
+        # a table per stack
+        "Relative bias (T5, 2 stacks)": [
+            num_stacks * num_buckets * num_heads for _ in seq_lens
+        ],
     }
-    print(f"{'max length':<32}" + "".join(f"{n:>11,}" for n in seq_lens))
-    for method, params in results.items():
-        print(f"{method:<32}" + "".join(f"{p:>11,}" for p in params))
+    labels = ["Token embedding (32k)", "Learned absolute", "T5 bias, 2 stacks"]
+    print(f"{'max length':<21}" + "".join(f"{n:>11,}" for n in seq_lens))
+    for label, params in zip(labels, results.values()):
+        print(f"{label:<21}" + "".join(f"{p:>11,}" for p in params))
     print("no parameters: sinusoidal, RoPE, ALiBi")
 
     plt.figure(figsize=(6.4, 3.8))
-    for (method, params), (marker, dash) in zip(results.items(), [("", "--"), ("s", "-"), ("^", "-")]):
+    styles = [("", "--"), ("s", "-"), ("^", "-")]
+    for (method, params), (marker, dash) in zip(results.items(), styles):
         plt.plot(seq_lens, params, marker=marker or None, linestyle=dash, label=method)
     plt.xscale("log", base=2)
     plt.yscale("log")
@@ -1239,9 +1419,15 @@ no parameters: sinusoidal, RoPE, ALiBi
 ```{figure} figures/position-parameter-cost.*
 :name: fig-ch1-position-parameter-cost
 :width: 77%
-:alt: Log-log plot over maximum lengths 128 to 4096. A dashed flat line for the token embedding sits at 16.4 million; the learned absolute line rises from about 65 thousand to 2.1 million; the T5 relative bias line stays flat at 512.
+:alt: Log-log plot over maximum lengths 128 to 4096. A dashed flat line for the token
+  embedding sits at 16.4 million; the learned absolute line rises from about 65 thousand
+  to 2.1 million; the T5 relative bias line stays flat at 512.
 
-The listing's plot on logarithmic axes, at T5-small's sizes. Learned absolute positions grow in proportion to the maximum length, from 65,536 parameters at 128 to 2,097,152 at 4,096, an eighth of the token embedding table (dashed, 16,384,000). T5's two bias tables stay at 512 parameters at any length. Sinusoidal positions, RoPE and ALiBi add none and do not appear on a logarithmic axis.
+The listing's plot on logarithmic axes, at T5-small's sizes. Learned absolute positions
+grow in proportion to the maximum length, from 65,536 parameters at 128 to 2,097,152 at
+4,096, an eighth of the token embedding table (dashed, 16,384,000). T5's two bias tables
+stay at 512 parameters at any length. Sinusoidal positions, RoPE and ALiBi add none and
+do not appear on a logarithmic axis.
 ```
 
 {numref}`fig-ch1-position-parameter-cost` shows that only learned absolute positions grow with the maximum length, by $d$ parameters per position, and that even at 4,096 positions they are small next to the vocabulary. Their real cost is that the model has no vector at all for a position past the end of the table, the extrapolation problem the relative schemes of {ref}`sec-ch1-positional-encodings` avoid.
@@ -1259,7 +1445,10 @@ import torch
 import torch.nn as nn
 
 class PositionalEncoding(nn.Module):
-    """Learned absolute positions ("learned") or none ("none"); other schemes do not belong in this layer."""
+    """Learned absolute positions ("learned") or none ("none").
+
+    Other schemes do not belong in this layer.
+    """
 
     def __init__(self, d_model, max_seq_length=5000, encoding_type="learned"):
         super().__init__()
@@ -1270,8 +1459,9 @@ class PositionalEncoding(nn.Module):
             self.position_embeddings = nn.Embedding(max_seq_length, d_model)
         elif encoding_type != "none":
             raise ValueError(
-                f"{encoding_type!r}: add a table from create_sinusoidal_encoding to the input instead; "
-                "relative schemes (RelativePositionBias, RoPE, ALiBi) act on the attention scores"
+                f"{encoding_type!r}: add a table from create_sinusoidal_encoding "
+                "to the input instead; relative schemes (RelativePositionBias, "
+                "RoPE, ALiBi) act on the attention scores"
             )
 
     def forward(self, x, position_ids=None):
@@ -1283,7 +1473,10 @@ class PositionalEncoding(nn.Module):
 
 
 class TokenEmbeddingLayer(nn.Module):
-    """Token ids to vectors: embedding lookup, optional sqrt(d) scaling, learned positions, LayerNorm, dropout."""
+    """Token ids to vectors.
+
+    Embedding lookup, optional sqrt(d) scaling, learned positions, LayerNorm, dropout.
+    """
 
     def __init__(
         self,
@@ -1313,7 +1506,10 @@ class TokenEmbeddingLayer(nn.Module):
         self._init_embeddings()
 
     def _init_embeddings(self):
-        """N(0, 1/d), so the sqrt(d)-scaled embedding has unit variance, like the positional encoding."""
+        """N(0, 1/d), so the sqrt(d)-scaled embedding has unit variance.
+
+        The positional encoding is of the same scale.
+        """
         nn.init.normal_(self.token_embeddings.weight, mean=0.0, std=self.d_model**-0.5)
 
     def forward(self, input_ids, position_ids=None):
@@ -1395,7 +1591,12 @@ In the WordPiece corpus of {ref}`sec-tdd-subword-listing` ("hug" 10 times, "pug"
 
 ```{admonition} Solution T1
 :class: dropdown
-`##u` occurs in every word, $10 + 5 + 12 + 4 + 5 = 36$ times. `##n` occurs in "pun" and "bun", $12 + 4 = 16$ times, always after `##u`, so the pair also occurs 16 times. Its score is $16 / (36 \cdot 16) = 1/36 = 0.0278$, the same as `##u ##g`: when the second piece never occurs without the first, the score reduces to $1/\operatorname{count}(\text{first piece})$, and `##u` is common. `##g ##s` scores 0.05 and is merged first, although BPE would rank `##u ##n` (16 occurrences) above it (5).
+`##u` occurs in every word, $10 + 5 + 12 + 4 + 5 = 36$ times. `##n` occurs in "pun" and
+"bun", $12 + 4 = 16$ times, always after `##u`, so the pair also occurs 16 times. Its
+score is $16 / (36 \cdot 16) = 1/36 = 0.0278$, the same as `##u ##g`: when the second
+piece never occurs without the first, the score reduces to
+$1/\operatorname{count}(\text{first piece})$, and `##u` is common. `##g ##s` scores 0.05
+and is merged first, although BPE would rank `##u ##n` (16 occurrences) above it (5).
 ```
 
 (sec-tdd-exercise-2)=
@@ -1406,7 +1607,12 @@ With the unigram probabilities of {ref}`sec-tdd-subword-listing`, compute the pr
 
 ```{admonition} Solution T2
 :class: dropdown
-$p(\text{un happiness}) = 0.08 \times 0.002 = 1.6 \times 10^{-4}$ and $p(\text{un happi ness}) = 0.08 \times 0.02 \times 0.06 = 9.6 \times 10^{-5}$, so the ratio is $5/3 = 1.667$. Their shares are $1.6 / 2.608 = 0.613$ and $0.96 / 2.608 = 0.368$, the values the listing prints. Viterbi always returns the first; sampling returns the second about 0.368 of the time, which is why subword regularization shows the model more than one segmentation of a frequent word.
+$p(\text{un happiness}) = 0.08 \times 0.002 = 1.6 \times 10^{-4}$ and
+$p(\text{un happi ness}) = 0.08 \times 0.02 \times 0.06 = 9.6 \times 10^{-5}$, so the
+ratio is $5/3 = 1.667$. Their shares are $1.6 / 2.608 = 0.613$ and
+$0.96 / 2.608 = 0.368$, the values the listing prints. Viterbi always returns the first;
+sampling returns the second about 0.368 of the time, which is why subword regularization
+shows the model more than one segmentation of a frequent word.
 ```
 
 (sec-tdd-exercise-3)=
@@ -1417,7 +1623,10 @@ The `ComprehensiveTokenizer` of {ref}`sec-tdd-complete-tokenization-pipeline` wa
 
 ```{admonition} Solution T3
 :class: dropdown
-Each of the two characters is three UTF-8 bytes, 6 bytes in all. The training text is ASCII, so no merge involves these bytes and each stays a token of its own: 6 byte ids plus `<BOS>` and `<EOS>`, 8 ids. `decode` joins the bytes of the ids that are not special and returns "你好" exactly; the listing asserts this round trip.
+Each of the two characters is three UTF-8 bytes, 6 bytes in all. The training text is
+ASCII, so no merge involves these bytes and each stays a token of its own: 6 byte ids
+plus `<BOS>` and `<EOS>`, 8 ids. `decode` joins the bytes of the ids that are not
+special and returns "你好" exactly; the listing asserts this round trip.
 ```
 
 (sec-tdd-exercise-4)=
@@ -1428,7 +1637,12 @@ A model of width $d = 4096$ does not tie its input embedding and output projecti
 
 ```{admonition} Solution T4
 :class: dropdown
-Each matrix holds $|\mathcal{V}| \times d$ parameters, so the pair holds $2\,|\mathcal{V}|\,d$: $2 \times 100{,}277 \times 4{,}096 = 821{,}469{,}184$ and $2 \times 200{,}019 \times 4{,}096 = 1{,}638{,}555{,}648$. The difference is $817{,}086{,}464$ parameters, $0.817 / 8 = 0.102$ of the model. In return, text in the languages of {ref}`sec-tdd-linguistic-bias` gets shorter: the Arabic greeting falls from 10 tokens in `cl100k_base` to 4 in `o200k_base`.
+Each matrix holds $|\mathcal{V}| \times d$ parameters, so the pair holds
+$2\,|\mathcal{V}|\,d$: $2 \times 100{,}277 \times 4{,}096 = 821{,}469{,}184$ and
+$2 \times 200{,}019 \times 4{,}096 = 1{,}638{,}555{,}648$. The difference is
+$817{,}086{,}464$ parameters, $0.817 / 8 = 0.102$ of the model. In return, text in the
+languages of {ref}`sec-tdd-linguistic-bias` gets shorter: the Arabic greeting falls from
+10 tokens in `cl100k_base` to 4 in `o200k_base`.
 ```
 
 (sec-tdd-further-reading)=
