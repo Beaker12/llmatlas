@@ -82,22 +82,27 @@ def page_blocks(out):
              "article paragraph 2", "share line", "<aside> links", "<footer>"]
     blocks = parser.blocks
     assert len(blocks) == len(names), [t for t, _ in blocks]
-    fig, ax = plt.subplots(figsize=(7.2, 3.8))
-    ax.add_patch(Rectangle((15, -0.13), 25, 0.43, color="#c6f6d5", zorder=0))
-    ax.text(39, 0.27, "kept: at least 15 words,\nlink density at most 0.3", ha="right", va="top", fontsize=9,
+    fig, ax = plt.subplots(figsize=(7.4, 3.8))
+    ax.add_patch(Rectangle((15, -0.13), 21, 0.43, color="#c6f6d5", zorder=0))
+    ax.text(35.5, 0.27, "kept: at least 15 words,\nlink density at most 0.3", ha="right", va="top", fontsize=9,
             color=GREEN)
     ax.axvline(15, color=GREEN, lw=1, ls="--")
     ax.axhline(0.3, color=GREEN, lw=1, ls="--")
-    offsets = {0: (4, -15), 1: (6, -12), 2: (6, 5), 3: (4, 9), 4: (6, -13), 5: (-6, 9), 6: (6, -4), 7: (6, -12),
-               8: (6, 5)}
+    # Each point carries its number; the key beside the plot names the block. Numbers sit clear of the
+    # threshold lines: below the cookie banner (just under 0.3), above everything else.
+    below = {1}
+    key = []
     for i, ((text, density), name) in enumerate(zip(blocks, names)):
         words = len(text.split())
         kept = words >= 15 and density <= 0.3
         ax.scatter(words, density, s=46, color=GREEN if kept else RED, zorder=3)
-        dx, dy = offsets[i]
-        ax.annotate(f"{name} ({words} words, {density:.2f})", (words, density), textcoords="offset points",
-                    xytext=(dx, dy), ha="right" if dx < 0 else "left", fontsize=8.5, color=INK)
-    ax.set_xlim(0, 40)
+        ax.annotate(str(i + 1), (words, density), textcoords="offset points", xytext=(0, -13 if i in below else 6),
+                    ha="center", va="bottom" if i not in below else "top", fontsize=9, fontweight="bold",
+                    color=GREEN if kept else RED)
+        key.append(f"{i + 1}  {name}: {words} words, {density:.2f}")
+    ax.text(1.03, 1.0, "\n".join(key), transform=ax.transAxes, va="top", ha="left", fontsize=8.5,
+            color=INK, linespacing=1.6)
+    ax.set_xlim(0, 36)
     ax.set_ylim(-0.13, 1.08)
     ax.set_xlabel("words in the block")
     ax.set_ylabel("link density (link characters / characters)")
@@ -171,7 +176,7 @@ def perplexity_terciles(out):
         patch.set_color(GREEN if left < lo else BLUE if left < hi else ORANGE)
     counts = [(ppl < lo).sum(), ((ppl >= lo) & (ppl < hi)).sum(), (ppl >= hi).sum()]
     ax.legend([Rectangle((0, 0), 1, 1, color=c) for c in (GREEN, BLUE, ORANGE)],
-              [f"{name}: {k} pages" for name, k in zip(("head", "middle", "tail"), counts)],
+              [f"{name}: {k:,} pages" for name, k in zip(("head", "middle", "tail"), counts)],
               frameon=False, fontsize=9)
     for t in (lo, hi):
         ax.axvline(t, color=INK, lw=1, ls="--")

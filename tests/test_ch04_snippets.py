@@ -92,3 +92,23 @@ def test_repetition_stats_divides_by_len_text_and_measures_paragraphs_as_datatro
     assert stats["top_2gram_char_frac"] == len("one two") * 2 / 28  # spaces inside the n-gram count
     # the six words hold only two 5-grams and they differ, so no 5-gram is a duplicate
     assert stats["dup_5gram_char_frac"] == 0
+
+
+def test_committed_notebook_keeps_an_image_for_every_plotting_cell():
+    """Every plotting cell of the committed notebook, and every cell tagged figure:<slug>, has an image/png output.
+
+    Executing the notebook with MPLBACKEND=Agg drops the inline images; this catches a notebook committed that way.
+    """
+    import json
+
+    notebook = CH04.parent / "examples" / "preprocessing_pipeline_demo.ipynb"
+    cells = [c for c in json.loads(notebook.read_text(encoding="utf-8"))["cells"] if c["cell_type"] == "code"]
+
+    def pngs(cell):
+        return sum("image/png" in o.get("data", {}) for o in cell.get("outputs", []))
+
+    plotting = [c for c in cells if re.search(r"\bplt\.(show|subplots|figure)\(", "".join(c["source"]))]
+    tagged = [c for c in cells if any(t.startswith("figure:") for t in c["metadata"].get("tags", []))]
+    assert plotting and tagged
+    assert sum(pngs(c) for c in cells) >= len(plotting)
+    assert [c["source"][0] for c in plotting + tagged if pngs(c) == 0] == []

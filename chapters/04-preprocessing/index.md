@@ -112,7 +112,7 @@ The percentages compound. A document that survives language identification with 
 :alt: Horizontal bars for the eight stages of the RefinedWeb pipeline, shrinking from 97.8% after URL filtering to 11.7% after exact deduplication.
 :width: 100%
 
-How much of Common Crawl survives each stage of RefinedWeb's pipeline, from Figure 2 of {cite:t}`penedo2023refinedweb`. Each bar is the share still present after the stage; the label also gives the share that stage removes from its own input. Language identification removes half of what reaches it, and the two deduplication stages together remove close to half of what the filters leave, so 11.7% of the original remains. The first three stages are counted in documents, the rest in tokens.
+How much of Common Crawl survives each stage of RefinedWeb's pipeline, from Figure 2 of {cite:t}`penedo2023refinedweb` (the numbers are in `figures/data/refinedweb_stages.json`). Each bar is the share still present after the stage; the label also gives the share that stage removes from its own input. Language identification removes half of what reaches it, and the two deduplication stages together remove close to half of what the filters leave, so 11.7% of the original remains. The first three stages are counted in documents, the rest in tokens.
 ```
 
 (sec-ch4-text-extraction-normalization)=
@@ -227,7 +227,7 @@ The WET-style text keeps the cookie banner, the menu, the share buttons, the sid
 :alt: Scatter plot of nine page blocks by word count and link density; only the two article paragraphs fall in the shaded keep region.
 :width: 100%
 
-The nine blocks of the listing's news page, placed by word count and link density, as the listing computes them. The shaded corner is what `main_text` keeps. Navigation, sidebar and share buttons are excluded by link density; the headline and the title are excluded by length alone, and the cookie banner (10 words, 0.27) by length although its link density would pass. The footer misses on both counts, narrowly on link density (0.31).
+The nine blocks of the listing's news page, placed by word count and link density as computed by the extraction listing above; the key beside the plot names each numbered block. The shaded corner is what `main_text` keeps. Navigation, sidebar and share buttons are excluded by link density; the headline and the title are excluded by length alone, and the cookie banner (10 words, 0.27) by length although its link density would pass. The footer misses on both counts, narrowly on link density (0.31).
 ```
 
 (sec-ch4-encoding-unicode-normalization)=
@@ -248,7 +248,7 @@ Unicode defines four normalization forms. The two that matter here:
 :alt: A table of four inputs (e with combining accent, precomposed e acute, the fi ligature, superscript two) under NFC, NFD, NFKC and NFKD, with code points.
 :width: 100%
 
-The four Unicode normalization forms applied to four inputs, with the code points of each result; shaded cells differ from the input. The two spellings of é end up identical under NFC (one code point) and under NFD (two), which is what deduplication needs. The ligature ﬁ and the superscript ² change only under the compatibility forms, which is why NFKC is applied selectively: it would turn x² into x2.
+The four Unicode normalization forms applied to four inputs, computed with Python's `unicodedata.normalize`, with the code points of each result; shaded cells differ from the input. The two spellings of é end up identical under NFC (one code point) and under NFD (two), which is what deduplication needs. The ligature ﬁ and the superscript ² change only under the compatibility forms, which is why NFKC is applied selectively: it would turn x² into x2.
 ```
 
 Beyond normalization, pipelines commonly remove or replace the following:
@@ -462,7 +462,7 @@ The terminal-punctuation rule is the most consequential: it removes almost every
 :alt: Two histograms over 4,707 English web pages: mean word length, peaked near 5 characters with thresholds at 3 and 10; and fraction of words containing a letter, peaked near 0.95 with a threshold at 0.8.
 :width: 100%
 
-Two Gopher statistics on 4,707 English pages of at least 50 words from the first 40 MiB of one WET file of the CC-MAIN-2024-10 crawl, with the rule's thresholds dashed (data and method in `figures/data/README.md`). Mean word length sits around 5 characters; the bounds of 3 and 10 cut only the extremes, 1.8% of pages. The fraction of words with a letter has a long left tail, and the 0.8 threshold removes 10.7% of pages.
+Two Gopher statistics on 4,707 English pages of at least 50 words from the first 40 MiB of one WET file of the CC-MAIN-2024-10 crawl, with the rule's thresholds dashed. The per-page statistics are in `figures/data/wet_stats.json`; the source and method are in `figures/data/README.md`. Mean word length sits around 5 characters; the bounds of 3 and 10 cut only the extremes, 1.8% of pages. The fraction of words with a letter has a long left tail, and the 0.8 threshold removes 10.7% of pages.
 ```
 
 **FineWeb additions**, found by computing document statistics on a higher-quality and a lower-quality version of one snapshot (the individually and the globally deduplicated 2013-48 crawl) and choosing thresholds where the two distributions separate {cite}`penedo2024fineweb`:
@@ -679,7 +679,7 @@ The appeal is that one scoring function replaces dozens of rules. The problems a
 :alt: Histogram of the perplexity of 4,707 English web pages on a log scale, colored into three equal-count thirds with cuts near 4,770 and 7,786.
 :width: 100%
 
-Perplexity of the same 4,707 pages under the add-0.5 unigram model of the listing below, trained on 20 English Wikipedia articles (10,774 words), split at its terciles into CCNet's head, middle and tail of 1,569 pages each. The values are large because the reference vocabulary is small, so many web words get the unknown-word probability; only the ranking matters. The distribution is roughly log-normal, so the thirds are wide in perplexity even though they are equal in count.
+Perplexity of the same 4,707 pages (`figures/data/wet_stats.json`) under the add-0.5 unigram model of the listing below, trained on 20 English Wikipedia articles (10,774 words), split at its terciles into CCNet's head, middle and tail of 1,569 pages each. The values are large because the reference vocabulary is small, so many web words get the unknown-word probability; only the ranking matters. The distribution is roughly log-normal, so the thirds are wide in perplexity even though they are equal in count.
 ```
 
 A smoothed unigram model is enough to see how the ranking behaves. Perplexity ({ref}`sec-ch1-perplexity`) of a document with tokens $x_1, \dots, x_T$ under a model $p_\theta$ is
@@ -799,7 +799,7 @@ Because the expected keep rate at classifier score $\hat{p}$ is $\Pr[\text{Paret
 :alt: Two curves of keep probability against classifier score: the GPT-3 curve with shape 9 stays near zero until a score of about 0.8, the Pile curve with shape 3 rises gradually from 0.125.
 :width: 100%
 
-Probability that GPT-3's stochastic filter keeps a page with classifier score $\hat{p}$, $(2-\hat{p})^{-9}$, with the values the listing measures (0.002, 0.026, 0.42 and 1). The Pile's shape of 3 gives the dashed curve, which keeps one page in eight even at a score of 0.
+Probability that GPT-3's stochastic filter keeps a page with classifier score $\hat{p}$, $(2-\hat{p})^{-9}$, marked at the four scores whose expected keep rate the listing above prints (0.002, 0.026, 0.42 and 1). The Pile's shape of 3 gives the dashed curve, which keeps one page in eight even at a score of 0.
 ```
 
 The classifier that produces $\hat{p}$ is small. GPT-3's was a logistic regression on hashed word features {cite}`brown2020language`: each word and word pair is hashed into one of a fixed number of buckets, so the feature vector has the same length however large the vocabulary, and no vocabulary has to be stored. The listing below builds the same thing in miniature. The positive class is a handful of curated sentences, the negative class is raw crawl cut into 20-word windows, and a document's score $\hat{p}$ is the mean predicted probability over its windows, which then feeds the Pareto rule.
@@ -1117,7 +1117,7 @@ which is a steep S-curve with its midpoint near $(1/b)^{1/r}$. Choosing $b$ and 
 :alt: Two MinHash signatures of 16 values side by side, split into four bands of four; band 2 matches in every position and is marked as a candidate.
 :width: 100%
 
-Banding two MinHash signatures with $n_{hash} = 16$, $b = 4$ and $r = 4$. Green positions hold the same minimum in both documents, red ones differ. Twelve of the sixteen agree, so the signature estimates $J \approx 0.75$. A band is hashed as a whole, so bands 1, 3 and 4, each with at least one differing position, land in different buckets; band 2 matches in all four rows, and one matching band is enough to make the pair a candidate.
+Banding two MinHash signatures (illustrative values) with $n_{hash} = 16$, $b = 4$ and $r = 4$. Green positions hold the same minimum in both documents, red ones differ. Twelve of the sixteen agree, so the signature estimates $J \approx 0.75$. A band is hashed as a whole, so bands 1, 3 and 4, each with at least one differing position, land in different buckets; band 2 matches in all four rows, and one matching band is enough to make the pair a candidate.
 ```
 
 Gopher {cite}`rae2021scaling` used 13-word shingles and removed one document of any pair with Jaccard similarity above 0.8; it does not report the number of hash functions. {cite:t}`lee2022deduplicating` used 5-word shingles with a 9,000-value signature in $b = 20$ bands of $r = 450$ rows, then confirmed candidate pairs with edit similarity above 0.8. RefinedWeb {cite}`penedo2023refinedweb` copied those MinHash settings (9,000 hashes in 20 buckets of 450) without a separate verification step; at those settings the midpoint of the banding curve is $(1/20)^{1/450} \approx 0.993$, so banding alone catches only near-identical pairs. FineWeb used 5-word shingles with 112 hash functions in 14 bands of 8 rows, which it describes as targeting documents at least 75% similar: a pair at $J = 0.75$ becomes a candidate with probability $1 - (1 - 0.75^8)^{14} \approx 0.77$, and the curve crosses 0.5 near $J = 0.69$. Dolma relied on exact matching of URLs, documents and paragraphs through a Bloom filter rather than MinHash. The implementation below uses a universal hash family $h_i(\chi) = (a_{i,1} \chi + a_{i,0}) \bmod P$ over the 32-bit integer id $\chi$ of a shingle, with $P$ a large prime, which is what most production implementations do.
@@ -1318,7 +1318,7 @@ With $b = 32$ bands of $r = 4$ rows the curve's midpoint is $(1/32)^{1/4} \appro
 :alt: Four S-shaped curves of candidate probability against Jaccard similarity, with midpoints at 0.42, 0.71, 0.72 and 0.88, and measured points from the notebook lying on the b = 16, r = 8 curve.
 :width: 100%
 
-The probability $1 - (1 - J^r)^b$ that a pair becomes a candidate, for the three bandings of the listing and FineWeb's 14 bands of 8 rows, with each curve's $(1/b)^{1/r}$ marked. The open circles are the notebook's measurement for $b = 16$, $r = 8$ on synthetic shingle sets, 300 signature draws per point; they follow the formula to within 0.041. The same signature length gives very different thresholds depending on how it is split.
+The probability $1 - (1 - J^r)^b$ that a pair becomes a candidate, for the three bandings of the listing and FineWeb's 14 bands of 8 rows, with each curve's $(1/b)^{1/r}$ marked. The curves are the formula; the open circles are measured by the notebook cell tagged `figure:lsh-curves`, for $b = 16$, $r = 8$ on synthetic shingle sets, 300 signature draws per point; they follow the formula to within 0.041. The same signature length gives very different thresholds depending on how it is split.
 ```
 
 Which document to keep from a cluster is not a detail. Keeping the shortest copy drops the version with the comment thread; keeping the longest keeps the version with the navigation menu. FineWeb's authors found that deduplicating each Common Crawl snapshot independently produced *better* models than deduplicating globally across all snapshots, because global deduplication preferentially removed the oldest copy of good content while leaving the long tail of low-quality pages that were never duplicated. The content that survives many crawls is, on average, the content worth keeping. FineWeb-2 {cite}`penedo2025fineweb2` takes the other route: it deduplicates globally, as the first step before any filter, and records the size of each duplicate cluster in the kept document's metadata, so that copies can later be added back in proportion to how often a page was duplicated. {numref}`fig-ch4-dedup-scope` shows the mechanism on six pages.
@@ -1463,7 +1463,7 @@ Because substring removal cuts through the middle of documents, it is applied af
 :alt: The 35 tokens of two documents in cells, with a 13-token license highlighted in both, above eleven rows of the sorted suffix array with their LCP values; one row has LCP 13.
 :width: 100%
 
-The listing's example. Top: the 35 tokens; the 13-token license appears at tokens 3 to 15 in document a and 19 to 31 in document b. Bottom: rows 23 to 33 of the sorted suffix array, each with the length of its longest common prefix (LCP) with the row above. The two suffixes that begin with the whole license are adjacent (ranks 27 and 28) and share 13 tokens, the threshold, so the later copy is marked; the listing prints it as tokens 19 to 32, end exclusive. Suffixes that start inside the license also pair up, but with shorter LCPs, and are not marked.
+The example of the suffix-array listing above. Top: the 35 tokens; the 13-token license appears at tokens 3 to 15 in document a and 19 to 31 in document b. Bottom: rows 23 to 33 of the sorted suffix array, each with the length of its longest common prefix (LCP) with the row above. The two suffixes that begin with the whole license are adjacent (ranks 27 and 28) and share 13 tokens, the threshold, so the later copy is marked; the listing prints it as tokens 19 to 32, end exclusive. Suffixes that start inside the license also pair up, but with shorter LCPs, and are not marked.
 ```
 
 (sec-ch4-semantic-deduplication)=
@@ -1810,7 +1810,7 @@ A corpus is thousands of shards, each a compressed JSONL file of documents with 
 :alt: Three shards pass through a first map of per-document stages, converge on a single global step that shuffles by band bucket and runs union-find, and fan out to a second per-document map.
 :width: 100%
 
-The shape of a distributed pipeline. Every stage in the two maps reads one document and needs nothing else, so shards run anywhere in parallel. Deduplication is the one exception: each document's $b$ band hashes are shuffled so that equal buckets meet, candidate pairs are resolved into clusters with union-find, and the resulting list of documents to drop is applied in the second map.
+The shape of a distributed pipeline, a schematic of the stages in {ref}`sec-ch4-operation-order`. Every stage in the two maps reads one document and needs nothing else, so shards run anywhere in parallel. Deduplication is the one exception: each document's $b$ band hashes are shuffled so that equal buckets meet, candidate pairs are resolved into clusters with union-find, and the resulting list of documents to drop is applied in the second map.
 ```
 
 Each stage writes its output to a new location rather than modifying its input, and records enough in each document's metadata to be rerun. A stage that fails halfway on a shard can be rerun on that shard alone, and a change to one filter requires rerunning that filter and everything after it, not everything before.
