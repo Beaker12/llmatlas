@@ -48,11 +48,15 @@ def test_fence_is_runnable_or_marked_pseudo_code(rel, line, code):
 # fence must print exactly that text (numbers to within one unit of the last digit shown);
 # `% output-shape` compares only the text around the numbers and the line count.
 # First-line markers: `# pseudo-code` is never run, `# network` only by the live test.
+# Every other fence must print at least one line and be followed by its output block (the page convention:
+# a runnable listing shows a key result). A `# network` fence must have its block too; it is not run here.
+# A `# pseudo-code` fence must not be a program: see stale_pseudo_code().
 # Failure strings are "<page>:L<line of the opening fence>: <reason>".
 
 RUN_TIMEOUT = 120
 OUTPUT_BLOCK = re.compile(r"\s*% output(-shape)?[ \t]*\n\s*```text\n([\s\S]*?)```")
 OUTPUT_MARKER = re.compile(r"\s*% output(?:-shape)?[ \t]*(?:\n|$)")
+ANY_MARKER = re.compile(r"\s*%\s*output", re.I)  # a marker, possibly mistyped (reported by marker_failures)
 
 
 def run_fence(code, timeout):
@@ -95,6 +99,26 @@ def marker_failures(text, name):
     return failures
 
 
+def stale_pseudo_code(code):
+    """True when a `# pseudo-code` fence is plainly a runnable program, so the marker hides real code.
+
+    The rule: the fence parses as Python, pyflakes finds no undefined name in it, and at top level it both
+    defines a function and calls a function it defines. Sketches (with `...`, undefined helpers or prose that
+    does not parse) and fragments that only define stay legal.
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    defined = {n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    called = {c.func.id for n in tree.body if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+              for c in ast.walk(n) if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
+    if not defined & called:
+        return False
+    proc = subprocess.run([sys.executable, "-m", "pyflakes"], input=code, capture_output=True, text=True)
+    return "undefined name" not in proc.stdout
+
+
 def has_network_fence(page):
     return any(NETWORK_MARKER.match(code.lstrip())
                for _, code, _ in python_fences(page.read_text(encoding="utf-8")))
@@ -106,9 +130,17 @@ def check_page(page, network=False, timeout=RUN_TIMEOUT):
     failures = [] if network else marker_failures(text, page.name)
     for line, code, rest in python_fences(text):
         first = code.lstrip()
-        if PSEUDO_MARKER.match(first) or bool(NETWORK_MARKER.match(first)) != network:
-            continue
         where = f"{page.name}:L{line}"
+        if PSEUDO_MARKER.match(first):
+            if not network and stale_pseudo_code(code):
+                failures.append(f"{where}: marked '# pseudo-code' but defines and calls its own functions and runs; "
+                                "drop the marker and show its output")
+            continue
+        block = OUTPUT_BLOCK.match(rest)
+        if bool(NETWORK_MARKER.match(first)) != network:
+            if not network and block is None and not ANY_MARKER.match(rest):
+                failures.append(f"{where}: no '% output' block after the fence")
+            continue
         try:
             proc = run_fence(code, timeout)
         except subprocess.TimeoutExpired:
@@ -118,10 +150,14 @@ def check_page(page, network=False, timeout=RUN_TIMEOUT):
             err = proc.stderr.strip().splitlines()
             failures.append(f"{where}: exit {proc.returncode}: {err[-1][:200] if err else 'no stderr'}")
             continue
-        block = OUTPUT_BLOCK.match(rest)
+        if not proc.stdout.strip() and not network:
+            failures.append(f"{where}: prints nothing; print a key result and show it in a '% output' block")
+            continue
         if block is None:
             if OUTPUT_MARKER.match(rest):
                 failures.append(f"{where}: '% output' is not followed by a ```text fence")
+            elif not network and not ANY_MARKER.match(rest):
+                failures.append(f"{where}: no '% output' block after the fence")
             continue
         reason = compare_output(proc.stdout, block.group(2), shape=bool(block.group(1)))
         if reason:
@@ -214,7 +250,7 @@ def test_a_fence_that_raises_is_reported_with_the_last_stderr_line(tmp_path):
 
 
 def test_a_fence_that_times_out_is_reported(tmp_path):
-    page = page_of(tmp_path, "```python\nimport time\ntime.sleep(30)\n```\n")
+    page = page_of(tmp_path, "```python\nimport time\ntime.sleep(30)\n```\n\n% output\n\n```text\n\n```\n")
     assert check_page(page, timeout=1) == ["index.md:L1: timeout after 1s"]
 
 
@@ -250,6 +286,29 @@ def test_an_output_marker_not_after_a_python_fence_is_reported(tmp_path, before)
     page = page_of(tmp_path, f"{before}\n% output\n\n```text\n1\n```\n")
     failures = check_page(page)
     assert len(failures) == 1 and "not directly after a python fence" in failures[0]
+
+
+def test_a_fence_that_prints_nothing_is_reported(tmp_path):
+    page = page_of(tmp_path, "```python\nx = 1 + 1\n```\n\n% output\n\n```text\n2\n```\n")
+    assert check_page(page) == ["index.md:L1: prints nothing; print a key result and show it in a '% output' block"]
+
+
+def test_a_fence_without_its_output_block_is_reported(tmp_path):
+    page = page_of(tmp_path, "```python\nprint(2)\n```\n\nProse.\n")
+    assert check_page(page) == ["index.md:L1: no '% output' block after the fence"]
+    network = page_of(tmp_path, "```python\n# network\nprint(2)\n```\n\nProse.\n")
+    assert check_page(network) == ["index.md:L1: no '% output' block after the fence"]
+
+
+def test_a_pseudo_code_fence_that_runs_as_written_is_reported(tmp_path):
+    stale = "```python\n# pseudo-code\ndef f(x):\n    return x + 1\n\n\nprint(f(1))\n```\n"
+    assert check_page(page_of(tmp_path, stale)) == [
+        "index.md:L1: marked '# pseudo-code' but defines and calls its own functions and runs; "
+        "drop the marker and show its output"]
+    for legal in ("```python\n# pseudo-code\ndef f(x):\n    return helper(x)\n\n\nf(1)\n```\n",
+                  "```python\n# pseudo-code\ndef f(x):\n    ...\n```\n",
+                  "```python\n# pseudo-code\nfor step in training:\n    update(step)\n```\n"):
+        assert check_page(page_of(tmp_path, legal)) == []
 
 
 @pytest.mark.parametrize("chapter_dir", CHAPTER_DIRS, ids=CHAPTER_IDS)

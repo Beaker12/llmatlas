@@ -60,6 +60,11 @@ Network fences are left to the live tests:
 raise RuntimeError("network fence ran")
 ```
 
+% output
+```text
+fetched
+```
+
 (sec-ch0-figures)=
 ## 2. Figures
 
@@ -69,6 +74,13 @@ A plotting fence must not trip the warnings-as-errors setting, and the figure it
 import matplotlib.pyplot as plt
 plt.plot([1, 2, 3])
 plt.show()
+print("plotted 3 points")
+```
+
+% output
+
+```text
+plotted 3 points
 ```
 
 ```{figure} figures/ramp.*
