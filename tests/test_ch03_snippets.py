@@ -24,7 +24,9 @@ SYNC_EXEMPT: dict[str, str] = {  # name -> reason it may differ between the chap
 
 # (chapter regex, notebook-output regex, comparator); each regex has exactly one capture group.
 # Comparator: eq, gt, lt or approx:<rel>, applied as `chapter_value <op> notebook_value`.
-RESULT_CLAIMS: list[tuple[str, str, str]] = []
+RESULT_CLAIMS: list[tuple[str, str, str]] = [
+    (r"\\approx (20\.8)\$T tokens", r"D = (\d+\.\d+)T tokens", "approx:0.01"),
+]
 
 # regex over a sentence -> one-line reason; such a sentence links a notebook and mentions a number but states
 # no result, so the notebook-link check (rule c of test_notebook_prose.py) does not flag it
@@ -37,3 +39,27 @@ NOTATION_OK: dict[str, str] = {}
 INTERFACE_LABELS: dict[str, str] = {
     "sec-ch3-epochs": "1.3 How much is enough",
 }
+
+
+# --- Tests -----------------------------------------------------------------------------------------------------
+import os  # noqa: E402
+import subprocess  # noqa: E402
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+import pytest  # noqa: E402
+
+FIGURE_SCRIPT = Path(__file__).resolve().parents[1] / "chapters" / "03-data-acquisition" / "figures" / "make_figures.py"
+
+
+@pytest.mark.slow
+def test_make_figures_twice_gives_identical_files(tmp_path):
+    """Two runs of the chapter's figure script write byte-identical SVGs (no dates, fixed hash salt)."""
+    env = {**os.environ, "MPLBACKEND": "Agg"}
+    outputs = []
+    for run in ("first", "second"):
+        out = tmp_path / run
+        subprocess.run([sys.executable, str(FIGURE_SCRIPT), str(out)], check=True, capture_output=True, env=env)
+        outputs.append({p.name: p.read_bytes() for p in sorted(out.glob("*.svg"))})
+    assert len(outputs[0]) == 5, sorted(outputs[0])
+    assert outputs[0] == outputs[1]

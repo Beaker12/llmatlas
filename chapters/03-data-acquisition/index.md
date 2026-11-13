@@ -49,6 +49,15 @@ Imagine being asked to assemble a library for someone who will read every book i
 
 Acquisition is where a model's knowledge, its languages, its biases and its legal exposure are all fixed. The cleaning in Chapter 4 can remove what should not have been collected; it cannot add what was never acquired.
 
+{numref}`fig-ch3-acquisition-flow` shows how the parts connect: every source passes the rights checks and is written to the provenance manifest, from which Chapter 4 cleans the text and Chapter 5 samples it by the mixture plan.
+
+```{figure} figures/acquisition-flow.*
+:name: fig-ch3-acquisition-flow
+:alt: Flow chart from top to bottom. Four sources (Common Crawl snapshots, your own crawl, curated sources, synthetic text) feed a rights check, which feeds the provenance manifest. The manifest feeds the mixture plan and Chapter 4's cleaning, and both feed Chapter 5.
+
+From sources to training data. Rights are decided at acquisition ({ref}`sec-ch3-rights-licenses-consent`), each kept document gets a manifest record ({ref}`sec-ch3-provenance-documentation`), and the mixture plan ({ref}`sec-ch3-mixture-design-token-budgeting`) fixes each source's weight $w_s$ and epochs $e_s \le e_{\max}$ before Chapter 5 samples the cleaned shards.
+```
+
 (sec-ch3-pretraining-corpus-composition)=
 
 ## 1. What a Pretraining Corpus Is Made Of
@@ -66,6 +75,15 @@ The training sets of the major models are reported, when they are reported at al
 | LLaMA 1 {cite}`touvron2023llama`                 | 67% CommonCrawl + 15% C4     | 4.5% Wikipedia, 2% StackExchange      | 4.5% (Gutenberg, Books3) | 2.5% arXiv | 4.5% GitHub | 1.4T |
 | Dolma {cite}`soldaini2024dolma`                  | 80% (Common Crawl)           | 3% (Reddit, Wikipedia, Wikibooks)     | 0.2% (Gutenberg) | 2.3% (peS2o)     | 13% (The Stack) | 3T |
 | FineWeb {cite}`penedo2024fineweb`                | 100%                         |                                       |                |                  |                 | 15T |
+
+{numref}`fig-ch3-mixtures` draws the same shares as bars, which makes the contrast visible at a glance: The Pile is the only mixture in which the web crawl is not the largest part.
+
+```{figure} figures/mixtures.*
+:name: fig-ch3-mixtures
+:alt: Five horizontal stacked bars, one per mixture, split into web crawl, curated web, books, papers and code. GPT-3 is 60, 25 and 16 percent; The Pile 18, 17, 15, 37 and 8; LLaMA 1 82, 6.5, 4.5, 2.5 and 4.5; Dolma 80, 3, 0.2, 2.3 and 13; FineWeb 100 percent web crawl.
+
+The published mixtures of the table above. Shares are as published and rounded, so GPT-3's row sums to 101%; the gaps in The Pile and Dolma are sources the table does not place in a column. GPT-3 and LLaMA 1 are shares of training tokens, The Pile of bytes, Dolma and FineWeb of corpus tokens.
+```
 
 Three things stand out. The web is the bulk of every corpus, because nothing else is large enough. Curated sources are small in tokens but upweighted: Wikipedia is 3% of GPT-3's training tokens while being a tiny fraction of the raw data, and LLaMA samples it for more than two epochs. And the totals have grown fifty-fold in four years, from GPT-3's 300B tokens to the 15T of FineWeb and the roughly 15T used by Llama 3 {cite}`grattafiori2024llama`, which is why the question of whether the supply of human-written text is finite {cite}`villalobos2024run` is now taken seriously.
 
@@ -91,6 +109,15 @@ Two results set the limits of stretching a fixed corpus:
 
 - **Repetition is cheap up to a point.** Training for up to about four epochs on the same data costs almost nothing in final loss relative to fresh data; beyond that the returns fall off steeply {cite}`muennighoff2023scaling`. A corpus of 1T unique tokens can support a 4T-token training run, not a 40T one.
 - **The stock of public text is finite.** {cite:t}`villalobos2024run` estimate the stock of human-written public text at about 300 trillion tokens (a 90% interval of 100T to 1,000T) and project that training runs will use all of it at some point between 2026 and 2032.
+
+{numref}`fig-ch3-corpus-size` puts the two together: on a log axis the training sets of the table in {ref}`sec-ch3-published-mixtures` climb about one order of magnitude every two years, and the largest, at 15T tokens, is already within a factor of seven of the lower end of the estimated stock.
+
+```{figure} figures/corpus-size.*
+:name: fig-ch3-corpus-size
+:alt: Log-scale plot of tokens against year. GPT-3 300 billion in 2020, LLaMA 1 1.4 trillion in 2023, Dolma 3 trillion, FineWeb 15 trillion and Llama 3 15 trillion in 2024. A shaded band from 100 to 1,000 trillion with a dashed line at 300 trillion marks the stock of public text; a gray span marks the projected exhaustion years 2026 to 2032.
+
+Training-set and corpus sizes against the stock of public text. Circles are tokens a model was trained on, squares tokens in a released corpus (The Pile is left out because it reports bytes). The band is the 90% interval of 100T to 1,000T tokens estimated by {cite:t}`villalobos2024run`, the dashed line their central 300T, and the gray span the years in which they project the stock to be used up.
+```
 
 Both results bear directly on acquisition. If repeated tokens are nearly free, then a small, high-quality source is worth collecting even though it will be seen many times. If the stock is finite, then every source lost to opt-outs or licensing is a permanent reduction, and synthetic data (Section 7) stops being optional.
 
@@ -119,6 +146,15 @@ A snapshot is identified by a crawl id such as `CC-MAIN-2026-39` (the thirty-nin
 | **WAT**   | JSON metadata per page: links, headers, title, language guess                | ~16 TB            | Link graphs, URL filtering, domain statistics |
 
 A WARC file is a sequence of gzip members, one per record, so that any record can be decompressed on its own once its byte offset is known. Each record has a header block (`WARC-Type`, `WARC-Target-URI`, `WARC-Date`, a content digest, the detected payload type) followed by the payload; a fetched page produces three records, `request`, `response` and `metadata`. The manifest files `warc.paths.gz`, `wet.paths.gz` and `wat.paths.gz` list every file in the snapshot, which is how a job divides the snapshot across machines.
+
+{numref}`fig-ch3-snapshot-layout` follows one path down this hierarchy to a single record, using the index entry that {ref}`sec-ch3-index-targeted-retrieval` looks up.
+
+```{figure} figures/snapshot-layout.*
+:name: fig-ch3-snapshot-layout
+:alt: Tree from crawl-data/CC-MAIN-2026-39 to 100 segments, each with warc, wet and wat directories of about 90, 7 and 16 TB per snapshot. One WARC file is drawn as a row of gzip members (warcinfo, request, response, metadata), with the response member at offset 48,374,322 and 9,882 bytes long highlighted. A URL index line with that filename, offset and length leads to a range request that fetches exactly that member.
+
+The layout of a snapshot. The manifest lists 100,000 WARC files, 1,000 per segment, each about a gigabyte and made of one gzip member per record. An index line gives a record's file, offset and length; the range request `bytes=48374322-48384203` fetches that member alone, and it decompresses without the rest of the file.
+```
 
 ```python
 # network
@@ -254,6 +290,15 @@ HTTP/1.1 200 OK
 34357 bytes of HTML; truncated: False
 ```
 
+{numref}`fig-ch3-warc-record` shows what the three parts of that split are: the WARC header that Common Crawl wrote, the HTTP header the server sent, and the page itself.
+
+```{figure} figures/warc-record.*
+:name: fig-ch3-warc-record
+:alt: A gzip member of 9,882 bytes decompresses to one WARC record, drawn as a stack of five bands. The WARC header (WARC/1.0, WARC-Type response, the target URI, WARC-Date 2026-09-08T10:00:30Z, the payload digest, Content-Type application/http), a blank line, the HTTP response header starting HTTP/1.1 200 OK, a second blank line, and the HTML payload of 34,357 bytes.
+
+Anatomy of the response record fetched above. The first two blank lines (`\r\n\r\n`) divide the record into `warc_head`, `http_head` and `html`, which is the split the code makes. The WARC date and the payload digest are the capture time and digest in the index line; a record cut off at the size limit would also carry `WARC-Truncated: length`. The HTML length is that of the run shown, so it may differ if the record is fetched again.
+```
+
 The CDX API returns the same JSON for a URL you name (`index.commoncrawl.org/<crawl-id>-index?url=…&output=json`), so a corpus builder with a list of a hundred thousand URLs makes a hundred thousand small requests instead of reading whole files. The API server is shared and can be slow or unavailable when it is busy, which is another reason bulk lookups belong in the columnar index.
 
 (sec-ch3-corpora-derived-common-crawl)=
@@ -303,6 +348,15 @@ The Robots Exclusion Protocol (RFC 9309) {cite}`koster2022robots` lets a site st
 - Identify itself with a user agent string that names the crawler and links to a page explaining it, so that site operators can block it or write to its operator.
 - Use the `Sitemap:` entries, which list the URLs a site wants crawled, as the frontier for that site.
 
+{numref}`fig-ch3-robots-decision` lays out the first two rules as the decision a crawler makes before each URL.
+
+```{figure} figures/robots-decision.*
+:name: fig-ch3-robots-decision
+:alt: Flow chart from top to bottom. Fetch /robots.txt, reusing a copy for at most 24 hours. A 4xx answer means no restrictions; a 5xx answer or network failure means the whole site is disallowed; a 2xx answer is parsed for at least the first 500 KiB and the group for this user agent, or else the star group, is used. The longest matching rule then decides: Allow or no match leads to a fetch at the host's delay, Disallow to skipping the URL.
+
+The robots.txt decision under RFC 9309. Note the asymmetry between the two failures: a missing file (4xx) permits everything, while a server error or network failure (5xx) forbids everything.
+```
+
 Python's standard library parses the file:
 
 ```python
@@ -349,6 +403,15 @@ A crawler at corpus scale is a distributed system with four parts:
 - **Fetchers**: many workers, each holding a pool of connections, resolving DNS, fetching with timeouts, and respecting the per-host schedule. Throughput is bounded by politeness rather than bandwidth: at one request per two seconds per host, a hundred thousand hosts in flight give fifty thousand pages per second in theory and a tenth of that in practice.
 - **Deduplication of URLs** before fetching (canonicalization, a seen-set of URL hashes) and of content after fetching (so that mirrors and soft-404 pages do not fill the frontier with links).
 - **Storage** as WARC, with the request, response and metadata records written together, because the raw response is what later re-extraction needs. Writing only extracted text saves space and throws away the option of re-extracting with a better tool next year.
+
+{numref}`fig-ch3-crawler-architecture` arranges the four parts in the order a URL passes through them.
+
+```{figure} figures/crawler-architecture.*
+:name: fig-ch3-crawler-architecture
+:alt: Left to right. Seed URLs and sitemaps fill a frontier of per-host queues. A scheduler, consulting a robots.txt cache, serves the host whose delay expires first, at most one request per host every two seconds. Fetchers handle DNS, connections, timeouts and back-off. Their output goes to a WARC writer and to content deduplication, then to link extraction and canonicalization, and the new URLs join their host's queue in the frontier.
+
+A crawler's parts. Politeness lives in the scheduler, which is why throughput is bounded by the number of hosts in flight rather than by bandwidth. The dashed box closes the loop: links found in fetched pages, once canonicalized and checked against the seen-set, go back into the frontier.
+```
 
 Rendering is the expensive option. A page that builds its content with JavaScript yields a near-empty HTML response to a plain fetcher; running a headless browser recovers the content at many times the cost per page. Most training-data crawls do not render, which is one reason single-page applications are under-represented in corpora.
 
@@ -629,6 +692,15 @@ A dataset on a hub carries a license (ODC-BY, CC BY, Apache 2.0, "other"), and i
 
 Consent in Crisis {cite}`longpre2024consent` measured, across C4, RefinedWeb and Dolma, how the web's permissions for AI crawlers changed between 2023 and 2024: within a year, robots.txt restrictions had put off limits more than 5% of all of C4's tokens and more than 28% of the tokens from its most actively maintained, highest-quality domains (news organizations above all), with terms-of-service restrictions covering a further large share (about 45% of C4), and the restrictions were rising fastest exactly where the best text was. The restrictions are also inconsistent: many sites block OpenAI's crawler but not others, many block `CCBot` without realizing that this also removes them from the open corpora that research depends on, and many state a prohibition in their terms of service that their robots.txt does not express.
 
+{numref}`fig-ch3-consent-restrictions` shows how abrupt the change was. From 2016, where the study's series begins, to mid-2023 the restricted share sat at a few percent; between August 2023 and April 2024 it rose to 19 to 32% of the head domains' tokens, against 5 to 7% of each corpus as a whole.
+
+```{figure} figures/consent-restrictions.*
+:name: fig-ch3-consent-restrictions
+:alt: Line plot from July 2022 to April 2024 of the percentage of tokens fully restricted by robots.txt. Three dashed red lines for head domains stay between 2 and 5 percent until August 2023, then rise steeply to between 19 and 32 percent by April 2024. Three solid blue lines for the full corpora stay near 1 to 2 percent and rise to between 5 and 7 percent.
+
+Share of tokens fully restricted to AI crawlers by robots.txt, by domain tier; data read from Fig. 2 of {cite:t}`longpre2024consent`. Each tier has three lines, one per corpus (C4, RefinedWeb and Dolma); the published figure does not label which line is which corpus, so they are drawn alike. Head domains are the most-used, most actively maintained sources in each corpus.
+```
+
 Opt-out mechanisms beyond robots.txt:
 
 - **Registries** such as Spawning's Do Not Train list and the `ai.txt` proposal, which some corpus builders query at acquisition time.
@@ -730,6 +802,15 @@ Roughly 45% of Common Crawl's pages are English, which is already a large over-r
 | FineWeb-2 {cite}`penedo2025fineweb2`           | 1,000+    | 96 Common Crawl snapshots | Per-language thresholds derived from reference-corpus statistics; duplicates "rehydrated" with cluster-size-dependent weights (1–10) derived from filter rates |
 
 The recurring finding, first established by the audit by {cite:t}`kreutzer2022quality` across mC4, OSCAR and other crawled corpora and repeated in the MADLAD-400 audit, is that automatic language identification produces hundreds of "languages" that on inspection are noise, boilerplate, mislabeled majority-language text or machine translation. Below the top hundred or so languages, a human who reads the language has to look at the data. FineWeb-2's rehydration step adds a nuance: after global per-language deduplication it records each kept document's cluster size and up-samples by a weight between 1 and 10 chosen from how often the quality filters removed documents of that cluster size. Moderately duplicated pages get the highest weights; unique pages and the most-copied pages (often boilerplate) get the lowest.
+
+{numref}`fig-ch3-fineweb2-rehydration` shows the U shape for French. The filters removed 70.4% of unique documents and 66.2% of the most-copied group, both above the global rate of 62.4%, but only 44.6% of documents with 19 copies; the sizes around that minimum get the weight 10, and the sizes whose removal rate is at or near the global rate get 1.
+
+```{figure} figures/fineweb2-rehydration.*
+:name: fig-ch3-fineweb2-rehydration
+:alt: Bar chart of the percentage of documents removed by filters against MinHash cluster size from 1 to 218, bars colored by upsampling weight from 1 to 10. Removal is 70.4 percent at size 1, falls to a minimum of about 45 percent near sizes 17 to 28 (weight 10), then rises slowly past 60 percent above size 175 (weight 1 to 2). A dashed line marks the global removal rate of 62.4 percent.
+
+Filter removal rate by duplicate-cluster size for French in FineWeb-2, and the upsampling weight each size receives; data read from Fig. 2 of {cite:t}`penedo2025fineweb2`. The weight is 10 at the size with the lowest removal rate, 1 above the global removal rate, and interpolated between. The last bar groups the most-copied 0.1% of documents.
+```
 
 (sec-ch3-beyond-crawl)=
 
@@ -926,6 +1007,15 @@ The procedure says nothing about whether the preferred weights are good; it only
 ```{admonition} Planning a Mixture
 :class: note
 The notebook section {ref}`nb-acq-mixture` starts from a compute budget, derives the token count with the Chapter 2 relation, runs `plan_mixture` over a realistic table of sources, plots the planned epochs per source against the four-epoch line, and shows what happens to the plan when a quarter of the high-quality web slice is lost to opt-outs, the rate the consent study measured for the best-maintained domains.
+```
+
+{numref}`fig-ch3-epochs-per-source` is the notebook's plot. Its run is larger than the 2T-token example above: a budget of $C = 10^{24}$ FLOPs for an 8B-parameter model gives $D = C / 6N \approx 20.8$T tokens, so four small sources reach the cap of $e_{\max} = 4$ and the opt-outs push more of the load onto the quality web slice.
+
+```{figure} figures/epochs-per-source.*
+:name: fig-ch3-epochs-per-source
+:alt: Grouped bar chart of epochs per source for a 21T-token run, planned and after opt-outs. Web rises slightly, from about 1.17 to 1.23 epochs, web_quality from 1.5 to 2.1, code stays at 1.8, and papers, wikipedia, books and dialogue all sit at the 4-epoch cap in both plans. A dashed line marks the cap at 4.
+
+Epochs $e_s$ per source from the notebook's `plan_mixture` run ($D \approx 20.8$T tokens, cap $e_{\max} = 4$), before and after removing 5% of the web and 28% of the quality web, the losses measured by {cite:t}`longpre2024consent`. Sources already at the cap cannot absorb the loss, so it falls on the web slices that still have room.
 ```
 
 (sec-ch3-provenance-documentation)=
