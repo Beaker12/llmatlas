@@ -56,7 +56,7 @@
 <text xml:space="preserve" text-anchor="start" x="8" y="-36.8" font-family="DejaVu Sans" font-weight="bold" font-size="12.00" fill="#1a202c">HTML payload</text>
 <text xml:space="preserve" text-anchor="start" x="103.55" y="-36.8" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c"> (html)</text>
 <text xml:space="preserve" text-anchor="start" x="8" y="-24.8" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">&lt;!DOCTYPE html&gt;&lt;html&gt; … &lt;/html&gt;</text>
-<text xml:space="preserve" text-anchor="start" x="8" y="-12.8" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">34,353 bytes when the lookup listing ran</text>
+<text xml:space="preserve" text-anchor="start" x="8" y="-12.8" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">34,353 bytes in this record</text>
 <text xml:space="preserve" text-anchor="start" x="435.9" y="-38.2" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">input to text</text>
 <text xml:space="preserve" text-anchor="start" x="435.9" y="-23.8" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">extraction in</text>
 <text xml:space="preserve" text-anchor="start" x="435.9" y="-9.4" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">preprocessing</text>

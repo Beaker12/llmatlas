@@ -356,3 +356,41 @@ def test_effective_data_law_listing_prints_what_the_page_shows():
     ns = {}
     exec(_page_block("def effective"), ns)  # noqa: S102 - the page's own listing
     assert [round(ns["effective"](e), 2) for e in (1, 4, 10, 40)] == [1.0, 3.73, 7.81, 15.17]
+
+
+def test_no_runnable_listing_queries_the_cdx_server():
+    """The CDX request is taught as a documented format; nothing the live test runs
+    may depend on the unreachable index server."""
+    import re
+    text = PAGE.read_text(encoding="utf-8")
+    for block in re.findall(r"```python\n(.*?)\n```", text, flags=re.S):
+        assert "index.commoncrawl.org" not in block
+    network = re.findall(r"```python\n# network\b", text)
+    assert len(network) == 5  # robots, range fetch, columnar index, crawler, manifest
+
+
+def test_cdx_reply_example_agrees_with_the_index_line():
+    import json
+    import re
+    text = PAGE.read_text(encoding="utf-8")
+    lines = _page_block("INDEX_LINES = [")
+    ns = {}
+    exec(lines, ns)  # noqa: S102 - the page's own listing
+    _, timestamp, fields = ns["INDEX_LINES"][0].split(" ", 2)
+    hit = json.loads(fields)
+    reply = re.search(r"```text\n(\{\"urlkey\".*?\})\n```", text, flags=re.S).group(1)
+    sketch = json.loads("".join(l.strip() for l in reply.splitlines()))
+    assert sketch["timestamp"] == timestamp
+    for key in ("url", "digest", "length", "offset", "filename"):
+        assert sketch[key] == hit[key]
+    assert (hit["filename"], int(hit["offset"]), int(hit["length"])) == (
+        "crawl-data/CC-MAIN-2026-39/segments/1788492699801.50/warc/"
+        "CC-MAIN-20260908083825-20260908113825-00403.warc.gz", 48374322, 9882)
+
+
+def test_phi4_listing_prints_what_the_page_shows(capsys):
+    ns = {}
+    exec(_page_block("PHI4 = {"), ns)  # noqa: S102 - the page's own listing
+    out = capsys.readouterr().out.splitlines()
+    assert out[2].split(":")[1].split(",")[0].strip() == "13.8 epochs"
+    assert round(ns["effective"](13.8), 2) == 9.69

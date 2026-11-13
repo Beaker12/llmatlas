@@ -10,7 +10,7 @@ Imagine being asked to assemble a library for someone who will read every book i
 
 **The web** is the only source large enough to fill most of the shelves. Common Crawl, a non-profit that has crawled the web since 2008 and publishes the result for free, supplies the raw material for nearly every open corpus and, by all accounts, for most closed ones.
 
-**Curated sources** fill the gaps the web leaves: encyclopedias for facts, books for long-form prose, scientific papers for technical reasoning, source code for programming, and conversation for dialogue. In most mixtures each is a few percent of the corpus (the exceptions are The Pile, where papers are 37% of the training bytes, and Dolma, where code is 13% of the tokens), and the smallest (Wikipedia, books) are typically seen two or more times.
+**Curated sources** fill the gaps the web leaves: encyclopedias for facts, books for long-form prose, scientific papers for technical reasoning, source code for programming, and conversation for dialogue. In most mixtures each is a few percent of the corpus (the exceptions are The Pile, where papers, court opinions and patents are 37% of the training bytes (papers alone 27%), and Dolma, where code is 13% of the tokens), and the smallest (Wikipedia, books) are typically seen two or more times.
 
 **Crawling** is how new material is obtained when the published crawls are not enough. It is a matter of HTTP mechanics, politeness conventions that are rapidly hardening into legal lines, and arithmetic about how many machines it takes to fetch a billion pages.
 
@@ -88,7 +88,7 @@ The training sets of the major models are reported, when they are reported at al
 | Model or corpus                                  | Web crawl                    | Curated web (Wikipedia, forums, news) | Books          | Papers           | Code            | Total tokens |
 | ------------------------------------------------ | ---------------------------- | ------------------------------------- | -------------- | ---------------- | --------------- | ------------ |
 | GPT-3 {cite}`brown2020language`                  | 60% (filtered Common Crawl)  | 22% WebText2, 3% Wikipedia            | 16% (two book corpora) | included in web | not separate | 300B (trained on) |
-| The Pile {cite}`gao2020pile`                     | 18% Pile-CC                  | 17% (OpenWebText2, StackExchange, Wikipedia, HN) | 15% (Books3, Gutenberg, BookCorpus2) | 37% (PubMed Central, arXiv, FreeLaw, USPTO, PubMed abstracts, …) | 8% GitHub | 825 GiB raw, 1,254 GiB after upsampling (bytes; no token count reported) |
+| The Pile {cite}`gao2020pile`                     | 18% Pile-CC                  | 17% (OpenWebText2, StackExchange, Wikipedia, HN) | 15% (Books3, Gutenberg, BookCorpus2) | 37% (27% papers: PubMed Central, arXiv, PubMed abstracts, …; 10% court opinions and patents: FreeLaw, USPTO) | 8% GitHub | 825 GiB raw, 1,254 GiB after upsampling (bytes; no token count reported) |
 | LLaMA 1 {cite}`touvron2023llama`                 | 67% CommonCrawl + 15% C4     | 4.5% Wikipedia, 2% StackExchange      | 4.5% (Gutenberg, Books3) | 2.5% arXiv | 4.5% GitHub | 1.4T (trained on) |
 | Dolma {cite}`soldaini2024dolma`                  | 81% (Common Crawl)           | 3% (Reddit, Wikipedia, Wikibooks)     | 0.2% (Gutenberg) | 2.3% (peS2o)     | 13.4% (The Stack) | 3T (corpus) |
 | FineWeb {cite}`penedo2024fineweb`                | 100%                         |                                       |                |                  |                 | 15T (corpus) |
@@ -233,6 +233,7 @@ alone, and it decompresses without the rest of the file.
 import gzip
 import json
 import os
+import time
 import urllib.request
 import zlib
 
@@ -279,6 +280,7 @@ def parse_record(record):
 
 
 paths = warc_paths("CC-MAIN-2026-39")
+time.sleep(2)  # two seconds between requests to one host
 first_256k = fetch(BASE + paths[0], {"Range": "bytes=0-262143"})
 records = [parse_record(r) for r in warc_records(first_256k)]
 print(len(paths), "WARC files;", len(records), "complete records in the first 256 KB")
@@ -300,7 +302,7 @@ Large responses are not stored whole. Common Crawl's crawler stops reading a res
 
 ### 2.3 The index and targeted retrieval
 
-Common Crawl also publishes a URL index for each snapshot, queryable through the CDX API (`index.commoncrawl.org/<crawl-id>-index?url=…&output=json`), which returns the WARC filename, byte offset and length of every capture of a URL or URL prefix. Combined with a range request this retrieves a single page from a 90 TB snapshot in one round trip. It is how researchers study a particular site's history across snapshots, and how a corpus builder can pull every capture of a chosen list of domains without scanning the whole snapshot. The index server is shared and rate limited, so bulk use goes through the columnar index files (`cc-index-table`, in Parquet on S3) and a query engine rather than the HTTP API.
+Common Crawl also publishes a URL index for each snapshot, queryable through the CDX API. A query returns the WARC filename, byte offset and length of every capture of a URL or URL prefix, and combined with a range request it retrieves a single page from a 90 TB snapshot in one round trip. It is how researchers study a particular site's history across snapshots, and how a corpus builder can pull every capture of a chosen list of domains without scanning the whole snapshot. The index server is shared and rate limited, so bulk use goes through the columnar index files (`cc-index-table`, in Parquet on S3) and a query engine rather than the HTTP API.
 
 A worked lookup in two steps. An index entry gives, for one capture, the WARC file, the byte offset and the compressed length of its record. The three entries below are real lines of the CC-MAIN-2026-39 index, taken from the start of its first index file (the files under `cc-index/collections/<crawl-id>/indexes/` are themselves blocks of gzip members, located through `cluster.idx`, so they too can be read by range request). Each entry is over 400 characters on one line; the listing adds line breaks for display only, writing it as adjacent string literals split after each JSON field, which Python joins back into the exact line. Turning an entry into the request that retrieves the record is arithmetic:
 
@@ -377,37 +379,27 @@ http://18.199.135.0/stocks/johnson-johnson 20260910 200
       Range: bytes=111752-125567
 ```
 
-The same entry can be asked for by URL through the CDX API instead of being read out of an index file. The query returns one JSON object per capture, with the SURT key and capture time as `urlkey` and `timestamp` beside the fields of the index line, and the last three of those fields are all the range fetch below needs:
-
-```python
-# network
-import json
-import os
-import urllib.parse
-import urllib.request
-
-UA = os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")
-url = "https://3.214.11.0/galleries/garys-gallery/yazyk/"
-query = urllib.parse.urlencode({"url": url, "output": "json"})
-endpoint = "https://index.commoncrawl.org/CC-MAIN-2026-39-index"
-req = urllib.request.Request(f"{endpoint}?{query}", headers={"User-Agent": UA})
-reply = urllib.request.urlopen(req, timeout=120).read().decode()
-hits = [json.loads(line) for line in reply.splitlines()]
-hit = hits[0]
-print(len(hits), "capture(s);", hit["urlkey"], hit["timestamp"], hit["status"])
-FILENAME, START, LENGTH = hit["filename"], int(hit["offset"]), int(hit["length"])
-# the three values the range fetch below uses
-print(FILENAME.rsplit("/", 1)[1], START, LENGTH)
-```
-
-% output-shape
+The same entry can be asked for by URL through the CDX API instead of being read out of an index file. The book does not run that query, because the index server is shared and its replies change with every crawl; the request and response below show the documented format only. Common Crawl's index server is, in the words of its repository, "a deployment of the pywb web archive replay and index server", and refers readers to the pywb "CDX Server API" page for the details. That page says that "the only required parameter to the cdx server api is the url", that `output=json` "will return each line as a proper JSON dictionary", and that the standard fields are "urlkey, timestamp, url, mime, status, digest, length, offset, filename". It also warns that without a `limit` "all the matching lines are returned, which may be slow". A request names the crawl in the path and the URL in the query:
 
 ```text
-1 capture(s); 0,11,214,3)/galleries/garys-gallery/yazyk 20260908100030 200
-CC-MAIN-20260908083825-20260908113825-00403.warc.gz 48374322 9882
+GET https://index.commoncrawl.org/CC-MAIN-2026-39-index
+    ?url=https://3.214.11.0/galleries/garys-gallery/yazyk/&output=json&limit=1
 ```
 
-The index server did not answer from the machine on which this chapter was built, in repeated attempts, so the block above shows the response format the API documents for this record (the first index line above) and was not captured from a run. The columnar index below was run, and gives the same three values for another URL.
+The reply is one JSON object per line, one line per capture. For the entry above it carries the fields of the index line, with the SURT key and capture time as `urlkey` and `timestamp`; the sketch below is built from that index line and is not a server reply:
+
+```text
+{"urlkey": "0,11,214,3)/galleries/garys-gallery/yazyk",
+ "timestamp": "20260908100030",
+ "url": "https://3.214.11.0/galleries/garys-gallery/yazyk/",
+ "mime": "text/html", "status": "200",
+ "digest": "4FPPZ452ITDX4GHJQJ354OVFUQJCBZVS",
+ "length": "9882", "offset": "48374322",
+ "filename": "crawl-data/CC-MAIN-2026-39/segments/1788492699801.50/warc/
+CC-MAIN-20260908083825-20260908113825-00403.warc.gz"}
+```
+
+(In the real reply each object is on a single line, and the filename is not broken.) The last three fields are all the range fetch needs, and they are the values the next listing fetches with.
 
 The second step fetches exactly those bytes. Because each record is its own gzip member, the slice decompresses on its own:
 
@@ -418,10 +410,8 @@ import os
 import urllib.request
 
 UA = os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")
-# FILENAME, START and LENGTH are the values the index query above returns for the
-# first index line (the record is 9882 bytes at offset 48374322 of this file); they
-# are restated so that this fetch runs even when the index
-# server is unreachable.
+# FILENAME, START and LENGTH are the filename, offset and length of the first index
+# line above (the record is 9882 bytes at offset 48374322 of this file).
 FILENAME = ("crawl-data/CC-MAIN-2026-39/segments/1788492699801.50/warc/"
             "CC-MAIN-20260908083825-20260908113825-00403.warc.gz")
 START, LENGTH = 48374322, 9882
@@ -547,7 +537,7 @@ com,blogspot,dantevada)/2012/02/blog-post_08.html 200
 fetched 33 MB of 503 MB (7%)
 ```
 
-The crawl's `warc` subset has 300 such files. In the files whose footers were read for this chapter, each is sorted by key but covers keys from all over the alphabet, so a query for one host repeats the footer check on every file and reads the matching row group of each. This listing did it for one file and moved 7% of its bytes; a query engine such as Athena runs the same pruning over all 300 files in parallel, which is what makes the columnar route the one for lists of thousands of URLs.
+The crawl's `warc` subset has 300 such files. Each file is sorted by key but covers keys from all over the alphabet, so a query for one host repeats the footer check on every file and reads the matching row group of each. This listing did it for one file and moved 7% of its bytes; a query engine such as Athena runs the same pruning over all 300 files in parallel, which is what makes the columnar route the one for lists of thousands of URLs.
 
 
 (sec-ch3-corpora-derived-common-crawl)=
@@ -792,9 +782,11 @@ def remove_dot_segments(path):
 
 def canonicalize(url):
     """RFC 3986 normalization (case, default port, percent-encoding, dot segments),
-    then three crawler conventions that the RFC does not make: drop the fragment,
-    sort the query parameters, and drop any userinfo (user:password@), which a
-    crawler should neither store nor send. IPv6 hosts keep their brackets."""
+    then four crawler conventions that the RFC does not make: drop the fragment,
+    sort the query parameters, drop an empty query ("?" alone, which RFC 3986
+    6.2.3 says cannot be assumed equivalent), and drop any userinfo
+    (user:password@), which a crawler should neither store nor send. IPv6 hosts
+    keep their brackets."""
     p = urlsplit(url)
     scheme, host = p.scheme.lower(), (p.hostname or "").lower()
     if ":" in host:      # IPv6 literal: urlsplit strips the brackets RFC 3986 requires
@@ -933,7 +925,7 @@ first crawl:  {'blocked': 1, 'duplicate': 2, 200: 5} in 6.0 simulated s
 second crawl: {'blocked': 1, 'duplicate': 2, 304: 5} in 6.0 simulated s
 ```
 
-The first crawl fetches five pages and two robots.txt files in six simulated seconds, skips the disallowed `/private/x`, and recognizes two links (`/A/../a#part-2` and the upper-case `example.org` URL with an empty query) as pages it already has. The re-crawl receives five `304` answers and transfers no page content. Against a real server the same exchange looks like this:
+The first crawl fetches five pages and two robots.txt files in six simulated seconds, skips the disallowed `/private/x`, and recognizes two links (`/A/../a#part-2` and the upper-case `example.org` URL with an empty query, which canonicalization treats as the URL without one by a crawler convention and not by the RFC) as pages it already has. The re-crawl receives five `304` answers and transfers no page content. Against a real server the same exchange looks like this:
 
 ```python
 # network
@@ -1118,7 +1110,7 @@ A dataset on a hub carries a license (ODC-BY, CC BY, Apache 2.0, "other"), and i
 
 Consent in Crisis {cite}`longpre2024consent` measured, across C4, RefinedWeb and Dolma, how the web's permissions for AI crawlers changed between 2023 and 2024: within a year, robots.txt restrictions had put off limits more than 5% of all of C4's tokens and more than 28% of the tokens from its most actively maintained, highest-quality domains (news organizations above all), while, measured separately, terms of service restricting crawling covered "a full 45% of C4" (the paper reports the two measures on their own, not as shares that add), and the restrictions were rising fastest exactly where the best text was. The restrictions are also inconsistent: many sites block OpenAI's crawler but not others, many block `CCBot` without realizing that this also removes them from the open corpora that research depends on, and many state a prohibition in their terms of service that their robots.txt does not express.
 
-{numref}`fig-ch3-consent-restrictions` shows how abrupt the change was. From 2016, where the study's series begins, to mid-2023 the restricted share sat at a few percent; between August 2023 and April 2024 it rose to 19 to 32% of the head domains' tokens, against 5 to 7% of each corpus as a whole.
+{numref}`fig-ch3-consent-restrictions` shows how abrupt the change was. From 2016, where the study's series begins, to mid-2023 the restricted share sat at a few percent; between August 2023 and April 2024 it rose to 20 to 33% of the head domains' tokens, the range the study states (the endpoints read off the plotted lines are a point lower), against 5 to 7% of each corpus as a whole.
 
 :::{figure} figures/consent-restrictions.*
 :name: fig-ch3-consent-restrictions
@@ -1305,7 +1297,7 @@ If the stock of human-written text is the binding constraint, text generated by 
 
 ### 7.2 What can go wrong
 
-Synthetic data inherits the generating model's errors, style and gaps, and feeding it back repeatedly compounds them. {cite:t}`shumailov2024curse` showed that models trained on the outputs of earlier models lose the tails of the distribution first, so that after a few generations rare content disappears and the model's outputs converge on a narrow, repetitive mode. The practical mitigations are to keep synthetic data a minority of the mixture, to keep human-written data in every generation, to anchor generation in real documents (rephrasing, grounded question writing) rather than free generation, and to mark synthetic data as such in provenance records. The last matters beyond your own pipeline: model-generated text is now a growing fraction of the open web, so future crawls contain it whether or not it was labeled.
+Synthetic data inherits the generating model's errors, style and gaps, and feeding it back repeatedly compounds them. {cite:t}`shumailov2024curse` showed that models trained on the outputs of earlier models lose the tails of the distribution first, so that after a few generations rare content disappears and the model's outputs converge on a narrow, repetitive mode. The practical mitigations are to cap the synthetic share (a share that production mixtures set differently; see {ref}`sec-ch3-epoch-cap-per-source`), to keep human-written data in every generation, to anchor generation in real documents (rephrasing, grounded question writing) rather than free generation, and to mark synthetic data as such in provenance records. The last matters beyond your own pipeline: model-generated text is now a growing fraction of the open web, so future crawls contain it whether or not it was labeled.
 
 A toy version of the experiment shows the mechanism. Let training be the estimation of word frequencies from a sample and generation be sampling from the estimate. A word type that a finite sample happens to miss gets probability zero and can never return, so with each generation of purely synthetic data the rare types disappear; replacing half of each generation's data with fresh human text keeps most of them:
 
@@ -1372,6 +1364,45 @@ $$e_s = \frac{w_s D}{U_s} \le e_{\max} \approx 4 \quad \text{for every source } 
 
 Small, high-quality sources (Wikipedia, textbooks, papers) hit the cap first and are the reason mixtures cannot simply weight sources by preference.
 
+The cap is a guideline from controlled experiments, and published mixtures do exceed it. The phi-4 report {cite}`abdin2024phi4` lists, for each source of its pretraining mixture, the "fraction of training", the "unique token count" and the "number of epochs", which are $w_s$, $U_s$ and $e_s$ of this section: web 15%, 1.3T tokens, 1.2 epochs; web rewrites 15%, 290B, 5.2; synthetic 40%, 290B, 13.8; code 20%, 820B, 2.4; acquired sources 10%, 580B, 1.7 (its Table 5). It states that "the total number of epochs on each data source is determined using the ratio of allocated tokens in the mixture and the number of unique tokens in that source", the formula above. Synthetic text is the largest component, and the authors report that "prioritizing more epochs over our synthetic data led to better performance with respect to adding fresh web tokens", while models trained only on synthetic data "underperformed on the knowledge-heavy benchmarks". The listing sets the stated epochs against the decay law of {ref}`sec-ch3-epochs`:
+
+```python
+import math
+
+R_STAR = 15.387756  # decay constant of the data-constrained scaling law
+
+
+def effective(epochs):
+    """Fresh-token equivalents of one unique token seen for `epochs` epochs."""
+    return 1 + R_STAR * (1 - math.exp(-(epochs - 1) / R_STAR))
+
+
+# phi-4 pretraining mixture (Table 5): share of training tokens, unique tokens
+# in billions, and the epochs the report states.
+PHI4 = {"web": (0.15, 1300, 1.2), "web rewrites": (0.15, 290, 5.2),
+        "synthetic": (0.40, 290, 13.8), "code": (0.20, 820, 2.4),
+        "acquired": (0.10, 580, 1.7)}
+D = 10_000  # billions of training tokens, implied by e = w * D / U
+
+for name, (w, u, e) in PHI4.items():
+    assert abs(w * D / u - e) / e < 0.06  # the table's epochs follow from w, U, D
+    print(f"{name:>12}: {e:4.1f} epochs, {effective(e):5.2f} fresh equivalents,",
+          f"{effective(e) / e:.0%} per pass")
+assert 9.6 < effective(13.8) < 9.8
+```
+
+% output
+
+```text
+         web:  1.2 epochs,  1.20 fresh equivalents, 100% per pass
+web rewrites:  5.2 epochs,  4.68 fresh equivalents, 90% per pass
+   synthetic: 13.8 epochs,  9.69 fresh equivalents, 70% per pass
+        code:  2.4 epochs,  2.34 fresh equivalents, 97% per pass
+    acquired:  1.7 epochs,  1.68 fresh equivalents, 99% per pass
+```
+
+The five epoch counts follow from the shares and a run of about 10T tokens, as the formula says. The decay law values the 13.8 passes over the synthetic data at 9.7 fresh passes: a loss, but a smaller one than the four-epoch rule would suggest, and a trade the authors made on purpose because each extra synthetic pass was worth more to them than a fresh web token. The law was fitted on natural text, and the report does not cite it, so the listing shows what the law would predict and not what the authors measured. For a mixture designer the lesson is that $e_{\max} \approx 4$ is a default for natural text, to be revisited source by source, and that the share of synthetic data, like the epoch cap, is a decision tested by ablation in the report and not a constant of nature.
+
 (sec-ch3-setting-weights)=
 
 ### 8.3 Setting the weights
@@ -1379,8 +1410,46 @@ Small, high-quality sources (Wikipedia, textbooks, papers) hit the cap first and
 Three ways the weights get set:
 
 - **By hand, from experience.** LLaMA's mixture (67% crawl, 15% C4, 4.5% each of GitHub, Wikipedia and books, 2.5% arXiv, 2% StackExchange, with Wikipedia and books at about two epochs) {cite}`touvron2023llama` is the template most open models started from.
-- **By optimization.** DoReMi {cite}`xie2023doremi` trains a small proxy model with weights adjusted to minimize the worst-case excess loss across domains against a reference, then trains the large model with the resulting weights; on The Pile it improved average downstream accuracy at the same token budget and reached the baseline's downstream accuracy 2.6 times faster. During the proxy run each domain has a weight, and every step multiplies it by the exponential of the domain's excess loss times a step size. The excess loss is the per-token loss of the proxy minus that of the reference, floored at zero, averaged over the domain's tokens in the batch. The weights are then renormalized and mixed with the uniform distribution with a small weight $c$ (the paper uses $c = 10^{-3}$), which keeps every domain's weight above zero. Domains that the proxy still learns slowly relative to the reference gain weight, which is the worst-case (minimax) objective carried out by exponentiated-gradient ascent on the weights.
+- **By optimization.** DoReMi {cite}`xie2023doremi` trains a small proxy model with weights adjusted to minimize the worst-case excess loss across domains against a reference, then trains the large model with the proxy run's weights averaged over its steps; on The Pile it improved average downstream accuracy at the same token budget and reached the baseline's downstream accuracy 2.6 times faster. During the proxy run each domain has a weight, and every step multiplies it by the exponential of the domain's excess loss times a step size. The excess loss is the per-token loss of the proxy minus that of the reference, floored at zero, averaged over the domain's tokens in the batch. The weights are then renormalized and mixed with the uniform distribution with a small weight $c$ (the paper uses $c = 10^{-3}$), which keeps every domain's weight above zero. Domains that the proxy still learns slowly relative to the reference gain weight, which is the worst-case (minimax) objective carried out by exponentiated-gradient ascent on the weights. The update is written out below, with the averaging that the paper's Algorithm 1 returns: "DoReMi takes the averaged domain weights over DRO training steps" {cite}`xie2023doremi`.
 - **By ablation.** The FineWeb {cite}`penedo2024fineweb` and DataComp-LM {cite}`li2024datacomp` protocol, training small models on candidate mixtures and comparing benchmarks, is the most expensive of the three, since every candidate costs a training run, and it is the one most teams use for the final decision.
+
+With $\Delta_t[i]$ the excess loss of domain $i$ at step $t$, $\nu$ the step size, $c$ the smoothing weight and $u$ the uniform distribution over the $k$ domains, one step and the returned weights are
+
+$$q_t' = q_{t-1} \odot \exp(\nu \Delta_t), \qquad q_t = (1 - c)\,\frac{q_t'}{\sum_{i=1}^k q_t'[i]} + c\,u, \qquad \bar{q} = \frac{1}{T} \sum_{t=1}^{T} q_t,$$
+
+where $\odot$ is the entrywise product and $\bar{q}$ is what the large run uses. The weights at the last step are one noisy sample of a process that keeps moving, because each batch's excess loss is noisy; the average smooths that out. The toy below has two domains, one the proxy lags on by 0.5 nats per token and one by 0.1, with a gap that shrinks as the domain's weight grows and is multiplied by noise in each batch. It is not the paper's setup, only the update rule applied to a made-up loss:
+
+```python
+import math
+import random
+
+rng = random.Random(0)
+NU, C = 4.0, 1e-3  # step size; smoothing with the uniform distribution
+GAP = [0.5, 0.1]    # how far the proxy lags the reference on each domain
+alpha = [0.5, 0.5]
+history = []
+for step in range(200):
+    # the excess loss shrinks as a domain's weight grows, and each batch is noisy
+    excess = [max(0.0, g * (1 - 1.6 * a) * rng.uniform(0.0, 2.0))
+              for g, a in zip(GAP, alpha)]
+    raw = [a * math.exp(NU * x) for a, x in zip(alpha, excess)]
+    alpha = [(1 - C) * r / sum(raw) + C / 2 for r in raw]
+    history.append(alpha)
+mean = [sum(h[i] for h in history) / len(history) for i in range(2)]
+print("final step weights:", [round(a, 3) for a in history[-1]])
+print("averaged weights:  ", [round(a, 3) for a in mean])
+assert abs(sum(mean) - 1) < 1e-9 and mean[0] > mean[1]
+assert min(min(h) for h in history) >= C / 2
+```
+
+% output
+
+```text
+final step weights: [0.563, 0.437]
+averaged weights:   [0.586, 0.414]
+```
+
+The domain the proxy lags on more gains weight, and the two ways of reading the weights differ by two points of share in the first domain; the paper uses the average.
 
 A fourth, increasingly common choice is **curriculum**: training on the full mixture for most of the run and then "annealing" on a small, high-quality subset (FineWeb-Edu, textbooks, instruction-like data) in the final stretch of the run. The Llama 3 report {cite}`grattafiori2024llama` linearly anneals the learning rate to 0 over the final 40M tokens of pre-training, and runs its annealing experiments on a 50% trained 8B model with 40B tokens, 30% of them from the dataset under test.
 
@@ -1564,7 +1633,7 @@ into Chapter 4.
 
 ## Summary
 
-- **Composition.** Most published mixtures are mostly web crawl, because nothing else is large enough; The Pile, at 18% web crawl, is the exception; curated sources are a few percent each in most mixtures (The Pile's papers, 37%, and Dolma's code, 13%, are the exceptions) and are upweighted. Training sets grew from GPT-3's 300B tokens to 15T in four years and are now within a factor of seven of the lower end (100T tokens) of the estimated effective stock of public text, and a factor of twenty below its central 300T; that stock is already adjusted for quality and for repeated epochs ({ref}`sec-ch3-epochs`).
+- **Composition.** Most published mixtures are mostly web crawl, because nothing else is large enough; The Pile, at 18% web crawl, is the exception; curated sources are a few percent each in most mixtures (The Pile's papers, court opinions and patents, 37%, and Dolma's code, 13%, are the exceptions) and are upweighted. Training sets grew from GPT-3's 300B tokens to 15T in four years and are now within a factor of seven of the lower end (100T tokens) of the estimated effective stock of public text, and a factor of twenty below its central 300T; that stock is already adjusted for quality and for repeated epochs ({ref}`sec-ch3-epochs`).
 - **Common Crawl.** A snapshot is 100 segments and 100,000 WARC files, about 90 TB compressed. Each record is its own gzip member, so an index line (file, offset, length) and one range request retrieve a single page; for many URLs the columnar index answers the same question by reading only the matching parts of Parquet files ({ref}`sec-ch3-index-targeted-retrieval`).
 - **Crawling.** A crawler obeys robots.txt as RFC 9309 defines it (redirects followed, at least five in a row, 4xx permits, 5xx forbids, longest match wins), spaces its requests per host, takes its seeds from sitemaps, canonicalizes URLs and re-fetches with `ETag`s. Politeness, not bandwidth, sets its throughput ({ref}`sec-ch3-crawler-architecture`).
 - **Curated sources.** Wikipedia, books, papers, code, forums and public records each supply something the web lacks, and each comes with its own terms, which for licensed news and for users' conversations are a contract and a consent setting ({ref}`sec-ch3-licensed-news`, {ref}`sec-ch3-first-party-conversations`); the books lawsuits turned on how the copies were obtained ({ref}`sec-ch3-books`).
