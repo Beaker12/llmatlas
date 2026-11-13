@@ -97,20 +97,22 @@ The caveat, which {ref}`sec-ch4-measuring-whether-filter-helps` returns to, is t
 
 Most published pipelines are a variation of the following sequence. The order matters because the cheap stages run first and shrink the input for the expensive ones, and because some stages assume the output of others (deduplication over normalized text finds more duplicates than deduplication over raw HTML).
 
-| Stage                   | Typical cost per document | Typical drop rate | Depends on                       |
-| ----------------------- | ------------------------- | ----------------- | -------------------------------- |
-| URL and domain blocking | Negligible                | 1 to 10%          | Nothing                          |
-| Text extraction         | Milliseconds              | Reduces size, not count | Raw HTML                   |
-| Normalization           | Microseconds              | None              | Extracted text                   |
-| Language identification | Microseconds              | 50 to 90%         | Normalized text                  |
-| Repetition and quality rules | Microseconds         | 10 to 40%         | Language (thresholds per language) |
-| Exact deduplication     | Microseconds              | 10 to 30%         | Normalized text                  |
-| Near deduplication      | Milliseconds plus a global join | 10 to 50%   | Everything above                 |
-| Classifier scoring      | Milliseconds (CPU) to GPU time | 50 to 90% if used as a hard filter | Everything above |
-| PII and toxicity        | Microseconds to milliseconds | Modifies rather than drops | Final text            |
-| Decontamination         | Microseconds              | Under 1%          | Benchmark set                    |
+| Stage                   | Relative cost (this chapter's ordering)        | Removed in RefinedWeb  | Depends on                       |
+| ----------------------- | ---------------------------------------------- | ---------------------- | -------------------------------- |
+| URL and domain blocking | Lowest: reads the URL only                     | 2.2% of documents      | Nothing                          |
+| Text extraction         | Moderate: parses the whole HTML page           | 1.5% of documents      | Raw HTML                         |
+| Normalization           | Low: one pass over the text                    | Not a separate stage   | Extracted text                   |
+| Language identification | Low: one small classifier call                 | 50.7% of documents     | Normalized text                  |
+| Repetition and quality rules | Low: counts over words and lines          | 24.3%, 16.2% and 22.6% of tokens (repetition, document rules, line corrections) | Language (thresholds per language) |
+| Exact deduplication     | Low per document, plus a global lookup         | 18.5% of tokens        | Normalized text                  |
+| Near deduplication      | Moderate per document, plus a global join      | 37.9% of tokens        | Everything above                 |
+| Classifier scoring      | Highest: a model run per document              | Not used               | Everything above                 |
+| PII and toxicity        | Low to moderate: patterns or a classifier      | Not a separate stage   | Final text                       |
+| Decontamination         | Low per document, plus a benchmark index       | Not a separate stage   | Benchmark set                    |
 
-The percentages compound. A document that survives language identification with probability 0.3, quality rules with 0.7 and deduplication with 0.6 has about a one in eight chance of being trained on. That factor of eight is not what turns petabytes of crawl into terabytes of corpus. Measured in bytes, most of that reduction happens before any filter runs, at text extraction: a WARC record stores the whole HTTP response (headers, markup, scripts and styles), and a Common Crawl snapshot of about 90 TB of compressed WARC files yields about 7 TB of compressed extracted text, under a tenth of the bytes ({ref}`sec-ch3-snapshots-segments-files`). The funnel below does not show that drop, because it counts documents for its first three stages, extraction included, and tokens after that, never bytes. {numref}`fig-ch4-retention-funnel` shows the same compounding in a published pipeline.
+The removal shares are RefinedWeb's, read from Figure 2 of {cite:t}`penedo2023refinedweb` (the data behind {numref}`fig-ch4-retention-funnel`): each is the share of the stage's own input that the stage removed, in documents for the first three stages and in tokens after them, and other pipelines remove different shares because their inputs and thresholds differ. Text extraction removes documents as well as bytes, the 1.5% of pages with no text left to extract. The cost column is not a measurement but this chapter's ranking of what each stage must read and compute.
+
+The percentages compound. In RefinedWeb a document that has reached language identification survives it with probability 0.49, the three rule stages together with 0.49 and the two deduplication stages together with 0.50 (each a ratio of the kept shares in Figure 2), so it has about a one in eight chance of being trained on. That factor of eight is not what turns petabytes of crawl into terabytes of corpus. Measured in bytes, most of that reduction happens before any filter runs, at text extraction: a WARC record stores the whole HTTP response (headers, markup, scripts and styles), and a Common Crawl snapshot of about 90 TB of compressed WARC files yields about 7 TB of compressed extracted text, under a tenth of the bytes ({ref}`sec-ch3-snapshots-segments-files`). The funnel below does not show that drop, because it counts documents for its first three stages, extraction included, and tokens after that, never bytes. {numref}`fig-ch4-retention-funnel` shows the same compounding in a published pipeline.
 
 ```{figure} figures/retention-funnel.*
 :name: fig-ch4-retention-funnel
@@ -144,17 +146,26 @@ The output of extraction is plain text with paragraph breaks preserved. Whether 
 ```python
 from html.parser import HTMLParser
 
-PAGE = """<html><head><title>Library approved</title><style>body {font: 12px}</style></head><body>
-<div class="cookie">We use cookies to improve your experience. <a href="/ok">Accept</a> <a href="/more">Learn more</a></div>
-<nav><a href="/">Home</a> | <a href="/news">News</a> | <a href="/sport">Sport</a> | <a href="/login">Log in</a></nav>
+PAGE = """<html><head><title>Library approved</title><style>body {font: \
+12px}</style></head><body>
+<div class="cookie">We use cookies to improve your experience. <a \
+href="/ok">Accept</a> <a href="/more">Learn more</a></div>
+<nav><a href="/">Home</a> | <a href="/news">News</a> | <a href="/sport">Sport</a> | <a \
+href="/login">Log in</a></nav>
 <main><h1>Council approves new library</h1>
-<p>The town council voted on Monday to approve the new library building after months of public
+<p>The town council voted on Monday to approve the new library building after months \
+of public
 consultation about its design, location and projected cost.</p>
-<p>Supporters argued that the existing branch had long been too small for the number of residents who
-use it, while opponents asked whether the money would be better spent on <a href="/roads">road repairs</a>.</p>
-<p>Share: <a href="/fb">Facebook</a> <a href="/x">X</a> <a href="/mail">Email</a></p></main>
-<aside><a href="/a">Most read</a> <a href="/b">Weather</a> <a href="/c">Puzzles</a></aside>
-<footer>Copyright 2024 Town News. <a href="/privacy">Privacy</a> <a href="/terms">Terms</a></footer>
+<p>Supporters argued that the existing branch had long been too small for the number \
+of residents who
+use it, while opponents asked whether the money would be better spent on <a \
+href="/roads">road repairs</a>.</p>
+<p>Share: <a href="/fb">Facebook</a> <a href="/x">X</a> <a \
+href="/mail">Email</a></p></main>
+<aside><a href="/a">Most read</a> <a href="/b">Weather</a> <a \
+href="/c">Puzzles</a></aside>
+<footer>Copyright 2024 Town News. <a href="/privacy">Privacy</a> <a \
+href="/terms">Terms</a></footer>
 </body></html>"""
 
 BLOCKS = {"p", "div", "h1", "h2", "h3", "li", "nav", "aside", "footer", "main", "title"}
@@ -166,7 +177,13 @@ class Blocks(HTMLParser):
 
     def __init__(self):
         super().__init__()
-        self.blocks, self.text, self.link_chars, self.in_link, self.skip = [], [], 0, 0, 0
+        self.blocks, self.text, self.link_chars, self.in_link, self.skip = (
+            [],
+            [],
+            0,
+            0,
+            0,
+        )
 
     def flush(self):
         text = " ".join("".join(self.text).split())
@@ -202,11 +219,16 @@ def all_text(html: str) -> str:
 
 
 def main_text(html: str, min_words: int = 15, max_link_density: float = 0.3) -> str:
-    """Keep blocks with enough words and few links: two shallow features of boilerplate detection."""
+    """Keep blocks with enough words and few links: two shallow features of boilerplate
+    detection."""
     parser = Blocks()
     parser.feed(html)
     parser.flush()
-    return "\n".join(t for t, d in parser.blocks if len(t.split()) >= min_words and d <= max_link_density)
+    return "\n".join(
+        t
+        for t, d in parser.blocks
+        if len(t.split()) >= min_words and d <= max_link_density
+    )
 
 
 wet, main = all_text(PAGE), main_text(PAGE)
@@ -214,7 +236,8 @@ print(f"all text: {len(wet.splitlines())} blocks, {len(wet.split())} words")
 print(f"main text: {len(main.splitlines())} blocks, {len(main.split())} words")
 print(main.splitlines()[0][:60])
 assert "Accept" in wet and "Accept" not in main and "Privacy" not in main
-assert "road repairs" in main  # one link inside a paragraph does not make it boilerplate
+# one link inside a paragraph does not make it boilerplate
+assert "road repairs" in main
 ```
 
 % output
@@ -258,7 +281,7 @@ The four Unicode normalization forms applied to four inputs, computed with Pytho
 
 Beyond normalization, pipelines commonly remove or replace the following:
 
-- Control characters other than newline and tab, including the null byte, which breaks several downstream tools
+- Control characters, including the null byte, which breaks several downstream tools. The other line breaks (carriage return, the next-line character U+0085 and the line and paragraph separators U+2028 and U+2029) are first turned into newlines, since U+0085 is itself in the control range and deleting it would join two lines. Tabs are not deleted but folded, with other runs of horizontal whitespace, into one space; a pipeline that must keep tab-separated tables or tab-indented code drops `\t` from that pattern
 - The zero-width space U+200B, the word joiner U+2060 and a byte-order mark U+FEFF that appears mid-text, all invisible but able to change tokenization
 - The zero-width non-joiner U+200C and zero-width joiner U+200D only in English-only corpora: the Unicode Standard notes that in Indic scripts they "may be of orthographic significance" and that the non-joiner is sometimes required in writing Persian {cite}`unicode2022standard`, so the function below keeps them unless asked to strip them
 - Private-use and unassigned code points
@@ -270,7 +293,10 @@ import unicodedata
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 _ZERO_WIDTH = re.compile(r"[\u200b\u2060\ufeff]")
-_JOINERS = re.compile(r"[\u200c\u200d]")  # ZWNJ and ZWJ: part of the spelling in Persian and Indic scripts
+# CR, NEL, line and paragraph separators
+_LINE_BREAKS = re.compile(r"\r\n|[\r\x85\u2028\u2029]")
+# ZWNJ and ZWJ: part of the spelling in Persian and Indic scripts
+_JOINERS = re.compile(r"[\u200c\u200d]")
 _MULTI_SPACE = re.compile(r"[ \t\u00a0]+")
 _MULTI_NEWLINE = re.compile(r"\n{3,}")
 
@@ -284,11 +310,11 @@ def normalize_text(text: str, form: str = "NFC", strip_joiners: bool = False) ->
     is set, an option meant for English-only corpora.
     """
     text = unicodedata.normalize(form, text)
+    text = _LINE_BREAKS.sub("\n", text)  # before _CONTROL, which covers NEL
     text = _CONTROL.sub("", text)
     text = _ZERO_WIDTH.sub("", text)
     if strip_joiners:
         text = _JOINERS.sub("", text)
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = _MULTI_SPACE.sub(" ", text)
     lines = [line.strip() for line in text.split("\n")]
     text = "\n".join(lines)
@@ -303,16 +329,24 @@ assert decomposed != composed
 assert normalize_text(decomposed) == normalize_text(composed) == "café"
 
 # NFKC folds compatibility characters; NFC does not:
-assert normalize_text("\ufb01le \uff21", form="NFKC") == "file A"  # U+FB01 is the "fi" ligature, U+FF21 a full-width A
+# U+FB01 is the "fi" ligature, U+FF21 a full-width A
+assert normalize_text("\ufb01le \uff21", form="NFKC") == "file A"
 assert normalize_text("\ufb01le \uff21", form="NFC") == "\ufb01le \uff21"
 
-# The Persian word "mi-shavad" needs its zero-width non-joiner; only the English-only option removes it:
+# The Persian word "mi-shavad" needs its zero-width non-joiner; only the English-only
+# option removes it:
 persian = "\u0645\u06cc\u200c\u0634\u0648\u062f"
 assert normalize_text(persian) == persian
 assert "\u200c" not in normalize_text(persian, strip_joiners=True)
+# Every Unicode line break becomes a newline; tabs fold to one space like other blanks:
+assert normalize_text("one\x85two\u2028three\r\nfour") == "one\ntwo\nthree\nfour"
+assert normalize_text("tab\there") == "tab here"
 ligature, zwnj = "\ufb01le \uff21", "\u200c"
 print(f"NFKC: {normalize_text(ligature, form='NFKC')!r}")
-print(f"ZWNJ kept by default: {zwnj in normalize_text(persian)}; with strip_joiners=True: {zwnj in normalize_text(persian, strip_joiners=True)}")
+print(
+    f"ZWNJ kept by default: {zwnj in normalize_text(persian)}; with "
+    f"strip_joiners=True: {zwnj in normalize_text(persian, strip_joiners=True)}"
+)
 ```
 
 % output
@@ -344,7 +378,7 @@ Pipelines that split a document into chunks before filtering (for example, to sc
 
 ### 3.1 Classifiers and thresholds
 
-Language identification is a solved problem for long documents in well-resourced languages and an open one for short texts, closely related languages, and code-switched text. The standard tool is a fastText classifier {cite}`joulin2017bag` trained on character n-grams: the `lid.176` model distinguishes 176 languages at microsecond speed, and the later OpenLID {cite}`burchell2023open` and GlotLID {cite}`kargaran2023glotlid` models cover 193 and 1,880 languages respectively {cite}`penedo2025fineweb2`.
+Language identification is a solved problem for long documents in well-resourced languages and an open one for short texts, closely related languages, and code-switched text. The standard tool is a fastText classifier {cite}`joulin2017bag` trained on character n-grams: the `lid.176` model distinguishes 176 languages at microsecond speed, and the later OpenLID and GlotLID models cover far more. OpenLID covered 201 languages when it was published {cite}`burchell2023open`, and the release that FineWeb-2 compared covers 193; GlotLID "identifies 1665 languages" in its paper {cite}`kargaran2023glotlid`, and the version FineWeb-2 used covers 1,880 {cite}`penedo2025fineweb2`.
 
 The classifier returns a distribution over languages. Pipelines keep a document if the top language is the target and its score exceeds a threshold. The threshold trades recall for precision:
 
@@ -382,7 +416,8 @@ def build_profile(texts, top_k: int = 300):
 
 
 def out_of_place_distance(doc_profile, lang_profile, top_k: int = 300) -> int:
-    """Sum of rank differences; n-grams missing from the language get the max penalty."""
+    """Sum of rank differences; n-grams missing from the language get the max penalty.
+    """
     return sum(
         abs(rank - lang_profile.get(gram, top_k)) for gram, rank in doc_profile.items()
     )
@@ -413,7 +448,10 @@ profiles = {
 }
 assert identify("Which language is this sentence written in?", profiles)[0] == "en"
 assert identify("In welcher Sprache ist dieser Satz geschrieben?", profiles)[0] == "de"
-for sentence in ("Which language is this sentence written in?", "In welcher Sprache ist dieser Satz geschrieben?"):
+for sentence in (
+    "Which language is this sentence written in?",
+    "In welcher Sprache ist dieser Satz geschrieben?",
+):
     print(f"{identify(sentence, profiles)[0]}: {sentence}")
 ```
 
@@ -506,7 +544,9 @@ def gopher_quality_filter(text: str):
 
     lines = [line for line in text.split("\n") if line.strip()]
     if lines:
-        bullet_frac = sum(line.lstrip().startswith(BULLETS) for line in lines) / len(lines)
+        bullet_frac = sum(line.lstrip().startswith(BULLETS) for line in lines) / len(
+            lines
+        )
         if bullet_frac > 0.9:
             return False, "bullet_lines"
         ellipsis_frac = sum(
@@ -552,7 +592,7 @@ listing: (False, 'mean_word_length')
 catalog: (False, 'stop_words')
 ```
 
-Every threshold above was set for English. The mean-word-length bounds exclude most Chinese and Japanese text (no spaces, so one "word" per line) and much German (compounds), and the stop-word list is meaningless outside English. Multilingual pipelines replace the word splitter with a language-appropriate tokenizer and the stop-word list with a per-language one.
+Every threshold above was set for English. The word rules exclude most Chinese and Japanese text: with no spaces a paragraph is one "word", and split into characters its mean word length is 1 ({ref}`sec-ch4-multilingual-text` runs both) and much German (compounds), and the stop-word list is meaningless outside English. Multilingual pipelines replace the word splitter with a language-appropriate tokenizer and the stop-word list with a per-language one.
 
 (sec-ch4-repetition-filters)=
 
@@ -584,16 +624,20 @@ from collections import Counter
 
 
 def repetition_stats(text: str) -> dict:
-    """Paragraph-, line- and n-gram-level repetition fractions in the style of Rae et al. (2021).
+    """Paragraph-, line- and n-gram-level repetition fractions in the style of Rae et
+    al. (2021).
 
-    Every character fraction is divided by len(text), as datatrove's GopherRepetitionFilter does.
-    """
+    Every character fraction is divided by len(text), as datatrove's
+    GopherRepetitionFilter does."""
     total_chars = max(1, len(text))
     words = text.split()
     stats = {}
 
     # A paragraph or line counts as a duplicate when the same text has appeared before.
-    for unit, parts in (("para", re.split(r"\n{2,}", text.strip())), ("line", re.split(r"\n+", text))):
+    for unit, parts in (
+        ("para", re.split(r"\n{2,}", text.strip())),
+        ("line", re.split(r"\n+", text)),
+    ):
         seen, dup_parts, dup_chars = set(), 0, 0
         for part in parts:
             if part in seen:
@@ -635,7 +679,10 @@ THRESHOLDS = {
     "top_2gram_char_frac": 0.20,
     "top_3gram_char_frac": 0.18,
     "top_4gram_char_frac": 0.16,
-    **{f"dup_{n}gram_char_frac": t for n, t in zip(range(5, 11), (0.15, 0.14, 0.13, 0.12, 0.11, 0.10))},
+    **{
+        f"dup_{n}gram_char_frac": t
+        for n, t in zip(range(5, 11), (0.15, 0.14, 0.13, 0.12, 0.11, 0.10))
+    },
 }
 
 
@@ -654,7 +701,10 @@ varied = (
     "afternoon, though everyone had read it."
 )
 assert passes_repetition_filter(varied)
-print(f"spam passes: {passes_repetition_filter(spam)}; varied prose passes: {passes_repetition_filter(varied)}")
+print(
+    f"spam passes: {passes_repetition_filter(spam)}; varied prose passes: "
+    f"{passes_repetition_filter(varied)}"
+)
 ```
 
 % output
@@ -726,14 +776,21 @@ reference = [
 ]
 lm = UnigramLM(reference)
 
-encyclopedic = "The valley was settled in the twelfth century and the city grew around the river."
+encyclopedic = (
+    "The valley was settled in the twelfth century and the city grew around the river."
+)
 gibberish = "zxq vprt qqa lkjh mnbv asdf poiu ytre wqaz"
 assert lm.perplexity(encyclopedic) < lm.perplexity(gibberish)
 
-# The pathology: formulaic text that repeats common words scores *better* than real prose
+# The pathology: formulaic text that repeats common words scores *better* than real
+# prose
 boilerplate = "the the the and the of the and the the"
 assert lm.perplexity(boilerplate) < lm.perplexity(encyclopedic)
-for name, text in (("boilerplate", boilerplate), ("encyclopedic", encyclopedic), ("gibberish", gibberish)):
+for name, text in (
+    ("boilerplate", boilerplate),
+    ("encyclopedic", encyclopedic),
+    ("gibberish", gibberish),
+):
     print(f"{name}: perplexity {lm.perplexity(text):.4g}")
 ```
 
@@ -785,7 +842,10 @@ assert keep_rate[-1] == 1.0  # score 1.0 is always kept
 assert keep_rate[0] < 0.05  # score 0.0 almost never
 assert np.all(np.diff(keep_rate) >= -0.02)  # monotone up to sampling noise
 for i in (0, 5, 9, 10):
-    print(f"score {scores[i]:.1f}: kept {keep_rate[i]:.4f}, expected {(2 - scores[i]) ** -9:.4f}")
+    print(
+        f"score {scores[i]:.1f}: kept {keep_rate[i]:.4f}, expected "
+        f"{(2 - scores[i]) ** -9:.4f}"
+    )
 ```
 
 % output
@@ -819,25 +879,37 @@ N_BUCKETS = 2**12
 
 
 def hashed_features(text: str, n_buckets: int = N_BUCKETS) -> np.ndarray:
-    """Word unigrams and bigrams hashed into a fixed number of buckets (the hashing trick)."""
-    words = ["0" if w.isdigit() else w for w in re.findall(r"[a-z]+|\d+|[^\sa-z\d]", text.lower())]
+    """Word unigrams and bigrams hashed into a fixed number of buckets (the hashing
+    trick)."""
+    words = [
+        "0" if w.isdigit() else w
+        for w in re.findall(r"[a-z]+|\d+|[^\sa-z\d]", text.lower())
+    ]
     x = np.zeros(n_buckets)
     for gram in words + [a + " " + b for a, b in zip(words, words[1:])]:
-        x[int.from_bytes(hashlib.md5(gram.encode("utf-8")).digest()[:4], "little") % n_buckets] += 1.0
+        x[
+            int.from_bytes(hashlib.md5(gram.encode("utf-8")).digest()[:4], "little")
+            % n_buckets
+        ] += 1.0
     return x / max(1.0, np.linalg.norm(x))
 
 
 def windows(text: str, size: int = 20) -> list:
-    """Cut a document into consecutive windows of `size` words; the last window holds the remainder."""
+    """Cut a document into consecutive windows of `size` words; the last window holds
+    the remainder."""
     words = text.split()
     return [" ".join(words[i : i + size]) for i in range(0, max(1, len(words)), size)]
 
 
-assert [len(w.split()) for w in windows(" ".join(["word"] * 39))] == [20, 19]  # no word is left unscored
+# no word is left unscored
+assert [len(w.split()) for w in windows(" ".join(["word"] * 39))] == [20, 19]
 
 
-def train_logreg(X: np.ndarray, y: np.ndarray, steps: int = 500, lr: float = 1.0, l2: float = 1e-3):
-    """Logistic regression by full-batch gradient descent, each class weighted to half the loss."""
+def train_logreg(
+    X: np.ndarray, y: np.ndarray, steps: int = 500, lr: float = 1.0, l2: float = 1e-3
+):
+    """Logistic regression by full-batch gradient descent, each class weighted to half
+    the loss."""
     w, b = np.zeros(X.shape[1]), 0.0
     weight = np.where(y == 1, 0.5 / y.sum(), 0.5 / (len(y) - y.sum()))
     for _ in range(steps):
@@ -848,38 +920,54 @@ def train_logreg(X: np.ndarray, y: np.ndarray, steps: int = 500, lr: float = 1.0
 
 
 def classifier_score(text: str, w: np.ndarray, b: float) -> float:
-    """Predicted probability of 'reference-like', averaged over the document's windows with each window
-    weighted by its word count, so a short tail window counts in proportion to its length."""
+    """Predicted probability of 'reference-like', averaged over the document's windows
+    with each window weighted by its word count, so a short tail window counts in
+    proportion to its length."""
     parts = windows(text)
     X = np.array([hashed_features(t) for t in parts])
     sizes = np.array([max(1, len(t.split())) for t in parts], dtype=float)
     return float(np.average(1.0 / (1.0 + np.exp(-(X @ w + b))), weights=sizes))
 
 
-# GPT-3's setup in miniature: curated text is the positive class, raw crawl the negative class.
+# GPT-3's setup in miniature: curated text is the positive class, raw crawl the negative
+# class.
 REFERENCE = [
     "The river flows through the valley and into the sea near the old town.",
     "The city was founded in the twelfth century and grew around its port and market.",
     "Mathematics is the study of quantity, structure, space and change.",
-    "The council published its report on the state of the local economy and the budget.",
-    "A library is a collection of books and other materials made available to the public.",
-    "The building was designed by a local architect and opened to residents in the spring.",
+    "The council published its report on the state of the local economy and the "
+    "budget.",
+    "A library is a collection of books and other materials made available to the "
+    "public.",
+    "The building was designed by a local architect and opened to residents in the "
+    "spring.",
 ]
 CRAWL = [
-    "\n".join(f"- {item}" for item in ["Home", "About", "Products", "Contact", "Login"] * 12),
+    "\n".join(
+        f"- {item}" for item in ["Home", "About", "Products", "Contact", "Login"] * 12
+    ),
     "buy cheap watches now " * 30,
     " ".join(f"SKU-{i:05d} {i * 7 % 100}.99" for i in range(80)),
-    "\n".join(f"Member {i}: member{i}@example.org, +1 (555) 010-{i:04d}" for i in range(10)),
+    "\n".join(
+        f"Member {i}: member{i}@example.org, +1 (555) 010-{i:04d}" for i in range(10)
+    ),
 ]
 pos = [hashed_features(t) for t in REFERENCE]
 neg = [hashed_features(t) for doc in CRAWL for t in windows(doc)]
 w, b = train_logreg(np.array(pos + neg), np.array([1.0] * len(pos) + [0.0] * len(neg)))
 
-prose = "The harbor was quiet at dawn. A single trawler moved out past the breakwater, its lights still on."
-junk = "Home | Shop | Cart | Login | Sign up | Contact | FAQ | Terms | Privacy | Sitemap"
+prose = (
+    "The harbor was quiet at dawn. A single trawler moved out past the breakwater, "
+    "its lights still on."
+)
+junk = (
+    "Home | Shop | Cart | Login | Sign up | Contact | FAQ | Terms | Privacy | Sitemap"
+)
 for name, text in (("prose", prose), ("junk", junk)):
     p_hat = classifier_score(text, w, b)
-    print(f"{name}: score {p_hat:.3f}, Pareto(9) keep probability {(2 - p_hat) ** -9:.4f}")
+    print(
+        f"{name}: score {p_hat:.3f}, Pareto(9) keep probability {(2 - p_hat) ** -9:.4f}"
+    )
 assert classifier_score(prose, w, b) > 0.5 > classifier_score(junk, w, b)
 ```
 
@@ -890,7 +978,7 @@ prose: score 0.885, Pareto(9) keep probability 0.3749
 junk: score 0.463, Pareto(9) keep probability 0.0209
 ```
 
-Neither test text was in the training data, and the prose shares only a few common words with the reference. The classifier generalizes because function words ("the", "was", "at") and their pairs are dense in prose and rare in navigation and listings. The same property is its weakness. The notebook section {ref}`nb-prep-classifier` trains this classifier on the notebook's sample, scoring each document with a model whose negatives exclude that document and its copies. It ranks the catalog, the contact list and the menu below every prose document, but it scores the boilerplate document, a repeated sentence built from common words, highest of all. A bag of hashed n-grams cannot see repetition, which is why the repetition filters of {ref}`sec-ch4-repetition-filters` run before the classifier.
+Neither test text was in the training data, and the prose shares only a few common words with the reference. The classifier generalizes because function words ("the", "was", "at") and their pairs are dense in prose and rare in navigation and listings. The same property is its weakness. The notebook section {ref}`nb-prep-classifier` trains this classifier on the notebook's sample, scoring each document with a model whose negatives exclude that document and its copies. It ranks the catalog, the contact list and the menu below every prose document, but it scores the boilerplate document, a repeated sentence built from common words, highest of all. A bag of hashed n-grams cannot see repetition, which is why the repetition filters of {ref}`sec-ch4-repetition-filters` run before the classifier. The notebook also prints the keep probability the Pareto rule would give each score, and the raw scores cannot be used with the rule as they stand: every good document scores far below the region where the curve of {numref}`fig-ch4-pareto-keep` rises, so the rule would keep almost none of them and would favor the boilerplate. GPT-3 fitted the rule to its own classifier, in the paper's words "$\alpha$ was chosen to match the distribution of scores from our classifier on WebText" {cite}`brown2020language`; a new classifier's scores have to be calibrated, or the shape refitted, before the rule is applied.
 
 (sec-ch4-spam-machine-generated-text)=
 
@@ -907,7 +995,10 @@ def detector_precision(share: float, tpr: float, fpr: float) -> float:
 
 for share in (0.5, 0.1, 0.01):
     p = detector_precision(share, tpr=0.95, fpr=0.05)
-    print(f"machine-generated share {share:.2f}: precision {p:.3f}, human documents removed {(1 - share) * 0.05:.4f}")
+    print(
+        f"machine-generated share {share:.2f}: precision {p:.3f}, human documents "
+        f"removed {(1 - share) * 0.05:.4f}"
+    )
 assert detector_precision(0.01, 0.95, 0.05) < 0.2
 ```
 
@@ -1000,7 +1091,8 @@ import math
 
 
 class BloomFilter:
-    """A bit array of n_bits bits and n_probe hash functions; no false negatives, some false positives."""
+    """A bit array of n_bits bits and n_probe hash functions; no false negatives, some
+    false positives."""
 
     def __init__(self, n_bits: int, n_probe: int):
         self.n_bits, self.n_probe = n_bits, n_probe
@@ -1008,8 +1100,12 @@ class BloomFilter:
 
     def _positions(self, item: str):
         digest = hashlib.sha256(item.encode("utf-8")).digest()
-        h1, h2 = int.from_bytes(digest[:8], "little"), int.from_bytes(digest[8:16], "little")
-        return [(h1 + i * h2) % self.n_bits for i in range(self.n_probe)]  # double hashing
+        h1, h2 = (
+            int.from_bytes(digest[:8], "little"),
+            int.from_bytes(digest[8:16], "little"),
+        )
+        # double hashing
+        return [(h1 + i * h2) % self.n_bits for i in range(self.n_probe)]
 
     def add(self, item: str):
         for p in self._positions(item):
@@ -1021,20 +1117,27 @@ class BloomFilter:
 
 def fp_rate(bloom, n_inserted):
     measured = sum(f"other paragraph {i}" in bloom for i in range(20_000)) / 20_000
-    return measured, (1 - math.exp(-bloom.n_probe * n_inserted / bloom.n_bits)) ** bloom.n_probe
+    return measured, (
+        1 - math.exp(-bloom.n_probe * n_inserted / bloom.n_bits)
+    ) ** bloom.n_probe
 
 
 n_items, n_bits, n_probe = 10_000, 96_000, 7
 bloom = BloomFilter(n_bits, n_probe)
 lost = 0
 for i in range(n_items):
-    lost += f"paragraph {i}" in bloom  # a unique paragraph reported as seen would be deleted
+    # a unique paragraph reported as seen would be deleted
+    lost += f"paragraph {i}" in bloom
     bloom.add(f"paragraph {i}")
-assert all(f"paragraph {i}" in bloom for i in range(n_items))  # every inserted item is found
+# every inserted item is found
+assert all(f"paragraph {i}" in bloom for i in range(n_items))
 
 measured, predicted = fp_rate(bloom, n_items)
 best_n_probe = n_bits / n_items * math.log(2)
-print(f"false-positive rate at {n_items:,} items: measured {measured:.4f}, predicted {predicted:.4f}")
+print(
+    f"false-positive rate at {n_items:,} items: measured {measured:.4f}, predicted "
+    f"{predicted:.4f}"
+)
 print(f"bits per item {n_bits / n_items:.1f}, best n_probe {best_n_probe:.2f}")
 print(f"unique paragraphs deleted while filling: {lost / n_items:.4f}")
 assert abs(measured - predicted) < 0.003 and lost / n_items < predicted
@@ -1043,7 +1146,10 @@ for total in (20_000, 40_000):  # keep inserting past the size the filter was bu
         bloom.add(f"paragraph {i}")
     n_items = total
     measured, predicted = fp_rate(bloom, n_items)
-    print(f"false-positive rate at {n_items:,} items: measured {measured:.4f}, predicted {predicted:.4f}")
+    print(
+        f"false-positive rate at {n_items:,} items: measured {measured:.4f}, "
+        f"predicted {predicted:.4f}"
+    )
     assert abs(measured - predicted) < 0.02
 ```
 
@@ -1072,7 +1178,8 @@ def sentences(text: str) -> list:
 
 
 def dedup_three_sentence_spans(docs: list) -> list:
-    """C4's rule: keep the first occurrence of any three-sentence span and delete later ones."""
+    """C4's rule: keep the first occurrence of any three-sentence span and delete later
+    ones."""
     seen, out = set(), []
     for doc in docs:
         sents = sentences(doc)
@@ -1087,7 +1194,8 @@ def dedup_three_sentence_spans(docs: list) -> list:
 
 
 def dedup_paragraphs(docs: list) -> list:
-    """Dolma-style: delete any paragraph (blank-line separated) already seen in an earlier document."""
+    """Dolma-style: delete any paragraph (blank-line separated) already seen in an
+    earlier document."""
     seen, out = set(), []
     for doc in docs:
         kept = []
@@ -1101,8 +1209,11 @@ def dedup_paragraphs(docs: list) -> list:
 
 FOOTER = "Subscribe to our newsletter. Follow us on social media. All rights reserved."
 docs = [
-    "The council approved the library. Work starts in spring. It opens in two years.\n\n" + FOOTER,
-    "Fishing boats stayed in harbor. A storm was forecast. The market closed early.\n\n" + FOOTER,
+    "The council approved the library. Work starts in spring. It opens in two "
+    "years.\n\n"
+    + FOOTER,
+    "Fishing boats stayed in harbor. A storm was forecast. The market closed early.\n\n"
+    + FOOTER,
     "Prices rose in March. Rents rose faster. Wages did not keep up.\n\n" + FOOTER,
 ]
 spans = dedup_three_sentence_spans(docs)
@@ -1135,11 +1246,17 @@ def line_key(line: str) -> str:
 
 
 def dedup_lines(docs: list, max_docs: int = 2) -> list:
-    """Delete every line that occurs in more than `max_docs` documents (two passes over the corpus)."""
+    """Delete every line that occurs in more than `max_docs` documents (two passes over
+    the corpus)."""
     doc_freq = Counter()
     for doc in docs:
         doc_freq.update({line_key(line) for line in doc.split("\n") if line.strip()})
-    return ["\n".join(line for line in doc.split("\n") if doc_freq[line_key(line)] <= max_docs) for doc in docs]
+    return [
+        "\n".join(
+            line for line in doc.split("\n") if doc_freq[line_key(line)] <= max_docs
+        )
+        for doc in docs
+    ]
 
 
 NAV = "Home | News | Sport | Contact"
@@ -1156,7 +1273,8 @@ before = sum(len(d.split("\n")) for d in docs)
 after = sum(len(d.split("\n")) for d in out)
 print(f"lines: {before} before, {after} after")
 print(out[2])
-assert all(NAV not in d and COOKIE.lower() not in d.lower() for d in out)  # boilerplate gone everywhere
+# boilerplate gone everywhere
+assert all(NAV not in d and COOKIE.lower() not in d.lower() for d in out)
 assert sum(QUOTE in d for d in out) == 2  # a line in only two documents survives
 ```
 
@@ -1212,10 +1330,15 @@ settings = {  # name: (bands b, rows per band r), in this page's symbols
     "Lee's numbers, roles swapped": (20, 450),
 }
 for name, (b, r) in settings.items():
-    probs = ", ".join(f"J={J}: {banding_probability(J, b, r):.3f}" for J in (0.7, 0.75, 0.8, 0.9))
-    print(f"{name:<29} b={b:>3} r={r:>3} threshold {(1 / b) ** (1 / r):.3f}; {probs}")
-# RefinedWeb: "This means that for each document, we compute a total of 9000 minhashes, and that the probability
-# that a document pair with similarity 0.75 or 0.8 will be marked as duplicates will be 76% and 99.4%
+    probs = ", ".join(
+        f"J={J}: {banding_probability(J, b, r):.3f}" for J in (0.7, 0.75, 0.8, 0.9)
+    )
+    print(f"{name:<29} b={b:>3} r={r:>3} threshold {(1 / b) ** (1 / r):.3f}")
+    print(f"    {probs}")
+# RefinedWeb: "This means that for each document, we compute a total of 9000 minhashes,
+# and that the probability
+# that a document pair with similarity 0.75 or 0.8 will be marked as duplicates will be
+# 76% and 99.4%
 # (respectively), diminishing rapidly for smaller similarity values."
 assert round(banding_probability(0.75, 450, 20), 2) == 0.76
 assert round(banding_probability(0.8, 450, 20), 3) == 0.995
@@ -1224,10 +1347,14 @@ assert round(banding_probability(0.8, 450, 20), 3) == 0.995
 % output
 
 ```text
-Lee et al. and RefinedWeb     b=450 r= 20 threshold 0.737; J=0.7: 0.302, J=0.75: 0.761, J=0.8: 0.995, J=0.9: 1.000
-Lee et al., stricter run      b= 40 r= 20 threshold 0.832; J=0.7: 0.031, J=0.75: 0.119, J=0.8: 0.371, J=0.9: 0.994
-FineWeb                       b= 14 r=  8 threshold 0.719; J=0.7: 0.565, J=0.75: 0.772, J=0.8: 0.924, J=0.9: 1.000
-Lee's numbers, roles swapped  b= 20 r=450 threshold 0.993; J=0.7: 0.000, J=0.75: 0.000, J=0.8: 0.000, J=0.9: 0.000
+Lee et al. and RefinedWeb     b=450 r= 20 threshold 0.737
+    J=0.7: 0.302, J=0.75: 0.761, J=0.8: 0.995, J=0.9: 1.000
+Lee et al., stricter run      b= 40 r= 20 threshold 0.832
+    J=0.7: 0.031, J=0.75: 0.119, J=0.8: 0.371, J=0.9: 0.994
+FineWeb                       b= 14 r=  8 threshold 0.719
+    J=0.7: 0.565, J=0.75: 0.772, J=0.8: 0.924, J=0.9: 1.000
+Lee's numbers, roles swapped  b= 20 r=450 threshold 0.993
+    J=0.7: 0.000, J=0.75: 0.000, J=0.8: 0.000, J=0.9: 0.000
 ```
 
 At 450 bands of 20 rows the curve's threshold is about 0.74, and the probabilities at $J = 0.75$ and $0.8$ are the "76% and 99.4%" that RefinedWeb reports (the second rounds to 0.995 here). The banding is set a little below the 0.8 target, so that almost every pair above it becomes a candidate; pairs below the target become candidates too (30% of pairs at $J = 0.7$). The two pipelines treat a candidate pair differently. Lee et al. "identify two documents as duplicates if they are matched by the MinHash algorithm and their edit similarity is greater than 0.8", so a candidate pair whose edit similarity is lower keeps both documents. RefinedWeb has no such check: every candidate pair counts as a duplicate, the pairs are joined into clusters, and it removes "all but one of the documents in each cluster". Lee et al.'s second run, 40 bands of 20 rows (800 hashes) for a target of 0.9, puts the threshold near 0.83. Read with the roles swapped, the same two numbers would give a threshold of 0.993 and a curve that catches almost nothing below near-identical copies. At FineWeb's 14 bands of 8 rows a pair at $J = 0.75$ becomes a candidate with probability $1 - (1 - 0.75^8)^{14} \approx 0.77$, and the curve crosses 0.5 near $J = 0.69$. Dolma relied on exact matching of URLs, documents and paragraphs through a Bloom filter rather than MinHash. The implementation below uses a universal hash family $h_i(\chi) = (a_{i,1} \chi + a_{i,0}) \bmod P$ over the 32-bit integer id $\chi$ of a shingle, with $P$ a large prime, which is what most production implementations do.
@@ -1263,7 +1390,9 @@ class MinHash:
             return np.full(self.num_perm, _MAX_HASH, dtype=np.int64)
         x = np.array([_hash32(s) for s in shingle_set], dtype=np.int64)
         # (a*x + c) mod P, then fold to 32 bits; object dtype avoids int64 overflow
-        ax = (x[:, None].astype(object) * self.a.astype(object) + self.c.astype(object)) % _MERSENNE
+        ax = (
+            x[:, None].astype(object) * self.a.astype(object) + self.c.astype(object)
+        ) % _MERSENNE
         hashes = np.array(ax, dtype=np.int64) & _MAX_HASH
         return hashes.min(axis=0)
 
@@ -1311,7 +1440,9 @@ docs = {
 mh = MinHash(num_perm=128)
 sigs = {k: mh.signature(shingles(v)) for k, v in docs.items()}
 
-true_j = len(shingles(base) & shingles(docs["retitled"])) / len(shingles(base) | shingles(docs["retitled"]))
+true_j = len(shingles(base) & shingles(docs["retitled"])) / len(
+    shingles(base) | shingles(docs["retitled"])
+)
 est_j = MinHash.estimate_jaccard(sigs["orig"], sigs["retitled"])
 assert abs(true_j - est_j) < 0.15, (true_j, est_j)
 assert MinHash.estimate_jaccard(sigs["orig"], sigs["unrelated"]) < 0.1
@@ -1351,8 +1482,15 @@ def minhash_signatures(docs: list, n_hash: int, seed: int = 0) -> np.ndarray:
     c = rng.integers(0, P31, size=n_hash, dtype=np.int64)
     sigs = []
     for words in docs:
-        x = np.array(sorted({zlib.crc32(" ".join(words[i : i + 5]).encode()) % P31
-                             for i in range(len(words) - 4)}), dtype=np.int64)
+        x = np.array(
+            sorted(
+                {
+                    zlib.crc32(" ".join(words[i : i + 5]).encode()) % P31
+                    for i in range(len(words) - 4)
+                }
+            ),
+            dtype=np.int64,
+        )
         sigs.append(((x[:, None] * a + c) % P31).min(axis=0))
     return np.array(sigs)
 
@@ -1369,7 +1507,8 @@ def lsh_pairs(sigs: np.ndarray, b: int, r: int) -> set:
 
 
 def union_find_clusters(n: int, pairs: set) -> list:
-    """Connected components of the candidate graph; returns the cluster root of each document."""
+    """Connected components of the candidate graph; returns the cluster root of each
+    document."""
     parent = list(range(n))
 
     def find(i):
@@ -1385,7 +1524,8 @@ def union_find_clusters(n: int, pairs: set) -> list:
     return [find(i) for i in range(n)]
 
 
-# 40 source documents, each with 3 edited copies (3% of words replaced), 160 documents in all.
+# 40 source documents, each with 3 edited copies (3% of words replaced), 160 documents
+# in all.
 rng = np.random.default_rng(0)
 vocab = [f"w{i}" for i in range(2000)]
 docs, family = [], []
@@ -1398,11 +1538,19 @@ for f in range(40):
                 words[i] = str(rng.choice(vocab))
         docs.append(words)
         family.append(f)
-true_pairs = {(i, j) for i, j in itertools.combinations(range(len(docs)), 2) if family[i] == family[j]}
+true_pairs = {
+    (i, j)
+    for i, j in itertools.combinations(range(len(docs)), 2)
+    if family[i] == family[j]
+}
 shingle_sets = [{" ".join(w[i : i + 5]) for i in range(len(w) - 4)} for w in docs]
-jac = {pair: len(shingle_sets[pair[0]] & shingle_sets[pair[1]]) / len(shingle_sets[pair[0]] | shingle_sets[pair[1]])
-       for pair in true_pairs}
-src_copy = np.mean([v for (i, j), v in jac.items() if i % 4 == 0])  # document 4f is the source of family f
+jac = {
+    pair: len(shingle_sets[pair[0]] & shingle_sets[pair[1]])
+    / len(shingle_sets[pair[0]] | shingle_sets[pair[1]])
+    for pair in true_pairs
+}
+# document 4f is the source of family f
+src_copy = np.mean([v for (i, j), v in jac.items() if i % 4 == 0])
 copy_copy = np.mean([v for (i, j), v in jac.items() if i % 4 != 0])
 print(f"mean J: source and copy {src_copy:.2f}, two copies {copy_copy:.2f}")
 
@@ -1410,12 +1558,20 @@ sigs = minhash_signatures(docs, n_hash=128)
 results = {}
 for b, r in ((32, 4), (16, 8), (8, 16)):
     roots = union_find_clusters(len(docs), lsh_pairs(sigs, b, r))
-    found = {(i, j) for i, j in itertools.combinations(range(len(docs)), 2) if roots[i] == roots[j]}
+    found = {
+        (i, j)
+        for i, j in itertools.combinations(range(len(docs)), 2)
+        if roots[i] == roots[j]
+    }
     precision = len(found & true_pairs) / max(1, len(found))
     recall = len(found & true_pairs) / len(true_pairs)
     results[(b, r)] = (precision, recall)
-    print(f"b={b:>2} r={r:>2}: {len(set(roots)):>3} clusters, precision {precision:.3f}, recall {recall:.3f}")
-assert all(p == 1.0 for p, _ in results.values())  # unrelated random documents share no shingles
+    print(
+        f"b={b:>2} r={r:>2}: {len(set(roots)):>3} clusters, precision "
+        f"{precision:.3f}, recall {recall:.3f}"
+    )
+# unrelated random documents share no shingles
+assert all(p == 1.0 for p, _ in results.values())
 assert results[(32, 4)][1] == 1.0 > results[(16, 8)][1] > results[(8, 16)][1]
 ```
 
@@ -1447,12 +1603,16 @@ from collections import Counter
 
 
 def simhash(text: str, n_fp: int = 64) -> int:
-    """Charikar's fingerprint: each feature votes +w or -w on every bit by its own hash; keep the signs."""
+    """Charikar's fingerprint: each feature votes +w or -w on every bit by its own hash;
+    keep the signs."""
     words = re.findall(r"\w+", text.lower())
-    features = Counter(" ".join(words[i : i + 2]) for i in range(len(words) - 1))  # weight = count
+    # weight = count
+    features = Counter(" ".join(words[i : i + 2]) for i in range(len(words) - 1))
     votes = [0] * n_fp
     for feature, weight in features.items():
-        h = int.from_bytes(hashlib.sha1(feature.encode("utf-8")).digest()[: n_fp // 8], "little")
+        h = int.from_bytes(
+            hashlib.sha1(feature.encode("utf-8")).digest()[: n_fp // 8], "little"
+        )
         for bit in range(n_fp):
             votes[bit] += weight if h >> bit & 1 else -weight
     return sum(1 << bit for bit in range(n_fp) if votes[bit] > 0)
@@ -1463,16 +1623,23 @@ def d_ham(x: int, y: int) -> int:
 
 
 base = (
-    "The town council voted on Monday to approve the new library building after months of public "
-    "consultation about its design, location and projected cost. Supporters argued that the existing "
-    "branch had long been too small for the number of residents who use it, while opponents asked "
-    "whether the money would be better spent on road repairs. The vote passed by seven to four."
+    "The town council voted on Monday to approve the new library building after "
+    "months of public "
+    "consultation about its design, location and projected cost. Supporters argued "
+    "that the existing "
+    "branch had long been too small for the number of residents who use it, while "
+    "opponents asked "
+    "whether the money would be better spent on road repairs. The vote passed by "
+    "seven to four."
 )
 edited = base.replace("Monday", "Tuesday").replace("seven to four", "eight to three")
 other = (
-    "Quarterly earnings exceeded analyst expectations on strong demand for cloud services, sending "
-    "shares higher in after-hours trading, while the company raised its forecast for the full year "
-    "and announced a new buyback program worth several billion dollars over the next two years."
+    "Quarterly earnings exceeded analyst expectations on strong demand for cloud "
+    "services, sending "
+    "shares higher in after-hours trading, while the company raised its forecast for "
+    "the full year "
+    "and announced a new buyback program worth several billion dollars over the next "
+    "two years."
 )
 fp = {k: simhash(v) for k, v in (("base", base), ("edited", edited), ("other", other))}
 print(f"d_Ham(base, edited) = {d_ham(fp['base'], fp['edited'])}")
@@ -1495,7 +1662,7 @@ Whichever detector finds a cluster, which document to keep from it is not a deta
 
 ### 5.4 Per-snapshot versus global deduplication
 
-The scope of the search matters as much as the detector. FineWeb's authors found that deduplicating each Common Crawl snapshot independently produced *better* models than deduplicating globally across all snapshots, because global deduplication preferentially removed the oldest copy of good content while leaving the long tail of low-quality pages that were never duplicated. The content that survives many crawls is, on average, the content worth keeping. FineWeb-2 {cite}`penedo2025fineweb2` takes the other route: it deduplicates globally, as the first step before any filter, and records the size of each duplicate cluster in the kept document's metadata. It then "rehydrates" the corpus: each kept document is repeated with a weight between 1 and 10 that depends on its cluster size, chosen from how often the quality filters removed documents of that cluster size. Moderately duplicated pages get the highest weights; unique pages and the most-copied pages, which the filters remove more often than average, get the lowest. The authors reject weights that grow with the number of copies because, in their words, highly duplicated documents "are generally of lower quality, and therefore should be repeated less rather than more". {numref}`fig-ch4-snapshot-scope` shows the per-snapshot mechanism on six pages.
+The scope of the search matters as much as the detector. FineWeb's authors found that deduplicating each Common Crawl snapshot independently produced *better* models than deduplicating globally across all snapshots, because global deduplication, run from the newest snapshot back to the oldest, removed every copy of good content but the newest, as much as 90% of the oldest snapshots, while leaving the long tail of low-quality pages that were never duplicated. The content that survives many crawls is, on average, the content worth keeping. FineWeb-2 {cite}`penedo2025fineweb2` takes the other route: it deduplicates globally, as the first step before any filter, and records the size of each duplicate cluster in the kept document's metadata. It then "rehydrates" the corpus: each kept document is repeated with a weight between 1 and 10 that depends on its cluster size, chosen from how often the quality filters removed documents of that cluster size. Moderately duplicated pages get the highest weights; unique pages and the most-copied pages, which the filters remove more often than average, get the lowest. The authors reject weights that grow with the number of copies because, in their words, highly duplicated documents "are generally of lower quality, and therefore should be repeated less rather than more". {numref}`fig-ch4-snapshot-scope` shows the per-snapshot mechanism on six pages.
 
 ```{figure} figures/dedup-scope.*
 :name: fig-ch4-snapshot-scope
@@ -1561,7 +1728,9 @@ def repeated_spans(tokens, min_len: int = 50):
     return spans
 
 
-license = "permission is hereby granted free of charge to any person obtaining a copy".split()
+license = (
+    "permission is hereby granted free of charge to any person obtaining a copy".split()
+)
 doc_a = "alpha beta gamma".split() + license + "delta".split()
 doc_b = "one two".split() + license + "three four five".split()
 tokens = doc_a + doc_b
@@ -1570,7 +1739,10 @@ assert len(spans) == 1
 start, end = spans[0]
 assert tokens[start:end] == license
 assert start == len(doc_a) + 2  # the copy in doc_b, not the one in doc_a
-print(f"repeated span: tokens {start} to {end}, starting {' '.join(tokens[start : start + 4])!r}")
+print(
+    f"repeated span: tokens {start} to {end}, starting "
+    f"{' '.join(tokens[start : start + 4])!r}"
+)
 ```
 
 % output
@@ -1627,7 +1799,8 @@ PII_PATTERNS = {
         r"(?<!\w)(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}(?!\w)"
     ),
     "IPV4": re.compile(
-        r"(?<!\d)(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?!\d)"
+        r"(?<!\d)(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}"
+        r"(?:25[0-5]|2[0-4]\d|1?\d?\d)(?!\d)"
     ),
 }
 
@@ -1645,10 +1818,17 @@ def redact_pii(text: str, max_matches: int = 5):
     return text, counts, sum(counts.values()) <= max_matches
 
 
-sample = "Contact Jane at jane.doe@example.org or (555) 123-4567; server 192.168.1.20 is down."
+sample = (
+    "Contact Jane at jane.doe@example.org or (555) 123-4567; server 192.168.1.20 is "
+    "down."
+)
 redacted, counts, keep = redact_pii(sample)
 assert counts == {"EMAIL": 1, "PHONE": 1, "IPV4": 1}
-assert "example.org" not in redacted and "123-4567" not in redacted and "192.168" not in redacted
+assert (
+    "example.org" not in redacted
+    and "123-4567" not in redacted
+    and "192.168" not in redacted
+)
 assert keep
 
 directory = "\n".join(f"user{i}@example.com" for i in range(8))
@@ -1683,16 +1863,19 @@ def shannon_entropy(s: str) -> float:
 
 TOKEN = re.compile(r"[A-Za-z0-9+/=_-]{20,}")
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}")
-DUMMY_EMAILS = ("email@example.com", "firstname.lastname@example.org")  # datatrove's defaults
+# datatrove's defaults
+DUMMY_EMAILS = ("email@example.com", "firstname.lastname@example.org")
 
 
 def find_secrets(code: str, limit: float = 4.5) -> list:
-    """Flag long base64-like tokens whose entropy exceeds the limit (detect-secrets' default is 4.5)."""
+    """Flag long base64-like tokens whose entropy exceeds the limit (detect-secrets'
+    default is 4.5)."""
     return [t for t in TOKEN.findall(code) if shannon_entropy(t) > limit]
 
 
 def replace_emails(text: str) -> str:
-    """Swap each email for a realistic dummy, cycling through the list as datatrove's PIIFormatter does."""
+    """Swap each email for a realistic dummy, cycling through the list as datatrove's
+    PIIFormatter does."""
     dummies = itertools.cycle(DUMMY_EMAILS)
     return EMAIL.sub(lambda m: next(dummies), text)
 
@@ -1729,7 +1912,7 @@ The random key carries 5.222 bits per character, above the limit; the placeholde
 Three mechanisms, in increasing order of cost and accuracy:
 
 - **URL and domain blocklists** remove whole sites known for adult content, gambling, malware and spam. FineWeb and RefinedWeb use lists of several million domains maintained for web filtering. This is the first stage of most pipelines because it costs nothing.
-- **Word lists** flag documents containing any of a few hundred terms. C4's "bad words" filter is the canonical example, and {cite:t}`dodge2021documenting` showed its canonical failure: the list removed a disproportionate amount of text written in African American English and text about LGBTQ identity, because the same words are slurs in one context and self-description in another.
+- **Word lists** flag documents containing any of a few hundred terms. C4's "bad words" filter is the canonical example, and {cite:t}`dodge2021documenting` showed its canonical failure: the list removed a disproportionate amount of text written in African American English and text about LGBTQ identity, because the same words are slurs in one context and self-description in another. Their Table 1 gives the size of the cut: the version of C4 without the blocklist has 395 million documents and 198 billion tokens, and C4 has 365 million and 156 billion. The list removed 30 million documents, 7.6% of them, but 42 billion tokens, 21%, so the removed pages are long: 1,400 tokens on average against 427 for the pages kept. By a dialect classifier, it removed 42% of the documents in African American English and 32% of those in Hispanic-aligned English, against 6.2% in White-aligned English.
 - **Classifiers** trained on labeled toxic and non-toxic text (the Jigsaw toxic-comment data {cite}`cjadams2017toxic`, for example) give a probability per document or per sentence. Dolma trained fastText classifiers for hate speech and NSFW content on the Jigsaw data and removes every sentence either classifier scores above 0.4 {cite}`soldaini2024dolma`.
 
 The lesson of the C4 analysis is that any filter aimed at toxic content will also remove text by and about the communities that toxic content targets, so the threshold is a trade-off between the two kinds of harm. A more recent practice is to filter less at the pretraining stage and rely on post-training ({ref}`roadmap-post-training-and-alignment`) to control behavior, on the grounds that a model which has never seen a slur cannot recognize one either.
@@ -1756,7 +1939,7 @@ The notebook section {ref}`nb-prep-pii` runs the redaction patterns over documen
 An evaluation benchmark is useful only if the model has not seen it. Since benchmarks are published on the web and copied into forums, tutorials and GitHub repositories, they are in every crawl, and a pipeline has to look for them. The standard method is $n$-gram overlap:
 
 - **GPT-3** {cite}`brown2020language` removed each 13-gram shared with a benchmark, together with a 200-character window around it, discarded the resulting pieces shorter than 200 characters, and dropped documents split into more than 10 pieces. A bug left the filter ineffective on long documents such as books, and retraining was too costly, so the paper also labeled each benchmark example "dirty" if it shared an $n$-gram with the training data ($n$ from 8 to 13, depending on the task) and reported results on both the full and the "clean" subsets.
-- **Llama 2** {cite}`touvron2023llama2` tokenized both sides and marked a token as contaminated if it fell in any 10-gram shared with a benchmark; an example was contaminated if more than 80% of its tokens were. This was an analysis of the evaluation sets rather than a training-data filter: the paper reports performance separately on clean, "not clean", "not dirty" and dirty subsets.
+- **Llama 2** {cite}`touvron2023llama2` tokenized both sides and marked a token as contaminated if it fell in a token $n$-gram longer than 10 tokens that appears in both the evaluation sample and the training set, allowing a "skipgram budget" of four mismatched positions; a sample's contamination is the percentage of its tokens so marked, and samples at 80% or more are "dirty", those under 20% "clean". This was an analysis of the evaluation sets rather than a training-data filter: the paper reports performance separately on clean, "not clean", "not dirty" and dirty subsets.
 - **Dolma** matched at the paragraph level, using a Bloom filter over benchmark paragraphs, and removed training documents containing a matching paragraph.
 
 The implementation is a set of hashed $n$-grams built from the benchmark and a scan over the training text.
@@ -1794,21 +1977,30 @@ def contaminated_fraction(doc: str, index: dict) -> float:
 
 
 benchmark = [
-    "What is the capital of the country whose largest city is Istanbul and whose currency is the lira?",
+    "What is the capital of the country whose largest city is Istanbul and whose "
+    "currency is the lira?",
     "Which element has atomic number 26?",
 ]
 index = contamination_index(benchmark, n=13)
 
 leaked = (
-    "Here is a question from the quiz: What is the capital of the country whose largest "
+    "Here is a question from the quiz: What is the capital of the country whose "
+    "largest "
     "city is Istanbul and whose currency is the lira? The answer, of course, is Ankara."
 )
 innocent = "Istanbul is the largest city in Turkey, and the lira is its currency."
-short_leak = "Pub quiz round two. Which element has atomic number 26? Iron, as most tables knew."
+short_leak = (
+    "Pub quiz round two. Which element has atomic number 26? Iron, as most tables knew."
+)
 assert contaminated_fraction(leaked, index) > 0
-assert contaminated_fraction(short_leak, index) > 0  # the 6-word example is indexed whole
+# the 6-word example is indexed whole
+assert contaminated_fraction(short_leak, index) > 0
 assert contaminated_fraction(innocent, index) == 0.0
-for name, text in (("leaked", leaked), ("short_leak", short_leak), ("innocent", innocent)):
+for name, text in (
+    ("leaked", leaked),
+    ("short_leak", short_leak),
+    ("innocent", innocent),
+):
     print(f"{name}: contaminated fraction {contaminated_fraction(text, index):.3f}")
 ```
 
@@ -1839,12 +2031,12 @@ The notebook section {ref}`nb-prep-decontam` builds a 13-gram index from a toy b
 
 ### 8.1 Source code
 
-Code corpora use the same stages with different rules. The Stack {cite}`kocetkov2022stack` and its successor StarCoder data pipelines:
+Code corpora use the same stages with different rules. The main ones, with the source of each:
 
-- **License filtering** by repository, keeping permissive licenses only.
+- **License filtering** by repository, keeping permissive licenses only, as The Stack {cite}`kocetkov2022stack` does.
 - **Near-deduplication** at the file level, since forks and vendored dependencies dominate GitHub. The Stack computes MinHash with 256 permutations over the files' alphanumeric tokens and treats two files as near-duplicates above Jaccard similarity 0.85, which removes 38.6% of the permissively licensed files; StarCoder {cite}`li2023starcoder` uses 5-gram shingles and a Jaccard threshold of 0.7.
-- **Quality heuristics** per file: drop files whose fraction of alphanumeric characters is below 0.25, whose maximum line length exceeds 1,000 characters, or whose mean line length exceeds 100 characters (minified or generated code), and files with "auto-generated" in the first few lines.
-- **Data file removal**: JSON, YAML and CSV files are kept only below a size cap, since they are data rather than code.
+- **Quality heuristics** per file. Codex {cite}`chen2021evaluating` removed files "which were likely auto-generated, had average line length greater than 100, had maximum line length greater than 1000, or contained a small percentage of alphanumeric characters". StarCoder's defaults are two of these with a number attached: "over 25% alpha-numeric symbols" and "lines to be less than 1,000 characters" {cite}`li2023starcoder`; it applies the mean-line-length bound of 100 only to YAML. Neither paper says how "likely auto-generated" was decided; the listing below looks for a marker such as "auto-generated" or "do not edit" in the first five lines, a test of this chapter's own.
+- **Data file removal**: StarCoder keeps JSON and YAML files only between 50 and 5,000 characters and with more than 50% alphabetic characters, since most of them are data rather than code; for JSON this "removes around 70% of the files and 98% of the volume" {cite}`li2023starcoder`.
 - **Secrets and PII** via regular expressions for keys and the StarPII model {cite}`bigcode2023starpii` for names and emails.
 
 ```python
@@ -1854,7 +2046,8 @@ _AUTOGEN = re.compile(r"(auto[- ]?generated|do not edit|generated by)", re.IGNOR
 
 
 def code_quality_filter(source: str):
-    """File-level rules in the style of The Stack / StarCoder; returns (keep, reason)."""
+    """File-level rules of Codex, with StarCoder's thresholds; returns (keep, reason).
+    """
     if not source.strip():
         return False, "empty"
     lines = source.split("\n")
@@ -1872,9 +2065,15 @@ def code_quality_filter(source: str):
 
 good = "def add(a, b):\n    return a + b\n\n\nprint(add(2, 3))\n"
 assert code_quality_filter(good) == (True, "ok")
-assert code_quality_filter("# Auto-generated by protoc. DO NOT EDIT!\nx = 1\n")[1] == "autogenerated"
+assert (
+    code_quality_filter("# Auto-generated by protoc. DO NOT EDIT!\nx = 1\n")[1]
+    == "autogenerated"
+)
 assert code_quality_filter("x = 1\n" + "y = 1; " * 400 + "\n")[1] == "max_line_length"
-assert code_quality_filter("".join("=" * 60 + "\n" for _ in range(20)))[1] == "low_alphanumeric"
+assert (
+    code_quality_filter("".join("=" * 60 + "\n" for _ in range(20)))[1]
+    == "low_alphanumeric"
+)
 print(f"good: {code_quality_filter(good)}")
 generated = "# Auto-generated by protoc. DO NOT EDIT!\nx = 1\n"
 print(f"generated: {code_quality_filter(generated)}")
@@ -1891,13 +2090,76 @@ generated: (False, 'autogenerated')
 
 ### 8.2 Mathematics and scientific text
 
-Mathematical text is destroyed by the default prose pipeline: HTML extractors drop MathML and MathJax, the mean-word-length and alphabetic-word rules of {ref}`sec-ch4-heuristic-rules` reject equations, NFKC normalization flattens superscripts, and line-based filters remove display equations because they do not end in a period. OpenWebMath {cite}`paster2023openwebmath` rebuilt extraction from the raw HTML to recover LaTeX from the rendered page, trained a classifier on mathematical content to replace the symbol rules, and kept its own line conventions. Scientific papers from arXiv are handled by converting the LaTeX source rather than the PDF, with macro expansion and bibliography removal. The general point holds for any domain: inspect what the default rules reject before adopting them.
+Mathematical text is destroyed by the default prose pipeline: HTML extractors drop MathML and MathJax, the mean-word-length and alphabetic-word rules of {ref}`sec-ch4-heuristic-rules` reject equations, NFKC normalization flattens superscripts, and line-based filters remove display equations because they do not end in a period. The listing at the end of {ref}`sec-ch4-multilingual-text` runs the Gopher word rules on a paragraph of LaTeX. OpenWebMath {cite}`paster2023openwebmath` rebuilt extraction from the raw HTML so that equations written for MathJax, in `<math>` (MathML) tags or in the alt text of images come out as LaTeX. In place of the prose rules it filters with a prefilter that looks for LaTeX symbols in the page's text and otherwise keeps pages its mathematical-content classifier, MathScore, scores above 0.8, followed by language identification, perplexity filtering and the MathScore classifier. Scientific papers from arXiv are handled by converting the LaTeX source rather than the PDF, with macro expansion and bibliography removal. The general point holds for any domain: inspect what the default rules reject before adopting them.
 
 (sec-ch4-multilingual-text)=
 
 ### 8.3 Multilingual text
 
 Every threshold in {ref}`sec-ch4-quality-filtering` is a function of language. The practical approach, used by ROOTS {cite}`laurenccon2022bigscience` and the Common Crawl-derived multilingual corpora, is a per-language parameter table covering the word-splitting rule (character-based for Chinese, Japanese and Thai), stop-word lists, the mean-word-length bounds, and the perplexity model, set with help from speakers of each language. Scripts need their own treatment: a document in Cyrillic with a Latin-script navigation menu should not fail the "words with an alphabetic character" rule, and right-to-left text should not be reordered by extraction. Languages with little web presence suffer twice, because the language identifier is less accurate on them and the quality filters, tuned on majority languages, reject more of what it finds.
+
+The listing below runs the word-based Gopher rules of {ref}`sec-ch4-heuristic-rules` on a paragraph of LaTeX and on a Chinese paragraph, and prints the first rule each fails.
+
+```python
+import re
+
+STOP_WORDS = {"the", "be", "to", "of", "and", "that", "have", "with"}
+_CJK = re.compile(r"[㐀-鿿豈-﫿]")
+
+
+def gopher_word_rules(words: list[str]) -> str:
+    """The word-based Gopher rules of section 4.1, in order; returns the first failure.
+    """
+    if len(words) < 50:
+        return "too_few_words"
+    if not 3 <= sum(map(len, words)) / len(words) <= 10:
+        return "mean_word_length"
+    if sum(any(ch.isalpha() for ch in w) for w in words) / len(words) < 0.8:
+        return "non_alpha_words"
+    if len(STOP_WORDS & {w.lower().strip(".,;:") for w in words}) < 2:
+        return "stop_words"
+    return "ok"
+
+
+latex = (
+    r"Let $u(x, t)$ solve $\partial_t u = \kappa \, \partial_x^2 u$ on $0 < x < L$ "
+    r"with $u(0, t) = u(L, t) = 0$. Separation of variables gives "
+    r"$u = \sum_{n=1}^{\infty} b_n e^{-\kappa (n \pi / L)^2 t} \sin(n \pi x / L)$ "
+    r"where $b_n = \frac{2}{L} \int_0^L f(x) \sin(n \pi x / L) \, dx$ and "
+    r"$f(x) = u(x, 0)$. Each mode decays at rate $\kappa (n \pi / L)^2$, so "
+    r"for $t \gg L^2 / \kappa$ only the $n = 1$ term is left: "
+    r"$u \approx b_1 e^{-\kappa \pi^2 t / L^2} \sin(\pi x / L)$."
+)
+# 20 copies of a 15-character Chinese sentence: "Data preprocessing decides what the
+# model learns."
+chinese = (
+    "\u6570\u636e\u9884\u5904\u7406\u51b3\u5b9a\u6a21\u578b"
+    "\u5b66\u5230\u7684\u5185\u5bb9\u3002"
+    * 20
+)
+for name, text in (("LaTeX", latex), ("Chinese", chinese)):
+    words = text.split()
+    print(f"{name}: {len(words)} words, {gopher_word_rules(words)}")
+# Splitting CJK text into characters fixes the count; the English stop words still fail
+# it.
+chars = [ch for ch in chinese if _CJK.match(ch)]
+print(
+    f"Chinese, one word per character: {len(chars)} words, {gopher_word_rules(chars)}"
+)
+assert gopher_word_rules(latex.split()) == "non_alpha_words"
+assert gopher_word_rules(chinese.split()) == "too_few_words"
+assert gopher_word_rules(chars) == "mean_word_length"
+```
+
+% output
+
+```text
+LaTeX: 99 words, non_alpha_words
+Chinese: 1 words, too_few_words
+Chinese, one word per character: 280 words, mean_word_length
+```
+
+The LaTeX paragraph has enough words of ordinary length, but a fifth or more of them (`$0`, `<`, `=`, `0$.`) contain no letter, so the alphabetic-word rule rejects it. The Chinese paragraph has no spaces and is therefore one word. Splitting it into characters, which is what a per-language word rule for Chinese does, gives enough words, but each is one character long and the English bound of 3 rejects them all; with that bound lifted, the English stop-word list would reject it next.
 
 (sec-ch4-assembling-pipeline)=
 
@@ -1931,7 +2193,7 @@ A corpus is thousands of shards, each a compressed JSONL file of documents with 
 ```{figure} figures/pipeline-map-shuffle.*
 :name: fig-ch4-pipeline-map-shuffle
 :alt: Shard 1 and the other shards pass through a first map of per-document stages, converge on a single global step that shuffles by band bucket and runs union-find, and fan out to a second per-document map.
-:width: 509px
+:width: 100%
 
 The shape of a distributed pipeline, a schematic of the stages in {ref}`sec-ch4-operation-order`. Every stage in the two maps reads one document and needs nothing else, so shards run anywhere in parallel. Deduplication is the one exception: each document's $b$ band hashes are shuffled so that equal buckets meet, candidate pairs are resolved into clusters with union-find, and the resulting list of documents to drop is applied in the second map.
 ```
@@ -1976,7 +2238,9 @@ def min_length(doc):
 
 
 def no_lorem(doc):
-    return (None, "lorem_ipsum") if "lorem ipsum" in doc["text"].lower() else (doc, "ok")
+    return (
+        (None, "lorem_ipsum") if "lorem ipsum" in doc["text"].lower() else (doc, "ok")
+    )
 
 
 def english_only(doc):
@@ -1989,20 +2253,29 @@ docs = [
     {"text": "Dies ist ein vollständiger Satz in deutscher Sprache.", "lang": "de"},
     {"text": "This document is long enough and in the right language.", "lang": "en"},
 ]
-pipe = Pipeline([("min_length", min_length), ("no_lorem", no_lorem), ("english_only", english_only)])
+pipe = Pipeline(
+    [("min_length", min_length), ("no_lorem", no_lorem), ("english_only", english_only)]
+)
 kept = list(pipe.run(docs))
 assert len(kept) == 1
 assert pipe.counts["dropped_by:min_length"] == 1
 assert pipe.counts["dropped_by:no_lorem"] == 1
 assert pipe.counts["dropped_by:english_only"] == 1
 assert pipe.reasons["english_only:language"] == 1
-print(f"kept {len(kept)} of {len(docs)}; {sorted(pipe.counts.items())}")
+print(f"kept {len(kept)} of {len(docs)}")
+for stage, count in sorted(pipe.counts.items()):
+    print(f"  {stage}: {count}")
 ```
 
 % output
 
 ```text
-kept 1 of 4; [('dropped_by:english_only', 1), ('dropped_by:min_length', 1), ('dropped_by:no_lorem', 1), ('input', 4), ('output', 1)]
+kept 1 of 4
+  dropped_by:english_only: 1
+  dropped_by:min_length: 1
+  dropped_by:no_lorem: 1
+  input: 4
+  output: 1
 ```
 
 (sec-ch4-keeping-receipts)=
@@ -2043,7 +2316,7 @@ The notebook section {ref}`nb-prep-pipeline` assembles normalization, language i
 - **Language identification** assigns each document a language and a confidence, and the threshold on that confidence decides how much low-resource and mixed-language text survives ({ref}`sec-ch4-language-identification`).
 - **Quality filters run from cheap to expensive:** heuristic rules and repetition measures remove pages that are not prose, a reference language model's perplexity scores fluency, and a classifier trained against a curated positive set selects for resemblance to it; each is judged by training small models with and without it at the same token budget and reporting the retained fraction ({ref}`sec-ch4-quality-filtering`).
 - **Machine-generated text is hard to filter** because it is a small share of a crawl: at a 1% base rate even an accurate detector removes mostly human-written documents ({ref}`sec-ch4-spam-machine-generated-text`).
-- **Deduplication works at four granularities:** exact hashing removes identical documents, and a Bloom filter does so in fixed memory at a false-positive rate that rises as the filter fills; hashing three-sentence spans, lines and paragraphs removes repeated boilerplate inside otherwise distinct documents; MinHash with LSH banding finds near-duplicates, with the band count $b$ and rows per band $r$ setting the similarity threshold of the S-curve $1 - (1 - J^r)^b$, and SimHash does the same with one 64-bit fingerprint per document; suffix arrays find repeated substrings. Semantic deduplication (SemDeDup) removes documents that are close in embedding space even when they share few words. Whether deduplication runs per snapshot or across the whole corpus changes what is kept ({ref}`sec-ch4-deduplication`).
+- **Deduplication works on several units and by several methods:** exact hashing removes identical documents, and a Bloom filter does so in fixed memory at a false-positive rate that rises as the filter fills; hashing three-sentence spans, lines and paragraphs removes repeated boilerplate inside otherwise distinct documents; MinHash with LSH banding finds near-duplicates, with the band count $b$ and rows per band $r$ setting the similarity threshold of the S-curve $1 - (1 - J^r)^b$, and SimHash does the same with one 64-bit fingerprint per document; suffix arrays find repeated substrings. Semantic deduplication (SemDeDup) removes documents that are close in embedding space even when they share few words. Whether deduplication runs per snapshot or across the whole corpus changes what is kept ({ref}`sec-ch4-deduplication`).
 - **Privacy and safety filtering** replaces personal data with placeholders, drops documents dense with it, and removes toxic or unlicensed content; pattern matching is cheap but its precision has to be measured on text full of look-alike numbers ({ref}`sec-ch4-privacy-toxicity-safety-filtering`).
 - **Decontamination** removes training text that shares long $n$-grams with evaluation sets; it misses paraphrases and translations, so it is reported as a procedure with its parameters and combined with fresh test sets ({ref}`sec-ch4-benchmark-decontamination`).
 - **Code, mathematics and multilingual text need their own rules:** code is filtered by license, file properties and secrets rather than by prose statistics; mathematical text needs extraction that keeps formulas; and thresholds tuned for English remove good text in other languages and scripts ({ref}`sec-ch4-domain-specific-preprocessing`).
@@ -2065,7 +2338,8 @@ import math
 
 import numpy as np
 
-MEDIAN, SPREAD = 300, 1.2  # median word count and log-scale standard deviation (illustrative)
+# median word count and log-scale standard deviation (illustrative)
+MEDIAN, SPREAD = 300, 1.2
 
 
 def normal_cdf(z: float) -> float:
@@ -2078,7 +2352,8 @@ print("min words  documents kept  words kept")
 for t in (10, 50, 100, 200):
     z = (math.log(t) - math.log(MEDIAN)) / SPREAD
     kept[t] = (1 - normal_cdf(z), 1 - normal_cdf(z - SPREAD))
-    assert abs((lengths >= t).mean() - kept[t][0]) < 0.005                      # simulation agrees
+    # simulation agrees
+    assert abs((lengths >= t).mean() - kept[t][0]) < 0.005
     assert abs(lengths[lengths >= t].sum() / lengths.sum() - kept[t][1]) < 0.005
     print(f"{t:9d}  {kept[t][0]:14.3f}  {kept[t][1]:10.4f}")
 ```
@@ -2103,7 +2378,8 @@ Gopher's threshold of 50 removes 6.8% of the documents but only 0.35% of the wor
 
 ```python
 def dup_ngram_char_frac(text: str, n: int, overlapping: bool) -> float:
-    """Characters in repeated word n-grams over len(text): skip ahead after a repeat, or count every window."""
+    """Characters in repeated word n-grams over len(text): skip ahead after a repeat, or
+    count every window."""
     words = text.split()
     seen, dup_chars, i = set(), 0, 0
     while i < len(words) - n + 1:
@@ -2120,19 +2396,28 @@ def dup_ngram_char_frac(text: str, n: int, overlapping: bool) -> float:
 loop = "a b c d e " * 4
 sentence = "The council will publish the full minutes of the meeting next week. "
 news = (
-    "Residents packed the hall on Thursday evening to hear the plan for the old rail yard. "
+    "Residents packed the hall on Thursday evening to hear the plan for the old rail "
+    "yard. "
     + sentence
-    + "Several speakers asked how the site would be cleaned, who would pay for it, and whether "
-    "the playing fields promised in the first draft had been dropped. The planning officer said "
-    "the fields remain, but on a smaller plot than before, and that a traffic survey is under way. "
+    + "Several speakers asked how the site would be cleaned, who would pay for it, "
+        "and whether "
+    "the playing fields promised in the first draft had been dropped. The planning "
+    "officer said "
+    "the fields remain, but on a smaller plot than before, and that a traffic survey "
+    "is under way. "
     + sentence
     + "A vote is expected before the end of the year."
 )
 fracs = {}
 for name, text in (("loop", loop), ("news", news)):
-    fracs[name] = (dup_ngram_char_frac(text, 5, False), dup_ngram_char_frac(text, 5, True))
-    print(f"{name}: {len(text.split())} words, {len(text)} characters; "
-          f"skip-ahead {fracs[name][0]:.3f}, every window {fracs[name][1]:.3f}")
+    fracs[name] = (
+        dup_ngram_char_frac(text, 5, False),
+        dup_ngram_char_frac(text, 5, True),
+    )
+    print(
+        f"{name}: {len(text.split())} words, {len(text)} characters; "
+        f"skip-ahead {fracs[name][0]:.3f}, every window {fracs[name][1]:.3f}"
+    )
 assert fracs["news"][0] <= 0.15 < fracs["news"][1] and fracs["loop"][1] > 1
 ```
 
@@ -2166,14 +2451,20 @@ def crossing(b: int, r: int) -> float:
 
 
 def candidate_rate(shared: int, b: int, r: int) -> float:
-    """Fraction of trials in which two SIZE-element sets with `shared` common elements share a band."""
+    """Fraction of trials in which two SIZE-element sets with `shared` common elements
+    share a band."""
     x = np.arange(SIZE)
     y = np.concatenate([x[:shared], SIZE + np.arange(SIZE - shared)])
     hits = 0
     for _ in range(TRIALS):
-        ranks = rng.permuted(np.tile(np.arange(UNIVERSE), (N_HASH, 1)), axis=1)  # one permutation per row
-        sig_x, sig_y = ranks[:, x].min(axis=1), ranks[:, y].min(axis=1)        # MinHash signatures
-        hits += any((sig_x[k * r : (k + 1) * r] == sig_y[k * r : (k + 1) * r]).all() for k in range(b))
+        # one permutation per row
+        ranks = rng.permuted(np.tile(np.arange(UNIVERSE), (N_HASH, 1)), axis=1)
+        # MinHash signatures
+        sig_x, sig_y = ranks[:, x].min(axis=1), ranks[:, y].min(axis=1)
+        hits += any(
+            (sig_x[k * r : (k + 1) * r] == sig_y[k * r : (k + 1) * r]).all()
+            for k in range(b)
+        )
     return hits / TRIALS
 
 
@@ -2181,18 +2472,27 @@ results = {}
 for b, r in ((8, 16), (16, 8), (32, 4)):
     shared = round(2 * SIZE * crossing(b, r) / (1 + crossing(b, r)))
     j = shared / (2 * SIZE - shared)
-    results[(b, r)] = (crossing(b, r), j, 1 - (1 - j**r) ** b, candidate_rate(shared, b, r))
-    assert abs(results[(b, r)][3] - results[(b, r)][2]) < 0.1   # within about three standard errors
-    print(f"b={b:2d}, r={r:2d}: crosses 0.5 at J = {results[(b, r)][0]:.3f}; simulated at J = {j:.3f}: "
-          f"formula {results[(b, r)][2]:.3f}, observed {results[(b, r)][3]:.3f}")
+    results[(b, r)] = (
+        crossing(b, r),
+        j,
+        1 - (1 - j**r) ** b,
+        candidate_rate(shared, b, r),
+    )
+    # within about three standard errors
+    assert abs(results[(b, r)][3] - results[(b, r)][2]) < 0.1
+    print(
+        f"b={b:2d}, r={r:2d}: crosses 0.5 at J={results[(b, r)][0]:.3f}; simulated "
+        f"at J={j:.3f}: "
+        f"formula {results[(b, r)][2]:.3f}, observed {results[(b, r)][3]:.3f}"
+    )
 ```
 
 % output
 
 ```text
-b= 8, r=16: crosses 0.5 at J = 0.856; simulated at J = 0.855: formula 0.496, observed 0.490
-b=16, r= 8: crosses 0.5 at J = 0.674; simulated at J = 0.672: formula 0.494, observed 0.517
-b=32, r= 4: crosses 0.5 at J = 0.383; simulated at J = 0.383: formula 0.502, observed 0.490
+b= 8, r=16: crosses 0.5 at J=0.856; simulated at J=0.855: formula 0.496, observed 0.490
+b=16, r= 8: crosses 0.5 at J=0.674; simulated at J=0.672: formula 0.494, observed 0.517
+b=32, r= 4: crosses 0.5 at J=0.383; simulated at J=0.383: formula 0.502, observed 0.490
 ```
 
 The three settings spend the same 128 hash values on very different thresholds: few long bands (8 by 16) only pair documents that are near-identical, and many short bands (32 by 4) pair documents that share about a third of their shingles. Each observed rate is within the sampling error of the formula, which with 300 trials is about 0.03. The crossing point is a little below the often-quoted approximation $(1/b)^{1/r}$ (0.878, 0.707 and 0.420 for the three settings), which lies close to where the curve is steepest rather than where it reaches 0.5.
@@ -2220,35 +2520,62 @@ The extended pattern adds one alternative per country and refuses a match that t
 ```python
 import re
 
-US_ONLY = re.compile(r"(?<!\w)(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}(?!\w)")
+US_ONLY = re.compile(
+    r"(?<!\w)(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}(?!\w)"
+)
 PHONE = re.compile(
     r"(?<![\w.:/-])(?:"
     r"(?:\+44\s?|0)(?:\d{4}\s?\d{6}|\d{3}\s?\d{3}\s?\d{4}|\d{2}\s?\d{4}\s?\d{4})"  # UK
-    r"|(?:\+49\s?|0)\d{2,5}[\s/-]?\d{3,8}(?:-\d{1,4})?"                           # Germany
-    r"|(?:\+91[\s-]?|0)?[6-9]\d{4}[\s-]?\d{5}"                                    # India, mobile
-    r"|(?:\+1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]\d{4}"                        # North America
+    # Germany
+    r"|(?:\+49\s?|0)\d{2,5}[\s/-]?\d{3,8}(?:-\d{1,4})?"
+    # India, mobile
+    r"|(?:\+91[\s-]?|0)?[6-9]\d{4}[\s-]?\d{5}"
+    # North America
+    r"|(?:\+1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]\d{4}"
     r")(?![\w.:/-])"
 )
-phones = ["+44 20 7946 0958", "020 7946 0958", "07700 900123", "+49 30 901820", "030 901820-12",
-          "089/12345678", "+91 98765 43210", "098765 43210", "(555) 123-4567"]
-distractors = ["version 10.2.4 build 2003", "ISBN 978-0-306-40615-7", "ISBN 0306406152",
-               "2024-03-15 14:22:05", "order 4402719911", "1999-2004", "192.168.1.20",
-               "pages 2203-2241", "serial 30901820"]
+phones = [
+    "+44 20 7946 0958",
+    "020 7946 0958",
+    "07700 900123",
+    "+49 30 901820",
+    "030 901820-12",
+    "089/12345678",
+    "+91 98765 43210",
+    "098765 43210",
+    "(555) 123-4567",
+]
+distractors = [
+    "version 10.2.4 build 2003",
+    "ISBN 978-0-306-40615-7",
+    "ISBN 0306406152",
+    "2024-03-15 14:22:05",
+    "order 4402719911",
+    "1999-2004",
+    "192.168.1.20",
+    "pages 2203-2241",
+    "serial 30901820",
+]
 
 scores = {}
 for name, pattern in (("original", US_ONLY), ("extended", PHONE)):
     found = sum(bool(pattern.search(f"Call {p} today.")) for p in phones)
     false = [d for d in distractors if pattern.search(f"See {d} for details.")]
     scores[name] = (found / len(phones), found / (found + len(false)))
-    print(f"{name}: recall {found}/{len(phones)}, precision {found}/{found + len(false)}; false matches {false}")
+    print(
+        f"{name}: recall {found}/{len(phones)}, precision "
+        f"{found}/{found + len(false)}\n  false matches {false}"
+    )
 assert scores["extended"] == (1.0, 0.9) and scores["original"][0] < 0.2
 ```
 
 % output
 
 ```text
-original: recall 1/9, precision 1/3; false matches ['ISBN 0306406152', 'order 4402719911']
-extended: recall 9/9, precision 9/10; false matches ['ISBN 0306406152']
+original: recall 1/9, precision 1/3
+  false matches ['ISBN 0306406152', 'order 4402719911']
+extended: recall 9/9, precision 9/10
+  false matches ['ISBN 0306406152']
 ```
 
 The original pattern finds only the North American number and fires on two bare ten-digit strings. The extended one finds all nine numbers, and its one false match is a ten-digit ISBN that begins with 0, which the German alternative (a leading 0 followed by 5 to 13 digits) cannot tell from a Berlin or Munich number. No pattern over digits alone can: the fix is context, such as skipping a number preceded by "ISBN" or validating the ISBN check digit. On real web text, where version strings and identifiers far outnumber phone numbers, the precision of the German alternative would be lower than this small sample shows, which is why production pipelines pair patterns with context rules or a named-entity model.
@@ -2293,19 +2620,45 @@ def contaminated_fraction(doc: str, index: dict) -> float:
     return best
 
 
-question = "Which of the following is the best explanation for why the sky appears blue during the day?"
+question = (
+    "Which of the following is the best explanation for why the sky appears blue "
+    "during the day?"
+)
 docs = {
-    "verbatim": "Quiz: which of the following is the best explanation for why the sky appears blue during the day? Rayleigh.",
-    "paraphrase": "Quiz: which of the following is the best explanation for why the daytime sky looks blue to us? Rayleigh.",
-    "reworded": "Quiz: why does the sky look blue in daytime, and what is the best explanation? Rayleigh.",
-    "innocent": "Which of the following is the best explanation for the result is left to the reader.",
+    "verbatim": (
+        "Quiz: which of the following is the best explanation for why the sky appears"
+        " blue during the day? Rayleigh."
+    ),
+    "paraphrase": (
+        "Quiz: which of the following is the best explanation for why the daytime sky"
+        " looks blue to us? Rayleigh."
+    ),
+    "reworded": (
+        "Quiz: why does the sky look blue in daytime, and what is the best "
+        "explanation? Rayleigh."
+    ),
+    "innocent": (
+        "Which of the following is the best explanation for the result is left to the"
+        " reader."
+    ),
 }
-scores = {n: {name: contaminated_fraction(doc, contamination_index([question], n)) for name, doc in docs.items()}
-          for n in (13, 8)}
+scores = {
+    n: {
+        name: contaminated_fraction(doc, contamination_index([question], n))
+        for name, doc in docs.items()
+    }
+    for n in (13, 8)
+}
 for n, row in scores.items():
-    print(f"n={n:2d}: " + ", ".join(f"{name} {value:.3f}" for name, value in row.items()))
+    print(
+        f"n={n:2d}: " + ", ".join(f"{name} {value:.3f}" for name, value in row.items())
+    )
 assert [name for name, v in scores[13].items() if v > 0] == ["verbatim"]
-assert [name for name, v in scores[8].items() if v > 0] == ["verbatim", "paraphrase", "innocent"]
+assert [name for name, v in scores[8].items() if v > 0] == [
+    "verbatim",
+    "paraphrase",
+    "innocent",
+]
 ```
 
 % output
@@ -2330,7 +2683,10 @@ corpus = {"unfiltered": 10e9, "filtered": 0.82 * 10e9}
 epochs = {}
 for budget in (2e9, 20e9):
     epochs[budget] = {name: budget / size for name, size in corpus.items()}
-    print(f"budget {budget / 1e9:.0f}B tokens: " + ", ".join(f"{k} {v:.3g} epochs" for k, v in epochs[budget].items()))
+    print(
+        f"budget {budget / 1e9:.0f}B tokens: "
+        + ", ".join(f"{k} {v:.3g} epochs" for k, v in epochs[budget].items())
+    )
 assert epochs[2e9]["filtered"] < 1 and 2 < epochs[20e9]["filtered"] < 4
 ```
 
