@@ -241,8 +241,8 @@ print(f"  hub total = {gemma3_text:,} text + {SIGLIP:,} vision "
 PUBLISHED = {
     "Qwen/Qwen2.5-7B": (7.61, 0.01, None, None, None),
     "Qwen/Qwen3-8B-Base": (8.2, 0.05, None, None, None),
-    # OLMoE paper: "7 billion (B) parameters"
-    "allenai/OLMoE-1B-7B-0924": (7, 0.5, 1.3, "with", 0.05),
+    # OLMoE paper: "6.9B total parameters, of which only 1.3B are activated"
+    "allenai/OLMoE-1B-7B-0924": (6.9, 0.05, 1.3, "with", 0.05),
     "deepseek-ai/DeepSeek-V2-Lite": (15.7, 0.05, 2.4, "without", 0.1),
     "deepseek-ai/DeepSeek-V3": (671, 0.5, 37, "without", 0.5),
     "mistralai/Mistral-7B-v0.1": (7.3, 0.1, None, None, None),
@@ -268,7 +268,7 @@ assert {"qwen2", "mixtral", "deepseek_v2", "deepseek_v3"} <= kinds
 ''')
 
 md(r"""
-The derived columns used in the chapter: embedding share, feed-forward share (dense models), and the KV-cache bytes per token over all layers in `bf16`.
+The derived columns used in the chapter: embedding share, feed-forward share (dense models), the KV-cache bytes per token over all layers in `bf16`, and the model's shape, the ratio of width to layers.
 """)
 code(r'''
 rows = []
@@ -296,6 +296,20 @@ assert kv_bytes["meta-llama/Llama-3.1-8B"] == 131072
 assert kv_bytes["deepseek-ai/DeepSeek-V3"] == 70272
 # MLA: one latent and one rotary key per layer
 assert kv_bytes["deepseek-ai/DeepSeek-V3"] == 61 * (512 + 64) * 2
+
+# Shape: width over layers, as in section 1.3
+aspect = {repo: cfg["hidden_size"] / cfg["num_hidden_layers"]
+          for repo, cfg in ALL_CONFIGS.items()}
+print("width / layers:")
+for repo, ratio in aspect.items():
+    print(f"  {repo:32} {ratio:6.1f}")
+assert len(aspect) == 12
+assert sum(ratio == 128 for ratio in aspect.values()) == 6
+assert round(aspect["meta-llama/Llama-3.1-70B"]) == 102
+assert round(aspect["google/gemma-2-9b"]) == 85
+assert aspect["google/gemma-3-12b-pt"] == 80
+assert round(aspect["deepseek-ai/DeepSeek-V2-Lite"]) == 76
+assert (8192 / 4096, 80 / 32) == (2.0, 2.5)  # Llama 3.1 8B to 70B: width, depth
 
 def attention_family(cfg):
     if cfg["model_type"].startswith("deepseek"):
@@ -478,6 +492,47 @@ TINY = {"model_type": "llama", "hidden_size": 64, "num_hidden_layers": 4,
 measured = sum(p.numel() for p in TinyLM().parameters())
 assert measured == count_params(TINY)["total"], (measured, count_params(TINY)["total"])
 print(f"TinyLM has {measured:,} parameters, as count_params predicts")
+''')
+
+md(r"""
+QK-norm bounds the logits ({ref}`sec-ch6-normalizing-queries-keys`). The check scales the query and key weights by a large factor, which multiplies the unnormalized logits by its square, and then normalizes either each head's slice or the whole projection, with gains of one. The largest logit stays below the bound of that layout, whatever the scale; the bounds are printed beside the logits.
+""")
+code(r'''
+torch.manual_seed(0)
+d_model, n_heads, d_k, n_tok = 64, 4, 16, 64
+x = torch.randn(n_tok, d_model, dtype=torch.double)
+W_q = torch.randn(d_model, n_heads * d_k, dtype=torch.double) / d_model**0.5
+W_k = torch.randn(d_model, n_heads * d_k, dtype=torch.double) / d_model**0.5
+
+
+def rms_normalize(t):
+    return t / t.pow(2).mean(-1, keepdim=True).sqrt()
+
+
+def max_logit(scale, layout):
+    q = (x @ (scale * W_q)).reshape(n_tok, n_heads, d_k)
+    k = (x @ (scale * W_k)).reshape(n_tok, n_heads, d_k)
+    if layout == "per head":
+        q, k = rms_normalize(q), rms_normalize(k)
+    elif layout == "full projection":
+        q = rms_normalize(q.reshape(n_tok, -1)).reshape(n_tok, n_heads, d_k)
+        k = rms_normalize(k.reshape(n_tok, -1)).reshape(n_tok, n_heads, d_k)
+    logits = torch.einsum("mhd,nhd->hmn", q, k) / d_k**0.5
+    return logits.abs().max().item()
+
+
+bound = {"per head": d_k**0.5, "full projection": (n_heads * n_heads * d_k) ** 0.5}
+raw1, raw100 = max_logit(1, "none"), max_logit(100, "none")
+assert math.isclose(raw100 / raw1, 100**2, rel_tol=1e-9)
+print(f"no normalization: largest logit {raw1:.2f} at scale 1, {raw100:,.0f} at 100")
+for layout, limit in bound.items():
+    small, large = max_logit(1, layout), max_logit(100, layout)
+    assert math.isclose(small, large, rel_tol=1e-9) and large <= limit
+    print(f"{layout}: largest logit {small:.2f} at scales 1 and 100 "
+          f"(bound {limit:.1f})")
+
+# Bounds quoted in the chapter: d_k = 128 per head; OLMo 2 7B has 32 heads
+assert round(128**0.5, 1) == 11.3 and round((32 * 32 * 128) ** 0.5) == 362
 ''')
 
 md(r"""
