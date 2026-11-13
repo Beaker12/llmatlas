@@ -61,7 +61,15 @@ The theme throughout is that architecture choices are constraints from somewhere
 
 Twelve models are used as running examples, among them the open mixture-of-experts model OLMoE {cite}`muennighoff2025olmoe` and two from 2025, Qwen3 {cite}`qwen2025qwen3` and Gemma 3 {cite}`gemma2025gemma3`. They span dense and sparse designs, three attention families and six organizations. Every figure below traces to a pinned `config.json` or to the model's paper, with the paper-derived rows expressed in the conventions of the Hugging Face configurations (for example vocabulary entries, and the width of one gate or up projection).
 
-All twelve have the same outer structure: a token embedding, a stack of identical blocks, a final normalization, and an output projection to the vocabulary. Within a block, a normalization, an attention sublayer and a residual addition are followed by a normalization, a feed-forward sublayer and a second residual addition. Only the contents of the boxes differ.
+All twelve have the same outer structure: a token embedding, a stack of identical blocks, a final normalization, and an output projection to the vocabulary. Within a block, a normalization, an attention sublayer and a residual addition are followed by a normalization, a feed-forward sublayer and a second residual addition. Only the contents of the boxes differ. {numref}`fig-ch6-block-2017-2025` sets the two ends of that history side by side.
+
+```{figure} figures/block-2017-2025.*
+:name: fig-ch6-block-2017-2025
+:alt: Two block diagrams side by side. Left, the 2017 block: multi-head attention, add, LayerNorm, ReLU feed-forward network, add, LayerNorm, with the residual skips entering each add. Right, the Llama 3.1 8B block: RMSNorm, grouped-query attention with RoPE, add, RMSNorm, SwiGLU network, add, with the residual skips bypassing the norms.
+:width: 100%
+
+The 2017 block and a 2025 block (Llama 3.1 8B). The outer structure is the same; what changed is the contents of each box (shaded blue) and where the normalization sits (orange). On the right, the residual path (orange arrows) runs from block to block without passing through a norm.
+```
 
 **Dense models.**
 
@@ -131,7 +139,15 @@ It is worth stating what is *constant*, because it explains why the field moved 
 
 The original transformer {cite}`vaswani2017attention` applied layer normalization *after* adding the sublayer output to the residual (post-norm): $x \leftarrow \mathrm{Norm}(x + F(x))$. Every layer's output passes through a normalization on the way to the next, which means the gradient reaching early layers is rescaled at each step. At initialization the gradients near the output are large, and Xiong et al. trace post-norm's reliance on a learning-rate warm-up to them {cite}`xiong2020layer`. How strict that reliance is depends on the learning rate: in the notebook section {ref}`nb-arch-train`, post-norm fails without warm-up only at the highest of three rates, and warm-up lets it train there in some seeds but not in all.
 
-Pre-norm moves the normalization inside the branch: $x \leftarrow x + F(\mathrm{Norm}(x))$. The residual path from the embedding to the output is then an unnormalized identity, so gradients reach every layer directly. Xiong et al. show that this keeps the gradient scale stable at initialization and makes warm-up optional. The price is that the residual stream's magnitude grows with depth, so the representation of the last layers can be dominated by the accumulated sum; this is why every pre-norm model adds a final normalization before the output projection. The notebook section {ref}`nb-arch-train` trains both arrangements side by side at three learning rates, with and without warm-up.
+Pre-norm moves the normalization inside the branch: $x \leftarrow x + F(\mathrm{Norm}(x))$. The residual path from the embedding to the output is then an unnormalized identity, so gradients reach every layer directly. Xiong et al. show that this keeps the gradient scale stable at initialization and makes warm-up optional. The price is that the residual stream's magnitude grows with depth, so the representation of the last layers can be dominated by the accumulated sum; this is why every pre-norm model adds a final normalization before the output projection. The notebook section {ref}`nb-arch-train` trains both arrangements side by side at three learning rates, with and without warm-up. {numref}`fig-ch6-norm-sweep` plots the recorded runs behind its statements.
+
+```{figure} figures/norm-sweep.*
+:name: fig-ch6-norm-sweep
+:alt: Two panels of final training loss against learning rate 0.0003, 0.001 and 0.003, for pre-norm in blue and post-norm in red, five seeds each. Without warm-up post-norm is lower at the two smaller rates and jumps to about 3.1 at 0.003 while pre-norm stays near 2.1. With warm-up post-norm at 0.003 is spread from about 1.9 to 3.1 across seeds.
+:width: 100%
+
+Final training loss of the notebook's six-layer model, five seeds per point, from the recorded sweep (`examples/data/norm_sweep.json`). Without warm-up (left), post-norm ends below pre-norm in every seed at the two lower rates and fails in every seed at 0.003, where pre-norm still trains. With a 100-step warm-up (right), post-norm at 0.003 trains in four seeds and fails in one.
+```
 
 Chapter 2 follows the gradient through the residual path and notes that where the normalization sits matters ({ref}`sec-ch2-pre-post-ln`). Post-norm is not extinct, and the question is revisited every few years, but the practical argument favors pre-norm: a diverged run on a cluster costs far more than any small quality difference at a size where both train.
 
@@ -159,7 +175,15 @@ OLMo 2 {cite}`olmo2024olmo2` and OLMoE {cite}`muennighoff2025olmoe` (whose confi
 
 A second family places the normalization on the *output* of each sublayer, before it is added to the residual. OLMo 2 does this in its "reordered" arrangement, $x \leftarrow x + \mathrm{Norm}(F(x))$ for both attention and feed-forward, and combines it with QK-norm; the authors report it as one of the changes that removed the loss spikes of their first-generation recipe {cite}`olmo2024olmo2`. Gemma 2 uses both: a normalization before each sublayer and another after it, four per layer {cite}`gemma2024gemma2`, and Gemma 3 keeps this "post-norm and pre-norm with RMSNorm" {cite}`gemma2025gemma3`. The sandwich arrangement was introduced for image-token transformers in CogView, again to control instabilities {cite}`ding2021cogview`.
 
-All of these keep the *magnitude* of what each layer adds to the residual stream bounded. That is the common thread: the stream is a running sum of terms, and the stability techniques of the last five years are ways of controlling the size of the terms.
+All of these keep the *magnitude* of what each layer adds to the residual stream bounded. That is the common thread: the stream is a running sum of terms, and the stability techniques of the last five years are ways of controlling the size of the terms. {numref}`fig-ch6-norm-placements` draws the four arrangements of this section on one sublayer.
+
+```{figure} figures/norm-placements.*
+:name: fig-ch6-norm-placements
+:alt: Four small diagrams of one sublayer F with its residual addition. Pre-norm: Norm then F then add. Post-norm: F, add, then Norm on the sum. Reordered: F, Norm, then add. Sandwich: Norm, F, Norm, then add.
+:width: 100%
+
+Where the norm sits relative to one sublayer F and its residual addition. Only post-norm puts a norm on the residual path itself; the other three leave the path from x to the next layer an identity (orange) and differ in whether the sublayer's input, its output, or both are normalized.
+```
 
 (sec-ch6-initialization-residual-branches)=
 
@@ -248,7 +272,15 @@ print(kv_cache_elements_per_token(  # Llama 3.1 8B: 32 layers, 8 KV heads of 128
 
 ### 4.2 Multi-query and grouped-query attention
 
-Multi-query attention shares a single key head and a single value head across all query heads, shrinking the cache by a factor of $n_h$ {cite}`shazeer2019fast`. It speeds up decoding substantially, at some cost in quality and in training stability. Grouped-query attention interpolates: the $n_h$ query heads are divided into $n_{kv}$ groups, each sharing one key and one value head {cite}`ainslie2023gqa`. The paper also shows that an existing multi-head checkpoint can be converted to grouped-query attention by mean-pooling the key and value heads of each group and training briefly. Llama 2's two largest models adopted it, and every Llama since has {cite}`touvron2023llama2`.
+Multi-query attention shares a single key head and a single value head across all query heads, shrinking the cache by a factor of $n_h$ {cite}`shazeer2019fast`. It speeds up decoding substantially, at some cost in quality and in training stability. Grouped-query attention interpolates: the $n_h$ query heads are divided into $n_{kv}$ groups, each sharing one key and one value head {cite}`ainslie2023gqa`. The paper also shows that an existing multi-head checkpoint can be converted to grouped-query attention by mean-pooling the key and value heads of each group and training briefly. Llama 2's two largest models adopted it, and every Llama since has {cite}`touvron2023llama2`. {numref}`fig-ch6-head-sharing` shows the three sharing patterns for eight query heads.
+
+```{figure} figures/head-sharing.*
+:name: fig-ch6-head-sharing
+:alt: Three rows of eight query heads. In multi-head attention each query head has its own key/value head. In grouped-query attention two key/value heads each serve four query heads. In multi-query attention one key/value head serves all eight.
+:width: 100%
+
+Head sharing for eight query heads. The number of key/value heads, eight, two or one, is what the cache stores per token per layer, $2\, n_{kv}\, d_k$ elements; the query heads and the attention computation are the same in all three.
+```
 
 The choice of $n_{kv}$ is a direct dial on the cache. Llama 3.1 8B uses 8 key/value heads for 32 query heads, a 4× reduction, and Llama 3.1 70B uses 8 for 64, an 8× reduction. The cache per token (bf16, all layers) is:
 
@@ -265,7 +297,15 @@ The choice of $n_{kv}$ is a direct dial on the cache. Llama 3.1 8B uses 8 key/va
 | DeepSeek-V2-Lite (MLA) | 15,552 | 31,104 | 8.9× smaller |
 | DeepSeek-V3 (MLA) | 35,136 | 70,272 | 71× smaller |
 
-"Compared with MHA" divides the cache the same model would need with one key/value head per query head by the actual cache. For Gemma 2 and Gemma 3, the full-cache figure assumes every layer keeps the entire context; its local layers can in fact discard tokens beyond the window (Section 4.5), so the real cache at long context is smaller.
+"Compared with MHA" divides the cache the same model would need with one key/value head per query head by the actual cache. For Gemma 2 and Gemma 3, the full-cache figure assumes every layer keeps the entire context; its local layers can in fact discard tokens beyond the window (Section 4.5), so the real cache at long context is smaller. {numref}`fig-ch6-kv-bytes` plots the cache per token of each model on a logarithmic scale.
+
+```{figure} figures/kv-bytes.*
+:name: fig-ch6-kv-bytes
+:alt: Horizontal bar chart of KV cache per token in KiB on a log scale, colored by attention type. DeepSeek-V2-Lite (MLA) is smallest at about 30 KiB, then Qwen2.5 7B (GQA) at 56, DeepSeek-V3 (MLA) at about 69, then the other GQA models up to Gemma 3 12B at 384, and OLMo 2 7B (MHA) largest at 512.
+:width: 100%
+
+KV cache per token, all layers, bf16, in KiB (1 KiB = 1,024 bytes; the table above gives bytes), from the notebook section {ref}`nb-arch-configs`. The color is the attention type. Latent attention puts DeepSeek-V3, with 61 layers and 128 heads, below every grouped-query model except Qwen2.5 7B, which keeps only 4 key/value heads; OLMo 2 7B's multi-head cache is 4 times Llama 3.1 8B's at the same width and depth.
+```
 
 At 128K tokens, Llama 3.1 8B's cache for a single sequence is $131{,}072 \times 131{,}072 = 17.2$ GB, more than its 16.1 GB of bf16 weights. Section 8 works through this.
 
@@ -308,7 +348,15 @@ DeepSeek-V2 reduces the cache by a different route: instead of sharing heads, it
 
 There is a complication. RoPE rotates the key by a position-dependent matrix, and that matrix would sit between $W^{UK}$ and the query, preventing the absorption. DeepSeek therefore splits each head into a part without positional information (128 dimensions) and a small decoupled part that carries RoPE (64 dimensions). The rotary key is shared across heads and cached separately, which is the $d_{rope} = 64$ in the cache formula. DeepSeek-V3's cache per token per layer is $512 + 64 = 576$ elements; the same layer under multi-head attention with its 128 heads would hold $128 \times (128 + 64 + 128) = 40{,}960$ elements, a factor of 71.
 
-Queries are also compressed through a low-rank bottleneck in V3 (rank 1,536) to save activation memory in training; V2-Lite projects queries directly. RMSNorm layers on the two latents are part of the block. Section 8 includes these in the parameter count.
+Queries are also compressed through a low-rank bottleneck in V3 (rank 1,536) to save activation memory in training; V2-Lite projects queries directly. RMSNorm layers on the two latents are part of the block. Section 8 includes these in the parameter count. {numref}`fig-ch6-mla-dataflow` traces one layer's data flow with DeepSeek-V3's sizes.
+
+```{figure} figures/mla-dataflow.*
+:name: fig-ch6-mla-dataflow
+:alt: Data flow of multi-head latent attention. The hidden state is projected to a latent of 512 elements and to a rotary key of 64 elements, both cached. Dashed boxes, content keys and values reconstructed from the latent by up-projections, feed the attention scores and the output. Queries come from the hidden state through a rank-1,536 bottleneck.
+:width: 100%
+
+Multi-head latent attention in DeepSeek-V3. Only the two orange boxes are cached, 576 elements per token per layer. The dashed keys and values are what the up-projections would produce; at inference they are never formed, because $W^{UK}$ is folded into the query side and $W^{UV}$ into the output projection.
+```
 
 DeepSeek-V3 caches 70 KB per token against Llama 3.1 70B's 328 KB, although it has 128 heads against 64. The design is a bet that the cache is the binding constraint and that the extra projection compute is cheap by comparison.
 
@@ -322,7 +370,15 @@ A pure window gives up exact long-range retrieval in any single layer. Gemma 2 a
 
 Gemma 3 pushes the ratio further: "a pattern of 5 local layers for every global layer, starting with a local layer", with the local span cut to 1,024 tokens, and QK-norm in place of the soft-cap {cite}`gemma2025gemma3`. The authors report "minimal impact on perplexity" from the ratio. The cache arithmetic shows why it is worth having. Gemma 3 12B has 8 global and 40 local layers, each caching $2 \times 8 \times 256 = 4{,}096$ elements per token. At 128K tokens in bf16 the global layers hold $8 \times 4{,}096 \times 131{,}072 \times 2 = 8.59$ GB and the local layers only their last 1,024 tokens, $40 \times 4{,}096 \times 1{,}024 \times 2 = 0.34$ GB: 8.93 GB in all, against 51.5 GB if every layer were global. ModernBERT, an encoder, uses a similar alternation, with a global layer every third layer and a 128-token local window (Section 9).
 
-A property of window attention that surprises people: tokens near the start of a sequence receive a disproportionate share of attention even when they are irrelevant, as "attention sinks", and removing them from a windowed cache breaks the model. Xiao et al. exploit this to stream arbitrarily long text by always keeping the first few tokens plus a window {cite}`xiao2024efficient`. The streaming model does not remember what fell out of the window; it simply stays stable.
+A property of window attention that surprises people: tokens near the start of a sequence receive a disproportionate share of attention even when they are irrelevant, as "attention sinks", and removing them from a windowed cache breaks the model. Xiao et al. exploit this to stream arbitrarily long text by always keeping the first few tokens plus a window {cite}`xiao2024efficient`. The streaming model does not remember what fell out of the window; it simply stays stable. {numref}`fig-ch6-attention-patterns` shows which keys each query scores under these patterns, and the order of local and global layers in Gemma 2 and Gemma 3.
+
+```{figure} figures/attention-patterns.*
+:name: fig-ch6-attention-patterns
+:alt: Three 16-by-16 masks of query position against key position: full causal is a lower triangle; a sliding window of 4 is a diagonal band; sink plus window adds the first two key columns to the band. Below, two strips of layers: Gemma 2 alternates local and global layers; Gemma 3 has five local layers before each global one, eight global layers in 48.
+:width: 100%
+
+Top: the keys each of 16 queries scores (blue) under full causal attention, a window of $n_{win} = 4$, and two sink tokens plus the window. The window's cost grows as $n\, n_{win}$ rather than $n^2/2$. Bottom: local and global layers in Gemma 2 9B (alternating, as in the Transformers implementation) and Gemma 3 12B (five local per global, starting with a local layer).
+```
 
 ```{admonition} Cache Sizes, Measured
 :class: tip
@@ -408,6 +464,16 @@ lowest frequency divided by 8
 attention factor at s = 8: 1.208
 ```
 
+{numref}`fig-ch6-rope-scaling` compares the three rescalings pair by pair for the same example.
+
+```{figure} figures/rope-scaling.*
+:name: fig-ch6-rope-scaling
+:alt: Line chart of the ratio of new to old frequency for each of 64 rotary pairs, log scale from 1 to 1/8. Position interpolation is flat at 1/8. NTK-aware scaling falls in a straight line from 1 at pair 0 to 1/8 at pair 63. YaRN stays at 1 for pairs 0 to 20, falls between, and is 1/8 from pair 46 on.
+:width: 100%
+
+How each method changes the 64 frequencies when 4,096 trained positions are extended 8 times ($d_k = 128$, $b = 10{,}000$). Position interpolation divides all of them by 8, including the high frequencies that tell neighboring tokens apart. NTK-aware scaling divides pair $i$ by $8^{2i/(d_k-2)}$, a straight line on this log scale. YaRN keeps the 21 pairs that turn more than 32 times within the trained length, divides the 18 that turn less than once by 8, and blends the 25 between.
+```
+
 Two short functions capture the frequency arithmetic.
 
 ```python
@@ -455,7 +521,15 @@ Three different statements get blurred under "context length":
 2. *The model was trained on sequences that long*, which is what the training report says.
 3. *The model uses information anywhere in them*, which only evaluations on long-context tasks show.
 
-Mistral 7B v0.1 is an example: its configuration says 32,768 positions, its paper reports training at 8,192 with a 4,096 window. The first number is a statement about code, the second about training. Treat a context-length figure as the first claim unless the report supports the others.
+Mistral 7B v0.1 is an example: its configuration says 32,768 positions, its paper reports training at 8,192 with a 4,096 window. The first number is a statement about code, the second about training. Treat a context-length figure as the first claim unless the report supports the others. {numref}`fig-ch6-context-claims` sets the stated numbers of four models against each other.
+
+```{figure} figures/context-claims.*
+:name: fig-ch6-context-claims
+:alt: Dot chart on a log scale from 4K to 160K tokens. Mistral 7B v0.1: window 4K, pretraining 8K, configuration 32K. Qwen2.5 7B: trained 32K, configuration 128K. Llama 3 405B: pretraining 8K, long-context stage at 128K, configuration 128K. DeepSeek-V3: pretraining 4K, stages at 32K and 128K, configuration 160K.
+:width: 100%
+
+Context numbers from the sources cited in this chapter. The red bar is what the configuration accepts (claim 1); the markers are the lengths the reports say training used (claim 2). Where a long-context stage reaches the red bar, as for Llama 3, the two claims meet; for Mistral 7B v0.1 and Qwen2.5 7B the configuration accepts four times the trained length.
+```
 
 ```{admonition} Frequencies and Scaling
 :class: note
@@ -524,7 +598,15 @@ Left alone, routers collapse: an expert that gets slightly more tokens trains fa
 
 ### 6.3 Fine-grained and shared experts
 
-DeepSeekMoE makes two changes to the conventional layout of GShard-style top-$n_{act}$ routing {cite}`dai2024deepseekmoe`. *Fine-grained experts* splits each expert into several smaller ones and routes to more of them: OLMoE uses 64 experts of width 1,024 with top-8, DeepSeek-V3 uses 256 with width 2,048 and top-8, instead of 8 experts with width 14,336 and top-2. The number of combinations of experts a token can use grows combinatorially, which should let experts specialize more finely. *Shared experts* are always active: DeepSeek keeps one or two that process every token, so common knowledge need not be duplicated across the routed experts.
+DeepSeekMoE makes two changes to the conventional layout of GShard-style top-$n_{act}$ routing {cite}`dai2024deepseekmoe`. *Fine-grained experts* splits each expert into several smaller ones and routes to more of them: OLMoE uses 64 experts of width 1,024 with top-8, DeepSeek-V3 uses 256 with width 2,048 and top-8, instead of 8 experts with width 14,336 and top-2. The number of combinations of experts a token can use grows combinatorially, which should let experts specialize more finely. *Shared experts* are always active: DeepSeek keeps one or two that process every token, so common knowledge need not be duplicated across the routed experts. {numref}`fig-ch6-moe-layer` shows one token passing through such a layer.
+
+```{figure} figures/moe-layer.*
+:name: fig-ch6-moe-layer
+:alt: Diagram of a mixture-of-experts layer. The token's hidden state x goes to a router and to a shared expert. The router computes logits and probabilities and selects the top-scoring experts; two selected experts, FFN 1 and FFN 3, are drawn bold with their gate weights, the others faint. The output y is the shared expert's output plus the weighted sum of the selected experts.
+:width: 100%
+
+One token through a mixture-of-experts layer with a shared expert. The router scores all $E$ routed experts but only the $n_{act}$ selected (bold) run, each weighted by its renormalized probability $\tilde{\rho}_i$; the shared expert runs for every token. Compute per token follows the bold boxes, memory follows all of them.
+```
 
 DeepSeek-V3 adds three more refinements {cite}`deepseek2024v3`. Its router uses sigmoid scores (normalized over the selected experts, then multiplied by 2.5), rather than softmax. Routing is node-limited, as DeepSeek-V2 already did with devices: the 256 experts are divided into 8 groups, a token chooses its best 4 groups and then the top 8 experts among them, which bounds cross-node communication. And it replaces the auxiliary loss with *auxiliary-loss-free* balancing {cite}`wang2024auxiliary`: a per-expert bias is added to the scores for the *selection* of the top experts only (not for the gate weights), and after each step the bias of overloaded experts is lowered and of underloaded ones raised. No gradient from a balancing objective competes with the language-modeling loss; a very small sequence-level auxiliary loss remains as a safeguard. The bias is stored per layer, one value per expert, which is why V3's router has $E$ extra parameters per layer in Section 8.
 
@@ -534,7 +616,15 @@ The first layers of both DeepSeek models are dense (one in V2-Lite, three in V3)
 
 ### 6.4 Total and active parameters
 
-A sparse model has two sizes. Its *total* parameters set the memory needed to hold it; its *active* parameters, those a single token touches, set the compute per token. Mixtral 8x7B holds 46.7B parameters and uses 12.9B for each token, so it costs per token about what a 13B dense model does while requiring memory for a 47B one. DeepSeek-V3 holds 671B and activates 36.6B, 5.5% of them.
+A sparse model has two sizes. Its *total* parameters set the memory needed to hold it; its *active* parameters, those a single token touches, set the compute per token. Mixtral 8x7B holds 46.7B parameters and uses 12.9B for each token, so it costs per token about what a 13B dense model does while requiring memory for a 47B one. DeepSeek-V3 holds 671B and activates 36.6B, 5.5% of them. {numref}`fig-ch6-moe-parameters` breaks each sparse model's total into its parts.
+
+```{figure} figures/moe-parameters.*
+:name: fig-ch6-moe-parameters
+:alt: Stacked horizontal bars, each 100 percent of a model's parameters, split into input embedding, output head, attention with norms and routers, dense and shared feed-forward, active routed experts and idle routed experts. The idle share dominates: active excluding the input embedding is 27.3 percent for Mixtral, 17.0 for OLMoE, 15.6 for DeepSeek-V2-Lite and 5.5 for DeepSeek-V3.
+:width: 100%
+
+Where the parameters of the four sparse models are, as shares of each total, computed from the committed configurations with the counting rules of Section 8 (the totals match {ref}`sec-ch6-validation`). Everything except the pale idle experts and the input-embedding lookup is used for a token; finer-grained routing pushes the active share down from Mixtral's 27.3% to DeepSeek-V3's 5.5%.
+```
 
 This changes what "size" means when comparing models. For compute, FLOPs per token, and training cost, the active count is what matters. For serving memory, and the number of GPUs needed to hold the weights, the total counts. Because a batch of tokens activates many different experts, the whole parameter set is touched at any reasonable batch size, so the memory bandwidth required per decoding step is also closer to that of the total than of the active count. Sparse models are cheaper to *train* than dense models of equal quality: Switch Transformers reached the quality of a dense T5 model up to seven times faster "while still using the same FLOPS per token" {cite}`fedus2022switch`. Their serving advantage is smaller and depends on batch size and the interconnect.
 
@@ -702,7 +792,15 @@ For a dense model with $N$ parameters in matrix multiplications, the forward pas
 
 First, the embedding lookup is not a multiplication, so $N$ should exclude the input embedding table. The output projection is a multiplication and stays in. For a sparse model, $N$ is the *active* count, with the router included.
 
-Second, attention scores and their application to the values add a term proportional to the context length $n$, which the $6N$ rule omits. In Kaplan et al.'s accounting, the forward pass per token is $2N + 2\,L\,n\,d_{attn}$, where $d_{attn} = n_h d_k$ is the attention width, and training is three times that (up to a factor of two lower under causal masking, which skips half of the scores). The attention term is below about 10% of the total while the context is no longer than the model width, and grows past it. At 128K it is the larger term. For Llama 3.1 8B a token that attends to all 131,072 earlier positions costs $2 \times 32 \times 131{,}072 \times 4{,}096 = 34.4$ GFLOPs in the attention term of the forward pass, against $2N = 2 \times 7.50\text{B} = 15.0$ GFLOPs for the weights, 2.3 times as much. Averaged over a causal sequence of that length each token attends to half the positions, 17.2 GFLOPs, still more than $2N$.
+Second, attention scores and their application to the values add a term proportional to the context length $n$, which the $6N$ rule omits. In Kaplan et al.'s accounting, the forward pass per token is $2N + 2\,L\,n\,d_{attn}$, where $d_{attn} = n_h d_k$ is the attention width, and training is three times that (up to a factor of two lower under causal masking, which skips half of the scores). The attention term is below about 10% of the total while the context is no longer than the model width, and grows past it. At 128K it is the larger term. For Llama 3.1 8B a token that attends to all 131,072 earlier positions costs $2 \times 32 \times 131{,}072 \times 4{,}096 = 34.4$ GFLOPs in the attention term of the forward pass, against $2N = 2 \times 7.50\text{B} = 15.0$ GFLOPs for the weights, 2.3 times as much. Averaged over a causal sequence of that length each token attends to half the positions, 17.2 GFLOPs, still more than $2N$. {numref}`fig-ch6-flops-context` follows both terms from short to long context.
+
+```{figure} figures/flops-context.*
+:name: fig-ch6-flops-context
+:alt: Line chart of forward GFLOPs per token against context length from 512 to 128K on a log scale. The weights' 2N is flat at 15.0. The attention term rises from near zero, crosses 15.0 at about 57K and reaches 34.4 at 128K; a dashed line at half of it shows the causal average.
+:width: 100%
+
+Llama 3.1 8B's forward cost per token: the weights' $2N = 15.0$ GFLOPs against the attention term $2\,L\,n\,d_{attn}$. At $n = d = 4{,}096$ attention is 7% of the total; the two are equal near 57K tokens, and at 128K attention is 2.3 times the weights. The dashed line is the average over a causal sequence, half the full term.
+```
 
 | Model | Parameters in the $6N$ rule | $6N$ (GFLOPs per token) |
 | --- | --- | --- |

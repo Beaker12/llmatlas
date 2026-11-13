@@ -233,3 +233,20 @@ def test_norm_sweep_check_recomputes_every_arm():
     result = subprocess.run([sys.executable, str(ROOT / "tools" / "build_architecture_notebook.py"),
                              "--sweep", "--check"], capture_output=True, text=True, timeout=3600)
     assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-3000:]
+
+
+@pytest.mark.slow
+def test_make_figures_is_deterministic(tmp_path):
+    """Two runs of figures/make_figures.py write byte-identical files (fixed salt, no dates, glyphs as paths)."""
+    import os
+    import subprocess
+    import sys
+    script = ROOT / "chapters" / "06-architectures" / "figures" / "make_figures.py"
+    runs = []
+    for name in ("first", "second"):
+        out = tmp_path / name
+        done = subprocess.run([sys.executable, str(script), str(out)], capture_output=True, text=True,
+                              env={**os.environ, "MPLBACKEND": "Agg"}, timeout=900)
+        assert done.returncode == 0, done.stderr[-2000:]
+        runs.append({p.name: p.read_bytes() for p in sorted(out.glob("*.svg"))})
+    assert len(runs[0]) == 7 and runs[0] == runs[1]
