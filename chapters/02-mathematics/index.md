@@ -1161,7 +1161,60 @@ The notebook section {ref}`nb-math-scaling` plots the Kaplan parameter, data and
 
 ### 5.1 Floating Point Precision
 
-Training large models requires careful attention to numerical precision:
+Training large models requires careful attention to numerical precision. The three formats in use differ in how they split their bits between the exponent, which sets the range, and the mantissa, which sets the precision:
+
+| Format | Sign | Exponent | Mantissa | Largest value | Smallest normal value | Machine epsilon |
+|---|---|---|---|---|---|---|
+| fp32 | 1 | 8 | 23 | $3.403 \times 10^{38}$ | $1.175 \times 10^{-38}$ | $1.192 \times 10^{-7}$ |
+| fp16 | 1 | 5 | 10 | 65,504 | $6.104 \times 10^{-5}$ | $9.766 \times 10^{-4}$ |
+| bf16 | 1 | 8 | 7 | $3.390 \times 10^{38}$ | $1.175 \times 10^{-38}$ | $7.812 \times 10^{-3}$ |
+
+Machine epsilon is the gap between 1 and the next representable number, $2^{-\text{mantissa bits}}$. bf16 has fp32's range with fewer than three significant decimal digits; fp16 has about three digits but overflows above 65,504 and loses precision below $6.104 \times 10^{-5}$. The table is what PyTorch reports:
+
+```python
+import torch
+
+for dtype in (torch.float32, torch.float16, torch.bfloat16):
+    info = torch.finfo(dtype)
+    print(f"{str(dtype):15s} bits {info.bits}, max {info.max:.4g}, "
+          f"smallest normal {info.smallest_normal:.4g}, eps {info.eps:.4g}")
+```
+
+% output
+
+```text
+torch.float32   bits 32, max 3.403e+38, smallest normal 1.175e-38, eps 1.192e-07
+torch.float16   bits 16, max 6.55e+04, smallest normal 6.104e-05, eps 0.0009766
+torch.bfloat16  bits 16, max 3.39e+38, smallest normal 1.175e-38, eps 0.007812
+```
+
+(sec-ch2-log-sum-exp)=
+
+#### Log-Sum-Exp and a Stable Softmax
+
+The softmax and the cross-entropy loss both need $\log \sum_j e^{z_j}$. Computed as written, $e^{z_j}$ overflows fp32 once a logit exceeds about 88.72, and in fp16 once it exceeds about 11.09. Subtracting the largest logit $z_{\max}$ changes nothing mathematically,
+
+$$\log \sum_j e^{z_j} = z_{\max} + \log \sum_j e^{z_j - z_{\max}},$$
+
+because $e^{z_{\max}}$ factors out of the sum, but now every exponent is at most zero, the largest term is exactly 1, and the sum lies between 1 and the number of logits. The softmax is shifted the same way, $p_i = e^{z_i - z_{\max}} / \sum_j e^{z_j - z_{\max}}$, which is why `F.log_softmax` and `F.cross_entropy` take logits rather than probabilities. For $z = (100, 99)$ the shifted form gives $100 + \ln(1 + e^{-1}) = 100.3$, while the direct form returns infinity.
+
+```python
+import torch
+
+z = torch.tensor([100.0, 99.0])
+naive = torch.log(torch.exp(z).sum())
+z_max = z.max()
+stable = z_max + torch.log(torch.exp(z - z_max).sum())
+print(f"direct: {naive.item()}, shifted: {stable.item():.4g}, torch.logsumexp: {torch.logsumexp(z, 0).item():.4g}")
+print("softmax:", [round(v, 4) for v in torch.softmax(z, 0).tolist()])
+```
+
+% output
+
+```text
+direct: inf, shifted: 100.3, torch.logsumexp: 100.3
+softmax: [0.7311, 0.2689]
+```
 
 (sec-ch2-mixed-precision-training)=
 
@@ -1186,6 +1239,31 @@ Dynamic loss scaling adjusts the scale factor to maximize gradient precision wit
 #### bfloat16
 
 **bf16** keeps fp32's 8 exponent bits and gives up mantissa bits instead, so it covers the same range as fp32 and needs no loss scaling at all. bf16 is widely used for training on accelerators that support it, usually with an fp32 master copy of the weights; fp16 with loss scaling remains the choice on hardware without bf16 support.
+
+(sec-ch2-epsilon-placement)=
+
+#### Where the Stability Constant Goes
+
+Adam and LayerNorm both add a small $\epsilon$ to a denominator, in different places. Adam adds it outside the square root, $\hat{m}_t / (\sqrt{\hat{v}_t} + \epsilon)$ ({ref}`sec-ch2-adam-optimizer`), as in Kingma and Ba's algorithm and PyTorch's `Adam`; a weight whose gradients have been tiny then takes steps of at most about $\eta\,|\hat{m}_t|/\epsilon$ rather than an unbounded one. LayerNorm adds it inside, $\sigma = \sqrt{\frac{1}{d}\sum_i (x_i - \mu)^2 + \epsilon}$ ({ref}`sec-ch2-layer-normalization-mathematics`), as PyTorch's `LayerNorm` documents, so the factor $1/\sigma$ can never exceed $1/\sqrt{\epsilon}$: 316.2 at PyTorch's default $\epsilon = 10^{-5}$. The size of $\epsilon$ has to suit the format. Adam's usual $10^{-8}$ is below fp16's smallest positive number, about $5.96 \times 10^{-8}$, and rounds to zero, which is one reason optimizer state is kept in fp32 ({ref}`sec-ch2-memory-requirements`).
+
+```python
+import torch
+
+print("1e-8 in fp16:", torch.tensor(1e-8, dtype=torch.float16).item())
+print("1e-8 in bf16:", f"{torch.tensor(1e-8, dtype=torch.bfloat16).item():.4g}")
+print("largest LayerNorm factor 1/sqrt(eps) at eps = 1e-5:", f"{1e-5 ** -0.5:.4g}")
+constant = torch.full((1, 8), 3.0)
+print("LayerNorm of a constant vector:", torch.nn.functional.layer_norm(constant, (8,)).tolist()[0])
+```
+
+% output
+
+```text
+1e-8 in fp16: 0.0
+1e-8 in bf16: 1.001e-08
+largest LayerNorm factor 1/sqrt(eps) at eps = 1e-5: 316.2
+LayerNorm of a constant vector: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+```
 
 (sec-ch2-initialization-strategies)=
 
