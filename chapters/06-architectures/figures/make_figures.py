@@ -249,32 +249,43 @@ def flops_context(out):
     L, d_attn = 32, 32 * 128
     N = 8_030_261_248 - 128_256 * 4096          # Llama 3.1 8B less its input embedding
     two_n = 2 * N / 1e9
-    assert round(two_n, 1) == 15.0 and round(2 * L * 131072 * d_attn / 1e9, 1) == 34.4
-    crossover = N / (L * d_attn)
+
+    def full(n):                                 # a token that attends to n positions
+        return 4 * L * n * d_attn / 1e9
+
+    def average(n):                              # mean over a causal sequence of n
+        return 2 * L * n * d_attn / 1e9
+
+    crossover, crossover_avg = 2 * N / (4 * L * d_attn), 2 * N / (2 * L * d_attn)
+    assert round(two_n, 1) == 15.0 and round(full(131072), 1) == 68.7
+    assert round(average(131072), 1) == 34.4 and round(full(131072) / two_n, 1) == 4.6
+    assert round(crossover / 1000) == 29 and round(crossover_avg / 1000) == 57
+    assert round(full(4096) / (two_n + full(4096)), 3) == 0.125
+    assert round(average(4096) / (two_n + average(4096)), 3) == 0.067
     ns = [2 ** (e / 8) for e in range(8 * 9, 8 * 17 + 1)]
     fig, ax = plt.subplots(figsize=(7, 3.8))
     ax.plot(ns, [two_n] * len(ns), color=BLUE, lw=2.2, label=r"weights, $2N$ = 15.0")
-    ax.plot(ns, [2 * L * n * d_attn / 1e9 for n in ns], color=RED, lw=2.2, label=r"attention, $2\,L\,n\,d_{attn}$")
-    ax.plot(ns, [L * n * d_attn / 1e9 for n in ns], color=RED, lw=1.6, ls="--",
-            label="attention, averaged over a causal sequence")
+    ax.plot(ns, [full(n) for n in ns], color=RED, lw=2.2)
+    ax.plot(ns, [average(n) for n in ns], color=RED, lw=1.6, ls="--")
     ax.axvline(4096, color=GREY, lw=1, ls=":")
-    ax.text(4096 * 1.08, 40, r"$n = d$ = 4,096:" "\nattention 7% of the total", fontsize=10, va="top")
-    ax.plot([crossover], [two_n], "o", color="black")
-    ax.annotate(f"equal at $n$ ≈ {crossover / 1000:.0f}K", (crossover, two_n), xytext=(-12, 14),
+    ax.text(4096 * 1.08, 76, r"$n = d_{attn}$ = 4,096:" "\nattention 12.5% of the total", fontsize=10, va="top")
+    ax.plot([crossover, crossover_avg], [two_n, two_n], "o", color="black")
+    ax.annotate(f"equal at $n$ ≈ {crossover / 1000:.0f}K", (crossover, two_n), xytext=(-8, 8),
                 textcoords="offset points", ha="right", fontsize=10)
-    ax.plot([131072], [2 * L * 131072 * d_attn / 1e9], "o", color=RED)
-    ax.annotate("34.4 at 128K", (131072, 34.4), xytext=(-8, 4), textcoords="offset points", ha="right", fontsize=10)
+    ax.plot([131072], [full(131072)], "o", color=RED)
+    ax.annotate("68.7 at 128K", (131072, full(131072)), xytext=(-8, 4), textcoords="offset points",
+                ha="right", fontsize=10)
     ax.set_xscale("log", base=2)
     ax.set_xticks([512, 2048, 8192, 32768, 131072], ["512", "2K", "8K", "32K", "128K"])
     ax.minorticks_off()
     ax.set_xlim(512, 131072 * 1.15)
-    ax.set_ylim(0, 40)
-    ax.set_xlabel(r"context length $n$ (tokens before the current one)")
+    ax.set_ylim(0, 80)
+    ax.set_xlabel(r"context length $n$ (positions attended to)")
     ax.set_ylabel("forward GFLOPs per token")
     ax.set_title("Llama 3.1 8B: when attention outgrows the weights")
-    ax.text(600, two_n + 0.8, r"weights, $2N$ = 15.0", color=BLUE, fontsize=10.5)
-    ax.text(24000, 27, r"attention, $2\,L\,n\,d_{attn}$", color=RED, fontsize=10.5, ha="right")
-    ax.text(90000, 5, "causal\naverage", color=RED, fontsize=10.5, ha="center")
+    ax.text(600, two_n + 1.5, r"weights, $2N$ = 15.0", color=BLUE, fontsize=10.5)
+    ax.text(52000, 62, r"attention, $4\,L\,n\,d_{attn}$", color=RED, fontsize=10.5, ha="right")
+    ax.text(45000, 40, "dashed: causal average,\n$2\\,L\\,n\\,d_{attn}$, equals $2N$ at ≈ 57K", color=RED, fontsize=10.5, ha="right")
     fig.tight_layout()
     save(fig, out / "flops-context.svg")
 
