@@ -27,6 +27,10 @@ LABEL = re.compile(r"^\(([A-Za-z0-9_-]+)\)=\s*$")
 HEADING = re.compile(r"^#{1,6} ")
 MATHLIKE = re.compile(r"[\\_^]|^sec-|^[A-Za-z]'+$")  # TeX, a section label, or a primed letter (n')
 SECTION = re.compile(r"sec-[A-Za-z0-9_-]+")
+# A code name such as a configuration key (beta_fast): a word joined by underscores with no TeX, where some part
+# after the first underscore has two or more characters. In math it would print as italic letters with a
+# one-letter subscript, so it is set as code. A symbol's subscript (d_k, x_i) has one character or braces.
+IDENTIFIER = re.compile(r"[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)*_[A-Za-z0-9]{2,}(?:_[A-Za-z0-9]+)*")
 
 INTRO = """\
 (sec-notation)=
@@ -65,6 +69,8 @@ def _math_token(token: str) -> str:
         return token
     if SECTION.fullmatch(core):
         return f"{lead}{{ref}}`{core}`{tail}"
+    if IDENTIFIER.fullmatch(core):
+        return f"{lead}`{core}`{tail}"
     return f"{lead}${core}${tail}"
 
 

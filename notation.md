@@ -120,8 +120,8 @@ layer computes $xW$.
 | $\ell$ | YaRN wavelength ($\ell_i$ = $2\pi/\omega_i$) |
 | $\xi$ | YaRN ratio ($\xi_i$ = $n_{train}/\ell_i$) |
 | $\psi$ | YaRN ramp function |
-| $\beta_{fast}$ | YaRN ramp bound $beta_fast$ |
-| $\beta_{slow}$ | YaRN ramp bound $beta_slow$ |
+| $\beta_{fast}$ | YaRN upper ramp bound: a RoPE pair that turns more than this many times within the trained length keeps its frequency (configuration key `beta_fast`, 32 in the YaRN paper) |
+| $\beta_{slow}$ | YaRN lower ramp bound: a RoPE pair that turns fewer than this many times within the trained length is fully interpolated (configuration key `beta_slow`, 1 in the YaRN paper) |
 | $i$ | running index (range stated where used) |
 | $j$ | running index (range stated where used) |
 | $l$ | layer index |
