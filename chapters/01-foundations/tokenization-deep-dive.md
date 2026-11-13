@@ -495,26 +495,46 @@ The output is the string the chat templating documentation {cite}`huggingface202
 
 ### Token IDs and Embeddings
 
-Each token maps to a unique integer ID:
+Each token maps to a unique integer ID. The class below splits on whitespace to keep the mapping visible; a real tokenizer replaces `tokenize` and `detokenize` with one of the algorithms above:
 
 ```python
-# pseudo-code: the splitting and special-token helpers are not defined here
 class Tokenizer:
     def __init__(self, vocab):
         self.vocab = vocab
         self.token_to_id = {token: i for i, token in enumerate(vocab)}
         self.id_to_token = {i: token for token, i in self.token_to_id.items()}
 
+    def tokenize(self, text):
+        return text.split()
+
+    def detokenize(self, tokens):
+        return " ".join(tokens)
+
     def encode(self, text):
-        tokens = self.tokenize(text)  # Your tokenization logic
+        tokens = self.tokenize(text)
         return [
             self.token_to_id.get(token, self.token_to_id["<UNK>"]) for token in tokens
         ]
 
     def decode(self, ids):
-        tokens = [self.id_to_token[id] for id in ids]
-        return self.detokenize(tokens)  # Your detokenization logic
+        tokens = [self.id_to_token[i] for i in ids]
+        return self.detokenize(tokens)
+
+
+tokenizer = Tokenizer(["<UNK>", "the", "cat", "sat"])
+ids = tokenizer.encode("the cat sat on the mat")
+print(ids)
+print(tokenizer.decode(ids))
 ```
+
+% output
+
+```text
+[1, 2, 3, 0, 1, 0]
+the cat sat <UNK> the <UNK>
+```
+
+Words outside the vocabulary map to the `<UNK>` id, so decoding cannot recover them; the byte-level and byte-fallback tokenizers above avoid this.
 
 (sec-tdd-practical-considerations)=
 
@@ -528,7 +548,7 @@ Common vocabulary sizes and their trade-offs:
 
 - **Small (1K-8K)**: character-like; used for code-only or single-domain models
 - **Medium (32K-50K)**: GPT-2 (50k), the original LLaMA (32k); the usual choice for research-scale models
-- **Large (100K-150K)**: GPT-4's `cl100k_base` (~100k), Llama 3 (128k), Qwen (~152k); better compression of multilingual text and code
+- **Large (100K-160K)**: GPT-4's `cl100k_base` (~100k), Llama 3 (128k), Qwen (~152k); better compression of multilingual text and code
 - **Very large (250K+)**: Gemma (256k) and multilingual models; the embedding and output matrices become a noticeable share of a small model's parameters
 
 (sec-tdd-efficiency-considerations)=
@@ -619,7 +639,7 @@ Both spellings of "café" become the same four code points under either form. NF
 
 Different languages present unique tokenization challenges:
 
-**Morphologically Rich Languages** (German, Turkish, Finnish):
+**Compounding Languages** (German):
 
 ```python
 # German compound words
@@ -891,7 +911,6 @@ def preprocess_for_tokenization(text, strategy="conservative"):
         text = re.sub(r"\s+", " ", text)
 
         # Handle special cases
-        text = re.sub(r"([.!?])\s+", r"\1 ", text)  # Normalize punctuation spacing
         text = re.sub(r"\s+([,.!?])", r"\1", text)  # Remove space before punctuation
 
         return text.strip()
@@ -1152,7 +1171,6 @@ def analyze_tokenization_efficiency(tokenizer, corpus):
 analysis_results = analyze_tokenization_efficiency(tokenizer, sample_corpus)
 ```
 
-This practical implementation provides a complete foundation for understanding and working with tokenization and embeddings in transformer models.
 
 (sec-tdd-embeddings-in-practice)=
 

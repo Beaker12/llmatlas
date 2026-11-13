@@ -317,6 +317,8 @@ With byte fallback, the four Chinese characters, absent from the learned pieces,
 - Consistent treatment of whitespace, written as the visible symbol `▁`
 - Reversible tokenization under the same condition
 
+For vocabulary construction, special tokens, cross-lingual issues and a full tokenizer implementation, see {doc}`tokenization-deep-dive`.
+
 ```{admonition} Tokenization Implementation
 :class: tip
 The notebook's tokenization section ({ref}`nb-attn-tokenization`) builds a tiny word-level vocabulary and runs the BPE merge loop step by step, printing the splits after every merge. For WordPiece, unigram, byte-level BPE and SentencePiece in practice, see {ref}`sec-tdd-subword-algorithms`.
@@ -326,7 +328,7 @@ The notebook's tokenization section ({ref}`nb-attn-tokenization`) builds a tiny 
 
 ## 2. Embeddings and Positional Encoding
 
-For vocabulary construction, special tokens, cross-lingual issues and a full tokenizer implementation, see {doc}`tokenization-deep-dive`. How the embedding width is chosen, how to inspect a trained embedding table, what each positional scheme costs and a complete embedding layer are in {ref}`sec-tdd-embeddings-in-practice`.
+How the embedding width is chosen, how to inspect a trained embedding table, what each positional scheme costs and a complete embedding layer are in {ref}`sec-tdd-embeddings-in-practice`.
 
 (sec-ch1-embedding-spaces)=
 
@@ -733,11 +735,6 @@ Most open-weight models since 2022 use RoPE {cite}`su2021roformer`; a few use AL
 ```{admonition} Embeddings and Positional Encoding
 :class: note
 The notebook ({ref}`nb-attn-positional`) visualizes sinusoidal and learned encodings, implements a learned relative-position bias and a rotary (RoPE) transform, and asserts RoPE's two defining properties: rotation preserves vector norms, and query-key dot products depend only on the relative offset.
-```
-
-```{admonition} Hands-On Practice
-:class: tip
-For runnable versions of the ideas in this section, see the accompanying notebook: [Attention Mechanisms Demo](examples/attention_mechanisms_demo.ipynb). Its sections are linked from each part of this chapter.
 ```
 
 (sec-ch1-historical-context)=
@@ -1501,7 +1498,7 @@ The model outputs a probability distribution over the vocabulary:
 
 $$p_\theta(\cdot \mid x_{<i}) = \text{softmax}(h^{(L)}_{i-1} W_{\text{out}})$$
 
-where $h^{(L)}_{i-1}$ is the hidden state of the last layer $L$ at position $i-1$, which under causal masking has seen exactly $x_{<i}$. GPT-2 and later models have no bias in this projection.
+where $h^{(L)}_{i-1}$ is the hidden state of the last layer $L$ at position $i-1$, which under causal masking has seen exactly $x_{<i}$. For $i = 1$ there is no earlier position, so a BOS token is prepended to the sequence and its hidden state plays the role of $h^{(L)}_{i-1}$ ({ref}`sec-ch1-teacher-forcing`). GPT-2 and later models have no bias in this projection.
 
 (sec-ch1-perplexity)=
 
