@@ -343,11 +343,11 @@ The notebook section {ref}`nb-dm-versioning` builds a manifest for the corpus wr
 
 ### 4.1 From documents to sequences
 
-A transformer trains on sequences of a fixed length $L$ (2,048 to 128,000 tokens in current models), and documents are whatever length they are. Three ways to reconcile them:
+A transformer trains on sequences of a fixed length $n$ (2,048 to 128,000 tokens in current models), and documents are whatever length they are. Three ways to reconcile them:
 
-- **Concatenate and chunk.** Join all documents with an end-of-document token between them into one stream, and cut it into consecutive windows of length $L$. No padding, no waste, and the method the GPT-3 paper describes and most pretraining codebases default to. The cost: a document is split across windows wherever the cut falls, and a window usually contains the tail of one document and the head of the next.
-- **Pad.** One document per sequence, padded to $L$. No cross-document contamination, but with a long-tailed length distribution most of each sequence is padding, which is compute spent on nothing. Used for fine-tuning on short examples, rarely for pretraining.
-- **Pack.** Fit whole documents into sequences like boxes into a container (a bin-packing problem) so that most sequences are nearly full and documents are rarely cut. Best-fit packing {cite}`ding2024fewer` first splits any document longer than $L$ into pieces of at most $L$, then places each piece into the sequence with the least remaining room that still fits it, processing pieces longest first. It reduced truncation substantially relative to chunking, with measurable gains in reading comprehension and faithfulness and less hallucination, at the cost of a sort and an index.
+- **Concatenate and chunk.** Join all documents with an end-of-document token between them into one stream, and cut it into consecutive windows of length $n$. No padding, no waste, and the method the GPT-3 paper describes and most pretraining codebases default to. The cost: a document is split across windows wherever the cut falls, and a window usually contains the tail of one document and the head of the next.
+- **Pad.** One document per sequence, padded to $n$. No cross-document contamination, but with a long-tailed length distribution most of each sequence is padding, which is compute spent on nothing. Used for fine-tuning on short examples, rarely for pretraining.
+- **Pack.** Fit whole documents into sequences like boxes into a container (a bin-packing problem) so that most sequences are nearly full and documents are rarely cut. Best-fit packing {cite}`ding2024fewer` first splits any document longer than $n$ into pieces of at most $n$, then places each piece into the sequence with the least remaining room that still fits it, processing pieces longest first. It reduced truncation substantially relative to chunking, with measurable gains in reading comprehension and faithfulness and less hallucination, at the cost of a sort and an index.
 
 ```python
 import numpy as np
@@ -416,7 +416,7 @@ assert (packed != -1).sum() == sum(len(d) for d in docs) + n_pieces  # every tok
 
 ### 4.2 Cross-document attention
 
-When a sequence holds several documents, causal attention lets a token in the second document attend to the first, which is both a waste (the first document is irrelevant) and a source of the model learning spurious dependencies. The fix is a document mask: a token attends only to earlier tokens of its own document. With a segment id per position, the mask is $M_{ij} = [j \le i] \cdot [s_i = s_j]$, block-diagonal within the causal triangle. Efficient attention kernels accept this as a list of segment boundaries rather than a full matrix.
+When a sequence holds several documents, causal attention lets a token in the second document attend to the first, which is both a waste (the first document is irrelevant) and a source of the model learning spurious dependencies. The fix is a document mask: a token attends only to earlier tokens of its own document. With a segment id $\operatorname{seg}(i)$ for each position $i$, the mask is $M_{ij} = [j \le i] \cdot [\operatorname{seg}(i) = \operatorname{seg}(j)]$, block-diagonal within the causal triangle. Efficient attention kernels accept this as a list of segment boundaries rather than a full matrix.
 
 ```python
 import numpy as np
@@ -463,8 +463,8 @@ A corpus has several sources with very different sizes, and the fraction of trai
 
 Given weights $w_s$ that sum to one, the sampler draws each document's source with probability $w_s$ and then the next unseen document from that source. Two refinements:
 
-- **Temperature** flattens or sharpens the weights: $p_s \propto w_s^{1/T}$. With $T = 1$ the weights are used as given; $T > 1$ upsamples small sources, which is how multilingual models give low-resource languages more than their share {cite}`xue2021mt5`. The same scheme is used on domain weights.
-- **Epoch caps** bound how many times a source is repeated. If source $s$ has $N_s$ tokens and the run needs $D$ tokens, source $s$ is seen $p_s D / N_s$ times; beyond about four repetitions the marginal token is worth much less {cite}`muennighoff2023scaling`. A cap re-normalises the weights of the uncapped sources once a capped one has used its budget.
+- **Temperature** flattens or sharpens the weights: $p_s \propto w_s^{1/\tau}$. With $\tau = 1$ the weights are used as given; $\tau > 1$ upsamples small sources, which is how multilingual models give low-resource languages more than their share {cite}`xue2021mt5`. The same scheme is used on domain weights.
+- **Epoch caps** bound how many times a source is repeated. If source $s$ has $U_s$ tokens and the run needs $D$ tokens, source $s$ is seen $p_s D / U_s$ times; beyond about four repetitions the marginal token is worth much less {cite}`muennighoff2023scaling`. A cap re-normalises the weights of the uncapped sources once a capped one has used its budget.
 
 Learned weights (DoReMi {cite}`xie2023doremi`, which fits static $w_s$ with a small proxy model) and curricula that change the mixture over training are both consumed by the same sampler, the latter with $w_s$ a function of the step. The cap is stated in tokens; the sampler below counts documents, which production samplers replace with token counts from the index.
 
@@ -472,9 +472,9 @@ Learned weights (DoReMi {cite}`xie2023doremi`, which fits static $w_s$ with a sm
 
 ### 5.2 Determinism and resumption
 
-The sampler must be a pure function of `(seed, step)`. The reason is resumption: a run that fails at step $k$ and restarts must continue from step $k + 1$ with the data it would have seen, not restart its epoch, and not replay the batch it just trained on. A sampler that keeps a queue or an iterator in memory cannot do this; one that computes the batch at step $k$ arithmetically can.
+The sampler must be a pure function of `(seed, step)`. The reason is resumption: a run that fails at step $t$ and restarts must continue from step $t + 1$ with the data it would have seen, not restart its epoch, and not replay the batch it just trained on. A sampler that keeps a queue or an iterator in memory cannot do this; one that computes the batch at step $t$ arithmetically can.
 
-The construction that achieves it: for each source, a seeded permutation of its document indices defines the order within an epoch; a seeded sequence of source draws decides which source supplies each slot; the document for slot $t$ is the next unused index of the chosen source. All of this can be recomputed from the seed in $O(t)$ time for the draws, or in $O(1)$ with per-epoch permutations generated by a counter-based random number generator.
+The construction that achieves it: for each source, a seeded permutation of its document indices defines the order within an epoch; a seeded sequence of source draws decides which source supplies each slot; the document for slot $t$ is the next unused index of the chosen source. All of this can be recomputed from the seed in $\mathcal{O}(t)$ time for the draws, or in $\mathcal{O}(1)$ with per-epoch permutations generated by a counter-based random number generator.
 
 ```python
 import numpy as np
@@ -548,7 +548,7 @@ flat = MixtureSampler(sizes, weights, seed=1, temperature=3.0)
 assert flat.probs[flat.names.index("wiki")] > a.probs[a.names.index("wiki")]
 ```
 
-The `seek` method replays draws, which is fine for millions of steps and a few sources. Production samplers are designed differently so that no replay is needed: the mixture is fixed in advance as a schedule of phases (the caps are applied when the schedule is computed, not as the run proceeds), the source for slot $t$ is a hash of `(seed, t)` under that schedule, and the within-source cursor at step $t$ is a count obtainable from a prefix sum, so that any step is $O(1)$. The price is that the schedule must be recomputed if the weights change mid-run.
+The `seek` method replays draws, which is fine for millions of steps and a few sources. Production samplers are designed differently so that no replay is needed: the mixture is fixed in advance as a schedule of phases (the caps are applied when the schedule is computed, not as the run proceeds), the source for slot $t$ is a hash of `(seed, t)` under that schedule, and the within-source cursor at step $t$ is a count obtainable from a prefix sum, so that any step is $\mathcal{O}(1)$. The price is that the schedule must be recomputed if the weights change mid-run.
 
 (sec-ch5-shuffling-right-granularity)=
 
@@ -575,10 +575,10 @@ The notebook section {ref}`nb-dm-sampler` runs the mixture sampler, plots the re
 
 ### 6.1 Sharding across ranks
 
-A training job with $W$ processes (data-parallel ranks) needs each step's global batch of $B$ sequences split into $W$ micro-batches of $B / W$, with every rank reading different data and no rank reading what another reads. Two designs:
+A training job with $n_{\text{ranks}}$ processes (data-parallel ranks) needs each step's global batch of $B$ sequences split into $n_{\text{ranks}}$ micro-batches of $B / n_{\text{ranks}}$, with every rank reading different data and no rank reading what another reads. Two designs:
 
-- **Shard assignment.** Shards are partitioned among ranks, rank $r$ gets every $W$-th shard, and each rank samples within its own shards. Simple, and what a WebDataset-style loader does. The drawback is that the global batch at step $t$ depends on $W$: change the number of GPUs and the data order changes, so a run resumed on a different cluster size is not the same run.
-- **Global indexing.** The sampler produces a single global sequence of samples; the sample at global position $t B + i$ goes to rank $i \bmod W$ (or rank $\lfloor i W / B \rfloor$). Every rank runs the same sampler and takes its slice. The global batch is then independent of $W$, and a run can be resumed with a different number of ranks and see the same data in the same order.
+- **Shard assignment.** Shards are partitioned among ranks, each rank gets every $n_{\text{ranks}}$-th shard, and each rank samples within its own shards. Simple, and what a WebDataset-style loader does. The drawback is that the global batch at step $t$ depends on $n_{\text{ranks}}$: change the number of GPUs and the data order changes, so a run resumed on a different cluster size is not the same run.
+- **Global indexing.** The sampler produces a single global sequence of samples; the sample at global position $t B + i$ goes to rank $i \bmod n_{\text{ranks}}$ (or rank $\lfloor i\, n_{\text{ranks}} / B \rfloor$). Every rank runs the same sampler and takes its slice. The global batch is then independent of $n_{\text{ranks}}$, and a run can be resumed with a different number of ranks and see the same data in the same order.
 
 The second property, that the stream is a function of `(seed, step)` and nothing else, is what makes a large run reproducible across hardware changes, and it costs nothing beyond requiring that every rank can read any shard. Mosaic Streaming is built around it: its sample order is fixed by the seed and does not change with the number of GPUs.
 
@@ -847,7 +847,7 @@ What no tool supplies is the discipline: that every version is produced by the b
 1. **Manifest diff.** Rebuild the notebook's corpus with the Chapter 4 repetition filter's thresholds changed by 10%. Diff the manifests. How many shards changed, and could you have predicted which ones from the shard naming scheme?
 1. **Packing efficiency.** For document length distributions with means of 100, 1,000 and 10,000 tokens and a sequence length of 4,096, measure the truncation rate of chunking and the padding rate of best-fit packing. When does packing stop being worth its complexity?
 1. **The mask's effect.** Train two small models on packed sequences with and without the document mask (the Chapter 1 notebook's transformer is enough). Compare the loss on the first tokens of each document, which are the ones the mask changes.
-1. **O(1) seeking.** Design a sampler whose state at step $t$ is computed without replaying: a fixed schedule of mixture phases, a hash of `(seed, t)` for the source draw, and per-source cursors from prefix counts. Its stream will differ from `MixtureSampler`'s, so verify it against itself: iterating to step $t$ and seeking to step $t$ must agree at a thousand random steps.
+1. **$\mathcal{O}(1)$ seeking.** Design a sampler whose state at step $t$ is computed without replaying: a fixed schedule of mixture phases, a hash of `(seed, t)` for the source draw, and per-source cursors from prefix counts. Its stream will differ from `MixtureSampler`'s, so verify it against itself: iterating to step $t$ and seeking to step $t$ must agree at a thousand random steps.
 1. **World-size invariance.** Implement a loader under both designs of Section 6.1 and resume a simulated run at step 500 with the world size changed from 8 to 4. Which design gives the same batches, and what does the other one skip or repeat?
 1. **A removal request.** Pick a document in the notebook's corpus and carry out the three steps of Section 8.3: locate it, cut a new version without it, and list the versions (and, hypothetically, the models) affected. How long did each step take, and which would have been impossible without the index?
 
