@@ -1,6 +1,6 @@
 digraph merkle {
-  graph [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" COLOR="#4a5568"><TR><TD BGCOLOR="#fde7cf">changed when shard 6 is refiltered (v1 → v2)</TD></TR><TR><TD BGCOLOR="#dbeafe">inclusion proof for shard 6: 4 sibling hashes</TD></TR></TABLE>>, fontname="DejaVu Sans", fontsize=15, rankdir=LR, nodesep=0.12, ranksep=0.4, pad=0.2, labelloc=b];
-  node [fontname="DejaVu Sans", fontsize=15, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=14, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
+  graph [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" COLOR="#4a5568"><TR><TD BGCOLOR="#fde7cf">changed when shard 6 is refiltered (v1 → v2)</TD></TR><TR><TD BGCOLOR="#dbeafe">inclusion proof for shard 6: 4 sibling hashes</TD></TR></TABLE>>, fontname="DejaVu Sans", fontsize=17, rankdir=LR, nodesep=0.12, ranksep=0.4, pad=0.2, labelloc=b];
+  node [fontname="DejaVu Sans", fontsize=17, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=16, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
   L0 [label="shard 0", fillcolor="#ffffff"];
   L1 [label="shard 1", fillcolor="#ffffff"];
   L2 [label="shard 2", fillcolor="#ffffff"];

@@ -106,6 +106,7 @@ The Hugging Face hub converts hosted corpora to Parquet for its viewer and `data
 The two streaming formats differ in how a reader finds a sample, as {numref}`fig-ch5-wds-mds` shows.
 
 ```{figure} figures/wds-mds.*
+:width: 75%
 :name: fig-ch5-wds-mds
 :alt: Top: a WebDataset tar shard whose members are 000000.txt, 000000.json, 000001.txt, 000001.json in order, grouped into samples by their shared key. Bottom: an MDS directory in which index.json lists the shards, and each shard.00000.mds file begins with a sample count, an offsets array and a JSON config, followed by the samples.
 
@@ -565,6 +566,7 @@ Because shards are stored by hash, two versions that share most of their shards 
 {numref}`fig-ch5-sharding-deletion` deletes one document of twelve under each rule.
 
 ```{figure} figures/sharding-deletion.*
+:width: 75%
 :name: fig-ch5-sharding-deletion
 :alt: Two panels, each showing three v1 shards above three v2 shards after document d1 is deleted. Cut by running count, all three v2 shards differ from v1 because every later document moves up by one. Bucketed by hash of the document id, only shard 1, the one that held d1, differs.
 
@@ -1683,6 +1685,7 @@ Requests to remove content arrive after release: an opt-out, a takedown, a disco
 {numref}`fig-ch5-removal` follows one request through the three steps, using the document index of the listing below.
 
 ```{figure} figures/removal.*
+:width: 75%
 :name: fig-ch5-removal
 :alt: A flow from a removal request for document alpha to step 1, locate via the document index at (v1.0, s0) and (v1.1, s0), step 2, cut v1.2 without alpha with a manifest diff naming s0 and the reason recorded, and step 3, record every model trained on v1.0 or v1.1 from the lineage graph. The flow ends at a policy decision outside the data system, with three outcomes: retrain, machine unlearning, or disclose.
 
