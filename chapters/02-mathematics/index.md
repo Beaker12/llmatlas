@@ -989,6 +989,36 @@ $$\mathcal{L}(D) = \left(\frac{D_c}{D}\right)^{\alpha_D}$$
 
 with $\alpha_D \approx 0.095$ and $D_c \approx 5.4 \times 10^{13}$ tokens. Kaplan et al. fit these laws on models from 768 to 1.5 billion non-embedding parameters and datasets from 22 million to 23 billion tokens, so applying them to larger models is an extrapolation.
 
+(sec-ch2-flops)=
+
+#### Training Compute per Token
+
+The compute axis of the scaling laws counts floating-point operations, and nearly all of them are matrix products. A weight matrix with $d_{\text{in}} d_{\text{out}}$ entries, applied to one token's row vector $x$, costs $d_{\text{in}} d_{\text{out}}$ multiply-adds, which is 2 FLOPs per parameter. Summed over every weight matrix, the forward pass costs about $2N$ FLOPs per token. The backward pass ({ref}`sec-ch2-vjp`) needs two products of the same size for each matrix: $g W^\top$, the gradient passed down to the layer's input, and $x^\top g$, the gradient of the weights themselves. That is another $4N$ FLOPs, so one training token costs
+
+$$2N + 4N = 6N \text{ FLOPs}, \qquad C \approx 6ND$$
+
+for $D$ training tokens. {cite:t}`kaplan2020scaling` count the forward pass as $2N + 2 L n d$ add-multiply operations per token, the second term being the attention scores, and drop it because, when $d > n/12$, it is "a relatively small fraction of the total compute"; {ref}`sec-ch2-training-complexity` derives where the crossover lies. They also leave the embedding out of $N$. Biases, normalization, the softmax and the optimizer step add work proportional to $N$ or smaller, not to $N$ times a width, and are left out as well.
+
+For Chinchilla, $N = 70 \times 10^9$ and $D = 1.4 \times 10^{12}$ give $C \approx 5.88 \times 10^{23}$ FLOPs. Turning the rule around answers the planning question: with $D = 20N$ ({ref}`sec-ch2-training-implications`), $C = 6N \cdot 20N = 120N^2$, so a budget $C$ buys a compute-optimal model of $N = \sqrt{C/120}$ parameters.
+
+```python
+N, D = 70e9, 1.4e12
+C = 6 * N * D
+print(f"C = 6ND = {C:.3g} FLOPs = {C / 8.64e19:,.0f} PF-days")
+for budget in (1e21, 5.88e23, 1e25):
+    N_opt = (budget / 120) ** 0.5
+    print(f"budget {budget:.3g} FLOPs: N = {N_opt:.3g} parameters, D = 20N = {20 * N_opt:.3g} tokens")
+```
+
+% output
+
+```text
+C = 6ND = 5.88e+23 FLOPs = 6,806 PF-days
+budget 1e+21 FLOPs: N = 2.89e+09 parameters, D = 20N = 5.77e+10 tokens
+budget 5.88e+23 FLOPs: N = 7e+10 parameters, D = 20N = 1.4e+12 tokens
+budget 1e+25 FLOPs: N = 2.89e+11 parameters, D = 20N = 5.77e+12 tokens
+```
+
 (sec-ch2-compute-scaling)=
 
 #### Compute Scaling
@@ -1019,11 +1049,13 @@ where 1.69 is the loss no model or dataset size removes. At $N = 70 \times 10^9$
 
 Chinchilla scaling implies that many large models are "undertrained"—better performance could be achieved with smaller models trained on more data. This has significant implications for training efficiency and inference costs.
 
+Because $a_N \approx a_D \approx 0.5$, the compute-optimal ratio $D^*/N^*$ is roughly the same at every budget, and Hoffmann et al.'s Table 3 puts it near 20 tokens per parameter: 20.2 billion tokens for 1 billion parameters, 205.1 billion for 10 billion, 1.5 trillion for 67 billion and 3.7 trillion for 175 billion {cite}`hoffmann2022training`, ratios of 20.2, 20.5, 22.4 and 21.1. Chinchilla itself, 70 billion parameters on 1.4 trillion tokens, sits at 20. With $C \approx 6ND$ ({ref}`sec-ch2-flops`) the rule fixes both sizes from the budget alone. GPT-3's 175 billion parameters would on this rule call for about 3.5 trillion training tokens (Table 3's own projection is 3.7 trillion).
+
 (sec-ch2-computational-complexity)=
 
 ### 4.3 Computational Complexity
 
-(sec-ch2-flops)=
+(sec-ch2-training-complexity)=
 
 #### Training Complexity
 
@@ -1033,7 +1065,30 @@ Training a transformer requires $\mathcal{O}(n \cdot d^2 + n^2 \cdot d)$ operati
 - $\mathcal{O}(n \cdot d^2)$: the feed-forward network with a $4d$ hidden width, $8nd^2$ multiply-adds, about two thirds of the linear-layer cost
 - $\mathcal{O}(n^2 \cdot d)$: the attention scores and their application to the values
 
-For long sequences, attention dominates; for large models, linear layers dominate.
+For long sequences, attention dominates; for large models, linear layers dominate. The crossover follows from the two counts. Per layer and sequence the linear layers cost $12nd^2$ multiply-adds and the attention scores and their application to the values $2n^2d$ ($n^2 d$ each for $QK^\top$ and $AV$). The two are equal when
+
+$$12nd^2 = 2n^2 d \quad\Longleftrightarrow\quad n = 6d.$$
+
+At $d = 4096$ attention costs as much as the linear layers only at $n = 24{,}576$ tokens; for GPT-3's $d = 12{,}288$ at its context of 2048 tokens, attention costs $n/(6d) = 2.78\%$ as much as the linear layers, 2.7% of the layer's work. Kaplan et al. count the context term as $2 L n d$ FLOPs per token, half of the $4 L n d$ above, so in their accounting the terms meet at $n = 12d$, which is their condition $d > n/12$ ({ref}`sec-ch2-flops`).
+
+```python
+def attention_share(n, d):
+    linear, attention = 12 * n * d ** 2, 2 * n ** 2 * d   # multiply-adds per layer and sequence
+    return attention / (linear + attention)
+
+
+for n, d in ((2048, 12288), (8192, 4096), (24576, 4096), (131072, 4096)):
+    print(f"n={n:6d}, d={d:5d}: attention is {attention_share(n, d):.1%} of the per-layer work")
+```
+
+% output
+
+```text
+n=  2048, d=12288: attention is 2.7% of the per-layer work
+n=  8192, d= 4096: attention is 25.0% of the per-layer work
+n= 24576, d= 4096: attention is 50.0% of the per-layer work
+n=131072, d= 4096: attention is 84.2% of the per-layer work
+```
 
 (sec-ch2-memory-requirements)=
 
@@ -1044,7 +1099,7 @@ Memory usage includes:
 - **Parameters**: $\approx 12 L d^2 + |\mathcal{V}| d$ where $L$ is the number of layers (each layer holds $4d^2$ attention and $8d^2$ feed-forward weights) and $|\mathcal{V}| d$ is the embedding table
 - **Activations**: $\mathcal{O}(B \cdot n \cdot d \cdot L)$ for the residual stream, plus the $\mathcal{O}(B \cdot n_h \cdot n^2 \cdot L)$ attention scores and the $4d$-wide feed-forward intermediates, where $B$ is batch size and $n_h$ the number of heads; without recomputation each layer stores about $B\,n\,d\,(34 + 5\,n_h\,n/d)$ bytes {cite}`korthikanti2022reducing`
 - **Optimizer and gradient state**: with mixed precision and Adam, each parameter costs about 16 bytes in total: a 2-byte weight, a 2-byte gradient, a 4-byte fp32 master copy and two 4-byte Adam moments {cite}`rajbhandari2020zero`
-- **Compute**: about $6N$ FLOPs per training token (2 per parameter for the forward pass, 4 for the backward), so $C \approx 6ND$ for $D$ tokens {cite}`kaplan2020scaling`. Kaplan et al. count only non-embedding parameters; the function below uses the total, which for GPT-3 is 0.36% more
+- **Compute**: about $6N$ FLOPs per training token (2 per parameter for the forward pass, 4 for the backward), so $C \approx 6ND$ for $D$ tokens {cite}`kaplan2020scaling`, as derived in {ref}`sec-ch2-flops`. Kaplan et al. count only non-embedding parameters; the function below uses the total, which for GPT-3 is 0.36% more
 
 ```python
 def estimate_memory_usage(num_layers, d_model, seq_length, batch_size, vocab_size, num_heads=None):
