@@ -28,7 +28,7 @@ import sys
 import time
 import urllib.request
 
-UA = {"User-Agent": os.environ.get("LLMATLAS_USER_AGENT", "Mozilla/5.0 (compatible; reader)")}
+UA = {"User-Agent": os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")}
 HUB = "https://huggingface.co"
 
 CANDIDATES = [
