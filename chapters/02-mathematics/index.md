@@ -1687,10 +1687,11 @@ A four-symbol source emits its symbols with probabilities $p = (1/2, 1/4, 1/8, 1
 
 ```{admonition} Solution 1
 :class: dropdown
+
 $$
 H(p) = \tfrac12 \cdot 1 + \tfrac14 \cdot 2 + \tfrac18 \cdot 3 + \tfrac18 \cdot 3
-= 1.75
-$$
+= 1.75$$
+
 bits, so the perplexity is $2^{1.75} = 3.364$: the source is as uncertain as a fair
 choice among about 3.36 symbols. Every $q$ entry is $1/4$, so
 $H(p, q) = -\sum_x p(x) \log_2 \tfrac14 = 2$ bits whatever $p$ is, and
@@ -1720,10 +1721,11 @@ $10^{-3} \times 0.003 / 0.00300001 = 9.99997 \times 10^{-4}$, and for $g = 300$ 
 $10^{-3}$ to nine digits: the first step has size $\eta$ whatever the gradient's scale,
 a gradient a hundred thousand times larger moves the parameter by the same amount.
 Without the correction the update is
+
 $$
 \eta \cdot 0.1\,g / (\sqrt{0.001}\,|g| + \epsilon) = 0.1/\sqrt{0.001}\;\eta = 3.162
-\times 10^{-3}
-$$
+\times 10^{-3}$$
+
 for both gradients, more than three times too large. It does not shrink at once: for a
 constant gradient the uncorrected step is $\eta\,(1 - \beta_1^t)/\sqrt{1 - \beta_2^t}$,
 because $m_t$ approaches $g$ in tens of steps while $v_t$ approaches $g^2$ only over
@@ -1738,10 +1740,11 @@ Ba give as the largest step, and below the $7.27\,\eta$ that no gradient sequenc
 exceed.
 
 (b) The second derivatives are
+
 $$
 \partial^2\mathcal{L}/\partial\theta_x^2 = 2 - 400\,(\theta_y - \theta_x^2)
-+ 800\,\theta_x^2,
-$$
++ 800\,\theta_x^2,$$
+
 $\partial^2\mathcal{L}/\partial\theta_x\partial\theta_y = -400\,\theta_x$ and
 $\partial^2\mathcal{L}/\partial\theta_y^2 = 200$. At $(-1, -1)$ they are
 $2 + 800 + 800 = 1602$, $400$ and $200$, so the Hessian is
@@ -1778,11 +1781,12 @@ parameters on a different dataset and tokenizer, so the two fits' losses are not
 comparable with each other, only within each fit.
 
 (c)
+
 $$
 6 \times 70 \times 10^9 \times 1.4 \times 10^{12} = 6 \times 280 \times 10^9
 \times 350 \times 10^9 = 6 \times 17.5 \times 10^9 \times 5.6 \times 10^{12} = 5.88
-\times 10^{23}.
-$$
+\times 10^{23}.$$
+
 The two terms of the fit are $0.0835 + 0.1632$ for 70 billion, $0.0521 + 0.2405$ for 280
 billion and $0.1338 + 0.1107$ for 17.5 billion, giving losses of 1.937, 1.983 and 1.934.
 The large model on few tokens is clearly worse: its data term dominates. Moving from 70
@@ -1796,8 +1800,7 @@ $0.34 \times 406.4\,N^{-1.34} = 0.28 \times 410.7\,(C/6)^{-0.28} N^{-0.72}$, so
 
 $$
 N^* = \left(\frac{0.34 \times 406.4}{0.28 \times 410.7}\right)^{1/0.62}
-\left(\frac{C}{6}\right)^{0.28/0.62} = 1.345 \left(\frac{C}{6}\right)^{0.4516}.
-$$
+\left(\frac{C}{6}\right)^{0.28/0.62} = 1.345 \left(\frac{C}{6}\right)^{0.4516}.$$
 
 At $C = 5.88 \times 10^{23}$, $C/6 = 9.8 \times 10^{22}$ and $N^* = 3.25 \times 10^{10}$
 parameters with $D^* = C/(6N^*) = 3.02 \times 10^{12}$ tokens, about 93 tokens per
@@ -1896,28 +1899,32 @@ softmax is $(3, 1)/4 = (0.75, 0.25)$ and row 2 is $(0.5, 0.5)$, so
 $O = AV = (0.75 \cdot 2,\ 0.5 \cdot 2)^\top = (1.5, 1.0)^\top$.
 
 (b)
+
 $$
 G = \frac{\partial \mathcal{L}}{\partial O} V^\top
-= \begin{pmatrix} 2 & 0 \\ 0 & 0 \end{pmatrix}.
-$$
+= \begin{pmatrix} 2 & 0 \\ 0 & 0 \end{pmatrix}.$$
+
 In row 1 the sum of $G \odot A$ is $2 \times 0.75 = 1.5$, so
 $\partial\mathcal{L}/\partial S$ has row 1
 $= (0.75 \times (2 - 1.5),\ 0.25 \times (0 - 1.5)) = (0.375, -0.375)$ and row 2
 $= (0, 0)$; each row sums to zero, as every softmax backward row does. Then
+
 $$
 \partial\mathcal{L}/\partial Q = \frac{\partial\mathcal{L}}{\partial S} K
-= (0.375, 0)^\top,
-$$
+= (0.375, 0)^\top,$$
+
+
 $$
 \partial\mathcal{L}/\partial K
 = \left(\frac{\partial\mathcal{L}}{\partial S}\right)^\top Q
-= (0.375 \ln 3,\ -0.375 \ln 3)^\top = (0.4120, -0.4120)^\top
-$$
+= (0.375 \ln 3,\ -0.375 \ln 3)^\top = (0.4120, -0.4120)^\top$$
+
 and
+
 $$
 \partial\mathcal{L}/\partial V = A^\top \frac{\partial\mathcal{L}}{\partial O}
-= (0.75, 0.25)^\top.
-$$
+= (0.75, 0.25)^\top.$$
+
 Directly, the first entry of $O$ is $2\,e^{q}/(e^{q} + 1)$, whose derivative in $q$ is
 $2 p (1 - p)$ with $p = 0.75$: $2 \times 0.75 \times 0.25 = 0.375$.
 
@@ -1940,11 +1947,12 @@ $\hat{x} = (-1.2247, 0, 1.2247)$. Here $\tilde{g} = (1, 0, 0)$, so
 $\frac{1}{d}\sum_j \tilde{g}_j = 1/3$ and
 $\frac{1}{d}\sum_j \tilde{g}_j \hat{x}_j = -1.2247/3 = -0.4082$. Feature by feature the
 formula gives
+
 $$
 \partial\mathcal{L}/\partial x
 = \big((1 - 0.3333 - 0.5),\ (0 - 0.3333 - 0),\ (0 - 0.3333 + 0.5)\big)/0.8165
-= (0.2041, -0.4082, 0.2041),
-$$
+= (0.2041, -0.4082, 0.2041),$$
+
 that is $(1, -2, 1)/(2\sqrt{6})$. The entries sum to zero because adding the same
 constant to all three inputs leaves the output unchanged, so the gradient can have no
 component along $(1, 1, 1)$.
@@ -1961,10 +1969,11 @@ component along $(1, 1, 1)$.
 (a) Step 0: $3 \times 10^{-4} \times 1/2000 = 1.5 \times 10^{-7}$; step 999:
 $3 \times 10^{-4} \times 1000/2000 = 1.5 \times 10^{-4}$. After warm-up the cosine runs
 over $98{,}000$ steps: step 26,500 is a quarter of the way, $\cos(\pi/4) = 0.7071$, so
+
 $$
 \eta = 3 \times 10^{-5} + \tfrac12 \times 2.7 \times 10^{-4} \times 1.7071 = 2.605
-\times 10^{-4};
-$$
+\times 10^{-4};$$
+
 step 51,000 is halfway, $\cos(\pi/2) = 0$, so
 $\eta = 3 \times 10^{-5} + 1.35 \times 10^{-4} = 1.65 \times 10^{-4}$; step 100,000 is
 the end, $\cos \pi = -1$, so $\eta = \eta_{\min} = 3 \times 10^{-5}$.
