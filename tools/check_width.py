@@ -3,9 +3,11 @@
 
 Usage: python tools/check_width.py [chapter directory name ... | all] [--limit N] [--quiet]
 
-Checked, for each chapter directory under chapters/: every line inside a fence (backtick or tilde, any info
-string, including the `text` fences that show output) of the chapter's Markdown pages, except its
-notation-local.md; and in the chapter's notebooks (examples/*.ipynb) every code-cell source line and every
+Checked, for each chapter directory under chapters/: every line inside a code fence (a plain-language info
+string such as python, text or bash, or {code-cell}, {code-block}, {sourcecode}; backtick, tilde or colon
+fence, at any nesting depth) of the chapter's Markdown pages, except its notation-local.md. The prose and
+options of any other {directive} (admonition, note, figure, math...) are not checked, since prose wraps in
+the PDF, but code fences nested in one are; and in the chapter's notebooks (examples/*.ipynb) every code-cell source line and every
 line of stream and text/plain output. 88 characters fit the PDF's text block at its code font size without
 wrapping. Exit status 1 if any line is over the limit. tests/test_line_width.py runs the same check per
 chapter.
@@ -17,25 +19,28 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from fences import directive_name, fences  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 88
-FENCE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
+CHECKED_DIRECTIVES = {"code-cell", "code-block", "code", "sourcecode"}
 
 
 def page_lines(path: Path):
-    """(line number, text) for every line inside a fence of a Markdown page; the fence lines are skipped."""
-    opener = None  # the opening fence's characters, e.g. "````"
-    for number, line in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), start=1):
-        match = FENCE.match(line)
-        if match:
-            mark, rest = match.groups()
-            if opener is None:
-                opener = mark
-            elif mark[0] == opener[0] and len(mark) >= len(opener) and not rest.strip():
-                opener = None
+    """(line number, text) for every line in the body of a code fence of a Markdown page.
+
+    A code fence has a plain-language info string (or none) or is one of CHECKED_DIRECTIVES; the fence lines
+    themselves are skipped. Any other {directive} is a container (prose, options, {math}, {literalinclude}):
+    its own lines are not checked, but code fences nested in it are. The fence parser is tools/fences.py.
+    """
+    text = Path(path).read_text(encoding="utf-8")
+    for fence in fences(text):
+        info = fence["info"]
+        if info.startswith("{") and directive_name(info.split("}")[0] + "}") not in CHECKED_DIRECTIVES:
             continue
-        if opener is not None:
-            yield number, line
+        for offset, line in enumerate(fence["body"].split("\n")[:-1], start=1):
+            yield fence["line"] + offset, line
 
 
 def _text(value) -> str:

@@ -1,6 +1,6 @@
 """Code and output lines are at most 88 characters, so they fit the PDF's text block without wrapping.
 
-tools/check_width.py holds the rule: every line inside a fence of a chapter's pages, and every code-cell
+tools/check_width.py holds the rule: every line inside a code fence of a chapter's pages (not the prose of a directive such as an admonition or figure), and every code-cell
 source line and stream or text/plain output line of its notebooks. A chapter directory that contains a
 file named .width-pending is an expected failure, strictly: the test xfails while the chapter has wide
 lines and fails once it has none, until the file is removed.
@@ -71,3 +71,40 @@ def test_notebook_within_the_limit_passes_and_markdown_cells_are_not_checked(tmp
 
 def test_command_line_reports_an_unknown_chapter():
     assert main(["no-such-chapter"]) == 2
+
+
+def _check(chapter, text):
+    (chapter / "index.md").write_text(text, encoding="utf-8")
+    return chapter_failures(chapter)
+
+
+def test_prose_inside_a_dropdown_admonition_is_not_checked(tmp_path):
+    page = f"````{{admonition}} Solution\n:class: dropdown\n\n{WIDE}\n\n```python\n{FITS}\n```\n````\n"
+    assert _check(tmp_path, page) == []
+
+
+def test_code_fence_nested_in_an_admonition_is_checked(tmp_path):
+    page = f"````{{admonition}} Solution\n:class: dropdown\n\n{WIDE}\n\n```python\n{WIDE}\n```\n````\n"
+    failures = _check(tmp_path, page)
+    assert len(failures) == 1 and failures[0].startswith("index.md:L7 (89 characters)"), failures
+
+
+def test_colon_fenced_figure_caption_is_not_checked(tmp_path):
+    page = f":::{{figure}} plot.png\n:name: fig-plot\n\n{WIDE}\n:::\n"
+    assert _check(tmp_path, page) == []
+
+
+def test_text_output_fence_nested_in_a_colon_fenced_directive_is_checked(tmp_path):
+    page = f":::{{note}}\n{WIDE}\n\n```text\n{WIDE}\n```\n:::\n"
+    failures = _check(tmp_path, page)
+    assert len(failures) == 1 and failures[0].startswith("index.md:L5 (89 characters)"), failures
+
+
+@pytest.mark.parametrize("opener", ["```{code-block} python", "```{sourcecode} python", "```bash", "```", "```json"])
+def test_code_fences_are_checked(tmp_path, opener):
+    failures = _check(tmp_path, f"{opener}\n{WIDE}\n```\n")
+    assert len(failures) == 1 and failures[0].startswith("index.md:L2"), failures
+
+
+def test_math_directive_is_not_checked(tmp_path):
+    assert _check(tmp_path, f"```{{math}}\n{WIDE}\n```\n") == []
