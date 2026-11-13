@@ -89,3 +89,24 @@ def test_warmup_cosine_schedule_is_never_zero_and_holds_at_lr_min():
     assert opt.get_lr(0) > 0
     assert math.isclose(opt.get_lr(1000), 1e-5, rel_tol=1e-9)
     assert math.isclose(opt.get_lr(1500), 1e-5, rel_tol=1e-9)
+
+
+def test_kl_divergence_is_infinite_where_q_has_no_mass():
+    """D11 / C2-11: D_KL(p || q) is infinite when some q_i = 0 < p_i, and terms with p_i = 0 add nothing."""
+    kl = run("def kl_divergence")["kl_divergence"]
+    assert math.isinf(kl(torch.tensor([[0.5, 0.5]]), torch.tensor([[1.0, 0.0]]))[0].item())
+    assert math.isclose(kl(torch.tensor([[1.0, 0.0]]), torch.tensor([[0.5, 0.5]]))[0].item(), 1.0, rel_tol=1e-6)
+    p = torch.tensor([[0.2, 0.3, 0.5]])
+    assert abs(kl(p, p)[0].item()) < 1e-7
+
+
+def test_kl_divergence_asymmetry_on_the_notebook_distributions():
+    """C2-01: peaked (0.9 on one of 10) against uncertain (0.5, 0.3, rest 0.2/8) gives 0.6064 and 1.2365 bits."""
+    kl = run("def kl_divergence")["kl_divergence"]
+    peaked = torch.full((1, 10), 0.1 / 9)
+    peaked[0, 0] = 0.9
+    uncertain = torch.full((1, 10), 0.2 / 8)
+    uncertain[0, 0], uncertain[0, 1] = 0.5, 0.3
+    a, b = kl(peaked, uncertain)[0].item(), kl(uncertain, peaked)[0].item()
+    assert abs(a - 0.6064) < 1e-3 and abs(b - 1.2365) < 1e-3, (a, b)
+    assert abs(a - b) > 0.1

@@ -145,7 +145,9 @@ Minimizing cross-entropy loss is equivalent to minimizing KL divergence between 
 
 **Mutual information** measures the amount of information shared between variables:
 
-$$I(\mathrm{X}; \mathrm{Y}) = \sum_{x,y} p(x,y) \log \frac{p(x,y)}{p(x)\,p(y)}$$
+$$\operatorname{MI}(\mathrm{X}; \mathrm{Y}) = \sum_{x, x'} p(x, x') \log \frac{p(x, x')}{p(x)\,p(x')}$$
+
+where $x$ ranges over the values of $\mathrm{X}$ and $x'$ over the values of $\mathrm{Y}$.
 
 Mutual information is the quantity that language modeling implicitly exploits: a context that shares a lot of information with the next token makes that token predictable.
 
@@ -191,22 +193,23 @@ def cross_entropy_loss(logits: torch.Tensor, targets: torch.Tensor) -> torch.Ten
     return F.nll_loss(log_probs, targets)
 
 
-def kl_divergence(p: torch.Tensor, q: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+def kl_divergence(p: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
     """
     Compute Kullback-Leibler divergence between distributions.
-    
-    D_KL(p || q) = ∑ p(x) log₂(p(x) / q(x)), in bits. Where q(x) = 0 and p(x) > 0 the
-    true divergence is infinite; the eps clamp keeps it finite, so treat such values as 'very large'.
-    
+
+    D_KL(p || q) = ∑ p(x) log₂(p(x) / q(x)), in bits. Outcomes with p(x) = 0 contribute 0;
+    where q(x) = 0 < p(x) the divergence is infinite, and the function returns inf.
+
     Args:
         p: True distribution [batch_size, num_classes]
         q: Approximate distribution [batch_size, num_classes]
-        eps: Small constant for numerical stability
-    
+
     Returns:
         KL divergence values [batch_size]
     """
-    return torch.sum(p * torch.log2((p + eps) / (q + eps)), dim=-1)
+    support = p > 0
+    ratio = torch.where(support, p / q, torch.ones_like(p))  # p / 0 = inf where q has no mass
+    return torch.sum(torch.where(support, p * torch.log2(ratio), torch.zeros_like(p)), dim=-1)
 
 
 def perplexity(loss: torch.Tensor) -> torch.Tensor:
@@ -611,7 +614,7 @@ Weights and optimizer state alone are close to three terabytes, which is why a 1
 
 ```{admonition} Scaling Laws Visualization
 :class: note
-The notebook section {ref}`nb-math-scaling` plots the Kaplan parameter, data and compute laws (with GPT-2, GPT-3 and LLaMA-70B placed on the parameter curve) and the Chinchilla allocation derived from C = 6ND and D = 20N, and {ref}`nb-math-memory` computes parameter counts, training memory and FLOPs per step for the GPT-2 and GPT-3 model sizes, asserting that the 175B configuration comes out at 175B.
+The notebook section {ref}`nb-math-scaling` plots the Kaplan parameter, data and compute laws (with the sizes of GPT-2, GPT-3 and Llama 2 70B marked on the parameter curve as extrapolations of the fit, not measured losses) and the Chinchilla allocation derived from C = 6ND and D = 20N, and {ref}`nb-math-memory` computes parameter counts, training memory and FLOPs per step for the GPT-2 and GPT-3 model sizes, asserting that the 175B configuration comes out at 175B.
 ```
 
 (sec-ch2-numerical-stability-considerations)=
