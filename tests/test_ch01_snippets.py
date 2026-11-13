@@ -549,3 +549,26 @@ def test_sentencepiece_wikitext_vocabulary_limits(tmp_path):
     assert limit(100_000, "unigram") == 2_743
     assert limit(1_000_000, "bpe") is None
     assert limit(1_000_000, "unigram") == 10_599
+
+
+def test_sentencepiece_defaults_do_not_round_trip_whitespace(tmp_path):
+    """The SentencePiece subsection: with default options the double space is lost."""
+    spm = pytest.importorskip("sentencepiece")
+    sentences = ["Hello, world! Tokenizers turn text into integers.",
+                 "The quick brown fox jumps over the lazy dog.",
+                 "Language models predict the next token from the previous ones."]
+    corpus = tmp_path / "c.txt"
+    corpus.write_text("\n".join(sentences * 200), encoding="utf-8")
+    spm.SentencePieceTrainer.train(
+        input=str(corpus), model_prefix=str(tmp_path / "t"), vocab_size=300,
+        model_type="bpe", byte_fallback=True, num_threads=1, minloglevel=2)
+    sp = spm.SentencePieceProcessor(model_file=str(tmp_path / "t.model"))
+    assert sp.decode_ids(sp.encode_as_ids("two  spaces")) == "two spaces"
+    assert sp.decode_ids(sp.encode_as_ids(" leading")) == "leading"
+
+
+def test_beam_search_length_penalty_numbers():
+    """Wu et al.: lp(Y) = ((5 + |Y|) / 6) ** alpha, the values printed on the page."""
+    lp = lambda n, a=0.6: ((5 + n) / 6) ** a
+    assert f"{lp(2):.2f}" == "1.10" and f"{lp(20):.2f}" == "2.35"
+    assert f"{math.log(0.36) / lp(2):.3f}" == "-0.931"

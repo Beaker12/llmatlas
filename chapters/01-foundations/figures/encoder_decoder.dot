@@ -12,7 +12,7 @@ digraph EncoderDecoder {
         eff [label=<<b>Feed-forward</b>> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     }
     subgraph cluster_dec {
-        label=""; fontsize=13; style="rounded,filled"; fillcolor="#f7fafc"; color="#2d3748"; penwidth=1.2;
+        margin=24; label=""; fontsize=13; style="rounded,filled"; fillcolor="#f7fafc"; color="#2d3748"; penwidth=1.2;
         tdec [label=<<b>Decoder block,</b><br/><b>repeated</b>> shape=plaintext style=filled fillcolor="#f7fafc" fontsize=13 fontcolor="#1a202c"];
         tdec -> dsa [style=invis];
         dsa [label=<<b>Masked self-attention</b><br/>earlier and current target tokens> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
