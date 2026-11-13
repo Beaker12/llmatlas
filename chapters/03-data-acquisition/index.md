@@ -262,6 +262,34 @@ http://18.199.135.0/stocks/johnson-johnson 20260910 200
   GET CC-MAIN-20260910122853-20260910152853-00300.warc.gz  Range: bytes=111752-125567
 ```
 
+The same entry can be asked for by URL through the CDX API instead of being read out of an index file. The query returns one JSON object per capture, with the SURT key and capture time as `urlkey` and `timestamp` beside the fields of the index line, and the last three of those fields are all the range fetch below needs:
+
+```python
+# network
+import json
+import os
+import urllib.parse
+import urllib.request
+
+UA = os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")
+query = urllib.parse.urlencode({"url": "https://3.214.11.0/galleries/garys-gallery/yazyk/", "output": "json"})
+req = urllib.request.Request(f"https://index.commoncrawl.org/CC-MAIN-2026-39-index?{query}", headers={"User-Agent": UA})
+hits = [json.loads(line) for line in urllib.request.urlopen(req, timeout=120).read().decode().splitlines()]
+hit = hits[0]
+print(len(hits), "capture(s);", hit["urlkey"], hit["timestamp"], hit["status"])
+FILENAME, START, LENGTH = hit["filename"], int(hit["offset"]), int(hit["length"])
+print(FILENAME.rsplit("/", 1)[1], START, LENGTH)    # the three values the range fetch below uses
+```
+
+% output-shape
+
+```text
+1 capture(s); 0,11,214,3)/galleries/garys-gallery/yazyk 20260908100030 200
+CC-MAIN-20260908083825-20260908113825-00403.warc.gz 48374322 9882
+```
+
+The block above was not captured live: on 12 November 2026 the index server refused every connection in six attempts spaced 35 seconds or more apart, for this crawl and for older ones. It shows what the documented JSON response format gives for this record, whose fields are those of the first index line above, so the `% output-shape` check compares only its shape. The range fetch takes the same three values.
+
 The second step fetches exactly those bytes. Because each record is its own gzip member, the slice decompresses on its own:
 
 ```python
@@ -532,6 +560,8 @@ def transport(url, headers):
 
 
 print(canonicalize("HTTP://Example.COM:80/a/./b/../c/%7euser?b=2&a=1#top"))
+print(canonicalize("http://user:secret@[2001:DB8::1]:8080/x"))   # IPv6 keeps its brackets; userinfo dropped
+print(canonicalize("https://[::1]:443/"))
 bot = PoliteCrawler(transport)
 first = bot.crawl(["https://Example.com/"])
 print("first crawl: ", dict(sorted(first.items(), key=str)), "in", bot.now, "simulated seconds")
@@ -544,6 +574,8 @@ print("second crawl:", dict(sorted(second.items(), key=str)), "in", bot.now - st
 
 ```text
 http://example.com/a/c/~user?a=1&b=2
+http://[2001:db8::1]:8080/x
+https://[::1]/
 first crawl:  {'blocked': 1, 'duplicate': 2, 200: 5} in 6.0 simulated seconds
 second crawl: {'blocked': 1, 'duplicate': 2, 304: 5} in 6.0 simulated seconds
 ```
@@ -680,7 +712,7 @@ Almost every document on the web is under copyright from the moment it is writte
 
 - In the **United States** the argument is fair use: that training is a transformative, non-expressive use that does not substitute for the work. Several suits by authors, publishers and news organizations against model developers were pending or partly decided in 2024 and 2025. The rulings so far have turned on how the data was obtained (a pirated library is treated differently from a lawful copy) {cite}`bartz2025order`, on market harm, which decided *Kadrey v. Meta* because the plaintiffs offered no evidence that the model's outputs would dilute the market for their books {cite}`kadrey2025order`, and, for a non-generative tool built from a competitor's content to compete with it, against fair use in *Thomson Reuters v. Ross* {cite}`thomsonreuters2025ross`. {ref}`sec-ch3-books` gives the three cases in more detail.
 - The **European Union**'s Digital Single Market directive (2019) created a text-and-data-mining exception for research institutions and a general one that rights holders may opt out of in a machine-readable way; the AI Act (Regulation 2024/1689) requires providers of general-purpose models to put in place a copyright policy that identifies and honors those opt-outs (Article 53(1)(c)) and to publish a sufficiently detailed summary of the content used for training, on a template from the AI Office (Article 53(1)(d)). A robots.txt directive is the most common machine-readable form, though the directive says only "such as machine-readable means", and which forms count is contested.
-- **Japan** permits uses that are not for enjoying a work's expression, which covers training, under Article 30-4 of its Copyright Act (added in 2018), unless the use would unreasonably prejudice the copyright owner's interests. The **United Kingdom** allows text and data analysis only for non-commercial research (section 29A of its Copyright Act) and opened a consultation on a broader exception in December 2024.
+- **Japan** permits uses that are not for enjoying a work's expression, which covers training, under Article 30-4 of its Copyright Act (added in 2018), unless the use would unreasonably prejudice the copyright owner's interests. The **United Kingdom** allows text and data analysis only for non-commercial research (section 29A of its Copyright Act) and opened a consultation on a broader exception in December 2024. **Singapore**'s Copyright Act 2021 has a statutory exception for computational data analysis: in its Part 5 (permitted uses), Division 8, section 243 defines what computational data analysis is and section 244 permits "copying or communicating for computational data analysis" {cite}`singapore2021copyright`.
 
 Copyright is not the only legal route. A site's terms of service raise a contract question, and in the United States anti-hacking law adds another: the Computer Fraud and Abuse Act forbids accessing a protected computer "without authorization". In *hiQ Labs v. LinkedIn* the Ninth Circuit, reconsidering the case after the Supreme Court's *Van Buren* decision, held that hiQ had raised serious questions whether access can be "without authorization" under the CFAA "where, as here, prior authorization is not generally required, but a particular person—or bot—is refused access", that is, to pages anyone can view, while noting that trespass to chattels and breach of contract claims may still be available {cite}`hiq2022linkedin`. Scraping public pages is therefore not thereby lawful: the risk moves from copyright to contract and tort, which is why the terms-of-service restrictions measured in {ref}`sec-ch3-robots-txt-opt-outs-commons` matter even where robots.txt admits a crawler.
 
