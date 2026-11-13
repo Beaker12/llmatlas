@@ -14,7 +14,7 @@ Imagine being asked to assemble a library for someone who will read every book i
 
 **Crawling** is how new material is obtained when the published crawls are not enough. It is a matter of HTTP mechanics, politeness conventions that are rapidly hardening into legal lines, and arithmetic about how many machines it takes to fetch a billion pages.
 
-**Rights and consent** decide what may be kept. Copyright, dataset licenses, robots.txt and opt-out registries all apply, and the answer has changed quickly: a quarter of the highest-quality web text became off limits to crawlers in a single year.
+**Rights and consent** decide what may be kept. Copyright, dataset licenses, robots.txt and opt-out registries all apply, and the answer has changed quickly: robots.txt put more than a quarter of the tokens from the best-maintained web domains off limits to AI crawlers in a single year.
 
 **Mixture design** turns the pile of sources into a training set. The scaling laws of Chapter 2 say how many tokens a model should see; the mixture says which ones, how many times, and in what proportion.
 
@@ -28,7 +28,7 @@ Acquisition is where a model's knowledge, its languages, its biases and its lega
 :name: fig-ch3-acquisition-flow
 :alt: Flow chart from top to bottom. Four sources (Common Crawl snapshots, your own crawl, curated sources, synthetic text) feed a rights check, which feeds the provenance manifest. The manifest feeds the mixture plan and Chapter 4's cleaning, and both feed Chapter 5.
 
-From sources to training data. Rights are decided at acquisition ({ref}`sec-ch3-rights-licenses-consent`), each kept document gets a manifest record ({ref}`sec-ch3-provenance-documentation`), and the mixture plan ({ref}`sec-ch3-mixture-design-token-budgeting`) fixes each source's weight $w_s$ and epochs $e_s \le e_{\max}$ before Chapter 5 samples the cleaned shards.
+From sources to training data. Rights are decided at acquisition ({ref}`sec-ch3-rights-licenses-consent`), each kept document gets a manifest record ({ref}`sec-ch3-provenance-documentation`), and the mixture plan ({ref}`sec-ch3-mixture-design-token-budgeting`) fixes each source's weight $w_s$ (its share of training tokens) and the number of times $e_s$ it is repeated, at most $e_{\max}$ epochs, before Chapter 5 samples the cleaned shards.
 ```
 
 (sec-ch3-learning-objectives)=
@@ -100,7 +100,7 @@ Corpus sizes are quoted in three units and the conversions are rough:
 - **Documents** are the unit of acquisition and deduplication. A snapshot holds two to three billion pages.
 - **Tokens** are what training cost and the scaling laws count. English prose runs about four characters per token with a GPT-style tokenizer, so one terabyte of UTF-8 text is roughly 250 billion tokens; code and non-Latin scripts tokenize less efficiently.
 
-The retention figures in Chapter 4 apply on top of this: of a snapshot's two billion pages, a cleaned English corpus keeps perhaps a tenth. Fifteen trillion tokens is therefore not one snapshot but ninety-six of them (FineWeb), each deduplicated on its own for the reason given in {ref}`sec-ch3-corpora-derived-common-crawl`.
+The retention figures in Chapter 4 apply on top of this: of a snapshot's two to three billion pages, a cleaned English corpus keeps perhaps a tenth. Fifteen trillion tokens is therefore not one snapshot but ninety-six of them (FineWeb), each deduplicated on its own for the reason given in {ref}`sec-ch3-corpora-derived-common-crawl`.
 
 (sec-ch3-epochs)=
 
@@ -302,7 +302,7 @@ HTTP/1.1 200 OK
 Anatomy of the response record fetched above. The first two blank lines (`\r\n\r\n`) divide the record into `warc_head`, `http_head` and `html`, which is the split the code makes. The WARC date and the payload digest are the capture time and digest in the index line; a record cut off at the size limit would also carry `WARC-Truncated: length`. The HTML length is that of the run shown, so it may differ if the record is fetched again.
 ```
 
-The CDX API returns the same JSON for a URL you name (`index.commoncrawl.org/<crawl-id>-index?url=…&output=json`), so a corpus builder with a list of a hundred thousand URLs makes a hundred thousand small requests instead of reading whole files. The API server is shared and can be slow or unavailable when it is busy, which is another reason bulk lookups belong in the columnar index.
+Through the CDX API the same lookup is one request per URL, so a list of a hundred thousand URLs means a hundred thousand requests to the shared index server; at that scale the columnar index is the better route.
 
 (sec-ch3-corpora-derived-common-crawl)=
 
@@ -913,7 +913,7 @@ After ten generations the all-synthetic chain keeps 478 of the 1,000 types and t
 
 ### 8.1 From compute to tokens
 
-Chapter 2's relation $C \approx 6ND$ fixes the token count once the budget and the model size are chosen. For an 8B-parameter model and $10^{24}$ FLOPs that is about 20T tokens; for the Chinchilla optimum at the same budget, $N \approx \sqrt{C/120} \approx 91$B and $D \approx 1.8$T. Production practice sits between: a model sized for inference cost, trained on as many tokens as the data allows.
+Chapter 2's relation $C \approx 6ND$ fixes the token count once the budget and the model size are chosen. For an 8B-parameter model and $10^{24}$ FLOPs that is about 20.8T tokens; for the Chinchilla optimum at the same budget, $N \approx \sqrt{C/120} \approx 91$B and $D \approx 1.8$T. Production practice sits between: a model sized for inference cost, trained on as many tokens as the data allows.
 
 (sec-ch3-epochs-unique-tokens)=
 
