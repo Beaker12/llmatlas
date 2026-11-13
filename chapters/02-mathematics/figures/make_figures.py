@@ -80,14 +80,15 @@ def run_fence(marker):
 def softmax_saturation(out):
     gap = np.linspace(0, 14, 400)
     fig, ax = plt.subplots(figsize=(7, 3.6))
-    for n, color in ((2, BLUE), (64, ORANGE)):
-        p1 = np.exp(gap) / (np.exp(gap) + (n - 1))
-        ax.plot(gap, p1 * (1 - p1), color=color, lw=2, label=f"$n = {n}$ logits")
-        p8 = math.exp(8) / (math.exp(8) + n - 1)
+    # The text of each annotation sits on the side of its point away from the other curve.
+    for count, color, offset, align in ((2, BLUE, (-12, -10), ("right", "top")),
+                                        (64, ORANGE, (12, 8), ("left", "bottom"))):
+        p1 = np.exp(gap) / (np.exp(gap) + (count - 1))
+        ax.plot(gap, p1 * (1 - p1), color=color, lw=2, label=f"{count} logits")
+        p8 = math.exp(8) / (math.exp(8) + count - 1)
         ax.plot(8, p8 * (1 - p8), "o", color=color, ms=6)
-        ax.annotate(f"$p_1 = {p8:.4f}$, derivative {p8 * (1 - p8):.2g}", (8, p8 * (1 - p8)),
-                    xytext=(14, 4 if n == 64 else -6), textcoords="offset points",
-                    va="bottom" if n == 64 else "top", color=color)
+        ax.annotate(f"$p_1 = {p8:.4f}$, derivative {p8 * (1 - p8):.2g}", (8, p8 * (1 - p8)), xytext=offset,
+                    textcoords="offset points", ha=align[0], va=align[1], color=color)
     ax.axvline(8, color=GREY, ls="--", lw=1)
     ax.text(7.85, 1.3e-6, "gap 8: one standard deviation\nof unscaled scores at $d_k = 64$", ha="right",
             va="bottom", color=GREY)
@@ -96,7 +97,7 @@ def softmax_saturation(out):
     ax.set_xlim(0, 14)
     ax.set_xlabel("logit gap $z_1 - z_j$ (all other logits equal)")
     ax.set_ylabel(r"$\partial p_1 / \partial z_1 = p_1(1 - p_1)$")
-    ax.legend(loc="upper right")
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=2, frameon=False)
     save(fig, out, "softmax-saturation")
 
 
@@ -184,7 +185,7 @@ def memory_stack(out):
              ("fp16 gradients, 2 B per parameter", 2 * params / 1e9, "#6f93c4"),
              ("fp32 master weights, 4 B per parameter", 4 * params / 1e9, "#3d6aa8"),
              ("Adam moments $m$ and $v$, 8 B per parameter", 8 * params / 1e9, "#1f3f73"),
-             ("activations, $B = 8$, $n = 2048$, no recomputation", gpt3["activation_GB"], ORANGE)]
+             ("activations, $B = 8$, $n = 2{,}048$, no recomputation", gpt3["activation_GB"], ORANGE)]
     fig, ax = plt.subplots(figsize=(7, 4.2))
     bottom = 0.0
     for label, size, color in parts:
@@ -192,10 +193,10 @@ def memory_stack(out):
         ax.annotate(f"{label}: {size:,.0f} GB", (0.25, bottom + size / 2), xytext=(0.42, bottom + size / 2),
                     va="center", arrowprops={"arrowstyle": "-", "color": GREY, "lw": 0.8})
         bottom += size
-    ax.text(-0.27, bottom + 60, f"total {bottom:,.0f} GB: {gpt3['param_and_optimizer_GB']:,.0f} GB of weights and "
+    ax.text(-0.27, bottom + 220, f"total {bottom:,.0f} GB: {gpt3['param_and_optimizer_GB']:,.0f} GB of weights and "
             f"optimizer state, {gpt3['activation_GB']:,.0f} GB of activations", ha="left", va="bottom")
     ax.set_xlim(-0.3, 2.3)
-    ax.set_ylim(0, bottom * 1.1)
+    ax.set_ylim(0, bottom * 1.16)
     ax.set_xticks([])
     ax.set_ylabel("GB")
     ax.spines["bottom"].set_visible(False)
@@ -216,8 +217,9 @@ def attention_crossover(out):
                     textcoords="offset points", ha="right" if left else "left", va="bottom" if left else "top",
                     color=color)
     ax.plot(2048, 100 * attention_share(2048, 12288), "s", color=ORANGE, mec="black", ms=6)
-    ax.annotate(f"GPT-3: $n = 2048$, {100 * attention_share(2048, 12288):.1f}%", (2048, 2.7), xytext=(6, 6),
-                textcoords="offset points")
+    gpt3_share = 100 * attention_share(2048, 12288)
+    ax.annotate(f"GPT-3: $n = 2{{,}}048$, {gpt3_share:.1f}%", (2048, gpt3_share), xytext=(700, 24), ha="center",
+                arrowprops={"arrowstyle": "-", "color": GREY, "lw": 0.8, "shrinkB": 4})
     ax.axhline(50, color=GREY, ls="--", lw=1)
     ax.set_xscale("log", base=2)
     ax.set_xlim(256, 262144)

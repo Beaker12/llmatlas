@@ -801,7 +801,7 @@ The identity term gives every layer a direct path for the gradient, so a deep st
 :name: fig-ch2-gradient-flow-depth
 :alt: Gradient norm against depth through 12 linear layers on a log scale: without LayerNorm at std 0.02 it falls from about 100 at the output to about 0.000002 at the input; the other three variants stay near 100.
 
-Gradient norm at each depth of a stack of 12 linear layers ($d = 128$). With weights of standard deviation 0.02 and nothing else, each layer shrinks the gradient and it falls by nearly eight orders of magnitude; Xavier scaling, LayerNorm or a residual connection each keeps it near its output value. From the notebook section {ref}`nb-math-layernorm`, by executing its cell tagged `figure:gradient-flow-depth`.
+Gradient norm at each depth of a stack of 12 linear layers ($d = 128$). With weights of standard deviation 0.02 and nothing else, each layer shrinks the gradient and it falls by nearly eight orders of magnitude; Xavier scaling, LayerNorm or a residual connection each keeps it near its output value; the Xavier and LayerNorm lines coincide and are told apart by their markers. From the notebook section {ref}`nb-math-layernorm`, by executing its cell tagged `figure:gradient-flow-depth`.
 ```
 
 (sec-ch2-pre-post-ln)=
