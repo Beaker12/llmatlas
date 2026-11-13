@@ -481,7 +481,7 @@ def attend(q, k, v, window=None):
     return F.softmax(scores, dim=-1) @ v
 
 
-torch.set_default_dtype(torch.float64)  # float32 sums round differently per CPU kernel set
+torch.set_default_dtype(torch.float64)  # float32 sums differ per CPU kernel set
 torch.manual_seed(0)
 n, d_k, n_win = 64, 16, 8
 kinds = ["local"] * 5 + ["global"]

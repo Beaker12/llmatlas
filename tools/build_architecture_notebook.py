@@ -1015,9 +1015,10 @@ SWEEP = json.loads((DATA / "norm_sweep.json").read_text())
 recorded = next(a for a in SWEEP["arms"] if (a["lr"], a["warmup"]) == (LR, 0))
 difference = max(float(np.abs(final[k] - np.array(recorded[k])).max())
                  for k in ("pre", "post"))
-# The recording machine reproduces the arm exactly. Another CPU's float32 kernels round differently and
-# 400 steps of training amplify that, so across machines the live scores need only stay within SWEEP_TOL
-# nats of the recorded ones (the notebook test applies the same tolerance to the printed numbers).
+# The recording machine reproduces the arm exactly. Another CPU's float32 kernels
+# round differently and 400 steps of training amplify that, so across machines the
+# live scores need only stay within SWEEP_TOL nats of the recorded ones (the notebook
+# test applies the same tolerance to the printed numbers).
 SWEEP_TOL = 0.15
 assert difference < SWEEP_TOL, difference
 print(f"sweep recorded with torch {SWEEP['torch']}, this kernel {torch.__version__};")
