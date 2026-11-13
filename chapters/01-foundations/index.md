@@ -357,7 +357,7 @@ Pieces: ['▁He', 'llo', ',', '▁w', 'orld', '!', '▁', '<0xE4>', '<0xBD>', '<
 19 ids; decoded text equals the input: True
 ```
 
-With byte fallback, the four Chinese characters, absent from the learned pieces, become twelve UTF-8 byte pieces instead of `<unk>`, and decoding returns the input. Without it, the same model would map them to the unknown id. SentencePiece refuses a vocabulary size larger than the corpus can fill. The toy corpus supports a few hundred pieces; for the common 32,000, a 100 kB sample of English Wikipedia text (WikiText-103) is refused and a 1 MB sample is enough, although production tokenizers train on far more text so that the pieces reflect real frequencies.
+With byte fallback, the four Chinese characters, absent from the learned pieces, become twelve UTF-8 byte pieces instead of `<unk>`, and decoding returns the input. Without it, the same model would map them to the unknown id. SentencePiece refuses a vocabulary size larger than the corpus can fill. The toy corpus supports a few hundred pieces; for the common 32,000, the first 100 kB of the training text of WikiText-103 (English Wikipedia articles) is refused by both model types (the error asks for at most 14,759 pieces with `bpe`, 2,778 with `unigram`), the first 1 MB is enough for `bpe` and still refused for `unigram` (at most 10,634), although production tokenizers train on far more text so that the pieces reflect real frequencies.
 
 **Key advantages**:
 

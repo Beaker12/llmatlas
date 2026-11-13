@@ -52,7 +52,7 @@ Encoding picks the most probable segmentation with the Viterbi algorithm, a dyna
 
 A BPE vocabulary over Unicode characters would need over 130,000 base symbols to cover every string. GPT-2 runs BPE over UTF-8 bytes instead, so the base vocabulary is 256 symbols and every string can be encoded {cite}`radford2019language`. Two details make this work:
 
-- **Pre-tokenization.** Before any merge, a regular expression splits the text into chunks: common English contractions, runs of letters, runs of digits, runs of other symbols, and whitespace. A space stays attached to the start of the following chunk (`" world"`). Merges never cross chunk boundaries, which keeps BPE from learning separate tokens for `dog.`, `dog!` and `dog?` {cite}`radford2019language`.
+- **Pre-tokenization.** Before any merge the text is split into chunks, and merges never cross a chunk boundary. The GPT-2 paper states the rule as preventing BPE from "merging across character categories for any byte sequence", with an exception for spaces, which keeps BPE from filling the vocabulary with variants of a word such as `dog.`, `dog!` and `dog?` {cite}`radford2019language`. A regular expression that separates runs of letters, digits, other symbols and whitespace implements such a rule, and the pipeline listing of {ref}`sec-tdd-complete-tokenization-pipeline` uses one in that style. A space stays attached to the start of the following chunk (`" world"`).
 - **Printable bytes.** The released code maps each of the 256 bytes to a printable Unicode character, so the BPE code only ever handles strings without whitespace or control characters. The 188 bytes that are already printable characters (`!` to `~`, `¡` to `¬` and `®` to `ÿ`) map to themselves. The other 68, the control characters, the space (byte 32), the no-break space (0xA0) and the soft hyphen (0xAD), map to characters from U+0100 upward. The space becomes `Ġ` (U+0120), which is why GPT-2 vocabularies are full of tokens like `Ġworld`. A non-ASCII character spans several bytes and so several symbols: `é` is the two bytes `0xC3 0xA9`, shown as `Ã©` until a merge joins them.
 
 (sec-tdd-sentencepiece-library)=
@@ -314,7 +314,9 @@ pprint.pp([enc.decode([i]) for i in tokens], width=88, compact=True)
 
 ```text
 Token count: 15
-Pieces: ['Hello', ',', ' world', '!', ' Here', "'s", ' some', ' code', ':', ' `', 'print', "('", 'hi', "')", '`']
+Pieces:
+['Hello', ',', ' world', '!', ' Here', "'s", ' some', ' code', ':', ' `', 'print', "('",
+ 'hi', "')", '`']
 ```
 
 (sec-tdd-tokenization-impact-model-behavior)=
@@ -537,13 +539,15 @@ def mistral_template(messages):
 
 # one line per turn for display: a line break after each [/INST] and each </s>
 formatted = mistral_template(messages)
-print(formatted.replace("[/INST]", "[/INST]\n").replace("</s>", "</s>\n"))
+print(formatted.replace("[/INST]", "[/INST]\n").replace("</s>", "</s>\n").rstrip())
 ```
 
 % output
 
 ```text
-<s>[INST] Hello, how are you? [/INST]I'm doing great. How can I help you today?</s> [INST] I'd like to show off how chat templating works! [/INST]
+<s>[INST] Hello, how are you? [/INST]
+I'm doing great. How can I help you today?</s>
+ [INST] I'd like to show off how chat templating works! [/INST]
 ```
 
 The output is the string the chat templating documentation {cite}`huggingface2026chattemplates` shows for this conversation. The model's reply is generated after the final `[/INST]`, and generation stops when the model emits `</s>`.
@@ -663,7 +667,8 @@ tokenizers = {
 for name, (encode, decode) in tokenizers.items():
     changed = test_reversibility(encode, decode, texts)
     print(f"{name:<17} {len(changed)} of {len(texts)} texts changed:")
-    print("    " + " ".join(ascii(t) for t in changed))
+    if changed:
+        print("    " + " ".join(ascii(t) for t in changed))
 ```
 
 % output
@@ -676,9 +681,11 @@ for name, (encode, decode) in tokenizers.items():
 'x\xb2'                length 2 | NFC 'x\xb2'          | NFKC 'x2'
 '\u2460'               length 1 | NFC '\u2460'         | NFKC '1'
 '\u0430'               length 1 | NFC '\u0430'         | NFKC '\u0430'
-UTF-8 bytes       0 of 7 texts changed: 
-NFC code points   1 of 7 texts changed: 'cafe\u0301'
-NFKC code points  5 of 7 texts changed: 'cafe\u0301' '\ufb01le' '\uff21\uff22\uff23' 'x\xb2' '\u2460'
+UTF-8 bytes       0 of 7 texts changed:
+NFC code points   1 of 7 texts changed:
+    'cafe\u0301'
+NFKC code points  5 of 7 texts changed:
+    'cafe\u0301' '\ufb01le' '\uff21\uff22\uff23' 'x\xb2' '\u2460'
 ```
 
 Both spellings of "café" become the same four code points under either form, so even NFC breaks a byte-exact round trip: the decomposed spelling comes back composed. NFKC changes five of the seven strings, and some of what it removes is visible to a reader: "x²" and "x2" become the same text. SentencePiece applies an NFKC-based normalization by default ({ref}`sec-tdd-sentencepiece-library`); GPT-2's byte-level BPE works on the bytes as given, so it never merges variants but always decodes back to the exact input ({ref}`sec-tdd-byte-level-bpe`).
@@ -968,8 +975,9 @@ from collections import Counter
 from typing import Dict, List, Tuple
 
 # Pre-tokenization in the style of GPT-2: a chunk is an optional leading space
-# followed by letters, digits or punctuation, or a run of whitespace. Joining the chunks gives back the text exactly, so whitespace is kept
-# inside the tokens instead of being thrown away.
+# followed by letters, digits or punctuation, or a run of whitespace. Joining the
+# chunks gives back the text exactly, so whitespace is kept inside the tokens
+# instead of being thrown away.
 CHUNK = re.compile(r" ?[^\W\d_]+| ?\d+| ?(?:[^\s\w]|_)+|\s+(?!\S)|\s+")
 
 
@@ -1124,7 +1132,8 @@ def analyze_tokenization_efficiency(tokenizer, corpus):
 
 held_out = ["The question is what the fox can do for the dog", "Ask a thousand times"]
 quality = evaluate_tokenization_quality(tokenizer, held_out)
-print("held out:", {k: round(v, 3) for k, v in quality.items()})
+print("held out:")
+pprint.pp({k: round(v, 3) for k, v in quality.items()}, width=88)
 lengths, kinds = analyze_tokenization_efficiency(tokenizer, held_out)
 print("token lengths in bytes:", lengths)
 print("kinds:", kinds)
@@ -1140,11 +1149,17 @@ for size in (261, 300, 400):
 
 ```text
 Training complete. 39 merges, vocabulary size 300
-'The quick brown fox.' -> ['The', ' qu', 'i', 'c', 'k', ' b', 'r', 'o', 'w', 'n', ' fo', 'x', '.']
-'two  spaces\nand a newline' -> ['t', 'w', 'o', ' ', ' s', 'p', 'a', 'c', 'es', '\n', 'an', 'd', ' a', ' n', 'e', 'w', 'l', 'in', 'e']
-'unthinkable' -> ['u', 'n', 't', 'h', 'in', 'k', 'a', 'b', 'l', 'e']
-held out: {'chars_per_token': 1.914, 'bytes_per_token': 1.914, 'reversibility_errors': 0.0}
-token lengths in bytes: {1: 15, 2: 10, 3: 8, 4: 2} | kinds: {'whole chunk': 7, 'part of a chunk': 13, 'single byte': 15}
+'The quick brown fox.' ->
+['The', ' qu', 'i', 'c', 'k', ' b', 'r', 'o', 'w', 'n', ' fo', 'x', '.']
+'two  spaces\nand a newline' ->
+['t', 'w', 'o', ' ', ' s', 'p', 'a', 'c', 'es', '\n', 'an', 'd', ' a', ' n', 'e', 'w',
+ 'l', 'in', 'e']
+'unthinkable' ->
+['u', 'n', 't', 'h', 'in', 'k', 'a', 'b', 'l', 'e']
+held out:
+{'chars_per_token': 1.914, 'bytes_per_token': 1.914, 'reversibility_errors': 0.0}
+token lengths in bytes: {1: 15, 2: 10, 3: 8, 4: 2}
+kinds: {'whole chunk': 7, 'part of a chunk': 13, 'single byte': 15}
 vocabulary 261:   0 merges, 1.000 bytes per token held out
 vocabulary 300:  39 merges, 1.914 bytes per token held out
 vocabulary 400: 115 merges, 3.722 bytes per token held out
@@ -1293,7 +1308,8 @@ dedicated to the great task remaining before us. . .that from these honored dead
 increased devotion to that cause for which they gave the last full measure of devotion.
 . . that we here highly resolve that these dead shall not have died in vain. . . that
 this nation, under God, shall have a new birth of freedom. . . and that government of
-the people. . .by the people. . .for the people. . . shall not perish from this earth."""
+the people. . .by the people. . .for the people. . . shall not perish from this
+earth."""
 
 counts = analyze_token_frequency(GETTYSBURG.split("\n\n"), WordTokenizer())
 print("most frequent:", ", ".join(f"{w} {c}" for w, c in counts.most_common(5)))
@@ -1409,10 +1425,10 @@ compare_position_encodings()
 % output
 
 ```text
-max length                              128        256        512      1,024      2,048      4,096
-Token embedding, 32,000 entries  16,384,000 16,384,000 16,384,000 16,384,000 16,384,000 16,384,000
-Learned absolute                     65,536    131,072    262,144    524,288  1,048,576  2,097,152
-Relative bias (T5, 2 stacks)            512        512        512        512        512        512
+max length                   128        256        512      1,024      2,048      4,096
+Token embedding (32k) 16,384,000 16,384,000 16,384,000 16,384,000 16,384,000 16,384,000
+Learned absolute          65,536    131,072    262,144    524,288  1,048,576  2,097,152
+T5 bias, 2 stacks            512        512        512        512        512        512
 no parameters: sinusoidal, RoPE, ALiBi
 ```
 
