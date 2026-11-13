@@ -124,6 +124,93 @@ can therefore seek to any sample. `index.json` lists every shard with its sample
 columns and hashes, following the writer in the `mosaicml/streaming` repository.
 ```
 
+The listing writes 20,000 samples in both layouts with the standard library: a tar whose members `000000.txt`, `000000.json`, and so on are grouped by key on read, and an MDS-style shard with the header of the figure (a `uint32` count, then $n + 1$ `uint32` byte offsets, then the length and the bytes of a JSON config). Sample $k$ of the second layout is the slice between offsets $k$ and $k+1$, found by reading two integers; in the tar the only way to the last sample is through every member before it. The tar is larger here because each member is padded to 512-byte blocks, an overhead that grows with the number of small members.
+
+```python
+import io
+import json
+import struct
+import tarfile
+import time
+
+samples = [{"text": f"document {i} " * (1 + i % 5), "n": i} for i in range(20_000)]
+
+# WebDataset layout: one tar; a sample is the consecutive members that share a key
+buf = io.BytesIO()
+with tarfile.open(fileobj=buf, mode="w") as tar:
+    for i, s in enumerate(samples):
+        parts = (("txt", s["text"].encode()), ("json", json.dumps(s).encode()))
+        for ext, payload in parts:
+            info = tarfile.TarInfo(f"{i:06d}.{ext}")
+            info.size = len(payload)
+            tar.addfile(info, io.BytesIO(payload))
+tar_bytes = buf.getvalue()
+
+
+def read_wds(data: bytes):
+    """Yield one dict per key by grouping consecutive members; front to back."""
+    key, group = None, {}
+    with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+        for member in tar:
+            stem, ext = member.name.rsplit(".", 1)
+            if stem != key and group:
+                yield group
+                group = {}
+            key = stem
+            group[ext] = tar.extractfile(member).read()
+    if group:
+        yield group
+
+
+# MDS-style layout: uint32 count, count + 1 uint32 offsets, JSON config, samples
+blobs = [json.dumps(s).encode() for s in samples]
+config = json.dumps({"columns": {"text": "str", "n": "int"}}).encode()
+header = 4 + 4 * (len(blobs) + 1) + 4 + len(config)  # 4 bytes hold len(config)
+offsets = [header]
+for b in blobs:
+    offsets.append(offsets[-1] + len(b))
+shard = (
+    struct.pack(f"<I{len(offsets)}I", len(blobs), *offsets)
+    + struct.pack("<I", len(config))
+    + config
+    + b"".join(blobs)
+)
+
+
+def read_mds(data: bytes, k: int) -> dict:
+    """Seek to sample k from the header alone: two offsets and one slice."""
+    (count,) = struct.unpack_from("<I", data, 0)
+    assert 0 <= k < count
+    lo, hi = struct.unpack_from("<2I", data, 4 + 4 * k)
+    return json.loads(data[lo:hi])
+
+
+groups = list(read_wds(tar_bytes))
+assert len(groups) == 20_000 and groups[7]["txt"].decode() == samples[7]["text"]
+assert read_mds(shard, 12_345) == samples[12_345]
+
+start = time.perf_counter()
+for _ in range(5):  # reaching the last sample of a tar means walking every member
+    last = list(read_wds(tar_bytes))[-1]
+tar_ms = (time.perf_counter() - start) / 5 * 1000
+start = time.perf_counter()
+for _ in range(200):
+    last = read_mds(shard, 19_999)
+mds_us = (time.perf_counter() - start) / 200 * 1e6
+assert tar_ms * 1000 > 10 * mds_us  # the seek does not grow with the shard
+print(f"{len(groups):,} samples; tar {len(tar_bytes):,} bytes; MDS {len(shard):,}")
+print(f"MDS header {header:,} bytes; sample 12,345 at byte {offsets[12345]:,}")
+print(f"last sample: tar {tar_ms:.0f} ms (scan), MDS {mds_us:.0f} us (seek)")
+```
+
+% output-shape
+
+```text
+20,000 samples; tar 40,970,240 bytes; MDS 1,415,612
+MDS header 80,052 bytes; sample 12,345 at byte 887,417
+last sample: tar 1344 ms (scan), MDS 4 us (seek)
+```
+
 A Parquet file is a sequence of row groups, each holding one compressed chunk per column, followed by a footer with the schema, the location of every column chunk and per-chunk statistics such as each column's minimum and maximum; the footer is written last so that the file can be written in one pass {cite}`apache2026parquet`. A reader opens the footer first, and two savings follow. Column projection reads only the chunks of the columns asked for, so a query over `num_tokens` never decompresses `text`. Predicate push-down skips any row group whose statistics show it cannot match. The listing writes 1,000 documents in four row groups and reads the long ones back: the footer rules out three of the four row groups before any data is read. The same table written in the Arrow IPC streaming format is the layout Hugging Face `datasets` caches on disk (its writer is a `pa.RecordBatchStreamWriter` and its reader calls `pa.ipc.open_stream` on a memory map {cite}`lhoest2021datasets`): memory-mapping it gives typed columns with no decoding step {cite}`apache2026arrow`. Arrow also defines a random-access file format, with magic bytes and a footer, which is a different layout that a stream reader cannot open; the listing shows that `pa.ipc.open_file` rejects the stream.
 
 ```python
@@ -770,6 +857,8 @@ pprint(diff_manifests(v1, v2), width=88, sort_dicts=False)
  'changed': ['shard_002'],
  'unchanged': 3}
 ```
+
+Table formats version a Parquet corpus by snapshot instead of by file hash, and map onto the same structure. In Apache Iceberg {cite}`apache2026iceberg` a snapshot "represents the state of a table at some time"; it lists its manifests in a manifest list, each manifest lists data files with per-file statistics, and a commit atomically swaps the table's metadata file for one that names the new snapshot. The snapshot plays the part of this section's version, the manifests the part of the manifest, and the metadata swap the part of cutting a version. Delta Lake {cite}`armbrust2020delta` reaches the same end with a transaction log of added and removed files, "to provide ACID properties, time travel, and significantly faster metadata operations", and Lance {cite}`pace2025lance` is a columnar format built for the random access that machine-learning workloads need as well as sequential scans. A snapshot gives atomic commits and the ability to read the table as of an earlier snapshot ("time travel"). What these systems record about a data file is its path, size and column statistics, and not, by default, a content hash; a reader who needs the guarantee of {ref}`sec-ch5-version-set-hashes`, that equal roots mean equal bytes, adds the hash to the manifest as above.
 
 (sec-ch5-immutability-naming)=
 
@@ -1941,7 +2030,13 @@ always global positions 24 to 31, and only the split between ranks changes (by r
 
 ### 6.2 Throughput
 
-The loader's job is to never make the accelerator wait. The arithmetic for a modern run: a step over a 4-million-token batch on a large cluster takes a few seconds; the batch is 8 MB of `uint16` ids (16 MB as `uint32`), spread over all ranks, so each rank reads kilobytes per step, trivial for local disk and comfortable for object storage with a few requests in flight. Text formats change the picture less in volume than in work: the same batch is some 16 MB of UTF-8 that must be decompressed, parsed and tokenized, which is CPU time on the step's critical path unless it is prefetched, and whose output depends on the tokenizer library's version at run time. The argument for pre-tokenized binaries is therefore not storage (gzip-compressed text is comparable in size to 16-bit ids), and it rests on two rates: the rate at which a rank consumes tokens and the rate at which one CPU core turns compressed text into token ids. The first is the global batch over the step time over the ranks. For the example above, 4 million tokens every 4 seconds on 1,024 ranks, it is about 1,000 tokens per second per rank. A small model on a fast accelerator consumes far more; take 500,000 tokens per second per rank as an example. The second rate the listing measures: decompressing gzip JSON Lines, parsing each line and tokenizing it with the `cl100k_base` encoding of tiktoken runs at about 1.9 million tokens per second on one core of the machine shown (on generated text of common words; real text with rarer words is slower). The number of loader workers a rank needs is the first rate over the second, rounded up, with headroom: one worker keeps up with the large run with three orders of magnitude to spare, and one or two with the small model. Prefetching, a queue of batches prepared ahead, absorbs the occasional slow read from object storage; it should hold at least as many steps as the slowest read takes. Parsing and tokenizing on the fly is thus rarely what holds a run back. Of the three advantages of pre-tokenized binaries, the binding ones are random access, which the seekable sampler, resumption and the sequence index of {ref}`sec-ch5-sampler-to-ranks` need, and a token stream fixed when the dataset is built rather than by the tokenizer library's version when it is read.
+The loader's job is to never make the accelerator wait. The arithmetic for a modern run: a step over a 4-million-token batch on a large cluster takes a few seconds; the batch is 8 MB of `uint16` ids (16 MB as `uint32`), spread over all ranks, so each rank reads kilobytes per step, trivial for local disk and comfortable for object storage with a few requests in flight. Text formats change the picture less in volume than in work: the same batch is some 16 MB of UTF-8 that must be decompressed, parsed and tokenized, which is CPU time on the step's critical path unless it is prefetched, and whose output depends on the tokenizer library's version at run time.
+
+The argument for pre-tokenized binaries is therefore not storage (gzip-compressed text is comparable in size to 16-bit ids), and it rests on two rates: the rate at which a rank consumes tokens and the rate at which one CPU core turns compressed text into token ids. The first is the global batch over the step time over the ranks. For the example above, 4 million tokens every 4 seconds on 1,024 ranks, it is about 1,000 tokens per second per rank. A small model on a fast accelerator consumes far more; take 500,000 tokens per second per rank as an example.
+
+The second rate the listing measures: decompressing gzip JSON Lines, parsing each line and tokenizing it with the `cl100k_base` encoding of tiktoken runs at about 1.9 million tokens per second on one core of the machine shown (on generated text of common words; real text with rarer words is slower). The number of loader workers a rank needs is the first rate over the second, rounded up, with headroom: one worker keeps up with the large run with three orders of magnitude to spare, and one or two with the small model.
+
+Prefetching, a queue of batches prepared ahead, absorbs the occasional slow read from object storage; it should hold at least as many steps as the slowest read takes. Parsing and tokenizing on the fly is thus rarely what holds a run back. Of the three advantages of pre-tokenized binaries, the binding ones are random access, which the seekable sampler, resumption and the sequence index of {ref}`sec-ch5-sampler-to-ranks` need, and a token stream fixed when the dataset is built rather than by the tokenizer library's version when it is read.
 
 ```python
 # network
@@ -2180,7 +2275,13 @@ Two monitoring practices borrowed from other fields:
 - **Canaries.** Insert a handful of unique, random strings into the corpus at known positions and with known repetition counts. After training, test whether the model can complete them. Canaries measure memorization directly {cite}`carlini2019secret`, and a canary that appears in a version where it should not have is proof that an upstream shard leaked.
 - **Drift.** Compare every statistic of {ref}`sec-ch5-statistics-per-version` between consecutive versions and flag changes beyond a threshold. Most data bugs (an extractor update that drops tables, a language-identification model update that rejects more of one language, a source that silently went offline) show up as a drift in a per-source statistic before they show up in a loss curve.
 
-A drift check needs a statistic and a threshold fixed before the comparison. For a length distribution, a good statistic is the two-sample Kolmogorov-Smirnov statistic D, the largest gap between the two empirical distribution functions. Its threshold has a closed form. For samples of sizes $n$ and $m$ from one continuous distribution, the probability that $D$ exceeds $c\sqrt{1/n + 1/m}$ tends to $2 \sum_{k \ge 1} (-1)^{k-1} e^{-2 k^2 c^2}$, Kolmogorov's limiting distribution, which {cite:t}`smirnov1948table` tabulated. At a 1% tail the terms after the first add less than $10^{-8}$; setting $2 e^{-2c^2} = 0.01$ gives $c = 1.628$, and for two versions of 20,000 documents a threshold of $1.628 \sqrt{2/20{,}000} = 0.0163$. That fixes the false-alarm rate: one comparison in a hundred between two versions whose lengths come from the same distribution is flagged. The rate rests on two assumptions, large samples and no ties, and lengths in tokens are integers with many ties. The listing therefore measures it on the data themselves: pool the two versions' lengths, relabel them at random into groups of the original sizes, which is what "same distribution" means for the data at hand (a permutation test), and count how often D exceeds the threshold. Each seed's 1,000 relabelings estimate the rate with a standard error of 0.31 points, so the listing asserts every seed between 0.25% and 2% and the five together, a standard error of 0.14 points, between 0.7% and 1.3%. A threshold taken instead as the 99th percentile of a few hundred relabelings moves with the seed: with 200 it lies between the second and third largest value, and over six seeds it ranged from 0.0149 to 0.0177 on the listing's data, false-alarm rates of about 2.4% and 0.4% by the formula above. (A deterministic rebuild with nothing changed is byte-identical and gives D = 0.) The listing compares a version with a second draw from the same length distribution and with a build in which an extractor update dropped the tables from 15% of documents: the first stays under the threshold and the second is flagged. On corpora of millions of documents the threshold becomes so small that real but harmless changes cross it, so in practice it is paired with a minimum effect size, such as a change in mean length of more than a few percent.
+A drift check needs a statistic and a threshold fixed before the comparison. For a length distribution, a good statistic is the two-sample Kolmogorov-Smirnov statistic D, the largest gap between the two empirical distribution functions. Its threshold has a closed form. For samples of sizes $n$ and $m$ from one continuous distribution, the probability that $D$ exceeds $c\sqrt{1/n + 1/m}$ tends to $2 \sum_{k \ge 1} (-1)^{k-1} e^{-2 k^2 c^2}$, Kolmogorov's limiting distribution, which {cite:t}`smirnov1948table` tabulated. At a 1% tail the terms after the first add less than $10^{-8}$; setting $2 e^{-2c^2} = 0.01$ gives $c = 1.628$, and for two versions of 20,000 documents a threshold of $1.628 \sqrt{2/20{,}000} = 0.0163$.
+
+That fixes the false-alarm rate: one comparison in a hundred between two versions whose lengths come from the same distribution is flagged. The rate rests on two assumptions, large samples and no ties, and lengths in tokens are integers with many ties.
+
+The listing therefore measures it on the data themselves: pool the two versions' lengths, relabel them at random into groups of the original sizes, which is what "same distribution" means for the data at hand (a permutation test), and count how often D exceeds the threshold. Each seed's 1,000 relabelings estimate the rate with a standard error of 0.31 points, so the listing asserts every seed between 0.25% and 2% and the five together, a standard error of 0.14 points, between 0.7% and 1.3%. A threshold taken instead as the 99th percentile of a few hundred relabelings is itself a noisy estimate: with 200 relabelings it lies between the second and third largest value, so it moves from seed to seed. (A deterministic rebuild with nothing changed is byte-identical and gives D = 0.)
+
+The listing compares a version with a second draw from the same length distribution and with a build in which an extractor update dropped the tables from 15% of documents: the first stays under the threshold and the second is flagged. On corpora of millions of documents the threshold becomes so small that real but harmless changes cross it, so in practice it is paired with a minimum effect size, such as a change in mean length of more than a few percent.
 
 ```python
 import math
@@ -2912,9 +3013,29 @@ seed 1, document mask                 0.181  4.88            4.67     3.57
 seed 1, mask, EOD opens               0.035  4.36            4.32     3.91
 ```
 
-The mask removes 62.0% of the causal attention pairs and changes the context of 75.6% of the tokens: every token after the first document boundary of its sequence. The change is largest for a document's first tokens, which without the mask see up to several thousand tokens of an unrelated document and with it see only the document's own tokens. For the training comparison the listing scales the setting down by 64, to 64-token sequences and documents averaging 16 tokens, and trains a two-layer decoder for 200 steps in three ways, from the same initial weights and on the same batches, for two seeds: with causal attention only; with the document mask; and with the document mask but each end-of-document (EOD) token counted as the first token of the document it opens instead of the last of the one it ends, so that a document's first token can attend to the EOD before it. Each document repeats a random pattern of three to eight tokens, so its first tokens cannot be predicted and its later tokens can be copied from earlier in the same document, while nothing in an earlier document helps. The held-out loss is averaged by the position of the token in its document, over the tokens whose context the mask changes; a gap row is the causal model's loss minus that of the named model. The losses depend in their last digits on the machine, so the output above is the shape of one run. The listing asserts, for each of the two seeds, only the inequalities in its last lines, with their margins; every other number below is an observation in the run shown.
+The mask removes 62.0% of the causal attention pairs and changes the context of 75.6% of the tokens: every token after the first document boundary of its sequence. The change is largest for a document's first tokens, which without the mask see up to several thousand tokens of an unrelated document and with it see only the document's own tokens.
 
-From position 4 on, where the document has a pattern to copy, both masked models lower the loss by more than 0.2 (by 0.41 to 0.63 in the run shown, with no clear peak across positions 4 to 7, 8 to 15 and beyond 16). At position 0, the prediction of a document's second token from its first, the plain document mask raises the loss by more than 0.3 (by 0.48 and 0.64 in the run shown). The best constant prediction there costs 4.09 nats, not ln 63 ≈ 4.14, because 8.2% of these targets are the EOD token; the causal models are near it (4.22 and 4.19), the masked ones well above it (4.70 and 4.84). The probe at the end of the listing measures, on the targets at position 0 that do not repeat the input token, how much probability each model gives to a repeat and how concentrated the rest of its prediction is. A plausible reading, which the probe does not prove, is that under the plain mask a document's first token can attend only to itself, so nothing in its context tells it apart from a later token of a document, where the model has learned to predict from what the document has already shown. The probe shows two differences from the causal model (asserted: the repeat probability is more than five times the causal model's, and the entropy of the rest lower by more than 0.2 nats). In the run shown, the plain-mask model gives 0.18 of its probability to the next token repeating the input, against 0.013 and 0.015 for the causal model, though a document's second token repeats its first only by chance; taking that mass away and renormalizing lowers its loss on these targets by 0.21 (4.74 to 4.53 and 4.88 to 4.67). What is left is also sharper than these targets seem to allow: its entropy is 3.60 and 3.57 nats, against 3.99 and 3.98 for the causal model, on targets that are close to uniform, where any concentration of probability raises the loss. Its loss without the repeat exceeds its entropy by 0.93 and 1.10 nats, the causal model's by 0.21 and 0.20: it is confident about tokens that are no more likely than the others, and that confidence accounts for the remaining 0.33 and 0.49 nats (4.53 against 4.20, 4.67 against 4.18). The third model asks whether the missing EOD matters. With the EOD in its context, in the run shown, a document's first token gives 0.03 and 0.035 of its probability to a repeat, the entropy of the rest is 3.93 and 3.91, and the cost at position 0 falls from 0.48 and 0.64 to 0.05 and 0.16 nats, while the gain from position 4 on stays. The listing asserts, for both seeds, that the repeat probability is less than half the plain mask's, that the entropy of the rest is more than 0.2 nats higher than the plain mask's, that the cost at position 0 falls by more than 0.3, and that both masked models gain more than 0.2 from position 4 on. These results fit the account that most of the mask's cost at a document's first token comes from the missing signal that a document has begun, rather than from the context the mask removes, which cannot help predict an unrelated document: one visible token before each document, here the previous document's EOD, restores most of it. A small difference remains at position 0 even with the EOD visible (0.05 and 0.16 nats in the run shown), and this experiment does not examine it.
+For the training comparison the listing scales the setting down by 64, to 64-token sequences and documents averaging 16 tokens, and trains a two-layer decoder for 200 steps in three ways, from the same initial weights and on the same batches, for two seeds: with causal attention only; with the document mask; and with the document mask but each end-of-document (EOD) token counted as the first token of the document it opens instead of the last of the one it ends, so that a document's first token can attend to the EOD before it. Each document repeats a random pattern of three to eight tokens, so its first tokens cannot be predicted and its later tokens can be copied from earlier in the same document, while nothing in an earlier document helps.
+
+The held-out loss is averaged by the position of the token in its document, over the tokens whose context the mask changes; a gap row is the causal model's loss minus that of the named model.
+
+The losses depend in their last digits on the machine, so the output above is the shape of one run. The listing asserts, for each of the two seeds, only the inequalities in its last lines, with their margins; every other number below is an observation in the run shown.
+
+From position 4 on, where the document has a pattern to copy, both masked models lower the loss by more than 0.2 (by 0.41 to 0.63 in the run shown, with no clear peak across positions 4 to 7, 8 to 15 and beyond 16).
+
+At position 0, the prediction of a document's second token from its first, the plain document mask raises the loss by more than 0.3 (by 0.48 and 0.64 in the run shown). The best constant prediction there costs 4.09 nats, not ln 63 ≈ 4.14, because 8.2% of these targets are the EOD token; the causal models are near it (4.22 and 4.19), the masked ones well above it (4.70 and 4.84).
+
+The probe at the end of the listing measures, on the targets at position 0 that do not repeat the input token, how much probability each model gives to a repeat and how concentrated the rest of its prediction is. A plausible reading, which the probe does not prove, is that under the plain mask a document's first token can attend only to itself, so nothing in its context tells it apart from a later token of a document, where the model has learned to predict from what the document has already shown. The probe shows two differences from the causal model (asserted: the repeat probability is more than five times the causal model's, and the entropy of the rest lower by more than 0.2 nats).
+
+In the run shown, the plain-mask model gives 0.18 of its probability to the next token repeating the input, against 0.013 and 0.015 for the causal model, though a document's second token repeats its first only by chance; taking that mass away and renormalizing lowers its loss on these targets by 0.21 (4.74 to 4.53 and 4.88 to 4.67).
+
+What is left is also sharper than these targets seem to allow: its entropy is 3.60 and 3.57 nats, against 3.99 and 3.98 for the causal model, on targets that are close to uniform, where any concentration of probability raises the loss. Its loss without the repeat exceeds its entropy by 0.93 and 1.10 nats, the causal model's by 0.21 and 0.20: it is confident about tokens that are no more likely than the others, and that confidence accounts for the remaining 0.33 and 0.49 nats (4.53 against 4.20, 4.67 against 4.18).
+
+The third model asks whether the missing EOD matters. With the EOD in its context, in the run shown, a document's first token gives 0.03 and 0.035 of its probability to a repeat, the entropy of the rest is 3.93 and 3.91, and the cost at position 0 falls from 0.48 and 0.64 to 0.05 and 0.16 nats, while the gain from position 4 on stays.
+
+The listing asserts, for both seeds, that the repeat probability is less than half the plain mask's, that the entropy of the rest is more than 0.2 nats higher than the plain mask's, that the cost at position 0 falls by more than 0.3, and that both masked models gain more than 0.2 from position 4 on.
+
+These results fit the account that most of the mask's cost at a document's first token comes from the missing signal that a document has begun, rather than from the context the mask removes, which cannot help predict an unrelated document: one visible token before each document, here the previous document's EOD, restores most of it. A small difference remains at position 0 even with the EOD visible (0.05 and 0.16 nats in the run shown), and this experiment does not examine it.
 ````
 
 5. **Seeking across mixture phases.** The `StrideSampler` of
