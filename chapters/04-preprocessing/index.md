@@ -126,6 +126,94 @@ A boilerplate remover works from the structure of the page rather than its words
 
 The output of extraction is plain text with paragraph breaks preserved. Whether to keep anything else (headings as Markdown, tables as rows, lists as bullets) is a choice that propagates all the way to the model's output format. Pipelines that aim at code or mathematics keep more structure than pipelines that aim at prose.
 
+Boilerplate detection from shallow text features {cite}`kohlschutter2010boilerplate` works with signals like these, measured per block of the page. The listing below compares a WET-style extraction, which keeps every visible text node, with an extractor that keeps only blocks of at least 15 words whose link density is at most 0.3, on one small news page.
+
+```python
+from html.parser import HTMLParser
+
+PAGE = """<html><head><title>Library approved</title><style>body {font: 12px}</style></head><body>
+<div class="cookie">We use cookies to improve your experience. <a href="/ok">Accept</a> <a href="/more">Learn more</a></div>
+<nav><a href="/">Home</a> | <a href="/news">News</a> | <a href="/sport">Sport</a> | <a href="/login">Log in</a></nav>
+<main><h1>Council approves new library</h1>
+<p>The town council voted on Monday to approve the new library building after months of public
+consultation about its design, location and projected cost.</p>
+<p>Supporters argued that the existing branch had long been too small for the number of residents who
+use it, while opponents asked whether the money would be better spent on <a href="/roads">road repairs</a>.</p>
+<p>Share: <a href="/fb">Facebook</a> <a href="/x">X</a> <a href="/mail">Email</a></p></main>
+<aside><a href="/a">Most read</a> <a href="/b">Weather</a> <a href="/c">Puzzles</a></aside>
+<footer>Copyright 2024 Town News. <a href="/privacy">Privacy</a> <a href="/terms">Terms</a></footer>
+</body></html>"""
+
+BLOCKS = {"p", "div", "h1", "h2", "h3", "li", "nav", "aside", "footer", "main", "title"}
+SKIP = {"script", "style"}
+
+
+class Blocks(HTMLParser):
+    """Collect each block's text and how much of it sits inside links."""
+
+    def __init__(self):
+        super().__init__()
+        self.blocks, self.text, self.link_chars, self.in_link, self.skip = [], [], 0, 0, 0
+
+    def flush(self):
+        text = " ".join("".join(self.text).split())
+        if text:
+            self.blocks.append((text, self.link_chars / len(text)))
+        self.text, self.link_chars = [], 0
+
+    def handle_starttag(self, tag, attrs):
+        self.skip += tag in SKIP
+        self.in_link += tag == "a"
+        if tag in BLOCKS:
+            self.flush()
+
+    def handle_endtag(self, tag):
+        self.skip -= tag in SKIP
+        self.in_link -= tag == "a"
+        if tag in BLOCKS:
+            self.flush()
+
+    def handle_data(self, data):
+        if not self.skip:
+            self.text.append(data)
+            if self.in_link:
+                self.link_chars += len(data.strip())
+
+
+def all_text(html: str) -> str:
+    """WET-style extraction: every visible text node, boilerplate included."""
+    parser = Blocks()
+    parser.feed(html)
+    parser.flush()
+    return "\n".join(text for text, _ in parser.blocks)
+
+
+def main_text(html: str, min_words: int = 15, max_link_density: float = 0.3) -> str:
+    """Keep blocks with enough words and few links: two shallow features of boilerplate detection."""
+    parser = Blocks()
+    parser.feed(html)
+    parser.flush()
+    return "\n".join(t for t, d in parser.blocks if len(t.split()) >= min_words and d <= max_link_density)
+
+
+wet, main = all_text(PAGE), main_text(PAGE)
+print(f"all text: {len(wet.splitlines())} blocks, {len(wet.split())} words")
+print(f"main text: {len(main.splitlines())} blocks, {len(main.split())} words")
+print(main.splitlines()[0][:60])
+assert "Accept" in wet and "Accept" not in main and "Privacy" not in main
+assert "road repairs" in main  # one link inside a paragraph does not make it boilerplate
+```
+
+% output
+
+```text
+all text: 9 blocks, 94 words
+main text: 2 blocks, 56 words
+The town council voted on Monday to approve the new library 
+```
+
+The WET-style text keeps the cookie banner, the menu, the share buttons, the sidebar and the footer; the two-feature extractor keeps the two article paragraphs and nothing else, including the one with a link inside it. It also drops the headline, which is shorter than 15 words. Production extractors such as trafilatura combine many more signals and keep headings, but the trade-off is the same: every threshold that drops more boilerplate also drops some short content.
+
 (sec-ch4-encoding-unicode-normalization)=
 
 ### 2.2 Encoding and Unicode normalization
