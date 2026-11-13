@@ -21,7 +21,11 @@ SYNC_EXEMPT: dict[str, str] = {}  # name -> reason it may differ between the cha
 
 # (chapter regex, notebook-output regex, comparator); each regex has exactly one capture group.
 # Comparator: eq, gt, lt or approx:<rel>, applied as `chapter_value <op> notebook_value`.
-RESULT_CLAIMS: list[tuple[str, str, str]] = []
+RESULT_CLAIMS: list[tuple[str, str, str]] = [
+    (r"accuracy is (0\.\d+) on single words", r"(?<!\d)1 words: accuracy (\d\.\d+)", "approx:0.001"),
+    (r"accuracy is [\d.]+ on single words.{0,80}is (1\.000) from 13 words on",
+     r"(?<!\d)13 words: accuracy (\d\.\d+)", "approx:0.001"),
+]
 
 # regex over a sentence -> one-line reason; such a sentence links a notebook and mentions a number but states
 # no result, so the notebook-link check (rule c of test_notebook_prose.py) does not flag it

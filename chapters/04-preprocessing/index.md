@@ -546,6 +546,16 @@ de: In welcher Sprache ist dieser Satz geschrieben?
 
 Real profiles are built from megabytes of text per language, and real classifiers learn weights for each n-gram rather than using ranks, but the failure modes are the same as the toy's: a document of a few words has too few n-grams to rank, a list of names has no language, and text in Bosnian, Croatian and Serbian shares most of its n-gram profile.
 
+The notebook measures the first of these failure modes for its toy identifier. It cuts 1000 random windows of $n$ words from five labeled documents, identifies each, and records the accuracy and the signed margin $m$ of each identification: the gap between the two smallest profile distances, divided by the second smallest, so that $m = 0$ is a tie and $m = 1$ is certainty, counted as $+m$ when the language is right and $-m$ when it is wrong. {numref}`fig-ch4-langid-windows` shows the result: accuracy is 0.790 on single words, never falls as the window grows and is 1.000 from 13 words on, so a minimum length is a cheap guard. The mean margin does not warn of the errors, because it does not shrink on short windows (single words score as confidently as paragraphs in this toy); only the error rate does, and a pipeline that thresholds on confidence alone would still keep the wrong short texts.
+
+```{figure} figures/langid-windows.*
+:name: fig-ch4-langid-windows
+:alt: Accuracy rises from 0.79 at one word to 1 from 13 words; the mean signed margin stays between 0.13 and 0.25.
+:width: 90%
+
+Accuracy and mean signed margin (the mean of $\pm m$) of the toy identifier against the window length $n$ in words, for 1000 random windows per length (the notebook's measurement, drawn from the same cell). The horizontal axis is logarithmic.
+```
+
 ```{admonition} Normalization and Language Identification
 :class: tip
 The notebook section {ref}`nb-prep-normalize` applies the normalizer to a corpus
@@ -2506,7 +2516,9 @@ prints the per-stage drop report.
 
 ## Exercises
 
-1. **What a length threshold costs.** Gopher drops documents with fewer than 50 words ({ref}`sec-ch4-heuristic-rules`). Suppose, for illustration, that the word counts of crawled documents follow a log-normal distribution with a median of 300 words and a log-scale standard deviation of 1.2. For minimum word counts of 10, 50, 100 and 200, what fraction of documents survives, and what fraction of words? What does the gap between the two tell you about how to choose the threshold?
+The exercises are graded: level 1 applies a definition or runs a given listing, level 2 combines two ideas or writes a short function, level 3 designs an experiment.
+
+1. **What a length threshold costs (level 2).** Gopher drops documents with fewer than 50 words ({ref}`sec-ch4-heuristic-rules`). Suppose, for illustration, that the word counts of crawled documents follow a log-normal distribution with a median of 300 words and a log-scale standard deviation of 1.2. For minimum word counts of 10, 50, 100 and 200, what fraction of documents survives, and what fraction of words? What does the gap between the two tell you about how to choose the threshold?
 
 ````{admonition} Solution 1
 :class: dropdown
@@ -2558,7 +2570,7 @@ min words  documents kept  words kept
 Gopher's threshold of 50 removes 6.8% of the documents but only 0.35% of the words; even a threshold of 200 removes over a third of the documents and only 6.2% of the words. Under any right-skewed length distribution a minimum length is nearly free in tokens, so the retained-fraction curve cannot tell you where to set it. The decision rests on what the rejected short pages are (error pages, captions, product stubs, or short poems and definitions you would want to keep), and only reading a sample of them at each setting answers that.
 ````
 
-2. **Repetition definitions.** The duplicate $n$-gram measure in
+2. **Repetition definitions (level 1).** The duplicate $n$-gram measure in
    {ref}`sec-ch4-repetition-filters` skips ahead by $n$ words after a repeat. A variant
    counts every overlapping window that has been seen before. Compute both versions of
    the duplicate 5-gram fraction for the string `"a b c d e " * 4` and for a 99-word
@@ -2624,7 +2636,7 @@ news: 99 words, 541 characters; skip-ahead 0.087, every window 0.338
 In the loop, the skip-ahead scan meets the passage "abcde" three more times and counts its 5 characters each time: 15 of 40 characters, 0.375. The overlapping scan counts all 11 windows from the sixth word on, each 5 characters long, so 55 characters are counted against a 40-character text: every character after the first passage is counted up to five times, and the fraction exceeds 1. In the news paragraph, the repeated 12-word sentence holds 8 overlapping 5-grams; the skip-ahead scan counts two of them (words 1 to 5 and 6 to 10 of the repeat) and the overlapping scan all eight, so the overlapping value is about four times larger. The skip-ahead version keeps the paragraph (0.087) and the overlapping version drops it (0.338), although one repeated sentence in a short news item is ordinary. The Gopher thresholds were set for the skip-ahead count; the overlapping count would need thresholds several times higher to make the same decisions.
 ````
 
-3. **LSH curve.** With $n_{hash} = 128$, the probability that two documents of Jaccard
+3. **LSH curve (level 2).** With $n_{hash} = 128$, the probability that two documents of Jaccard
    similarity $J$ share at least one LSH bucket is $1 - (1 - J^r)^b$
    ({ref}`sec-ch4-near-duplicate-detection-minhash-lsh`). For
    $(b, r) \in \{(8, 16), (16, 8), (32, 4)\}$, find the similarity at which this
@@ -2698,7 +2710,7 @@ b=32, r= 4: crosses 0.5 at J=0.383; simulated at J=0.383: formula 0.502, observe
 The three settings spend the same 128 hash values on very different thresholds: few long bands (8 by 16) only pair documents that are near-identical, and many short bands (32 by 4) pair documents that share about a third of their shingles. Each observed rate is within the sampling error of the formula, which with 300 trials is about 0.03. The crossing point is a little below the often-quoted approximation $(1/b)^{1/r}$ (0.878, 0.707 and 0.420 for the three settings), which lies close to where the curve is steepest rather than where it reaches 0.5.
 ````
 
-4. **Which copy to keep.** A cluster of near-duplicates, formed by containment and substring matches rather than by resemblance alone, holds four versions of one news
+4. **Which copy to keep (level 2).** A cluster of near-duplicates, formed by containment and substring matches rather than by resemblance alone, holds four versions of one news
    article: (A) the 800-word article followed by a 1,200-word comment thread, crawled on
    2 March; (B) the clean 800-word article, crawled on 3 March; (C) the article with a
    150-word navigation menu, 950 words, crawled on 5 March; and (D) a 300-word
@@ -2733,7 +2745,7 @@ earliest" is the worst choice. Keep the most recent crawl, or the copy whose URL
 the newest version when the site exposes one.
 ```
 
-5. **Phone numbers of the world.** The `PHONE` pattern in {ref}`sec-ch4-personal-data` matches North American numbers. Extend it to UK, German and Indian formats. Test it on nine phone numbers (three UK, three German, two Indian, one North American) and nine distractors (version numbers, ISBNs, timestamps, an IP address, page ranges, an order number and a serial number), each placed in a short sentence, and report recall and precision for the original pattern and the extended one.
+5. **Phone numbers of the world (level 2).** The `PHONE` pattern in {ref}`sec-ch4-personal-data` matches North American numbers. Extend it to UK, German and Indian formats. Test it on nine phone numbers (three UK, three German, two Indian, one North American) and nine distractors (version numbers, ISBNs, timestamps, an IP address, page ranges, an order number and a serial number), each placed in a short sentence, and report recall and precision for the original pattern and the extended one.
 
 ````{admonition} Solution 5
 :class: dropdown
@@ -2807,7 +2819,7 @@ extended: recall 9/9, precision 9/10
 The original pattern finds only the North American number and fires on two bare ten-digit strings. The extended one finds all nine numbers, and its one false match is a ten-digit ISBN that begins with 0, which the German alternative (a leading 0 followed by 5 to 13 digits) cannot tell from a Berlin or Munich number. No pattern over digits alone can: the fix is context, such as skipping a number preceded by "ISBN" or validating the ISBN check digit. On real web text, where version strings and identifiers far outnumber phone numbers, the precision of the German alternative would be lower than this small sample shows, which is why production pipelines pair patterns with context rules or a named-entity model.
 ````
 
-6. **Decontamination by paraphrase.** A benchmark contains the question "Which of the
+6. **Decontamination by paraphrase (level 2).** A benchmark contains the question "Which of the
    following is the best explanation for why the sky appears blue during the day?" Using
    `contamination_index` and `contaminated_fraction` from {ref}`sec-ch4-n-gram-overlap`,
    score four training documents at $n = 13$ and $n = 8$: a verbatim copy, a light
@@ -2903,7 +2915,7 @@ n= 8: verbatim 0.833, paraphrase 0.333, reworded 0.000, innocent 0.222
 At $n = 13$ only the verbatim copy is flagged: the paraphrase keeps eleven consecutive words of the question (the ten words "which of the following is the best explanation for why" and the "the" after them), too few for a 13-gram. At $n = 8$ those eleven words contain four 8-grams, 4 of the paraphrase's 12, hence 0.333, so the paraphrase is caught; so is the innocent sentence, which shares nine consecutive words with the question ("which of the following is the best explanation for"), two of its nine 8-grams, hence 0.222. Shortening $n$ trades missed paraphrases for false positives on stock phrases, and the full rewording is missed at both lengths. This is the trade-off every choice of $n$ makes, and the reason {ref}`sec-ch4-overlap-misses` recommends fresh test sets rather than a shorter $n$.
 ````
 
-7. **Designing a filter ablation.** An unfiltered corpus holds 10 billion tokens and the
+7. **Designing a filter ablation (level 3).** An unfiltered corpus holds 10 billion tokens and the
    repetition filter keeps 82% of them. You will train two small models, one on each
    version, as in {ref}`sec-ch4-measuring-whether-filter-helps`. How many epochs of its
    corpus does each model see at a budget of 2 billion training tokens, and at 20

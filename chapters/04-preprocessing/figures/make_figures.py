@@ -267,6 +267,46 @@ def notebook_cell(tag):
     return namespace
 
 
+def notebook_through(tag):
+    """Execute every notebook code cell up to and including the one tagged `tag`; return the namespace."""
+    cells = json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"]
+    namespace = {"np": np, "plt": plt}
+    show, plt.show = plt.show, (lambda *args, **kwargs: None)
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            for cell in cells:
+                if cell["cell_type"] != "code":
+                    continue
+                source = "".join(cell["source"])
+                exec(compile(source, str(NOTEBOOK), "exec"), namespace)
+                if tag in cell["metadata"].get("tags", []):
+                    return namespace
+    finally:
+        plt.show = show
+        plt.close("all")
+    raise SystemExit(f"no notebook cell is tagged {tag!r}")
+
+
+def langid_windows(out):
+    r = notebook_through("figure:langid-windows")
+    lengths, accuracy, margin = r["lengths"], r["accuracy"], r["mean_margin"]
+    fig, ax = plt.subplots(figsize=(6.4, 3.4))
+    ax.plot(lengths, accuracy, "o-", color=BLUE, lw=1.8, label="accuracy")
+    ax.plot(lengths, margin, "s--", color=ORANGE, lw=1.8, label="mean signed margin")
+    ax.axhline(0, color=GREY, lw=0.8)
+    for x, y in ((lengths[0], accuracy[0]), (lengths[-1], accuracy[-1])):
+        ax.annotate(f"{y:.3g}", (x, y), textcoords="offset points", xytext=(6, -12), fontsize=10, color=BLUE)
+    ax.set_xscale("log")
+    ax.set_xticks(lengths)
+    ax.set_xticklabels([str(n) for n in lengths])
+    ax.minorticks_off()
+    ax.set_ylim(-0.05, 1.08)
+    ax.set_xlabel(f"window length $n$ in words ({r['WINDOWS']} random windows per point)")
+    ax.set_ylabel("accuracy, margin")
+    ax.legend(frameon=False, loc="center right", fontsize=10)
+    save(fig, out, "langid-windows")
+
+
 def lsh_curves(out):
     measured = notebook_cell("figure:lsh-curves")
     j = np.linspace(0, 1, 501)
@@ -376,7 +416,7 @@ def main(out):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     for make in (retention_funnel, page_blocks, unicode_forms, gopher_stats, perplexity_terciles, pareto_keep,
-                 minhash_bands, lsh_curves, dedup_scope, suffix_array):
+                 minhash_bands, langid_windows, lsh_curves, dedup_scope, suffix_array):
         make(out)
 
 
