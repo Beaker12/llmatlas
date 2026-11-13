@@ -1,0 +1,17 @@
+digraph wds_mds {
+  graph [fontname="DejaVu Sans", fontsize=14, nodesep=0.3, ranksep=0.45, pad=0.2];
+  node [fontname="DejaVu Sans", fontsize=14, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=13, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
+  subgraph cluster_wds { label="WebDataset: shard-000000.tar"; style="rounded,filled"; fillcolor="#edf2f7"; color="#4a5568"; fontsize=14;
+    tar [shape=plain, style="", label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" COLOR="#4a5568"><TR><TD BGCOLOR="#dbeafe">000000.txt</TD><TD BGCOLOR="#dbeafe">000000.json</TD><TD BGCOLOR="#fde7cf">000001.txt</TD><TD BGCOLOR="#fde7cf">000001.json</TD><TD>…</TD></TR><TR><TD COLSPAN="5" BORDER="0">tar members in order; read front to back</TD></TR></TABLE>>];
+    wsample [label="sample = consecutive files sharing a key\n{__key__: 000000, txt, json}"];
+    tar -> wsample;
+  }
+  wsample -> index [style=invis];
+  subgraph cluster_mds { label="Mosaic Streaming (MDS): a directory"; style="rounded,filled"; fillcolor="#edf2f7"; color="#4a5568"; fontsize=14;
+    index [shape=note, style=filled, fillcolor="#ffffff", label="index.json (version 2)\lone entry per shard: basename, samples,\lcolumn_names, column_encodings, hashes\l"];
+    shard [shape=plain, style="", label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" COLOR="#4a5568"><TR><TD COLSPAN="5" BORDER="0"><B>shard.00000.mds</B></TD></TR><TR><TD COLSPAN="5" BORDER="0">random access: a sample runs from its offset to the next offset</TD></TR><TR><TD BGCOLOR="#edf2f7">sample count<BR/>uint32</TD><TD BGCOLOR="#edf2f7" PORT="off">offsets<BR/>uint32 × (count + 1)</TD><TD BGCOLOR="#edf2f7">config<BR/>JSON</TD><TD BGCOLOR="#dbeafe" PORT="s0">sample 0</TD><TD BGCOLOR="#fde7cf">sample 1 …</TD></TR></TABLE>>];
+    msample [label="sample = sizes of variable-size columns (uint32)\nthen each column's bytes"];
+    index -> shard [label="lists"];
+    shard:s0:s -> msample;
+  }
+}

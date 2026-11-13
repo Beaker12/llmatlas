@@ -1,0 +1,12 @@
+digraph removal {
+  graph [fontname="DejaVu Sans", fontsize=13, nodesep=0.3, ranksep=0.45, pad=0.2];
+  node [fontname="DejaVu Sans", fontsize=12, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=11, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
+  req [label="Removal request\nopt-out, takedown, privacy,\nlicense: document \"alpha\"", fillcolor="#fde2e2"];
+  locate [label="1. Locate\ndocument index lookup:\n(v1.0, s0), (v1.1, s0)", fillcolor="#dbeafe"];
+  cut [label="2. Cut a new version\nv1.2 without alpha;\nmanifest diff: s0 changed;\nreason recorded", fillcolor="#dbeafe"];
+  lineage [label="3. Record affected models\nlineage graph: every model\ntrained on v1.0 or v1.1", fillcolor="#dbeafe"];
+  policy [label="Policy decision\n(outside the data system)", fillcolor="#edf2f7"];
+  retrain [label="Retrain"]; unlearn [label="Machine unlearning\n(SISA: retrain only the\nconstituent models touched)"]; disclose [label="Disclose"];
+  req -> locate -> cut -> lineage -> policy;
+  policy -> retrain; policy -> unlearn; policy -> disclose;
+}
