@@ -1,0 +1,10 @@
+# The published mixtures of section 1.1, in percent, copied from the table on the chapter page (which cites each
+# paper). GPT-3 and LLaMA 1 are shares of training tokens, The Pile of corpus bytes, Dolma and FineWeb of corpus
+# tokens. Rows are as published and rounded, so they need not sum to exactly 100; for The Pile and Dolma the
+# remainder is sources the table does not place in a column.
+name,web_crawl,curated_web,books,papers,code
+GPT-3,60,25,16,0,0
+The Pile,18,17,15,37,8
+LLaMA 1,82,6.5,4.5,2.5,4.5
+Dolma,80,3,0.2,2.3,13
+FineWeb,100,0,0,0,0

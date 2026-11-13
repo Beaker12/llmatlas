@@ -1,0 +1,21 @@
+digraph snapshot_layout {
+  graph [fontname="DejaVu Sans", fontsize=13, nodesep=0.3, ranksep=0.4, pad=0.2];
+  node [fontname="DejaVu Sans", fontsize=12, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=11, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
+  crawl [label=<<B>crawl-data/CC-MAIN-2026-39/</B><BR/>warc.paths.gz lists all 100,000 WARC files>, fillcolor="#edf2f7"];
+  segments [label=<<B>segments/</B>: 100 segments<BR/>e.g. 1788492699801.50/>, fillcolor="#edf2f7"];
+  warc [label=<<B>warc/</B><BR/>raw request and response<BR/>1,000 files per segment<BR/>about 90 TB per snapshot>, fillcolor="#dbeafe"];
+  wet [label=<<B>wet/</B><BR/>extracted plain text<BR/>about 7 TB>];
+  wat [label=<<B>wat/</B><BR/>JSON metadata, links<BR/>about 16 TB>];
+  file [shape=plain, style="", label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#4a5568">
+    <TR><TD COLSPAN="6" BORDER="0" ALIGN="LEFT"><B>CC-MAIN-20260908083825-20260908113825-00403.warc.gz</B> (about 1 GB): one gzip member per record</TD></TR>
+    <TR><TD BGCOLOR="#f7fafc">warcinfo</TD><TD BGCOLOR="#f7fafc">…</TD><TD BGCOLOR="#f7fafc">request</TD><TD BGCOLOR="#fde7cf" PORT="hit"><B>response</B><BR/>offset 48,374,322<BR/>9,882 bytes</TD><TD BGCOLOR="#f7fafc">metadata</TD><TD BGCOLOR="#f7fafc">…</TD></TR>
+  </TABLE>>];
+  index [label=<<B>URL index line</B> (cc-index, CDX)<BR/>0,11,214,3)/galleries/… 20260908100030<BR/>"filename": …-00403.warc.gz<BR/>"offset": "48374322", "length": "9882">, fillcolor="#dcfce7"];
+  get [label=<GET the file with<BR/>Range: bytes=48374322-48384203<BR/>then gunzip one member>, fillcolor="#dcfce7"];
+  crawl -> segments;
+  segments -> warc; segments -> wet; segments -> wat;
+  warc -> file:n;
+  index -> get;
+  get -> file:hit:n [label=" one record,\n decompressed alone"];
+  {rank=same; warc; wet; wat; index}
+}
