@@ -16,6 +16,7 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\alpha_C$ | Kaplan's compute exponent (written $\alpha_C^{\min}$) | index.md:L416 |  |
 | $D_{KL}$ | Kullback-Leibler divergence | index.md:L110 |  |
 | $\delta$ | Kronecker delta | index.md:L56 | the one-hot target $y$ at L58 is written $\delta_{j x_i}$ |
+| $\delta_{jx_i}$ | the one-hot target: the Kronecker delta at the target token, 1 when $j = x_i$ and 0 otherwise (`tools/list_symbols.py` keeps the subscript because $x_i$ is not a running index) | index.md, sec-ch2-softmax-jacobian |  |
 | $\eta$ | learning rate ($\eta_t$ at step $t$) | index.md:L172 |  |
 | $\eta_{\max}$ | peak learning rate | index.md:L206 |  |
 | $\eta_{\min}$ | final learning rate | index.md:L217 |  |

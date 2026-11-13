@@ -57,7 +57,7 @@ Everything a transformer does is a sequence of matrix products followed by simpl
 
 ### 0.1 A matrix is a map between spaces
 
-A weight matrix $W \in \mathbb{R}^{d_{\text{in}} \times d_{\text{out}}}$ turns a row vector $x \in \mathbb{R}^{d_{\text{in}}}$ into $xW \in \mathbb{R}^{d_{\text{out}}}$. Stacking $n$ inputs as the rows of $X \in \mathbb{R}^{n \times d_{\text{in}}}$ applies the same map to all of them at once, $XW$, which is why a batch of tokens costs one matrix product rather than $n$ separate ones. A query-key score matrix $QK^T \in \mathbb{R}^{n \times n}$ is the table of all pairwise dot products $q_i \cdot k_j$; the $\sqrt{d_k}$ scaling keeps those dot products at unit variance when $q$ and $k$ have unit-variance entries, since a sum of $d_k$ such products has variance $d_k$.
+A weight matrix $W \in \mathbb{R}^{d_{\text{in}} \times d_{\text{out}}}$ turns a row vector $x \in \mathbb{R}^{d_{\text{in}}}$ into $xW \in \mathbb{R}^{d_{\text{out}}}$. Stacking $n$ inputs as the rows of $X \in \mathbb{R}^{n \times d_{\text{in}}}$ applies the same map to all of them at once, $XW$, which is why a batch of tokens costs one matrix product rather than $n$ separate ones. A query-key score matrix $QK^\top \in \mathbb{R}^{n \times n}$ is the table of all pairwise dot products $q_i \cdot k_j$; the $\sqrt{d_k}$ scaling keeps those dot products at unit variance when $q$ and $k$ have unit-variance entries, since a sum of $d_k$ such products has variance $d_k$.
 
 (sec-ch2-softmax-jacobian)=
 
@@ -67,7 +67,7 @@ For $p = \mathrm{softmax}(z)$, $p_i = e^{z_i}/\sum_j e^{z_j}$,
 
 $$\frac{\partial p_i}{\partial z_j} = p_i(\delta_{ij} - p_j), \qquad \text{so for an upstream gradient } g: \quad \frac{\partial \mathcal{L}}{\partial z} = p \odot \left(g - \langle g, p\rangle \mathbf{1}\right)$$
 
-This is the identity behind the attention gradient in Section 3.3 and behind cross-entropy's gradient $p - y$ (take $g = -y/p$ for a one-hot target $y$). It also explains saturation: if one $p_i \approx 1$ then every factor $p_i(\delta_{ij} - p_j)$ is near zero, and no gradient flows through that softmax.
+This is the identity behind the attention gradient in Section 3.3 and behind cross-entropy's gradient $p_j - \delta_{j x_i}$ (take $g_j = -\delta_{j x_i}/p_j$ for the target token $x_i$). It also explains saturation: if one $p_i \approx 1$ then every factor $p_i(\delta_{ij} - p_j)$ is near zero, and no gradient flows through that softmax.
 
 (sec-ch2-norms-conditioning-scale-matters)=
 
@@ -91,7 +91,7 @@ Language modeling is fundamentally a probabilistic task—predicting the likelih
 
 Given a vocabulary $\mathcal{V}$ and sequence $x = (x_1, x_2, ..., x_n)$, language models estimate:
 
-$$P(x) = \prod_{i=1}^{n} P(x_i | x_{<i})$$
+$$p(x) = \prod_{i=1}^{n} p(x_i \mid x_{<i})$$
 
 This autoregressive factorization enables tractable modeling of exponentially large sequence spaces.
 
@@ -99,13 +99,13 @@ This autoregressive factorization enables tractable modeling of exponentially la
 
 #### Cross-Entropy Loss
 
-The standard training objective minimizes cross-entropy between the true data distribution $P_{\text{data}}$ and model distribution $P_{\theta}$:
+The standard training objective minimizes cross-entropy between the true data distribution $p_{\text{data}}$ and model distribution $p_{\theta}$:
 
-$$\mathcal{L}(\theta) = -\mathbb{E}_{x \sim P_{\text{data}}}[\log P_{\theta}(x)]$$
+$$\mathcal{L}(\theta) = -\mathbb{E}_{x \sim p_{\text{data}}}[\log p_{\theta}(x)]$$
 
-For discrete sequences, this becomes:
+Over a training corpus of $T$ tokens, this becomes:
 
-$$\mathcal{L}(\theta) = -\frac{1}{N} \sum_{i=1}^{N} \log P_{\theta}(x_i | x_{<i})$$
+$$\mathcal{L}(\theta) = -\frac{1}{T} \sum_{i=1}^{T} \log p_{\theta}(x_i \mid x_{<i})$$
 
 Cross-entropy loss has favorable properties: it's convex in the output probabilities and provides strong gradients for incorrect predictions {cite}`murphy2012machine`.
 
@@ -119,7 +119,7 @@ Cross-entropy loss has favorable properties: it's convex in the output probabili
 
 **Shannon entropy** quantifies the uncertainty in a probability distribution:
 
-$$H(X) = -\sum_{x} P(x) \log P(x)$$
+$$H(p) = -\sum_{x} p(x) \log p(x)$$
 
 Using $\log_2$ gives entropy in bits; the natural logarithm gives nats. The code in this chapter uses natural logarithms, so its values are in nats.
 
@@ -129,13 +129,13 @@ For language, entropy measures the average information content per symbol. Shann
 
 #### Cross-Entropy and KL Divergence
 
-**Cross-entropy** between distributions $P$ and $Q$ measures the average number of bits needed to encode data from $P$ using code optimized for $Q$:
+**Cross-entropy** between distributions $p$ and $q$ measures the average number of bits needed to encode data from $p$ using code optimized for $q$:
 
-$$H(P, Q) = -\sum_{x} P(x) \log Q(x)$$
+$$H(p, q) = -\sum_{x} p(x) \log q(x)$$
 
 **Kullback-Leibler (KL) divergence** measures the difference between distributions:
 
-$$D_{KL}(P || Q) = \sum_{x} P(x) \log \frac{P(x)}{Q(x)} = H(P, Q) - H(P)$$
+$$D_{KL}(p \,\|\, q) = \sum_{x} p(x) \log \frac{p(x)}{q(x)} = H(p, q) - H(p)$$
 
 Minimizing cross-entropy loss is equivalent to minimizing KL divergence between data and model distributions.
 
@@ -145,7 +145,7 @@ Minimizing cross-entropy loss is equivalent to minimizing KL divergence between 
 
 **Mutual information** measures the amount of information shared between variables:
 
-$$I(X; Y) = \sum_{x,y} P(x,y) \log \frac{P(x,y)}{P(x)P(y)}$$
+$$I(\mathrm{X}; \mathrm{Y}) = \sum_{x,y} p(x,y) \log \frac{p(x,y)}{p(x)\,p(y)}$$
 
 Mutual information is the quantity that language modeling implicitly exploits: a context that shares a lot of information with the next token makes that token predictable.
 
@@ -217,10 +217,10 @@ where $\eta$ is the learning rate and $\nabla_\theta \mathcal{L}$ is the gradien
 
 Momentum accelerates optimization by accumulating gradients:
 
-$$v_{t+1} = \beta v_t + \nabla_\theta \mathcal{L}(\theta_t)$$
-$$\theta_{t+1} = \theta_t - \eta v_{t+1}$$
+$$u_{t+1} = \beta_{\text{mom}} u_t + \nabla_\theta \mathcal{L}(\theta_t)$$
+$$\theta_{t+1} = \theta_t - \eta u_{t+1}$$
 
-The momentum parameter $\beta$ (typically 0.9) controls how much previous gradients influence the current update {cite}`polyak1964some`.
+The momentum coefficient $\beta_{\text{mom}}$ (typically 0.9) controls how much previous gradients influence the current update {cite}`polyak1964some`.
 
 (sec-ch2-adam-optimizer)=
 
@@ -250,7 +250,7 @@ Effective training requires careful learning rate management:
 Many LLM training schedules use linear warmup followed by decay:
 
 $$\eta_t = \begin{cases}
-\eta_{\max} \cdot \frac{t+1}{T_{\text{warmup}}} & \text{if } t < T_{\text{warmup}} \\
+\eta_{\max} \cdot \frac{t+1}{t_{\text{warm}}} & \text{if } t < t_{\text{warm}} \\
 \eta_{\max} \cdot \text{decay}(t) & \text{otherwise}
 \end{cases}$$
 
@@ -262,7 +262,7 @@ Warmup prevents large gradient updates early in training when parameters are ran
 
 Cosine schedules provide smooth learning rate decay:
 
-$$\eta_t = \eta_{\min} + \frac{1}{2}(\eta_{\max} - \eta_{\min})\left(1 + \cos\left(\frac{t - T_{\text{warmup}}}{T_{\max} - T_{\text{warmup}}} \pi\right)\right)$$
+$$\eta_t = \eta_{\min} + \frac{1}{2}(\eta_{\max} - \eta_{\min})\left(1 + \cos\left(\frac{t - t_{\text{warm}}}{t_{\text{end}} - t_{\text{warm}}} \pi\right)\right)$$
 
 (sec-ch2-gradient-clipping)=
 
@@ -270,9 +270,9 @@ $$\eta_t = \eta_{\min} + \frac{1}{2}(\eta_{\max} - \eta_{\min})\left(1 + \cos\le
 
 Large language models are susceptible to exploding gradients. **Gradient clipping** prevents this by rescaling gradients:
 
-$$g_{\text{clipped}} = \min\left(1, \frac{\tau}{\|g\|}\right) g$$
+$$g_{\text{clipped}} = \min\left(1, \frac{g_{\max}}{\|g\|}\right) g$$
 
-where $\tau$ is the clipping threshold (typically 1.0) {cite}`pascanu2013difficulty`.
+where $g_{\max}$ is the clipping threshold (typically 1.0) {cite}`pascanu2013difficulty`.
 
 ```python
 import math
@@ -349,9 +349,9 @@ Understanding how gradients flow through transformer architectures reveals why c
 
 In deep networks, gradients can become exponentially small:
 
-$$\frac{\partial \mathcal{L}}{\partial \theta_1} = \frac{\partial \mathcal{L}}{\partial h_L} \prod_{l=2}^{L} \frac{\partial h_l}{\partial h_{l-1}} \frac{\partial h_1}{\partial \theta_1}$$
+$$\frac{\partial \mathcal{L}}{\partial \theta^{(1)}} = \frac{\partial \mathcal{L}}{\partial h^{(L)}} \prod_{l=2}^{L} \frac{\partial h^{(l)}}{\partial h^{(l-1)}} \frac{\partial h^{(1)}}{\partial \theta^{(1)}}$$
 
-If $\left\|\frac{\partial h_l}{\partial h_{l-1}}\right\| < 1$, gradients vanish as depth increases.
+If $\left\|\frac{\partial h^{(l)}}{\partial h^{(l-1)}}\right\| < 1$, gradients vanish as depth increases.
 
 (sec-ch2-pre-post-ln)=
 
@@ -359,11 +359,11 @@ If $\left\|\frac{\partial h_l}{\partial h_{l-1}}\right\| < 1$, gradients vanish 
 
 Residual connections provide direct gradient pathways:
 
-$$h_{l+1} = h_l + F(h_l)$$
+$$h^{(l+1)} = h^{(l)} + F(h^{(l)})$$
 
 The gradient becomes:
 
-$$\frac{\partial h_{l+1}}{\partial h_l} = I + \frac{\partial F(h_l)}{\partial h_l}$$
+$$\frac{\partial h^{(l+1)}}{\partial h^{(l)}} = I + \frac{\partial F(h^{(l)})}{\partial h^{(l)}}$$
 
 The identity term gives every layer a direct path for the gradient, so a deep stack no longer multiplies a long chain of possibly small Jacobians {cite}`he2016deep`. It does not by itself bound the gradient's magnitude: where normalization sits relative to the residual branch matters, and the original post-LN transformer needs learning-rate warm-up precisely because its gradients at initialization are not well behaved, which is why most later models normalize before each sublayer (pre-LN) {cite}`xiong2020layer`.
 
@@ -382,9 +382,9 @@ where:
 
 The gradients with respect to inputs are:
 
-$$\frac{\partial \mathcal{L}}{\partial x_i} = \frac{1}{\sigma}\left(g_i - \frac{1}{d}\sum_j g_j - \hat{x}_i \frac{1}{d}\sum_j g_j \hat{x}_j\right)$$
+$$\frac{\partial \mathcal{L}}{\partial x_i} = \frac{1}{\sigma}\left(\tilde{g}_i - \frac{1}{d}\sum_j \tilde{g}_j - \hat{x}_i \frac{1}{d}\sum_j \tilde{g}_j \hat{x}_j\right)$$
 
-where $g_j = \gamma_j \frac{\partial \mathcal{L}}{\partial y_j}$ carries the per-feature scale and $\hat{x}_j = (x_j-\mu)/\sigma$ is the normalized input.
+where $\tilde{g}_j = \gamma_j \frac{\partial \mathcal{L}}{\partial y_j}$ carries the per-feature scale and $\hat{x}_j = (x_j-\mu)/\sigma$ is the normalized input.
 
 Layer normalization provides more stable gradients than batch normalization in sequence models.
 
@@ -396,17 +396,17 @@ The attention mechanism's gradients reveal how learning occurs:
 
 For scaled dot-product attention write the scores, weights and output as
 
-$$S = QK^T/\sqrt{d_k}, \qquad P = \mathrm{softmax}(S), \qquad O = PV$$
+$$S = QK^\top/\sqrt{d_k}, \qquad A = \mathrm{softmax}(S), \qquad O = AV$$
 
-Given the upstream gradient $\frac{\partial \mathcal{L}}{\partial O}$, let $G = \frac{\partial \mathcal{L}}{\partial O} V^T$ be the gradient with respect to the weights $P$. Backpropagating through the row-wise softmax gives
+Given the upstream gradient $\frac{\partial \mathcal{L}}{\partial O}$, let $G = \frac{\partial \mathcal{L}}{\partial O} V^\top$ be the gradient with respect to the weights $A$. Backpropagating through the row-wise softmax gives
 
-$$\frac{\partial \mathcal{L}}{\partial S} = P \odot \left(G - (G \odot P)\mathbf{1}\mathbf{1}^T\right)$$
+$$\frac{\partial \mathcal{L}}{\partial S} = A \odot \left(G - (G \odot A)\mathbf{1}\mathbf{1}^\top\right)$$
 
-where $(G \odot P)\mathbf{1}\mathbf{1}^T$ broadcasts each row's sum of $G \odot P$ across that row. The gradients with respect to the three inputs are then
+where $(G \odot A)\mathbf{1}\mathbf{1}^\top$ broadcasts each row's sum of $G \odot A$ across that row. The gradients with respect to the three inputs are then
 
-$$\frac{\partial \mathcal{L}}{\partial Q} = \frac{1}{\sqrt{d_k}}\frac{\partial \mathcal{L}}{\partial S} K, \qquad \frac{\partial \mathcal{L}}{\partial K} = \frac{1}{\sqrt{d_k}}\left(\frac{\partial \mathcal{L}}{\partial S}\right)^T Q, \qquad \frac{\partial \mathcal{L}}{\partial V} = P^T \frac{\partial \mathcal{L}}{\partial O}$$
+$$\frac{\partial \mathcal{L}}{\partial Q} = \frac{1}{\sqrt{d_k}}\frac{\partial \mathcal{L}}{\partial S} K, \qquad \frac{\partial \mathcal{L}}{\partial K} = \frac{1}{\sqrt{d_k}}\left(\frac{\partial \mathcal{L}}{\partial S}\right)^\top Q, \qquad \frac{\partial \mathcal{L}}{\partial V} = A^\top \frac{\partial \mathcal{L}}{\partial O}$$
 
-The $P \odot (\cdot)$ factor is why saturated attention (one weight near 1) passes almost no gradient to the other positions; it is also the reason for the $\sqrt{d_k}$ scaling.
+The $A \odot (\cdot)$ factor is why saturated attention (one weight near 1) passes almost no gradient to the other positions; it is also the reason for the $\sqrt{d_k}$ scaling.
 
 ```python
 import numpy as np
@@ -463,9 +463,9 @@ Empirical observations reveal predictable relationships between model size, comp
 
 #### Parameter Scaling
 
-The relationship between model parameters $N$ and loss $L$ follows a power law {cite}`kaplan2020scaling`:
+The relationship between model parameters $N$ and loss $\mathcal{L}$ follows a power law {cite}`kaplan2020scaling`:
 
-$$L(N) = \left(\frac{N_c}{N}\right)^{\alpha_N}$$
+$$\mathcal{L}(N) = \left(\frac{N_c}{N}\right)^{\alpha_N}$$
 
 where $N$ counts non-embedding parameters, $N_c \approx 8.8 \times 10^{13}$ is a fitted scale and $\alpha_N \approx 0.076$ for language modeling.
 
@@ -475,7 +475,7 @@ where $N$ counts non-embedding parameters, $N_c \approx 8.8 \times 10^{13}$ is a
 
 Similarly, performance improves with dataset size $D$:
 
-$$L(D) = \left(\frac{D_c}{D}\right)^{\alpha_D}$$
+$$\mathcal{L}(D) = \left(\frac{D_c}{D}\right)^{\alpha_D}$$
 
 with $\alpha_D \approx 0.095$.
 
@@ -485,7 +485,7 @@ with $\alpha_D \approx 0.095$.
 
 Training compute also follows a power law. On the compute-efficient frontier (the best loss reachable with a given budget), Kaplan et al. report
 
-$$L(C_{\min}) = \left(\frac{C_c^{\min}}{C_{\min}}\right)^{\alpha_C^{\min}}, \qquad C_c^{\min} \approx 3.1 \times 10^{8}\ \text{PF-days},\quad \alpha_C^{\min} \approx 0.050$$
+$$\mathcal{L}(C_{\min}) = \left(\frac{C_c^{\min}}{C_{\min}}\right)^{\alpha_C^{\min}}, \qquad C_c^{\min} \approx 3.1 \times 10^{8}\ \text{PF-days},\quad \alpha_C^{\min} \approx 0.050$$
 
 where compute is measured in petaflop/s-days (one PF-day is $8.64 \times 10^{19}$ FLOPs).
 
@@ -497,9 +497,9 @@ Recent work {cite}`hoffmann2022training` refined scaling laws to find **compute-
 
 For a given compute budget $C$, the optimal model size $N^*$ and dataset size $D^*$ satisfy:
 
-$$N^* \propto C^a, \quad D^* \propto C^b$$
+$$N^* \propto C^{a_N}, \quad D^* \propto C^{a_D}$$
 
-where $a \approx 0.50$ and $b \approx 0.50$, suggesting equal scaling of parameters and data.
+where $a_N \approx 0.50$ and $a_D \approx 0.50$, suggesting equal scaling of parameters and data.
 
 (sec-ch2-training-implications)=
 
@@ -515,11 +515,11 @@ Chinchilla scaling implies that many large models are "undertrained"—better pe
 
 #### Training Complexity
 
-Training a transformer requires $O(n \cdot d^2 + n^2 \cdot d)$ operations per layer:
+Training a transformer requires $\mathcal{O}(n \cdot d^2 + n^2 \cdot d)$ operations per layer:
 
-- $O(n \cdot d^2)$: the four attention projections (Q, K, V, output), $4nd^2$ multiply-adds
-- $O(n \cdot d^2)$: the feed-forward network with a $4d$ hidden width, $8nd^2$ multiply-adds, about two thirds of the linear-layer cost
-- $O(n^2 \cdot d)$: the attention scores and their application to the values
+- $\mathcal{O}(n \cdot d^2)$: the four attention projections (Q, K, V, output), $4nd^2$ multiply-adds
+- $\mathcal{O}(n \cdot d^2)$: the feed-forward network with a $4d$ hidden width, $8nd^2$ multiply-adds, about two thirds of the linear-layer cost
+- $\mathcal{O}(n^2 \cdot d)$: the attention scores and their application to the values
 
 For long sequences, attention dominates; for large models, linear layers dominate.
 
@@ -529,8 +529,8 @@ For long sequences, attention dominates; for large models, linear layers dominat
 
 Memory usage includes:
 
-- **Parameters**: $\approx 12 L d^2 + V d$ where $L$ is the number of layers (each layer holds $4d^2$ attention and $8d^2$ feed-forward weights) and $V d$ is the embedding table
-- **Activations**: $O(B \cdot n \cdot d \cdot L)$ for the residual stream, plus the $O(B \cdot h \cdot n^2 \cdot L)$ attention scores and the $4d$-wide feed-forward intermediates, where $B$ is batch size and $h$ the number of heads; without recomputation each layer stores about $B\,n\,d\,(34 + 5\,h\,n/d)$ bytes {cite}`korthikanti2022reducing`
+- **Parameters**: $\approx 12 L d^2 + |\mathcal{V}| d$ where $L$ is the number of layers (each layer holds $4d^2$ attention and $8d^2$ feed-forward weights) and $|\mathcal{V}| d$ is the embedding table
+- **Activations**: $\mathcal{O}(B \cdot n \cdot d \cdot L)$ for the residual stream, plus the $\mathcal{O}(B \cdot n_h \cdot n^2 \cdot L)$ attention scores and the $4d$-wide feed-forward intermediates, where $B$ is batch size and $n_h$ the number of heads; without recomputation each layer stores about $B\,n\,d\,(34 + 5\,n_h\,n/d)$ bytes {cite}`korthikanti2022reducing`
 - **Optimizer and gradient state**: with mixed precision and Adam, each parameter costs about 16 bytes in total: a 2-byte weight, a 2-byte gradient, a 4-byte fp32 master copy and two 4-byte Adam moments
 
 ```python
@@ -598,9 +598,9 @@ Training large models requires careful attention to numerical precision:
 
 To prevent gradient underflow in FP16, gradients are scaled up during backpropagation and scaled down before parameter updates:
 
-$$\mathrm{loss}_{\text{scaled}} = \mathrm{loss} \times s$$
+$$\mathrm{loss}_{\text{scaled}} = \mathrm{loss} \times \zeta$$
 
-where $s$ is the scale factor.
+where $\zeta$ is the scale factor.
 
 Dynamic loss scaling adjusts the scale factor to maximize gradient precision without overflow.
 
@@ -620,9 +620,9 @@ Proper initialization is crucial for stable training:
 
 #### Xavier/Glorot Initialization
 
-For layers with $n_{\text{in}}$ inputs and $n_{\text{out}}$ outputs:
+For layers with $d_{\text{in}}$ inputs and $d_{\text{out}}$ outputs:
 
-$$W \sim \mathcal{N}\left(0, \frac{2}{n_{\text{in}} + n_{\text{out}}}\right)$$
+$$W \sim \mathcal{N}\left(0, \frac{2}{d_{\text{in}} + d_{\text{out}}}\right)$$
 
 (sec-ch2-he-initialization)=
 
@@ -630,7 +630,7 @@ $$W \sim \mathcal{N}\left(0, \frac{2}{n_{\text{in}} + n_{\text{out}}}\right)$$
 
 For ReLU activations:
 
-$$W \sim \mathcal{N}\left(0, \frac{2}{n_{\text{in}}}\right)$$
+$$W \sim \mathcal{N}\left(0, \frac{2}{d_{\text{in}}}\right)$$
 
 (sec-ch2-residual-init)=
 
