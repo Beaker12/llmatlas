@@ -7,11 +7,6 @@ digraph removal {
   lineage [label="3. Record affected models\nlineage graph: every model\ntrained on v1.0 or v1.1", fillcolor="#dbeafe"];
   policy [label="Policy decision\n(outside the data system)", fillcolor="#edf2f7"];
   retrain [label="Retrain"]; unlearn [label="Machine unlearning\n(SISA: retrain only the\nconstituent models touched)"]; disclose [label="Disclose"];
-  req -> locate -> cut;
-  cut -> lineage [constraint=false];
-  lineage -> policy;
-  {rank=same; req; lineage}
-  {rank=same; locate; policy}
-  {rank=same; cut; retrain; unlearn; disclose}
+  req -> locate -> cut -> lineage -> policy;
   policy -> retrain; policy -> unlearn; policy -> disclose;
 }

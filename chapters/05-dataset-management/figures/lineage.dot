@@ -4,7 +4,7 @@ digraph lineage {
     sources [label="Sources\ncrawl snapshots, dumps,\nrepositories", fillcolor="#dbeafe"];
     corpus [label="Processed corpus v1.0\ndocument shards + manifest\nidentified by its root hash", fillcolor="#dbeafe"];
     tokenized [label="Tokenized build\ntoken arrays + offsets", fillcolor="#dcfce7"];
-    stream [label="Training stream\nbatches for steps 1 … N", fillcolor="#fde7cf"];
+    stream [label=<Training stream<BR/>batches for steps 1 … <I>t</I><SUB>end</SUB>>, fillcolor="#fde7cf"];
   key [shape=plain, style="", label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" COLOR="#4a5568"><TR><TD BGCOLOR="#dbeafe">versioned and stored</TD></TR><TR><TD BGCOLOR="#dcfce7">derived, rebuilt on demand</TD></TR><TR><TD BGCOLOR="#fde7cf">recomputed, never stored</TD></TR></TABLE>>];
   key -> model [style=invis];
   model [label="Model checkpoint", fillcolor="#edf2f7"];

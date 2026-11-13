@@ -50,30 +50,32 @@
 <!-- stream -->
 <g id="node4" class="node">
 <title>stream</title>
-<path fill="#fde7cf" stroke="#4a5568" stroke-width="1.3" d="M516.4,-64.8C516.4,-64.8 353.85,-64.8 353.85,-64.8 347.85,-64.8 341.85,-58.8 341.85,-52.8 341.85,-52.8 341.85,-19.2 341.85,-19.2 341.85,-13.2 347.85,-7.2 353.85,-7.2 353.85,-7.2 516.4,-7.2 516.4,-7.2 522.4,-7.2 528.4,-13.2 528.4,-19.2 528.4,-19.2 528.4,-52.8 528.4,-52.8 528.4,-58.8 522.4,-64.8 516.4,-64.8"/>
-<text xml:space="preserve" text-anchor="middle" x="435.13" y="-39.6" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">Training stream</text>
-<text xml:space="preserve" text-anchor="middle" x="435.13" y="-25.2" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">batches for steps 1 … N</text>
+<path fill="#fde7cf" stroke="#4a5568" stroke-width="1.3" d="M523.57,-62.4C523.57,-62.4 342.69,-62.4 342.69,-62.4 336.69,-62.4 330.69,-56.4 330.69,-50.4 330.69,-50.4 330.69,-21.6 330.69,-21.6 330.69,-15.6 336.69,-9.6 342.69,-9.6 342.69,-9.6 523.57,-9.6 523.57,-9.6 529.57,-9.6 535.57,-15.6 535.57,-21.6 535.57,-21.6 535.57,-50.4 535.57,-50.4 535.57,-56.4 529.57,-62.4 523.57,-62.4"/>
+<text xml:space="preserve" text-anchor="start" x="385.51" y="-38.2" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">Training stream</text>
+<text xml:space="preserve" text-anchor="start" x="352.29" y="-26.2" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">batches for steps 1 … </text>
+<text xml:space="preserve" text-anchor="start" x="486.66" y="-26.2" font-family="DejaVu Sans" font-style="italic" font-size="12.00" fill="#1a202c">t</text>
+<text xml:space="preserve" text-anchor="start" x="491.36" y="-26.2" font-family="DejaVu Sans" baseline-shift="sub" font-size="12.00" fill="#1a202c">end</text>
 </g>
 <!-- tokenized&#45;&gt;stream -->
 <g id="edge5" class="edge">
 <title>tokenized&#45;&gt;stream</title>
-<path fill="none" stroke="#4a5568" stroke-width="1.2" d="M405.98,-156.81C411.72,-133.23 419.95,-99.41 426.2,-73.71"/>
-<polygon fill="#4a5568" stroke="#4a5568" stroke-width="1.2" points="428.53,-74.48 427.81,-67.1 423.77,-73.32 428.53,-74.48"/>
-<text xml:space="preserve" text-anchor="middle" x="448.81" y="-112.5" font-family="DejaVu Sans" font-size="11.00" fill="#1a202c">pack, mix,</text>
-<text xml:space="preserve" text-anchor="middle" x="448.81" y="-99.3" font-family="DejaVu Sans" font-size="11.00" fill="#1a202c">shuffle</text>
+<path fill="none" stroke="#4a5568" stroke-width="1.2" d="M405.6,-156.81C411.21,-132.4 419.34,-97.02 425.31,-71.03"/>
+<polygon fill="#4a5568" stroke="#4a5568" stroke-width="1.2" points="427.66,-71.75 426.84,-64.38 422.88,-70.65 427.66,-71.75"/>
+<text xml:space="preserve" text-anchor="middle" x="447.63" y="-112.5" font-family="DejaVu Sans" font-size="11.00" fill="#1a202c">pack, mix,</text>
+<text xml:space="preserve" text-anchor="middle" x="447.63" y="-99.3" font-family="DejaVu Sans" font-size="11.00" fill="#1a202c">shuffle</text>
 </g>
 <!-- model -->
 <g id="node6" class="node">
 <title>model</title>
-<path fill="#edf2f7" stroke="#4a5568" stroke-width="1.3" d="M799.52,-57.6C799.52,-57.6 674.74,-57.6 674.74,-57.6 668.74,-57.6 662.74,-51.6 662.74,-45.6 662.74,-45.6 662.74,-26.4 662.74,-26.4 662.74,-20.4 668.74,-14.4 674.74,-14.4 674.74,-14.4 799.52,-14.4 799.52,-14.4 805.52,-14.4 811.52,-20.4 811.52,-26.4 811.52,-26.4 811.52,-45.6 811.52,-45.6 811.52,-51.6 805.52,-57.6 799.52,-57.6"/>
-<text xml:space="preserve" text-anchor="middle" x="737.13" y="-32.4" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">Model checkpoint</text>
+<path fill="#edf2f7" stroke="#4a5568" stroke-width="1.3" d="M802.52,-57.6C802.52,-57.6 677.74,-57.6 677.74,-57.6 671.74,-57.6 665.74,-51.6 665.74,-45.6 665.74,-45.6 665.74,-26.4 665.74,-26.4 665.74,-20.4 671.74,-14.4 677.74,-14.4 677.74,-14.4 802.52,-14.4 802.52,-14.4 808.52,-14.4 814.52,-20.4 814.52,-26.4 814.52,-26.4 814.52,-45.6 814.52,-45.6 814.52,-51.6 808.52,-57.6 802.52,-57.6"/>
+<text xml:space="preserve" text-anchor="middle" x="740.13" y="-32.4" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">Model checkpoint</text>
 </g>
 <!-- stream&#45;&gt;model -->
 <g id="edge7" class="edge">
 <title>stream&#45;&gt;model</title>
-<path fill="none" stroke="#4a5568" stroke-width="1.2" d="M529.03,-36C568.95,-36 615.12,-36 653.81,-36"/>
-<polygon fill="#4a5568" stroke="#4a5568" stroke-width="1.2" points="653.64,-38.45 660.64,-36 653.64,-33.55 653.64,-38.45"/>
-<text xml:space="preserve" text-anchor="middle" x="595.57" y="-42.3" font-family="DejaVu Sans" font-size="11.00" fill="#1a202c">train</text>
+<path fill="none" stroke="#4a5568" stroke-width="1.2" d="M536.21,-36C575.4,-36 619.52,-36 656.67,-36"/>
+<polygon fill="#4a5568" stroke="#4a5568" stroke-width="1.2" points="656.65,-38.45 663.65,-36 656.65,-33.55 656.65,-38.45"/>
+<text xml:space="preserve" text-anchor="middle" x="600.65" y="-42.3" font-family="DejaVu Sans" font-size="11.00" fill="#1a202c">train</text>
 </g>
 <!-- key -->
 <g id="node5" class="node">
@@ -107,18 +109,18 @@
 <!-- cfg -->
 <g id="node8" class="node">
 <title>cfg</title>
-<polygon fill="#ffffff" stroke="#4a5568" stroke-width="1.3" points="272.39,-72 135.87,-72 135.87,0 278.39,0 278.39,-66 272.39,-72"/>
-<polyline fill="none" stroke="#4a5568" stroke-width="1.3" points="272.39,-72 272.39,-66"/>
-<polyline fill="none" stroke="#4a5568" stroke-width="1.3" points="278.39,-66 272.39,-66"/>
-<text xml:space="preserve" text-anchor="middle" x="207.13" y="-46.8" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">Packing method</text>
-<text xml:space="preserve" text-anchor="middle" x="207.13" y="-32.4" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">mixture weights</text>
-<text xml:space="preserve" text-anchor="middle" x="207.13" y="-18" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">data seed, steps</text>
+<polygon fill="#ffffff" stroke="#4a5568" stroke-width="1.3" points="261.39,-72 124.87,-72 124.87,0 267.39,0 267.39,-66 261.39,-72"/>
+<polyline fill="none" stroke="#4a5568" stroke-width="1.3" points="261.39,-72 261.39,-66"/>
+<polyline fill="none" stroke="#4a5568" stroke-width="1.3" points="267.39,-66 261.39,-66"/>
+<text xml:space="preserve" text-anchor="middle" x="196.13" y="-46.8" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">Packing method</text>
+<text xml:space="preserve" text-anchor="middle" x="196.13" y="-32.4" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">mixture weights</text>
+<text xml:space="preserve" text-anchor="middle" x="196.13" y="-18" font-family="DejaVu Sans" font-size="12.00" fill="#1a202c">data seed, steps</text>
 </g>
 <!-- cfg&#45;&gt;stream -->
 <g id="edge6" class="edge">
 <title>cfg&#45;&gt;stream</title>
-<path fill="none" stroke="#4a5568" stroke-width="1.2" d="M278.82,-36C296.75,-36 314.68,-36 332.61,-36"/>
-<polygon fill="#4a5568" stroke="#4a5568" stroke-width="1.2" points="332.59,-38.45 339.59,-36 332.59,-33.55 332.59,-38.45"/>
+<path fill="none" stroke="#4a5568" stroke-width="1.2" d="M267.88,-36C285.72,-36 303.56,-36 321.41,-36"/>
+<polygon fill="#4a5568" stroke="#4a5568" stroke-width="1.2" points="321.35,-38.45 328.35,-36 321.35,-33.55 321.35,-38.45"/>
 </g>
 </g>
 </svg>

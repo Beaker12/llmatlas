@@ -1010,7 +1010,7 @@ Given weights $w_s$ that sum to one, the sampler draws each document's source wi
 :name: fig-ch5-temperature
 :alt: A grouped bar chart with one group each for code, web and wiki and four bars per group for temperatures 0.5, 1, 2 and 4. As temperature rises, web falls from about 0.82 to 0.40 while code and wiki rise. A black tick over each bar marks its target, and every bar lies close to its tick.
 
-The fraction of 600 draws from each source (bars) against the tempered target $p_s$ (black ticks). The weights are web 0.6, wiki 0.25 and code 0.15, and the legend's T is the temperature $\tau$. At $\tau = 0.5$ the largest weight is sharpened to about 0.8. At $\tau = 4$ the three sources move toward equal shares.
+The fraction of 600 draws from each source (bars) against the tempered target $p_s$ (black ticks). The weights are web 0.6, wiki 0.25 and code 0.15. At $\tau = 0.5$ the largest weight is sharpened to about 0.8. At $\tau = 4$ the three sources move toward equal shares.
 ```
 
 ```{figure} figures/epoch-cap.*
@@ -1321,7 +1321,7 @@ shard assignment, step 3, 2 vs 4 ranks: [12, 13, 14, 15] [6, 7, 22, 23]
 
 ```{figure} figures/ranks.*
 :name: fig-ch5-ranks
-:alt: Two panels for step 3 with a global batch of 8. Shard assignment: at W = 2, rank 0 reads documents 12–15 and rank 1 reads 28–31; at W = 4, the ranks read 6, 7; 22, 23; 38, 39; and 54, 55, so the global batch differs. Global indexing: at both W = 2 and W = 4 the ranks split samples 24–31 among themselves, so the global batch is the same.
+:alt: Two panels for step 3 with a global batch of 8. Shard assignment: with 2 ranks, rank 0 reads documents 12–15 and rank 1 reads 28–31; with 4 ranks, the ranks read 6, 7; 22, 23; 38, 39; and 54, 55, so the global batch differs. Global indexing: with 2 ranks and with 4 the ranks split samples 24–31 among themselves, so the global batch is the same.
 
 The documents in the global batch at step 3 ($B = 8$, ten shards of 16 documents) for 2 and 4 ranks. Under shard assignment, each rank walks its own shards, so the set of documents seen at a step depends on $n_{\text{ranks}}$. Under global indexing, the batch is always global positions 24 to 31, and only the split between ranks changes.
 ```
