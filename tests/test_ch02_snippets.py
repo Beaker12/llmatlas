@@ -271,30 +271,140 @@ def test_fix_round_numbers_in_prose_and_solutions():
     assert round(1e-10 / (1e-10 + 1e-8), 4) == 0.0099
 
 
-def test_adam_step_without_epsilon_is_bounded_by_kingma_ba_section_2_1():
-    """Chapter 2, sec-ch2-epsilon-placement: with negligible eps, |m_hat|/sqrt(v_hat) <= (1 - beta1)/sqrt(1 - beta2) = 3.16;
-    5,000 zero gradients followed by one nonzero gradient give a step of 3.15 lr, a dense constant gradient about lr."""
-    import math
+def test_adam_step_without_epsilon_exceeds_kingma_ba_bound_but_not_cauchy_schwarz_bound():
+    """Chapter 2, sec-ch2-epsilon-placement: with negligible eps the step |m_hat|/sqrt(v_hat) (in units of lr) is
+    3.15 on the first nonzero gradient after 5,000 zeros, as Kingma and Ba's (1 - beta1)/sqrt(1 - beta2) = 3.16 says,
+    but rises past it to 4.24 and a peak of 6.55 at the 12th step if the gradient stays constant. No sequence exceeds
+    the Cauchy-Schwarz bound (1 - beta1)/sqrt((1 - beta2)(1 - beta1^2/beta2)) = 7.27, which a geometrically growing
+    gradient approaches. Steps are taken by torch.optim.Adam itself, in float64."""
+    b1, b2 = 0.9, 0.999
 
-    def last_step(grads):
-        p = torch.zeros(1, requires_grad=True)
+    def steps(grads):
+        p = torch.zeros(1, dtype=torch.float64, requires_grad=True)
         # eps = 0 would make the zero-gradient steps 0/0 (the first job of eps); 1e-300 avoids that and is
         # negligible against sqrt(v_hat) once a gradient is nonzero.
         opt = torch.optim.Adam([p], lr=1.0, eps=1e-300)
-        before = 0.0
+        out = []
         for g in grads:
             before = p.item()
-            p.grad = torch.tensor([g])
-            with torch.no_grad():
-                opt.step()
-        return abs(p.item() - before)
+            p.grad = torch.tensor([g], dtype=torch.float64)
+            opt.step()
+            out.append(abs(p.item() - before))
+        return out
 
-    torch.set_default_dtype(torch.float64)
-    try:
-        sparse = last_step([0.0] * 5000 + [1.0])
-        dense = last_step([1.0] * 100)
-    finally:
-        torch.set_default_dtype(torch.float32)
-    bound = 0.1 / math.sqrt(0.001)
-    assert round(bound, 2) == 3.16 and round(sparse, 2) == 3.15 and sparse <= bound
-    assert abs(dense - 1.0) < 1e-9
+    kingma_ba = (1 - b1) / math.sqrt(1 - b2)
+    q = b1 * b1 / b2
+    cauchy_schwarz = (1 - b1) / math.sqrt((1 - b2) * (1 - q))
+    assert round(kingma_ba, 2) == 3.16 and round(cauchy_schwarz, 2) == 7.27
+    assert round(q, 4) == 0.8108 and round(1 - q, 4) == 0.1892 and round(0.1 / math.sqrt(0.001 * 0.1892), 2) == 7.27
+
+    resumed = steps([0.0] * 5000 + [1.0] * 200)[5000:]
+    assert [round(resumed[k], 2) for k in (0, 1, 11)] == [3.15, 4.24, 6.55]
+    assert max(resumed) == resumed[11] and resumed[0] <= kingma_ba < max(resumed) < cauchy_schwarz
+    assert abs(steps([1.0] * 100)[-1] - 1.0) < 1e-9  # dense constant gradient: a step of lr
+
+    # Zeros-then-constant gradients never reach 7.27, whatever the length of the zero run.
+    assert all(max(steps([0.0] * z + [1.0] * 40)[z:]) < cauchy_schwarz for z in (0, 10, 100, 1000, 20000))
+
+    # The bias-corrected bound over a history of t steps rises toward 7.27 and never exceeds it ...
+    def finite_bound(t):
+        return (1 - b1) / (1 - b1**t) * math.sqrt((1 - b2**t) / (1 - b2) * (1 - q**t) / (1 - q))
+
+    bounds = [finite_bound(t) for t in range(1, 100_001)]
+    assert all(a <= b for a, b in zip(bounds, bounds[1:])) and bounds[-1] <= cauchy_schwarz + 1e-12  # rounding
+    assert abs(cauchy_schwarz - bounds[-1]) < 1e-3
+    # ... and a gradient growing by beta2/beta1 per step attains it at step t (here t = 3000: 7.09, past 6.55).
+    t = 3000
+    growing = steps([(b2 / b1) ** (s - t) for s in range(1, t + 1)])
+    assert math.isclose(growing[-1], finite_bound(t), rel_tol=1e-9) and round(growing[-1], 2) == 7.09
+    assert math.isclose(finite_bound(1), 1.0)
+    text = CH02.read_text(encoding="utf-8")
+    assert "0.8108" in text and "0.001 \\times 0.1892" in text and "$7.09\\,\\eta$ after 3,000 steps" in text
+
+
+def test_exercises_are_graded_and_labelled():
+    text = CH02.read_text(encoding="utf-8")
+    for n in range(1, 9):
+        assert f"(sec-ch2-exercise-{n})=\n\n### Exercise {n}: " in text
+        assert re.search(rf"### Exercise {n}: .+ \(level [123]\)\n", text)
+        assert f"{{admonition}} Solution {n}" in text
+
+
+def test_exercise_6_attention_backward_by_hand():
+    for q1, expected in ((math.log(3), 0.375), (8.0, 6.705e-4)):
+        Q = torch.tensor([[q1], [0.0]], dtype=torch.float64, requires_grad=True)
+        K = torch.tensor([[1.0], [0.0]], dtype=torch.float64, requires_grad=True)
+        V = torch.tensor([[2.0], [0.0]], dtype=torch.float64, requires_grad=True)
+        A = torch.softmax(Q @ K.T, dim=-1)
+        O = A @ V
+        O[0, 0].backward()
+        assert math.isclose(Q.grad[0, 0].item(), expected, rel_tol=1e-3) and Q.grad[1, 0].item() == 0
+        if q1 < 2:
+            assert torch.allclose(A, torch.tensor([[0.75, 0.25], [0.5, 0.5]], dtype=torch.float64))
+            assert torch.allclose(O.detach().flatten(), torch.tensor([1.5, 1.0], dtype=torch.float64))
+            assert [round(v, 4) for v in K.grad.flatten().tolist()] == [0.412, -0.412]
+            assert torch.allclose(V.grad.flatten(), torch.tensor([0.75, 0.25], dtype=torch.float64))
+            small = Q.grad[0, 0].item()
+        else:
+            assert round(small / Q.grad[0, 0].item()) == 559
+    s = exercise_text(6)
+    assert "(0.375, -0.375)" in s and "(0.4120, -0.4120)" in s and "6.705 \\times 10^{-4}" in s and "559 times" in s
+
+
+def test_exercise_7_layernorm_gradient_by_hand():
+    x = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64, requires_grad=True)
+    y = F.layer_norm(x, (3,), eps=0.0)
+    y[0].backward()
+    assert [round(v, 4) for v in y.tolist()] == [-1.2247, 0.0, 1.2247]
+    assert [round(v, 4) for v in x.grad.tolist()] == [0.2041, -0.4082, 0.2041]
+    assert torch.allclose(x.grad, torch.tensor([1.0, -2.0, 1.0], dtype=torch.float64) / (2 * math.sqrt(6)))
+    assert abs(x.grad.sum().item()) < 1e-12
+    s = exercise_text(7)
+    assert "\\sigma = 0.8165" in s and "0.2041" in s and "-0.4082" in s
+
+
+def test_exercise_8_schedule_clipping_accumulation():
+    def lr(t, mx=3e-4, mn=3e-5, tw=2000, te=100_000):
+        if t < tw:
+            return mx * (t + 1) / tw
+        return mn + 0.5 * (mx - mn) * (1 + math.cos((t - tw) / (te - tw) * math.pi))
+
+    got = [lr(t) for t in (0, 999, 26_500, 51_000, 100_000)]
+    assert [float(f"{v:.4g}") for v in got] == [1.5e-7, 1.5e-4, 2.605e-4, 1.65e-4, 3e-5]
+    p = torch.zeros(2, requires_grad=True)
+    p.grad = torch.tensor([3.0, 4.0])
+    assert torch.nn.utils.clip_grad_norm_([p], 1.0).item() == 5.0
+    assert torch.allclose(p.grad, torch.tensor([0.6, 0.8]), atol=1e-6)
+    n, n_acc = 10, 4
+    divisors = [min(n_acc, n - (i - 1) // n_acc * n_acc) for i in range(1, n + 1)]
+    steps = [i for i in range(1, n + 1) if i % n_acc == 0 or i == n]
+    assert steps == [4, 8, 10] and divisors == [4] * 8 + [2] * 2
+    s = exercise_text(8)
+    assert "2.605 \\times 10^{-4}" in s and "1.65 \\times 10^{-4}" in s and "(0.6, 0.8)" in s
+
+
+def test_condition_number_rate_and_rosenbrock_minimum():
+    """sec-ch2-stability-condition: (cond - 1)/(cond + 1) per step at eta = 2/(lambda_max + lambda_min)."""
+    assert round(99 / 101, 4) == 0.9802 and round(math.log(10) / math.log(101 / 99)) == 115
+    assert round(math.log(10) / math.log(3), 1) == 2.1
+    lo, hi = np.linalg.eigvalsh(np.array([[802.0, -400.0], [-400.0, 200.0]]))
+    cond = hi / lo
+    assert round(hi, 1) == 1001.6 and round(lo, 3) == 0.399 and round(cond) == 2508
+    rate = (cond - 1) / (cond + 1)
+    assert round(rate, 4) == 0.9992 and round(math.log(10) / -math.log(rate), -2) == 2900
+    for eta in (2 / (hi + lo),):  # both extreme directions shrink by the same factor
+        assert math.isclose(abs(1 - eta * lo), abs(1 - eta * hi)) and math.isclose(abs(1 - eta * lo), rate)
+    text = CH02.read_text(encoding="utf-8")
+    assert "$99/101 = 0.9802$" in text and "1001.6 and 0.399" in text and "= 2508$" in text
+
+
+def test_mutual_information_worked_table():
+    """sec-ch2-mutual-information: MI = H(Y) - H(Y | X) = 1 - 0.7219 = 0.2781 bits."""
+    P = np.array([[0.4, 0.1], [0.1, 0.4]])
+    px, py = P.sum(1), P.sum(0)
+    mi = sum(P[i, j] * math.log2(P[i, j] / (px[i] * py[j])) for i in range(2) for j in range(2))
+    hy = -sum(p * math.log2(p) for p in py)
+    hyx = -sum(P[i, j] * math.log2(P[i, j] / px[i]) for i in range(2) for j in range(2))
+    assert hy == 1.0 and round(hyx, 4) == 0.7219 and round(mi, 4) == 0.2781 and math.isclose(mi, hy - hyx)
+    text = CH02.read_text(encoding="utf-8")
+    assert "= 0.7219$ bits" in text and "0.2781$ bits" in text

@@ -90,7 +90,7 @@
 <title>V</title>
 <path fill="#e8eef7" stroke="#4a5568" stroke-width="1.25" d="M818.9,-216.92C818.9,-216.92 762.33,-216.92 762.33,-216.92 756.33,-216.92 750.33,-210.92 750.33,-204.92 750.33,-204.92 750.33,-165.56 750.33,-165.56 750.33,-159.56 756.33,-153.56 762.33,-153.56 762.33,-153.56 818.9,-153.56 818.9,-153.56 824.9,-153.56 830.9,-159.56 830.9,-165.56 830.9,-165.56 830.9,-204.92 830.9,-204.92 830.9,-210.92 824.9,-216.92 818.9,-216.92"/>
 <text xml:space="preserve" text-anchor="middle" x="790.62" y="-192.44" font-family="Helvetica,sans-Serif" font-size="24.00" fill="#050510">V</text>
-<text xml:space="preserve" text-anchor="middle" x="790.62" y="-163.64" font-family="Helvetica,sans-Serif" font-size="24.00" fill="#050510">n × dₖ</text>
+<text xml:space="preserve" text-anchor="middle" x="790.62" y="-163.64" font-family="Helvetica,sans-Serif" font-size="24.00" fill="#050510">n × dᵥ</text>
 </g>
 <!-- A&#45;&gt;V -->
 <!-- O -->
@@ -98,7 +98,7 @@
 <title>O</title>
 <path fill="#e8eef7" stroke="#4a5568" stroke-width="1.25" d="M936.23,-216.92C936.23,-216.92 875,-216.92 875,-216.92 869,-216.92 863,-210.92 863,-204.92 863,-204.92 863,-165.56 863,-165.56 863,-159.56 869,-153.56 875,-153.56 875,-153.56 936.23,-153.56 936.23,-153.56 942.23,-153.56 948.23,-159.56 948.23,-165.56 948.23,-165.56 948.23,-204.92 948.23,-204.92 948.23,-210.92 942.23,-216.92 936.23,-216.92"/>
 <text xml:space="preserve" text-anchor="middle" x="905.62" y="-192.44" font-family="Helvetica,sans-Serif" font-size="24.00" fill="#050510">O = AV</text>
-<text xml:space="preserve" text-anchor="middle" x="905.62" y="-163.64" font-family="Helvetica,sans-Serif" font-size="24.00" fill="#050510">n × dₖ</text>
+<text xml:space="preserve" text-anchor="middle" x="905.62" y="-163.64" font-family="Helvetica,sans-Serif" font-size="24.00" fill="#050510">n × dᵥ</text>
 </g>
 <!-- A&#45;&gt;O -->
 <g id="edge7" class="edge">

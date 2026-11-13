@@ -16,7 +16,7 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\alpha_C$ | Kaplan's compute exponent (written $\alpha_C^{\min}$) | index.md:L416 |  |
 | $D_{KL}$ | Kullback-Leibler divergence | index.md:L110 |  |
 | $\delta$ | Kronecker delta | index.md:L56 |  |
-| $\delta_{jx_i}$ | the one-hot target: the Kronecker delta at the target token, 1 when $j = x_i$ and 0 otherwise (`tools/list_symbols.py` keeps the subscript because $x_i$ is not a running index) | index.md, sec-ch2-softmax-jacobian |  |
+| $\delta_{jx_i}$ | the one-hot target: the Kronecker delta at the target token, 1 when $j = x_i$ and 0 otherwise (the subscript names the target token $x_i$, so it is part of the symbol) | index.md, sec-ch2-softmax-jacobian |  |
 | $\eta$ | learning rate ($\eta_t$ at step $t$) | index.md:L172 |  |
 | $\eta_{\max}$ | peak learning rate | index.md:L206 |  |
 | $\eta_{\min}$ | final learning rate | index.md:L217 |  |
@@ -35,6 +35,9 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\theta_y$ | second of the two parameters of the Rosenbrock function (exercise 2) | index.md, sec-ch2-exercises |  |
 | $z_{ff}$ | pre-activation of the feed-forward hidden layer | index.md, sec-ch2-ffn-embedding-head-gradients |  |
 | $x_i$ | feature $i$ of a layer's input row vector $x$ (LayerNorm and RMSNorm, sec-ch2-layer-normalization-mathematics and sec-ch2-epsilon-placement; the book-wide $x_i$ is the token at position $i$, and the page says which is meant) | index.md, sec-ch2-layer-normalization-mathematics |  |
+| $\lambda_{\min}$ | smallest eigenvalue of the Hessian (beside the book-wide $\lambda_{\max}$) | index.md, sec-ch2-stability-condition |  |
+| $\sigma_{\max}$ | largest singular value of a matrix | index.md, sec-ch2-norms-conditioning-scale-matters |  |
+| $\sigma_{\min}$ | smallest singular value of a matrix | index.md, sec-ch2-norms-conditioning-scale-matters |  |
 | $\mathrm{X}$ | a random variable | index.md:L118 |  |
 | $\mathrm{Y}$ | a second random variable | index.md:L118 |  |
 
