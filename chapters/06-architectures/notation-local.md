@@ -7,6 +7,8 @@ chapter writes today and must change to the symbol in the first column. This fil
 
 | Symbol | Meaning | First used | Rename | Also means |
 |---|---|---|---|---|
+| $\gamma_q$ | largest gain of the query RMSNorm (bounds a normalized logit) | index.md:L235 |  |
+| $\gamma_k$ | largest gain of the key RMSNorm (bounds a normalized logit) | index.md:L235 |  |
 | $f$ | fraction of tokens dispatched to expert i (f_i) | index.md:L352 |  |
 | $\lambda_{aux}$ | weight of the auxiliary load-balancing loss | index.md:L352 |  |
 | $v$ | value vector (v_i at position i) | index.md:L236 |  |

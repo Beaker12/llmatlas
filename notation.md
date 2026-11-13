@@ -294,6 +294,8 @@ layer computes $xW$.
 
 | Symbol | Meaning | Introduced in |
 |---|---|---|
+| $\gamma_q$ | largest gain of the query RMSNorm (bounds a normalized logit) | {ref}`sec-ch6-normalizing-queries-keys` |
+| $\gamma_k$ | largest gain of the key RMSNorm (bounds a normalized logit) | {ref}`sec-ch6-normalizing-queries-keys` |
 | $f$ | fraction of tokens dispatched to expert i ($f_i$) | {ref}`sec-ch6-keeping-experts-balanced` |
 | $\lambda_{aux}$ | weight of the auxiliary load-balancing loss | {ref}`sec-ch6-keeping-experts-balanced` |
 | $v$ | value vector ($v_i$ at position $i$) | {ref}`sec-ch6-multi-head-latent-attention` |
