@@ -14,7 +14,7 @@ The chapter has six parts, each needed to read the rest of the book. A short lin
 
 **Backpropagation.** The gradient of the loss with respect to billions of parameters is computed in one backward pass. This part works through the backward pass of attention, layer normalization, the feed-forward layer, the embedding and the output head, and shows how residual connections and pre-LN keep gradients from vanishing with depth.
 
-**Scaling laws and compute.** Loss falls as a power law in parameters, data and compute. This part derives the $6N$ FLOPs-per-token rule, uses the Kaplan and Chinchilla laws to split a compute budget between model size and data, and counts the memory a training run needs.
+**Scaling laws and compute.** Loss falls as a power law in parameters, data and compute. This part derives the $6N$ FLOPs-per-token rule, uses the Kaplan and Chinchilla laws to split a compute budget between model size and data, relates the batch size to the loss through the critical batch size, and counts the memory a training run needs.
 
 **Numerical stability.** Training runs in 16-bit formats with a limited range and few significant digits. This part shows where values overflow or underflow, and how log-sum-exp, loss scaling, bf16 and initialization scaled to width and depth keep them finite.
 
@@ -56,19 +56,19 @@ Everything a transformer does is a sequence of matrix products followed by simpl
 
 (sec-ch2-matrix-map)=
 
-### 0.1 A matrix is a map between spaces
+### 0.1 A Matrix Is a Map Between Spaces
 
 A weight matrix $W \in \mathbb{R}^{d_{\text{in}} \times d_{\text{out}}}$ turns a row vector $x \in \mathbb{R}^{d_{\text{in}}}$ into $xW \in \mathbb{R}^{d_{\text{out}}}$. Stacking $n$ inputs as the rows of $X \in \mathbb{R}^{n \times d_{\text{in}}}$ applies the same map to all of them at once, $XW$, which is why a batch of tokens costs one matrix product rather than $n$ separate ones. A query-key score matrix $QK^\top \in \mathbb{R}^{n \times n}$ is the table of all pairwise dot products $q_i \cdot k_j$.
 
 (sec-ch2-sqrt-dk)=
 
-#### Why attention scores are divided by the key dimension's square root
+#### Why Attention Scores Are Divided by the Square Root of the Key Dimension
 
 Suppose the entries of a query $q$ and a key $k$ are independent, with mean zero and variance one. Each product $q_j k_j$ then has mean zero and variance one, and the dot product $q \cdot k$, a sum of $d_k$ independent such products, has variance $d_k$. Dividing the scores by $\sqrt{d_k}$ brings them back to unit variance. Without it, at $d_k = 64$ the scores would have standard deviation 8; the softmax would put almost all weight on one position, and by the softmax Jacobian below ({ref}`sec-ch2-softmax-jacobian`) almost no gradient would flow through it.
 
 (sec-ch2-softmax-jacobian)=
 
-### 0.2 The softmax Jacobian
+### 0.2 The Softmax Jacobian
 
 For $p = \mathrm{softmax}(z)$, $p_i = e^{z_i}/\sum_j e^{z_j}$,
 
@@ -80,7 +80,7 @@ This is the identity behind the attention gradient in {ref}`sec-ch2-attention-gr
 
 ```{figure} figures/softmax-saturation.*
 :name: fig-ch2-softmax-saturation
-:alt: Log-scale plot of the softmax derivative p1 times one minus p1 against the logit gap, for 2 and 64 logits; at gap 8 it is 0.00034 for 2 logits and 0.02 for 64.
+:alt: Log-scale plot of the softmax derivative p_i times one minus p_i against the logit gap, for 2 and 64 logits; at gap 8 it is 0.00034 for 2 logits and 0.02 for 64.
 
 The diagonal softmax derivative $\partial p_i/\partial z_i = p_i(1 - p_i)$ when logit
 $z_i$ leads all the others by the same gap. It peaks at 0.25 where $p_i = 0.5$ and then
@@ -93,7 +93,7 @@ with 2 logits and 0.02 with 64. Computed from the formula above by
 
 (sec-ch2-norms-conditioning-scale-matters)=
 
-### 0.3 Norms, conditioning and why scale matters
+### 0.3 Norms, Conditioning and Why Scale Matters
 
 The operator norm $\|W\|_2$ is the largest factor by which $W$ can stretch a vector. A stack of $L$ layers multiplies these factors, which is why gradients vanish or explode geometrically with depth unless each layer is kept near norm 1, by initialization scale ({ref}`sec-ch2-initialization-strategies`), by normalization ({ref}`sec-ch2-layer-normalization-mathematics`) or by residual connections ({ref}`sec-ch2-residual-connections`). The notebook section {ref}`nb-math-layernorm` measures the effect of each on a stack of linear layers.
 
@@ -101,9 +101,9 @@ How unevenly a matrix stretches is measured by its **condition number**, the rat
 
 (sec-ch2-svd-low-rank)=
 
-### 0.4 Singular value decomposition and low rank
+### 0.4 Singular Value Decomposition and Low Rank
 
-Every real matrix factors as $W = U \Sigma R^\top$, where $U$ and $R$ have orthonormal columns and $\Sigma$ is diagonal, holding the singular values $\Sigma_{jj} \ge 0$ in decreasing order. Read as a map, $W$ rotates or reflects (by $R^\top$), stretches each axis by a singular value, and rotates or reflects again (by $U$); the operator norm of {ref}`sec-ch2-norms-conditioning-scale-matters` is the largest stretch, so $\|W\|_2$ is the largest singular value.
+Every real matrix factors as $W = U \Sigma R^\top$, where $U$ and $R$ have orthonormal columns and $\Sigma$ is diagonal, holding the singular values $\Sigma_{jj} \ge 0$ in decreasing order, so that the $\sigma_{\max}$ and $\sigma_{\min}$ of {ref}`sec-ch2-norms-conditioning-scale-matters` are the first and last of them. Acting on a row vector, $xW = ((xU)\Sigma)R^\top$, so $W$ rotates or reflects (by $U$), stretches each axis by a singular value, and rotates or reflects again (by $R^\top$); the operator norm of {ref}`sec-ch2-norms-conditioning-scale-matters` is the largest stretch, so $\|W\|_2$ is the largest singular value.
 
 Keeping only the $n_{rank}$ largest singular values, $\sum_{j=1}^{n_{rank}} \Sigma_{jj}\, U_{:,j} R_{:,j}^\top$, gives a matrix of rank $n_{rank}$. {cite:t}`eckart1936approximation` showed that no matrix of that rank is closer to $W$ in the Frobenius norm, and that the error is the root of the sum of the discarded squares, $\sqrt{\sum_{j > n_{rank}} \Sigma_{jj}^2}$; in the operator norm the error is the largest discarded singular value. A rank-$n_{rank}$ matrix stored as two factors costs $n_{rank}(d_{\text{in}} + d_{\text{out}})$ numbers instead of $d_{\text{in}} d_{\text{out}}$: for a $4096 \times 4096$ matrix and $n_{rank} = 8$ that is 65,536 instead of 16,777,216, or 0.39%. LoRA {cite}`hu2022lora` uses exactly this count, training the update to a frozen weight matrix as a product of two such thin factors.
 
@@ -135,7 +135,7 @@ parameters of a rank-8 factorization of 4096 x 4096: 65,536 of 16,777,216
 
 (sec-ch2-vjp)=
 
-### 0.5 Vector-Jacobian products
+### 0.5 Vector-Jacobian Products
 
 For a layer that maps a row vector $x \in \mathbb{R}^{d_{\text{in}}}$ to a row vector $y \in \mathbb{R}^{d_{\text{out}}}$, the Jacobian $\partial y / \partial x$ is a $d_{\text{out}} \times d_{\text{in}}$ matrix. Backpropagation never builds it. It needs only the vector-Jacobian product (VJP): given the gradient $g = \partial \mathcal{L} / \partial y$ of a scalar loss, the chain rule gives
 
@@ -179,7 +179,7 @@ closed form p * (g - <g, p>) equals it: True
 
 #### Probability Distributions Over Sequences
 
-Given a vocabulary $\mathcal{V}$ and sequence $x = (x_1, x_2, ..., x_n)$, language models estimate:
+Given a vocabulary $\mathcal{V}$ and sequence $x = (x_1, x_2, \ldots, x_n)$, language models estimate:
 
 $$p(x) = \prod_{i=1}^{n} p(x_i \mid x_{<i})$$
 
@@ -309,6 +309,8 @@ tau=2.0: p = [0.5065, 0.3072, 0.1863], entropy 1.472 bits
 (sec-ch2-practical-applications)=
 
 ### 1.3 Practical Applications
+
+The quantities of the last two sections, entropy, cross-entropy, KL divergence and perplexity, take a few lines each. The functions below compute them from probabilities and logits, and the last two lines check them on a three-outcome example and on a model that knows nothing, whose loss is the logarithm of the vocabulary size.
 
 ```python
 import torch
@@ -556,7 +558,47 @@ $$\theta_{t+1} = \theta_t - \eta_t \left(\frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \ep
 
 The alternative, L2 regularization, adds $\lambda\theta_t$ to the gradient $g_t$ before the moments are formed, and so the decay is divided by $\sqrt{\hat{v}_t}$ like everything else. A weight whose gradients have been large is then decayed less than one whose gradients have been small. Take two weights both at $\theta = 1$ with $\lambda = 0.01$, one with $\sqrt{\hat{v}_t} = 0.001$ and one with $\sqrt{\hat{v}_t} = 1$: once the moment has absorbed the decay term, L2 decays them by about $\eta \cdot 10$ and $\eta \cdot 0.01$ per step, a thousandfold difference, while AdamW decays both by $\eta \cdot 0.01$. {cite:t}`loshchilov2017decoupled` show that this decoupling is what makes weight decay effective with Adam.
 
-{cite:t}`kingma2014adam` designed Adam for "problems with very noisy and/or sparse gradients". A language model's embedding table is one source of sparse gradients: the row of a token that does not occur in a batch receives a zero gradient from that batch, so a rare token's row is updated only now and then, and Adam's per-parameter scaling gives those infrequent updates a usable size. They can also be larger than $\eta$: the first gradient after a long absence moves the row by about $3.15\,\eta$, and if the token keeps occurring the step grows to about $6.5\,\eta$ before it settles, below a general limit of $7.27\,\eta$ for these $\beta$s ({ref}`sec-ch2-epsilon-placement`).
+{cite:t}`kingma2014adam` designed Adam for "problems with very noisy and/or sparse gradients". A language model's embedding table is one source of sparse gradients: the row of a token that does not occur in a batch receives a zero gradient from that batch, so a rare token's row is updated only now and then, and Adam's per-parameter scaling gives those infrequent updates a usable size. They can also be larger than $\eta$: the first gradient after a long absence moves the row by about $3.15\,\eta$, and if the token keeps occurring the step grows to about $6.5\,\eta$ before it settles, below a general limit of $7.27\,\eta$ for these $\beta$s ({ref}`sec-ch2-adam-step-bound`).
+
+(sec-ch2-adam-step-bound)=
+
+#### How Large Adam's Step Can Get
+
+How far a single Adam update can move a weight is bounded in units of $\eta$, but not by the value usually quoted. Take $\epsilon$ to be negligible, so that the step is $\eta\,|\hat{m}_t|/\sqrt{\hat{v}_t}$. {cite:t}`kingma2014adam` give $(1 - \beta_1)/\sqrt{1 - \beta_2} = 0.1/\sqrt{0.001} = 3.16$ as the bound when $1 - \beta_1 > \sqrt{1 - \beta_2}$, a case that "only happens in the most severe case of sparsity: when a gradient has been zero at all timesteps except at the current timestep", and add that "for less sparse cases, the effective stepsize will be smaller". The first statement holds: a rare token's embedding row ({ref}`sec-ch2-adam-optimizer`) whose gradient has been zero for 5,000 steps and is then nonzero moves by $3.15\,\eta$. The second does not. If the token then occurs in every batch with the same gradient, $\hat{m}_t$ approaches the gradient within tens of steps while $\sqrt{\hat{v}_t}$ grows over thousands, and the step rises to $4.24\,\eta$ at the second occurrence and $6.55\,\eta$ at the twelfth before it falls back toward $\eta$, the same curve as the uncorrected steps of Solution 2 in {ref}`sec-ch2-exercise-2`.
+
+The bound that does hold for every gradient sequence follows from the Cauchy-Schwarz inequality, which bounds a sum of products by the square roots of the two sums of squares. Unrolled from their zero start, $m_t = (1 - \beta_1)\sum_{i=1}^{t} \beta_1^{t-i} g_i$ and $v_t = (1 - \beta_2)\sum_{i=1}^{t} \beta_2^{t-i} g_i^2$ ({ref}`sec-ch2-adam-optimizer`). Writing each term of the first sum as the product $(\beta_1/\sqrt{\beta_2})^{t-i} \cdot \beta_2^{(t-i)/2} g_i$ gives
+
+$$\left|\sum_{i=1}^{t} \beta_1^{t-i} g_i\right| \le \sqrt{\sum_{i=1}^{t} \left(\frac{\beta_1^2}{\beta_2}\right)^{t-i}}\;\sqrt{\sum_{i=1}^{t} \beta_2^{t-i} g_i^2} = \sqrt{\frac{1 - (\beta_1^2/\beta_2)^t}{1 - \beta_1^2/\beta_2}}\;\sqrt{\frac{v_t}{1 - \beta_2}},$$
+
+where the first sum is geometric with ratio $\beta_1^2/\beta_2 = 0.8108$. Multiplying by $1 - \beta_1$ and dividing $m_t$ and $v_t$ by their bias corrections gives
+
+$$\frac{|\hat{m}_t|}{\sqrt{\hat{v}_t}} \le \frac{1 - \beta_1}{1 - \beta_1^t}\sqrt{\frac{1 - \beta_2^t}{1 - \beta_2}\cdot\frac{1 - (\beta_1^2/\beta_2)^t}{1 - \beta_1^2/\beta_2}} \;\longrightarrow\; \frac{1 - \beta_1}{\sqrt{(1 - \beta_2)(1 - \beta_1^2/\beta_2)}} = \frac{0.1}{\sqrt{0.001 \times 0.1892}} = 7.27.$$
+
+The right-hand side is 1 at $t = 1$ and rises with $t$ toward its limit. Equality in Cauchy-Schwarz needs the two factors to be proportional, $\beta_2^{(t-i)/2} g_i \propto (\beta_1/\sqrt{\beta_2})^{t-i}$, that is $g_i \propto (\beta_2/\beta_1)^{i}$: a gradient that grows by the factor $\beta_2/\beta_1 = 1.11$ at every step. Such a gradient reaches $7.09\,\eta$ after 3,000 steps, and 7.27 is approached but never reached. For dense gradients of steady size the ratio is about 1 or less.
+
+```python
+import math
+
+beta1, beta2 = 0.9, 0.999
+m = v = 0.0
+steps = []  # |m_hat| / sqrt(v_hat): the step in units of eta, without eps
+# a rare token: absent, then in every batch
+for t, g in enumerate([0.0] * 5000 + [1.0] * 20, start=1):
+    m, v = beta1 * m + (1 - beta1) * g, beta2 * v + (1 - beta2) * g * g
+    if g:
+        steps.append((m / (1 - beta1**t)) / math.sqrt(v / (1 - beta2**t)))
+print("step / eta at the 1st, 2nd and 12th occurrence:",
+      [round(steps[k], 2) for k in (0, 1, 11)])
+bound = (1 - beta1) / math.sqrt((1 - beta2) * (1 - beta1**2 / beta2))
+print("Cauchy-Schwarz bound:", round(bound, 2))
+```
+
+% output
+
+```text
+step / eta at the 1st, 2nd and 12th occurrence: [3.15, 4.24, 6.55]
+Cauchy-Schwarz bound: 7.27
+```
 
 (sec-ch2-learning-rate-scheduling)=
 
@@ -564,14 +606,16 @@ The alternative, L2 regularization, adds $\lambda\theta_t$ to the gradient $g_t$
 
 (sec-ch2-linear-warmup)=
 
-#### Linear Warmup
+#### Linear Warm-up
 
-Many LLM training schedules use linear warmup followed by decay:
+Many LLM training schedules use linear warm-up followed by decay:
 
 $$\eta_t = \begin{cases}
 \eta_{\max} \cdot \frac{t+1}{t_{\text{warm}}} & \text{if } t < t_{\text{warm}} \\
-\eta_{\max} \cdot \text{decay}(t) & \text{otherwise}
+\eta_{\text{decay}}(t) & \text{otherwise}
 \end{cases}$$
+
+where $\eta_{\text{decay}}(t)$ is the decay schedule that takes over at the end of warm-up; the next two sections give two choices.
 
 Warm-up keeps the first updates small while the weights are random and Adam's moment estimates rest on only a few gradients. For the original post-LN transformer, {cite:t}`xiong2020layer` show that at initialization the expected gradients of the parameters near the output layer are large, so a full learning rate from the first step makes training unstable. With $\eta_{\max} = 3 \times 10^{-4}$ and $t_{\text{warm}} = 2000$, the first step uses $1.5 \times 10^{-7}$ and the rate reaches $\eta_{\max}$ at step 1999.
 
@@ -633,7 +677,13 @@ Large language models are susceptible to exploding gradients. **Gradient clippin
 
 $$g_{\text{clipped}} = \min\left(1, \frac{g_{\max}}{\|g\|}\right) g$$
 
-where $g_{\max}$ is the clipping threshold (typically 1.0) {cite}`pascanu2013difficulty`.
+where $g_{\max}$ is the clipping threshold (typically 1.0) {cite}`pascanu2013difficulty`. The norm $\|g\|$ is taken over all parameters at once, so the direction of the update is kept and only its length changes.
+
+(sec-ch2-adamw-implementation)=
+
+#### AdamW with Warm-up and Clipping
+
+The class below puts this section's pieces together with the optimizer of {ref}`sec-ch2-adam-optimizer` and the schedule of {ref}`sec-ch2-linear-warmup` and {ref}`sec-ch2-cosine-annealing`: clip the global gradient norm, update the moments, bias-correct, decay the weights directly and take the step at the scheduled rate. The check after the schedule values steps it 50 times against `torch.optim.AdamW` and then shows one clipped gradient.
 
 ```python
 import math
@@ -703,6 +753,35 @@ opt = AdamWWithWarmup([torch.zeros(1, requires_grad=True)],
                       lr=3e-4, warmup_steps=2000, max_steps=100_000)
 for step in (0, 1999, 51_000, 100_000):
     print(f"step {step:6d}: lr {opt.get_lr(step):.4g}")
+
+# Against torch.optim.AdamW: constant rate 1e-2, decay 0.1, clipping switched off
+torch.manual_seed(0)
+w0 = torch.randn(10, 5, dtype=torch.float64)
+ours, ref = torch.nn.Parameter(w0.clone()), torch.nn.Parameter(w0.clone())
+mine = AdamWWithWarmup([ours], lr=1e-2, lr_min=1e-2, weight_decay=0.1,
+                       warmup_steps=0, max_grad_norm=float("inf"))
+theirs = torch.optim.AdamW([ref], lr=1e-2, weight_decay=0.1)
+for _ in range(50):
+    grad = torch.randn(10, 5, dtype=torch.float64)
+    ours.grad, ref.grad = grad.clone(), grad.clone()
+    mine.step()
+    theirs.step()
+diff = (ours - ref).abs().max().item()
+assert diff < 1e-12
+print("50 steps, largest difference from torch.optim.AdamW below 1e-12: True")
+
+# One step with clipping on: a gradient of norm 180 is rescaled to norm 1
+clipped = torch.nn.Parameter(torch.zeros(4))
+clipped.grad = torch.full((4,), 90.0)
+before = clipped.grad.norm().item()
+AdamWWithWarmup([clipped]).step()
+after = clipped.grad.norm().item()
+print(f"gradient norm {before:.1f} before the step, {after:.4f} after")
+free = torch.nn.Parameter(torch.zeros(4))
+free.grad = torch.full((4,), 90.0)
+AdamWWithWarmup([free], max_grad_norm=float("inf")).step()
+print("first update the same with and without clipping:",
+      torch.allclose(clipped, free))
 ```
 
 % output
@@ -712,12 +791,17 @@ step      0: lr 1.5e-07
 step   1999: lr 0.0003
 step  51000: lr 0.00015
 step 100000: lr 0
+50 steps, largest difference from torch.optim.AdamW below 1e-12: True
+gradient norm 180.0 before the step, 1.0000 after
+first update the same with and without clipping: True
 ```
+
+The first Adam update has size $\eta$ whatever the gradient's scale, since the bias-corrected ratio $\hat{m}_t/\sqrt{\hat{v}_t}$ is $\pm 1$ at $t = 1$, so on the first step clipping leaves the weights alone, as the last line shows. It acts through the moments: the spike enters $m$ and $v$ with norm 1 instead of 180, and $v$, which remembers about $1/(1 - \beta_2) = 1000$ steps, is not inflated by $180^2$ for the rest of that memory.
 
 ```{admonition} Interactive Exploration
 :class: note
 The notebook section {ref}`nb-math-optimizers` implements SGD, momentum and Adam from
-scratch (Adam is asserted to match `torch.optim.Adam`), compares them on the Rosenbrock
+scratch (Adam is asserted to match `torch.optim.Adam`, with L2 decay, and its decoupled-decay form `torch.optim.AdamW`), compares them on the Rosenbrock
 function ({ref}`nb-math-rosenbrock`), and plots warm-up with cosine, inverse-square-root
 and constant schedules ({ref}`nb-math-schedules`).
 ```
@@ -1201,7 +1285,7 @@ The compute axis of the scaling laws counts floating-point operations, and nearl
 
 $$2N + 4N = 6N \text{ FLOPs}, \qquad C \approx 6ND$$
 
-for $D$ training tokens. {cite:t}`kaplan2020scaling` count the forward pass as $2N + 2 L n d$ per token, the second term being the attention scores. They call these "add-multiply operations, where the factor of two comes from the multiply-accumulate operation used in matrix multiplication": each multiply-add is counted as two operations, so both terms are FLOPs in this page's sense. They drop the second term because, when $d > n/12$, it is "a relatively small fraction of the total compute"; {ref}`sec-ch2-training-complexity` derives where the crossover lies. They also leave the embedding out of $N$. Biases, normalization, the softmax and the optimizer step add work proportional to $N$ or smaller, not to $N$ times a width, and are left out as well.
+for $D$ training tokens. {cite:t}`kaplan2020scaling` count the forward pass as $2N + 2 L n d$ per token, the second term being the attention scores. They call these "add-multiply operations, where the factor of two comes from the multiply-accumulate operation used in matrix multiplication": each multiply-add is counted as two operations, so both terms are FLOPs in this page's sense. They drop the second term because, when $d > n/12$, it is "a relatively small fraction of the total compute"; {ref}`sec-ch2-training-complexity` derives where the crossover lies. They also leave the embedding out of $N$. Biases, normalization and the softmax cost per token on the order of the number of activations, $d$ per layer and $|\mathcal{V}|$ for the output softmax, a small share beside $2N$; the optimizer step costs on the order of $N$ per step, that is $N/(Bn)$ per token for batches of $B$ sequences of $n$ tokens. They are left out as well.
 
 For Chinchilla, $N = 70 \times 10^9$ and $D = 1.4 \times 10^{12}$ give $C \approx 5.88 \times 10^{23}$ FLOPs. Turning the rule around answers the planning question: with $D = 20N$ ({ref}`sec-ch2-training-implications`), $C = 6N \cdot 20N = 120N^2$, so a budget $C$ buys a compute-optimal model of $N = \sqrt{C/120}$ parameters.
 
@@ -1254,7 +1338,7 @@ where 1.69 is the loss no model or dataset size removes. At $N = 70 \times 10^9$
 
 {cite:t}`hoffmann2022training` conclude that "current large language models are significantly undertrained": at the same compute, a smaller model trained on more tokens reaches a lower loss. A smaller model is also cheaper to run, so the shift lowers inference cost as well.
 
-Because $a_N \approx a_D \approx 0.5$, the compute-optimal ratio $D^*/N^*$ is roughly the same at every budget, and Hoffmann et al.'s Table 3, which gives the projections of their first approach, puts it near 20 tokens per parameter: 20.2 billion tokens for 1 billion parameters, 205.1 billion for 10 billion, 1.5 trillion for 67 billion and 3.7 trillion for 175 billion {cite}`hoffmann2022training`, ratios of 20.2, 20.5, 22.4 and 21.1. Chinchilla itself, 70 billion parameters on 1.4 trillion tokens, sits at 20. With $C \approx 6ND$ ({ref}`sec-ch2-flops`) the rule fixes both sizes from the budget alone. GPT-3's 175 billion parameters would on this rule call for about 3.5 trillion training tokens (Table 3's own projection is 3.7 trillion).
+Because $a_N \approx a_D \approx 0.5$, the compute-optimal ratio $D^*/N^*$ is roughly the same at every budget, and Hoffmann et al.'s Table 3, which gives the projections of their first approach, puts it near 20 tokens per parameter: 20.2 billion tokens for 1 billion parameters, 205.1 billion for 10 billion, 1.5 trillion for 67 billion and 3.7 trillion for 175 billion {cite}`hoffmann2022training`, ratios of 20.2, 20.5, 22.4 and 21.1. Chinchilla itself, 70 billion parameters on 1.4 trillion tokens, sits at 20. With $C \approx 6ND$ ({ref}`sec-ch2-flops`) the rule fixes both sizes from the budget alone. GPT-3's 175 billion parameters {cite}`brown2020language` would on this rule call for about 3.5 trillion training tokens (Table 3's own projection is 3.7 trillion).
 
 {numref}`fig-ch2-allocation-lines` shows how far the two prescriptions part once the budget moves away from Chinchilla's.
 
@@ -1270,6 +1354,53 @@ panel's legend gives that panel's exponents. Exponents and points from
 {cite:t}`kaplan2020scaling` and {cite:t}`hoffmann2022training`; the common anchor is
 this figure's choice.
 ```
+
+(sec-ch2-critical-batch)=
+
+#### Batch Size and the Critical Batch
+
+The budget fixes $N$ and $D$, but the run also needs a batch size $B$ in tokens, and it divides the same $D$ tokens into $D/B$ steps. {ref}`sec-ch2-minibatch-noise` gave the gradient noise: the mini-batch gradient $\hat{g}$ has total variance $\operatorname{tr}(\Sigma)/B$, where $\Sigma$ is the covariance of the per-example gradients. {cite:t}`mccandlish2018empirical` compare it with the squared length of the full gradient $G$. The simple noise scale
+
+$$B_{\text{simple}} = \frac{\operatorname{tr}(\Sigma)}{|G|^2}$$
+
+is the batch at which the noise and the signal have equal size, and it is their noise scale exactly when the Hessian is a multiple of the identity. For a batch much smaller than the noise scale the gradient is mostly noise, so each doubling of $B$ makes each step about twice as useful; for a much larger batch the gradient is already accurate and a larger one adds little.
+
+{cite:t}`kaplan2020scaling` measure this trade for transformer language models. To reach a fixed loss, a run needs a minimum number of steps $S_{\min}$ (at very large batches) and a minimum number of examples $E_{\min}$ (at very small ones), and at any batch size $B$ the number of steps $S$ and of examples $E = BS$ satisfy $(S/S_{\min} - 1)(E/E_{\min} - 1) = 1$. The batch size $B_{\text{crit}} = E_{\min}/S_{\min}$ is the critical batch size. Writing $B = rB_{\text{crit}}$, the relation gives
+
+$$S = S_{\min}\left(1 + \frac{1}{r}\right), \qquad E = E_{\min}(1 + r).$$
+
+At $r = 1$ the run takes twice the minimum steps and twice the minimum data, which Kaplan et al. call "a roughly optimal time/compute tradeoff". At $r = 0.1$ it takes 11 times the minimum steps and only 1.1 times the data: a small batch is cheap but slow. At $r = 10$ it takes 1.1 times the minimum steps and 11 times the data: a large batch is fast but wasteful. They also find that $B_{\text{crit}}$ depends on the model only through the loss reached, and fit $B_{\text{crit}}(\mathcal{L}) \approx B_*/\mathcal{L}^{1/\alpha_B}$ with $B_* \approx 2 \times 10^8$ tokens and $\alpha_B \approx 0.21$ (a loss in nats per token, for their tokenization). The critical batch size therefore grows as training progresses and the loss falls: it roughly doubles for every 13% decrease in loss, and the listing computes it at three losses.
+
+```python
+B_star, alpha_B = 2e8, 0.21  # Kaplan et al.: tokens, and the exponent on the loss
+
+
+def critical_batch(loss):
+    return B_star / loss ** (1 / alpha_B)
+
+
+for loss in (3.0, 2.61, 2.0):
+    print(f"loss {loss}: B_crit = {critical_batch(loss):.3g} tokens")
+ratio = critical_batch(2.61) / critical_batch(3.0)
+print(f"13% lower loss: B_crit x {ratio:.2f}")
+assert 1.8 < ratio < 2.1
+for r in (0.1, 1, 10):
+    print(f"B = {r:g} B_crit: steps {1 + 1 / r:.1f} S_min, data {1 + r:.1f} E_min")
+```
+
+% output
+
+```text
+loss 3.0: B_crit = 1.07e+06 tokens
+loss 2.61: B_crit = 2.08e+06 tokens
+loss 2.0: B_crit = 7.37e+06 tokens
+13% lower loss: B_crit x 1.94
+B = 0.1 B_crit: steps 11.0 S_min, data 1.1 E_min
+B = 1 B_crit: steps 2.0 S_min, data 2.0 E_min
+B = 10 B_crit: steps 1.1 S_min, data 11.0 E_min
+```
+
+Once the batch size is chosen, the learning rate has to follow. {cite:t}`mccandlish2018empirical` find that for plain SGD and momentum the best learning rate is $\eta_{\max}/(1 + B_{\text{noise}}/B)$: proportional to $B$ for small batches, and leveling off at $\eta_{\max}$ once the batch is well above the noise scale ($B_{\text{noise}}$ is their noise scale with the Hessian included). For small batches this is the rule of {cite:t}`goyal2017accurate`: "When the minibatch size is multiplied by $k$, multiply the learning rate by $k$". For Adam, {cite:t}`mccandlish2018empirical` report that the best learning rate initially follows a power law in $B$, with an exponent between 0.5 and 1.0 depending on the task, and then becomes roughly constant. A run that doubles its batch to stay near $B_{\text{crit}}$ as the loss falls should therefore raise the peak learning rate by a factor between $2^{0.5} = 1.41$ and 2, and find the exact value by a sweep.
 
 (sec-ch2-computational-complexity)=
 
@@ -1289,7 +1420,7 @@ For long sequences, attention dominates; for large models, linear layers dominat
 
 $$12nd^2 = 2n^2 d \quad\Longleftrightarrow\quad n = 6d.$$
 
-At $d = 4096$ attention costs as much as the linear layers only at $n = 24{,}576$ tokens; for GPT-3's $d = 12{,}288$ at its context of 2048 tokens, attention costs $n/(6d) = 2.78\%$ as much as the linear layers, 2.7% of the layer's work. In FLOPs per token the $2n^2d$ multiply-adds above are $4nd$ per layer, $4 L n d$ over $L$ layers; Kaplan et al. count the context term as $2 L n d$ FLOPs per token, half of that, so in their accounting the terms meet at $n = 12d$, which is their condition $d > n/12$ ({ref}`sec-ch2-flops`).
+At $d = 4096$ attention costs as much as the linear layers only at $n = 24{,}576$ tokens; for GPT-3's $d = 12{,}288$ at its context of 2048 tokens {cite}`brown2020language`, attention costs $n/(6d) = 2.78\%$ as much as the linear layers, 2.7% of the layer's work. In FLOPs per token the $2n^2d$ multiply-adds above are $4nd$ per layer, $4 L n d$ over $L$ layers; Kaplan et al. count the context term as $2 L n d$ FLOPs per token, half of that, so in their accounting the terms meet at $n = 12d$, which is their condition $d > n/12$ ({ref}`sec-ch2-flops`).
 
 ```python
 def attention_share(n, d):
@@ -1334,7 +1465,7 @@ Training memory has three parts:
 - **Activations**: $\mathcal{O}(B \cdot n \cdot d \cdot L)$ for the residual stream, plus the $\mathcal{O}(B \cdot n_h \cdot n^2 \cdot L)$ attention scores and the $4d$-wide feed-forward intermediates, where $B$ is batch size and $n_h$ the number of heads; without activation recomputation (below) each layer stores about $B\,n\,d\,(34 + 5\,n_h\,n/d)$ bytes {cite}`korthikanti2022reducing`
 - **Optimizer and gradient state**: with mixed precision and Adam, each parameter costs about 16 bytes in total: a 2-byte weight, a 2-byte gradient, a 4-byte fp32 master copy and two 4-byte Adam moments {cite}`rajbhandari2020zero`
 
-**Activation recomputation** (also called activation checkpointing) trades time for memory. Instead of storing every intermediate of the forward pass for the backward pass ({ref}`sec-ch2-reverse-mode`), it stores only the input of each layer and, during the backward pass, runs that layer's forward pass again to rebuild the rest. {cite:t}`korthikanti2022reducing` show that this "full activation recomputation" cuts the activation memory to $2\,B\,n\,d\,L$ bytes, the fp16 layer inputs alone, at the price of one extra forward pass, about $2N$ more FLOPs per token on top of $6N$; they "observe 30 − 40% execution time overhead" in their runs. For the GPT-3 configuration below at batch 8 that is $2 \times 8 \times 2048 \times 12{,}288 \times 96$ bytes $= 38.7$ GB instead of 2,203 GB.
+**Activation recomputation** (also called activation checkpointing) trades time for memory. Instead of storing every intermediate of the forward pass for the backward pass ({ref}`sec-ch2-reverse-mode`), it stores only the input of each layer and, during the backward pass, runs that layer's forward pass again to rebuild the rest. {cite:t}`korthikanti2022reducing` show that this "full activation recomputation" cuts the activation memory to $2\,B\,n\,d\,L$ bytes, the fp16 layer inputs alone, at the price of one extra forward pass, about $2N$ more FLOPs per token on top of $6N$; they "observe 30 − 40% execution time overhead" in their runs. For the GPT-3 configuration {cite}`brown2020language` below at batch 8 that is $2 \times 8 \times 2048 \times 12{,}288 \times 96$ bytes $= 38.7$ GB instead of 2,203 GB.
 
 The function below also counts compute: about $6N$ FLOPs per training token (2 per parameter for the forward pass, 4 for the backward), so $C \approx 6ND$ for $D$ tokens {cite}`kaplan2020scaling`, as derived in {ref}`sec-ch2-flops`. Kaplan et al. count only non-embedding parameters; the function uses the total, which for GPT-3 is 0.36% more.
 
@@ -1518,35 +1649,15 @@ The right $\zeta$ depends on the largest gradient: {cite:t}`micikevicius2017mixe
 
 #### Where the Stability Constant Goes
 
-Adam and LayerNorm both add a small $\epsilon$ to a denominator, in different places. Adam adds it outside the square root, $\hat{m}_t / (\sqrt{\hat{v}_t} + \epsilon)$ ({ref}`sec-ch2-adam-optimizer`), as in Kingma and Ba's algorithm and PyTorch's `Adam` {cite}`pytorch2026adam`. Without it the ratio $|\hat{m}_t|/\sqrt{\hat{v}_t}$ is still bounded, though not by the value usually quoted. {cite:t}`kingma2014adam` give $(1 - \beta_1)/\sqrt{1 - \beta_2} = 0.1/\sqrt{0.001} = 3.16$ as the bound when $1 - \beta_1 > \sqrt{1 - \beta_2}$, a case that "only happens in the most severe case of sparsity: when a gradient has been zero at all timesteps except at the current timestep", and add that "for less sparse cases, the effective stepsize will be smaller". The first statement holds: a rare token's embedding row ({ref}`sec-ch2-adam-optimizer`) whose gradient has been zero for 5,000 steps and is then nonzero moves by $3.15\,\eta$. The second does not. If the token then occurs in every batch with the same gradient, $\hat{m}_t$ approaches the gradient within tens of steps while $\sqrt{\hat{v}_t}$ grows over thousands, and the step rises to $4.24\,\eta$ at the second occurrence and $6.55\,\eta$ at the twelfth before it falls back toward $\eta$, the same curve as the uncorrected steps of Solution 2 in {ref}`sec-ch2-exercise-2`.
+Adam and LayerNorm both add a small $\epsilon$ to a denominator, in different places. Adam adds it outside the square root, $\hat{m}_t / (\sqrt{\hat{v}_t} + \epsilon)$ ({ref}`sec-ch2-adam-optimizer`), as in Kingma and Ba's algorithm and PyTorch's `Adam` {cite}`pytorch2026adam`. The step bound of {ref}`sec-ch2-adam-step-bound` does not involve $\epsilon$, so $\epsilon$ is not what keeps the step finite. It does two other things: it avoids $0/0$ for a weight that has so far received only zero gradients, and it damps the steps of weights whose gradients are tiny, which without it would move by about $\eta$ whatever their gradient's size. With constant gradients of $10^{-10}$, $\hat{m}_t = \sqrt{\hat{v}_t} = 10^{-10}$ and the step is $\eta \cdot 10^{-10}/(10^{-10} + 10^{-8}) = 0.0099\,\eta$ instead of $\eta$.
 
-The bound that does hold for every gradient sequence follows from the Cauchy-Schwarz inequality, which bounds a sum of products by the square roots of the two sums of squares. Unrolled from their zero start, $m_t = (1 - \beta_1)\sum_{i=1}^{t} \beta_1^{t-i} g_i$ and $v_t = (1 - \beta_2)\sum_{i=1}^{t} \beta_2^{t-i} g_i^2$ ({ref}`sec-ch2-adam-optimizer`). Writing each term of the first sum as the product $(\beta_1/\sqrt{\beta_2})^{t-i} \cdot \beta_2^{(t-i)/2} g_i$ gives
+LayerNorm adds $\epsilon$ inside the square root, $\sigma = \sqrt{\frac{1}{d}\sum_i (x_i - \mu)^2 + \epsilon}$ ({ref}`sec-ch2-layer-normalization-mathematics`), as PyTorch's `LayerNorm` documents {cite}`pytorch2026layernorm`, so the factor $1/\sigma$ can never exceed $1/\sqrt{\epsilon}$: 316.2 at PyTorch's default $\epsilon = 10^{-5}$.
 
-$$\left|\sum_{i=1}^{t} \beta_1^{t-i} g_i\right| \le \sqrt{\sum_{i=1}^{t} \left(\frac{\beta_1^2}{\beta_2}\right)^{t-i}}\;\sqrt{\sum_{i=1}^{t} \beta_2^{t-i} g_i^2} = \sqrt{\frac{1 - (\beta_1^2/\beta_2)^t}{1 - \beta_1^2/\beta_2}}\;\sqrt{\frac{v_t}{1 - \beta_2}},$$
-
-where the first sum is geometric with ratio $\beta_1^2/\beta_2 = 0.8108$. Multiplying by $1 - \beta_1$ and dividing $m_t$ and $v_t$ by their bias corrections gives
-
-$$\frac{|\hat{m}_t|}{\sqrt{\hat{v}_t}} \le \frac{1 - \beta_1}{1 - \beta_1^t}\sqrt{\frac{1 - \beta_2^t}{1 - \beta_2}\cdot\frac{1 - (\beta_1^2/\beta_2)^t}{1 - \beta_1^2/\beta_2}} \;\longrightarrow\; \frac{1 - \beta_1}{\sqrt{(1 - \beta_2)(1 - \beta_1^2/\beta_2)}} = \frac{0.1}{\sqrt{0.001 \times 0.1892}} = 7.27.$$
-
-The right-hand side is 1 at $t = 1$ and rises with $t$ toward its limit. Equality in Cauchy-Schwarz needs the two factors to be proportional, $\beta_2^{(t-i)/2} g_i \propto (\beta_1/\sqrt{\beta_2})^{t-i}$, that is $g_i \propto (\beta_2/\beta_1)^{i}$: a gradient that grows by the factor $\beta_2/\beta_1 = 1.11$ at every step. Such a gradient reaches $7.09\,\eta$ after 3,000 steps, and 7.27 is approached but never reached. For dense gradients of steady size the ratio is about 1 or less. Either way $\epsilon$ is not what keeps the step finite. It does two other things: it avoids $0/0$ for a weight that has so far received only zero gradients, and it damps the steps of weights whose gradients are tiny, which without it would move by about $\eta$ whatever their gradient's size. With constant gradients of $10^{-10}$, $\hat{m}_t = \sqrt{\hat{v}_t} = 10^{-10}$ and the step is $\eta \cdot 10^{-10}/(10^{-10} + 10^{-8}) = 0.0099\,\eta$ instead of $\eta$. LayerNorm adds it inside, $\sigma = \sqrt{\frac{1}{d}\sum_i (x_i - \mu)^2 + \epsilon}$ ({ref}`sec-ch2-layer-normalization-mathematics`), as PyTorch's `LayerNorm` documents {cite}`pytorch2026layernorm`, so the factor $1/\sigma$ can never exceed $1/\sqrt{\epsilon}$: 316.2 at PyTorch's default $\epsilon = 10^{-5}$. The size of $\epsilon$ has to suit the format. Adam's usual $10^{-8}$ is below fp16's smallest positive number, about $5.96 \times 10^{-8}$, and rounds to zero, which is one reason optimizer state is kept in fp32 ({ref}`sec-ch2-memory-requirements`).
+The size of $\epsilon$ has to suit the format. Adam's usual $10^{-8}$ is below fp16's smallest positive number, about $5.96 \times 10^{-8}$, and rounds to zero, which is one reason optimizer state is kept in fp32 ({ref}`sec-ch2-memory-requirements`).
 
 ```python
-import math
-
 import torch
 
-beta1, beta2 = 0.9, 0.999
-m = v = 0.0
-steps = []  # |m_hat| / sqrt(v_hat): the step in units of eta, without eps
-# a rare token: absent, then in every batch
-for t, g in enumerate([0.0] * 5000 + [1.0] * 20, start=1):
-    m, v = beta1 * m + (1 - beta1) * g, beta2 * v + (1 - beta2) * g * g
-    if g:
-        steps.append((m / (1 - beta1**t)) / math.sqrt(v / (1 - beta2**t)))
-print("step / eta at the 1st, 2nd and 12th occurrence:",
-      [round(steps[k], 2) for k in (0, 1, 11)])
-bound = (1 - beta1) / math.sqrt((1 - beta2) * (1 - beta1**2 / beta2))
-print("Cauchy-Schwarz bound:", round(bound, 2))
 print("1e-8 in fp16:", torch.tensor(1e-8, dtype=torch.float16).item())
 print("1e-8 in bf16:", f"{torch.tensor(1e-8, dtype=torch.bfloat16).item():.4g}")
 print("largest LayerNorm factor 1/sqrt(eps) at eps = 1e-5:", f"{1e-5 ** -0.5:.4g}")
@@ -1558,8 +1669,6 @@ print("LayerNorm of a constant vector:",
 % output
 
 ```text
-step / eta at the 1st, 2nd and 12th occurrence: [3.15, 4.24, 6.55]
-Cauchy-Schwarz bound: 7.27
 1e-8 in fp16: 0.0
 1e-8 in bf16: 1.001e-08
 largest LayerNorm factor 1/sqrt(eps) at eps = 1e-5: 316.2
@@ -1574,17 +1683,60 @@ LayerNorm of a constant vector: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
 #### Xavier/Glorot Initialization
 
-For layers with $d_{\text{in}}$ inputs and $d_{\text{out}}$ outputs, {cite:t}`glorot2010understanding` choose the variance that keeps activations and gradients at the same scale in both directions:
+Both rules come from following the variance of a signal through one linear layer. Take a row vector $x$ whose $d_{\text{in}}$ entries have mean zero and the same variance $\operatorname{Var}(x)$, and a weight matrix whose entries are independent of $x$ and of each other, with mean zero and variance $\operatorname{Var}(W)$. Each output $y_j = \sum_i x_i W_{ij}$ is a sum of $d_{\text{in}}$ independent terms, each with variance $\operatorname{Var}(x)\operatorname{Var}(W)$, so
 
-$$W \sim \mathcal{N}\left(0, \frac{2}{d_{\text{in}} + d_{\text{out}}}\right)$$
+$$\operatorname{Var}(y_j) = d_{\text{in}} \operatorname{Var}(W) \operatorname{Var}(x).$$
+
+The forward signal keeps its scale from layer to layer only if $d_{\text{in}} \operatorname{Var}(W) = 1$. The backward pass multiplies by $W^\top$ instead: the gradient reaching input $i$ is $\sum_j g_j W_{ij}$, a sum of $d_{\text{out}}$ terms, so the gradient keeps its scale only if $d_{\text{out}} \operatorname{Var}(W) = 1$. The two conditions agree only when $d_{\text{in}} = d_{\text{out}}$. {cite:t}`glorot2010understanding` choose the variance that makes $1/\operatorname{Var}(W)$ the average of the two widths,
+
+$$W \sim \mathcal{N}\left(0, \frac{2}{d_{\text{in}} + d_{\text{out}}}\right),$$
+
+which keeps activations and gradients at similar scales in both directions. For a layer from 256 to 1024 units the forward factor $d_{\text{in}} \operatorname{Var}(W)$ is $2 \cdot 256/1280 = 0.4$ and the backward factor $d_{\text{out}} \operatorname{Var}(W)$ is $1.6$.
 
 (sec-ch2-he-initialization)=
 
 #### He Initialization
 
-For ReLU activations, which set about half of their inputs to zero, {cite:t}`he2015delving` use variance $2/d_{\text{in}}$, twice the $1/d_{\text{in}}$ that would keep a linear layer's output scale:
+A ReLU sets the negative half of a symmetric zero-mean input to zero, so the second moment of its output is half that of its input, $\mathbb{E}[\max(0, y)^2] = \tfrac{1}{2}\operatorname{Var}(y)$. {cite:t}`he2015delving` write the resulting recurrence as $\operatorname{Var}(y_l) = \tfrac{1}{2} n_l \operatorname{Var}(w_l) \operatorname{Var}(y_{l-1})$, with $n_l$ the layer's number of inputs. Across $L$ layers these factors multiply, and keeping the product at 1 needs $\tfrac{1}{2} d_{\text{in}} \operatorname{Var}(W) = 1$ in every layer:
 
-$$W \sim \mathcal{N}\left(0, \frac{2}{d_{\text{in}}}\right)$$
+$$W \sim \mathcal{N}\left(0, \frac{2}{d_{\text{in}}}\right).$$
+
+This is twice the $1/d_{\text{in}}$ that keeps a linear layer's output scale. Using one rule's variance where the other belongs compounds with depth, by a factor of 2 per layer. The listing sends unit-variance inputs through 20 square layers of width 512 and prints the mean square of the final activations: Xavier's variance $2/(d_{\text{in}} + d_{\text{out}}) = 1/512$ keeps linear layers at scale 1 but loses a factor of about $2^{20} \approx 10^6$ through ReLUs, He's variance does the reverse, and a fixed standard deviation of 0.02 collapses the signal in both cases because $512 \times 0.02^2 = 0.2$ is below 1.
+
+```python
+import torch
+
+d, depth = 512, 20
+rules = {"Xavier": 2 / (d + d), "He": 2 / d, "std 0.02": 0.02**2}
+
+
+def second_moment(variance, relu, seed=0):
+    """Mean square of the activations after `depth` layers, unit-variance input."""
+    torch.manual_seed(seed)
+    h = torch.randn(256, d)
+    for _ in range(depth):
+        h = h @ (torch.randn(d, d) * variance**0.5)
+        h = torch.relu(h) if relu else h
+    return (h**2).mean().item()
+
+
+for relu in (False, True):
+    kind = "ReLU" if relu else "linear"
+    row = {name: second_moment(var, relu) for name, var in rules.items()}
+    print(f"{kind:6s} after {depth} layers: "
+          + ", ".join(f"{name} {value:.3g}" for name, value in row.items()))
+    if relu:
+        assert 0.1 < row["He"] < 10 and row["Xavier"] < 1e-4
+    else:
+        assert 0.1 < row["Xavier"] < 10 and row["He"] > 1e4
+```
+
+% output
+
+```text
+linear after 20 layers: Xavier 0.985, He 1.03e+06, std 0.02 1.66e-14
+ReLU   after 20 layers: Xavier 8.6e-07, He 0.902, std 0.02 1.45e-20
+```
 
 (sec-ch2-residual-init)=
 
@@ -1645,10 +1797,10 @@ scaling.
 
 - **Linear algebra** ({ref}`sec-ch2-linear-algebra-you-need`). A weight matrix maps one space to another; dividing attention scores by $\sqrt{d_k}$ keeps their variance at 1 when query and key entries have unit variance. The softmax Jacobian is $\operatorname{diag}(p) - p p^\top$, which vanishes as one probability approaches 1. Reverse-mode differentiation never forms a Jacobian: it passes a vector-Jacobian product back through each operation.
 - **Probability and information theory** ({ref}`sec-ch2-probability-information-theory`). The training loss is the cross-entropy $H(p, q) = H(p) + D_{KL}(p\,\|\,q)$; perplexity is its exponential, and bits per byte divides the loss in bits by the bytes of text, so it compares models with different tokenizers. KL divergence is asymmetric and infinite where the model gives zero probability to an outcome that occurs.
-- **Optimization** ({ref}`sec-ch2-optimization-fundamentals`). On a quadratic, gradient descent is stable for $\eta < 2/\lambda_{\max}$ and heavy-ball momentum for $\eta < 2(1 + \beta_{\text{mom}})/\lambda_{\max}$. Adam divides the bias-corrected first moment by the root of the bias-corrected second moment, so its first step has size about $\eta$ whatever the scale of the gradient. Warm-up, cosine decay, global-norm clipping and gradient accumulation (which reproduces a large batch's gradient from micro-batches) control the step.
+- **Optimization** ({ref}`sec-ch2-optimization-fundamentals`). On a quadratic, gradient descent is stable for $\eta < 2/\lambda_{\max}$ and heavy-ball momentum for $\eta < 2(1 + \beta_{\text{mom}})/\lambda_{\max}$. Adam divides the bias-corrected first moment by the root of the bias-corrected second moment, so its first step has size about $\eta$ whatever the scale of the gradient. Its step is bounded by $7.27\,\eta$ whatever the gradients, not by the $3.16\,\eta$ usually quoted. Warm-up, cosine decay, global-norm clipping and gradient accumulation (which reproduces a large batch's gradient from micro-batches) control the step.
 - **Backpropagation through transformers** ({ref}`sec-ch2-backpropagation-through-transformers`). A residual connection adds the identity to every layer's Jacobian, so a gradient path that skips every layer always exists; pre-LN keeps that path free of normalization. The attention gradient is the softmax Jacobian applied row by row, and the layer-norm gradient removes the components along the mean and along the normalized input.
-- **Scaling laws and compute** ({ref}`sec-ch2-scaling-laws-compute`). Training costs about $6N$ FLOPs per token, so $C \approx 6ND$: Chinchilla's 70 billion parameters and 1.4 trillion tokens cost $5.88 \times 10^{23}$ FLOPs. Kaplan's power laws have exponents 0.076 in parameters and 0.095 in data; the projections of Hoffmann et al.'s first approach (their Table 3) put the compute-optimal ratio near 20 tokens per parameter, the ratio Chinchilla was trained at, and their parametric loss fit gives 1.937 at Chinchilla's own size. Per layer, attention scores cost $2n^2 d$ multiply-adds against $12 n d^2$ for the weight matrices, so they dominate only beyond $n = 6d$. Mixed-precision Adam holds 16 bytes per parameter before activations.
-- **Numerical stability** ({ref}`sec-ch2-numerical-stability-considerations`). fp16 overflows above 65,504 and underflows below its smallest subnormal, so its gradients need loss scaling; bf16 has fp32's exponent range and fewer than three significant decimal digits. Subtracting the largest logit makes softmax and log-sum-exp safe in any format. Xavier and He initialization scale the weight variance to the layer's width so that activations neither grow nor shrink from layer to layer, and scaling each residual branch's output weights by $1/\sqrt{2L}$ keeps the residual stream's variance from growing with depth.
+- **Scaling laws and compute** ({ref}`sec-ch2-scaling-laws-compute`). Training costs about $6N$ FLOPs per token, so $C \approx 6ND$: Chinchilla's 70 billion parameters and 1.4 trillion tokens cost $5.88 \times 10^{23}$ FLOPs. Kaplan's power laws have exponents 0.076 in parameters and 0.095 in data; the projections of Hoffmann et al.'s first approach (their Table 3) put the compute-optimal ratio near 20 tokens per parameter, the ratio Chinchilla was trained at, and their parametric loss fit gives 1.937 at Chinchilla's own size. Per layer, attention scores cost $2n^2 d$ multiply-adds against $12 n d^2$ for the weight matrices, so they dominate only beyond $n = 6d$. Training at the critical batch size, which grows as the loss falls, costs twice the minimum steps and twice the minimum data. Mixed-precision Adam holds 16 bytes per parameter before activations.
+- **Numerical stability** ({ref}`sec-ch2-numerical-stability-considerations`). fp16 overflows above 65,504 and underflows below its smallest subnormal, so its gradients need loss scaling; bf16 has fp32's exponent range and fewer than three significant decimal digits. Subtracting the largest logit makes softmax and log-sum-exp safe in any format. Xavier and He initialization, derived from how a layer changes a signal's variance, scale the weight variance to the layer's width so that activations neither grow nor shrink from layer to layer, and scaling each residual branch's output weights by $1/\sqrt{2L}$ keeps the residual stream's variance from growing with depth.
 
 (sec-ch2-exercises)=
 
@@ -1712,7 +1864,7 @@ overshoot at the start of training, but not later: an embedding row whose gradie
 been zero for thousands of steps has $m_t$ and $v_t$ near zero again while
 $1 - \beta_1^t$ and $1 - \beta_2^t$ are close to 1, so when its token starts to occur in
 every batch its corrected step follows almost the same curve, peaking at $6.55\,\eta$
-({ref}`sec-ch2-epsilon-placement`). The peak is above the $3.16\,\eta$ that Kingma and
+({ref}`sec-ch2-adam-step-bound`). The peak is above the $3.16\,\eta$ that Kingma and
 Ba give as the largest step, and below the $7.27\,\eta$ that no gradient sequence can
 exceed.
 
@@ -1974,7 +2126,7 @@ that each update uses the mean gradient of its own group.
 **Start Here - Intuitive Explanations:**
 
 1. [3Blue1Brown: Neural Networks](https://www.3blue1brown.com/topics/neural-networks) {cite}`sanderson2026neural` - Visual explanations of backpropagation and gradient descent
-1. [Distill: Momentum](https://distill.pub/2017/momentum/) - Interactive visualization of optimization algorithms
+1. [Distill: Momentum](https://distill.pub/2017/momentum/) {cite}`goh2017momentum` - Interactive visualization of optimization algorithms
 1. [The Matrix Calculus You Need For Deep Learning](https://explained.ai/matrix-calculus/) {cite}`parr2018matrix` - Essential calculus for understanding backpropagation
 
 **Mathematical Foundations:**

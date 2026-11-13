@@ -47,7 +47,7 @@ MIN_FIGURES: int = 12
 NOTATION_OK: dict[str, str] = {}
 # Section labels other chapters link to: label -> the text of the heading it sits directly above.
 INTERFACE_LABELS: dict[str, str] = {
-    "sec-ch2-sqrt-dk": "Why attention scores are divided by the key dimension's square root",
+    "sec-ch2-sqrt-dk": "Why Attention Scores Are Divided by the Square Root of the Key Dimension",
     "sec-ch2-pre-post-ln": "Pre-LN versus Post-LN",
     "sec-ch2-flops": "Training Compute per Token",
     "sec-ch2-residual-init": "Transformer-Specific Initialization",

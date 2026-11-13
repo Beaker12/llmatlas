@@ -29,6 +29,14 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $n_{acc}$ | number of micro-batches accumulated per optimizer step | index.md, sec-ch2-gradient-accumulation |  |
 | $z_{\max}$ | largest logit, the shift in log-sum-exp | index.md, sec-ch2-log-sum-exp |  |
 | $\hat{g}$ | mini-batch gradient estimate | index.md, sec-ch2-minibatch-noise |  |
+| $B_{crit}$ | critical batch size, in tokens | index.md, sec-ch2-critical-batch |  |
+| $B_*$ | Kaplan's critical-batch constant, in tokens | index.md, sec-ch2-critical-batch |  |
+| $B_{noise}$ | gradient noise scale with the Hessian included | index.md, sec-ch2-critical-batch |  |
+| $B_{simple}$ | simple noise scale, $\operatorname{tr}(\Sigma)/\lVert G\rVert^2$ | index.md, sec-ch2-critical-batch |  |
+| $S_{\min}$ | fewest steps that reach a given loss | index.md, sec-ch2-critical-batch |  |
+| $E_{\min}$ | fewest examples that reach a given loss | index.md, sec-ch2-critical-batch |  |
+| $\alpha_B$ | exponent of the critical batch size in the loss | index.md, sec-ch2-critical-batch |  |
+| $\eta_{decay}$ | the decay schedule that follows warm-up | index.md, sec-ch2-linear-warmup |  |
 | $\sigma_g$ | standard deviation of a per-example gradient (mini-batch noise) | index.md, sec-ch2-minibatch-noise |  |
 | $n_{rank}$ | rank kept by a low-rank approximation | index.md, sec-ch2-svd-low-rank |  |
 | $\theta_x$ | first of the two parameters of the Rosenbrock function (exercise 2) | index.md, sec-ch2-exercises |  |
