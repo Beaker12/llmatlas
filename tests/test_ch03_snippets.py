@@ -27,8 +27,8 @@ SYNC_EXEMPT: dict[str, str] = {  # name -> reason it may differ between the chap
 RESULT_CLAIMS: list[tuple[str, str, str]] = [
     (r"\\approx (20\.8)\$T tokens", r"D = (\d+\.\d+)T tokens", "approx:0.01"),
     (r"with (428) Disallow rules for every agent", r"Disallow lines: \{'\*': (\d+)\}", "eq"),
-    (r"median article \((206) words", r"(?m)^wikipedia\s+\d+\s+(\d+)", "eq"),
-    (r"median page \((188) words", r"(?m)^c4\s+\d+\s+(\d+)", "eq"),
+    (r"median article \((206\.5) words", r"(?m)^wikipedia\s+\d+\s+(\d+\.\d)", "eq"),
+    (r"median page \((188\.5) words", r"(?m)^c4\s+\d+\s+(\d+\.\d)", "eq"),
     (r"from the first three files of the manifest, is about (95) TB", r"GB -> ~(\d+) TB of WARC", "eq"),
 ]
 
@@ -245,3 +245,84 @@ def test_mixture_shares_match_the_papers_tables():
     assert round(100 - sum(float(rows["Dolma"][c]) for c in dolma), 1) == 0.1   # rounding only
     page = PAGE.read_text()
     assert "out of 1,254 GiB, not of the 825 GiB raw corpus" in page and "Llama tokens out of 3,059B" in page
+
+
+def _page_block(marker):
+    """The source of the page's python listing that contains `marker`."""
+    text = PAGE.read_text(encoding="utf-8")
+    end = text.index(marker)
+    start = text.rindex("```python\n", 0, end) + len("```python\n")
+    return text[start:text.index("\n```", end)]
+
+
+def test_canonicalize_keeps_empty_segments_and_removes_dot_segments(capsys):
+    ns = {}
+    exec(_page_block("def remove_dot_segments"), ns)  # noqa: S102 - the page's own listing
+    canon = ns["canonicalize"]
+    # RFC 3986 section 5.2.4 removes only "." and ".."; an empty segment is significant
+    assert canon("http://example.com/a//b") == "http://example.com/a//b"
+    assert canon("http://example.com//a") == "http://example.com//a"
+    assert canon("http://example.com/a/b/..") == "http://example.com/a/"
+    assert canon("http://example.com/..") == "http://example.com/"
+    assert canon("http://example.com/a/./b/../c") == "http://example.com/a/c"
+
+
+def test_polite_crawler_waits_through_its_sleep_hook(capsys):
+    ns = {}
+    exec(_page_block("def remove_dot_segments"), ns)  # noqa: S102 - the page's own listing
+    clock = {"t": 100.0}
+    slept = []
+
+    def sleep(seconds):          # a real clock that moves only when the crawler waits
+        slept.append(seconds)
+        clock["t"] += seconds
+
+    bot = ns["PoliteCrawler"](ns["transport"], clock=lambda: clock["t"], sleep=sleep)
+    bot.get("https://example.com/a")
+    bot.get("https://example.com/b")          # same host, no time passed: must wait 2 s
+    bot.get("https://example.org/")           # another host: no wait
+    assert slept == [2.0]
+    assert bot.now == 0.0                     # the simulated clock is not used when a clock is given
+
+
+def _notebook_setup_namespace(monkeypatch):
+    import json
+    nb_path = PAGE.parent / "examples" / "data_acquisition_demo.ipynb"
+    cells = json.loads(nb_path.read_text(encoding="utf-8"))["cells"]
+    src = next("".join(c["source"]) for c in cells if c["cell_type"] == "code" and "def fetch(" in c["source"][0]
+               + "".join(c["source"]))
+    monkeypatch.chdir(nb_path.parent)
+    monkeypatch.setenv("LLMATLAS_OFFLINE", "1")
+    ns = {}
+    exec(src, ns)  # noqa: S102 - the notebook's own setup cell
+    return ns
+
+
+def test_notebook_fetch_spaces_requests_per_host(monkeypatch, capsys):
+    ns = _notebook_setup_namespace(monkeypatch)
+    clock = {"t": 1000.0}
+    slept = []
+
+    class Response:
+        headers = {}
+
+        def read(self):
+            return b"ok"
+
+    monkeypatch.setattr(ns["time"], "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(ns["time"], "sleep", lambda s: (slept.append(s), clock.__setitem__("t", clock["t"] + s)))
+    monkeypatch.setattr(ns["urllib"].request, "urlopen", lambda req, timeout: Response())
+    ns["fetch"]("https://a.example/1")
+    ns["fetch"]("https://a.example/2")        # same host at once: waits the full delay
+    ns["fetch"]("https://b.example/1")        # another host: no wait
+    assert slept == [ns["POLITE_DELAY"]] and ns["POLITE_DELAY"] >= 2.0
+    assert all("fetched_at" in f for f in ns["FETCHED"])
+
+
+def test_notebook_fallback_records_carry_the_collection_date(monkeypatch, capsys):
+    ns = _notebook_setup_namespace(monkeypatch)
+    ns["fetch_or_fallback"]("https://en.wikipedia.org/robots.txt", ns["DATA"] / "wikipedia_robots.txt")
+    assert ns["FETCHED"][-1]["fetched_at"] == "2026-10-20"   # examples/data/README.md
+    ns["fetch_or_fallback"]("https://example.com/x", ns["DATA"] / "cc_warc_slice.json")
+    assert ns["FETCHED"][-1]["fetched_at"] == "2026-11-13"
+
