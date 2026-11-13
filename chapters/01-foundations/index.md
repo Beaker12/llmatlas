@@ -803,6 +803,67 @@ Self-attention computes a weighted representation of the input sequence, where w
 
 The scaling factor $\sqrt{d_k}$, where $d_k$ is the per-head key dimension, keeps the dot products at unit variance so the softmax does not saturate {cite}`vaswani2017attention`.
 
+(sec-ch1-attention-worked-example)=
+
+#### A Worked Example
+
+Take $n = 3$ tokens with $d = d_k = 2$, embeddings $(1, 0)$, $(0, 1)$ and $(1, 1)$ as the rows of $X$, and let $W_Q$, $W_K$ and $W_V$ be the identity so that $Q = K = V = X$. Token 1's scores are its dot products with every key, divided by $\sqrt{2} \approx 1.4142$: $(1, 0, 1)/\sqrt{2} = (0.7071, 0, 0.7071)$. The softmax turns them into weights: $e^{0.7071} = 2.028$ and $e^{0} = 1$, so the weights are $(2.028, 1, 2.028)/5.056 = (0.4011, 0.1978, 0.4011)$. Token 1's output is the weighted sum of the values, $0.4011\,(1, 0) + 0.1978\,(0, 1) + 0.4011\,(1, 1) = (0.8022, 0.5989)$. It has moved from $(1, 0)$ toward the tokens it resembles; the orthogonal token 2 gets the smallest weight but not zero. The listing computes all three rows:
+
+```python
+import torch
+
+X = torch.tensor([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])  # n = 3 tokens, d = 2
+Q, K, V = X, X, X  # W_Q = W_K = W_V = identity, so the numbers stay small
+scores = Q @ K.T / 2 ** 0.5
+weights = torch.softmax(scores, dim=-1)
+out = weights @ V
+torch.set_printoptions(precision=4)
+print("scores:\n", scores)
+print("weights:\n", weights)
+print("row sums:", weights.sum(dim=-1))
+print("output:\n", out)
+```
+
+% output
+
+```text
+scores:
+ tensor([[0.7071, 0.0000, 0.7071],
+        [0.0000, 0.7071, 0.7071],
+        [0.7071, 0.7071, 1.4142]])
+weights:
+ tensor([[0.4011, 0.1978, 0.4011],
+        [0.1978, 0.4011, 0.4011],
+        [0.2483, 0.2483, 0.5035]])
+row sums: tensor([1., 1., 1.])
+output:
+ tensor([[0.8022, 0.5989],
+        [0.5989, 0.8022],
+        [0.7517, 0.7517]])
+```
+
+(sec-ch1-attention-complexity)=
+
+#### Cost in Time and Memory
+
+The score matrix $QK^\top$ has one entry for every pair of positions, $n \times n$ of them, and each entry is a dot product of length $d_k$. Over all heads that is $n^2 d$ multiply-adds for the scores and as many again for multiplying the weights by $V$, so self-attention costs $\mathcal{O}(n^2 d)$ time per layer, against $\mathcal{O}(n d^2)$ for the projections and the feed-forward network {cite}`vaswani2017attention`. The weights also have to be stored, $n^2$ numbers per head, so memory grows as $\mathcal{O}(n^2)$. Doubling the context quadruples both. The four projections cost $4nd^2$ and a feed-forward network of width $4d$ costs $8nd^2$, so the $2n^2 d$ of attention overtakes their $12nd^2$ only when $n > 6d$, which is 4,608 tokens for $d = 768$. Below that the $nd^2$ terms dominate; above it the $n^2$ terms do:
+
+```python
+for n in (1_024, 8_192, 131_072):
+    scores = n * n  # one score per (query, key) pair, per head and layer
+    print(f"n = {n:>7,}: {scores:>14,} scores, {4 * scores / 2**20:>9,.0f} MiB in fp32 per head")
+```
+
+% output
+
+```text
+n =   1,024:      1,048,576 scores,         4 MiB in fp32 per head
+n =   8,192:     67,108,864 scores,       256 MiB in fp32 per head
+n = 131,072: 17,179,869,184 scores,    65,536 MiB in fp32 per head
+```
+
+FlashAttention computes exactly the same output without ever storing the full $n \times n$ matrix, which removes the $\mathcal{O}(n^2)$ memory but not the $\mathcal{O}(n^2 d)$ time {cite}`dao2022flashattention`.
+
 (sec-ch1-multi-head-attention)=
 
 #### Multi-Head Attention
@@ -1082,6 +1143,79 @@ logits:       (2, 10, 1000)
 parameters:   229,120
 ```
 
+(sec-ch1-parameter-count)=
+
+#### Counting Parameters
+
+Every block of the model above has the same parameters, so the count is a short formula. With biases, LayerNorm and $d_{ff} = 4d$, one block holds:
+
+- attention: four $d \times d$ projections and their biases, $4d^2 + 4d$;
+- feed-forward network: $d \times 4d$ and $4d \times d$ matrices with biases, $8d^2 + 5d$;
+- two LayerNorms with $\gamma$ and $\beta$, $4d$.
+
+That is $12d^2 + 13d$ per block. The whole model adds the token and position tables, the final LayerNorm and, unless it is tied to $W_E$ ({ref}`sec-ch1-embedding-sharing-tying`), the unembedding:
+
+$$|\mathcal{V}|\,d + n_{ctx}\,d + L\,(12d^2 + 13d) + 2d + d\,|\mathcal{V}|$$
+
+For the listing's toy model this is $64{,}000 + 1{,}024 + 2 \times 49{,}984 + 128 + 64{,}000 = 229{,}120$, exactly what it printed. For large models the $12Ld^2$ term is almost everything, so $12Ld^2$ alone is a good estimate:
+
+```python
+def count_parameters(vocab, d, layers, context, tied):
+    per_block = 12 * d * d + 13 * d  # attention 4d^2 + 4d, FFN (width 4d) 8d^2 + 5d, two LayerNorms 4d
+    embeddings = vocab * d + context * d  # W_E and learned positions
+    unembedding = 0 if tied else d * vocab
+    return embeddings + layers * per_block + 2 * d + unembedding  # 2d: final LayerNorm
+
+print(f"toy model of the listing above: {count_parameters(1000, 64, 2, 16, tied=False):,}")
+gpt3 = count_parameters(50257, 12288, 96, 2048, tied=True)
+print(f"GPT-3 (96 layers, d = 12288):   {gpt3:,} = {gpt3 / 1e9:.1f}B")
+print(f"of which 12 L d^2:              {12 * 96 * 12288**2 / gpt3:.1%}")
+```
+
+% output
+
+```text
+toy model of the listing above: 229,120
+GPT-3 (96 layers, d = 12288):   174,604,259,328 = 174.6B
+of which 12 L d^2:              99.6%
+```
+
+GPT-3's 96 layers of width 12,288 come from its paper, which lists the model as 175.0B parameters {cite}`brown2020language`; the formula lands within 0.3% of that. Modern blocks change the constants (a SwiGLU network of width about $\tfrac{8}{3}d$ has three matrices, $8d^2$, the same as the ReLU network of width $4d$; grouped-query attention shrinks $W_K$ and $W_V$), and chapter 6 counts them for real models.
+
+(sec-ch1-encoder-decoder)=
+
+#### The Encoder-Decoder Stack and Cross-Attention
+
+The original transformer is two stacks {cite}`vaswani2017attention`. The **encoder** reads the whole source sentence of $n_{src}$ tokens with unmasked self-attention and outputs one vector per source token, $H_{enc} \in \mathbb{R}^{n_{src} \times d}$. The **decoder** generates the target one token at a time. Each decoder block has three sublayers instead of two: masked self-attention over the target so far, then **cross-attention**, then the feed-forward network. In cross-attention, in the paper's words, "the queries come from the previous decoder layer, and the memory keys and values come from the output of the encoder":
+
+$$\text{CrossAttention}(Y, H_{enc}) = \text{softmax}\left(\frac{(YW_Q)(H_{enc}W_K)^\top}{\sqrt{d_k}}\right) H_{enc}W_V$$
+
+where $Y \in \mathbb{R}^{n \times d}$ holds the decoder's states. The score matrix is $n \times n_{src}$, so every target position can look at every source position, and no mask is needed because the source is fully known. $H_{enc}$ is computed once per source sentence and reused at every decoding step and in every decoder block:
+
+```python
+import torch
+
+torch.manual_seed(0)
+n, n_src, d = 3, 5, 4  # 3 target positions, 5 source positions
+H_enc = torch.randn(n_src, d)  # encoder output, computed once per source sentence
+y = torch.randn(n, d)  # decoder states after its own masked self-attention
+W_Q, W_K, W_V = (torch.randn(d, d) / d ** 0.5 for _ in range(3))
+Q, K, V = y @ W_Q, H_enc @ W_K, H_enc @ W_V  # queries from the decoder, keys and values from the encoder
+weights = torch.softmax(Q @ K.T / d ** 0.5, dim=-1)
+out = weights @ V
+print("weights:", tuple(weights.shape), "row sums:", [round(s, 4) for s in weights.sum(-1).tolist()])
+print("output: ", tuple(out.shape))
+```
+
+% output
+
+```text
+weights: (3, 5) row sums: [1.0, 1.0, 1.0]
+output:  (3, 4)
+```
+
+The decoder's output then goes through the same final normalization and unembedding as in {ref}`sec-ch1-end-to-end`. The `MultiHeadAttention` listing in {ref}`sec-ch1-multi-head-attention` runs the multi-head version of this case when it is called with a second sequence as keys and values.
+
 (sec-ch1-architectural-variants)=
 
 ### 5.2 Architectural Variants
@@ -1091,6 +1225,51 @@ While the original transformer was designed for machine translation, different v
 - **GPT** {cite}`radford2018improving`: Decoder-only architecture with causal masking
 - **BERT** {cite}`devlin2018bert`: Encoder-only architecture with bidirectional attention
 - **T5** {cite}`raffel2019exploring`: Encoder-decoder architecture treating all tasks as text-to-text
+
+(sec-ch1-masked-lm)=
+
+#### The Masked-Language-Model Objective
+
+An encoder sees the whole sequence, so it cannot be trained to predict the next token: the answer would be visible. BERT instead hides some tokens and predicts them from both sides {cite}`devlin2018bert`. It chooses 15% of the token positions at random as targets, the set $\mathcal{M}$, and replaces each chosen token with `[MASK]` 80% of the time, with a random token 10% of the time, and leaves it unchanged 10% of the time, so the model cannot rely on `[MASK]` marking what to predict and the inputs at fine-tuning time, which have no `[MASK]`, look like training inputs. The loss is the cross-entropy at the chosen positions only:
+
+$$\mathcal{L}_{\text{MLM}} = -\frac{1}{|\mathcal{M}|}\sum_{i \in \mathcal{M}} \log p_\theta(x_i \mid \tilde{x})$$
+
+where $\tilde{x}$ is the corrupted sequence. The listing applies the procedure to 10,000 tokens:
+
+```python
+import torch
+
+torch.manual_seed(0)
+n, vocab, mask_id = 10_000, 30_000, 103  # 103 is [MASK] in BERT's vocabulary
+ids = torch.randint(1_000, vocab, (n,))
+chosen = torch.randperm(n)[: int(0.15 * n)]  # 15% of positions become prediction targets
+k = len(chosen)
+to_mask, to_random = chosen[: int(0.8 * k)], chosen[int(0.8 * k): int(0.9 * k)]  # 80% / 10%; the last 10% stay
+corrupted = ids.clone()
+corrupted[to_mask] = mask_id
+corrupted[to_random] = torch.randint(1_000, vocab, (len(to_random),))
+print(f"targets (loss terms): {k:,} of {n:,}")
+print(f"[MASK] inputs:        {int((corrupted == mask_id).sum()):,}")
+print(f"left unchanged:       {int((corrupted[chosen] == ids[chosen]).sum()):,}")
+print(f"causal LM targets:    {n - 1:,}")
+```
+
+% output
+
+```text
+targets (loss terms): 1,500 of 10,000
+[MASK] inputs:        1,200
+left unchanged:       150
+causal LM targets:    9,999
+```
+
+The last line is the contrast that matters. A causal language model gets a training signal from every position, 9,999 terms for 10,000 tokens, while the masked model gets 1,500; BERT's authors note that because the masked model "only make[s] predictions on 15% of tokens in each batch", "more pre-training steps may be required" {cite}`devlin2018bert`.
+
+(sec-ch1-why-decoder-only)=
+
+#### Why Decoder-Only Models Won
+
+Encoders trained this way are strong at understanding tasks such as classification, but they do not generate text, and an encoder-decoder needs two stacks and a split of the input into source and target. A decoder-only model needs neither. Its objective uses every token, as the count above shows; it needs no task-specific output layer, because any task can be posed as text to continue; and the same next-token prediction that trains it is how it generates. GPT-3 showed that such a model, made large enough, performs new tasks from a few examples placed in its prompt {cite}`brown2020language`, and the widely used LLMs since, from LLaMA to Llama 3, are decoder-only {cite}`touvron2023llama,grattafiori2024llama`. Encoder-only and encoder-decoder models remain in use where their strengths matter, for example for retrieval embeddings and for translation.
 
 (sec-ch1-modern-block)=
 
@@ -1182,6 +1361,82 @@ def create_causal_mask(seq_length: int) -> torch.Tensor:
     return mask == 0  # True for allowed positions, False for masked
 ```
 
+(sec-ch1-teacher-forcing)=
+
+#### Teacher Forcing, Shifted Targets, BOS and EOS
+
+During training the model never feeds its own predictions back in. The whole true sequence goes in at once, and position $i$ is asked to predict token $i + 1$; this is called **teacher forcing**. In code the targets are the inputs shifted left by one, and the causal mask makes the $n$ predictions independent of each other's answers, so one forward pass yields $n$ loss terms. Two special tokens frame each sequence: a **beginning-of-sequence** token (BOS) gives position 1 something to condition on, and an **end-of-sequence** token (EOS) is a target like any other, so the model learns when to stop. GPT-2 uses one token, `<|endoftext|>` (id 50,256), for both roles, placed between documents:
+
+```python
+tokens = ["<bos>", "the", "cat", "sat", "<eos>"]
+inputs, targets = tokens[:-1], tokens[1:]  # the targets are the inputs shifted left by one
+for i, (seen, target) in enumerate(zip(inputs, targets), start=1):
+    print(f"position {i}: sees {inputs[:i]} -> predicts {target!r}")
+```
+
+% output
+
+```text
+position 1: sees ['<bos>'] -> predicts 'the'
+position 2: sees ['<bos>', 'the'] -> predicts 'cat'
+position 3: sees ['<bos>', 'the', 'cat'] -> predicts 'sat'
+position 4: sees ['<bos>', 'the', 'cat', 'sat'] -> predicts '<eos>'
+```
+
+(sec-ch1-decoding)=
+
+#### Decoding: Greedy, Temperature, Top-k and Top-p
+
+At generation time there is no true sequence. The model computes the distribution for the next token, one token is chosen and appended, and the loop repeats until EOS or a length limit. How the token is chosen is the **decoding** strategy:
+
+- **Greedy** decoding takes the most probable token every time. It is deterministic and tends to repeat itself in long text.
+- **Temperature** $\tau$ divides the logits before the softmax, $\text{softmax}(z/\tau)$. $\tau < 1$ sharpens the distribution toward greedy, $\tau > 1$ flattens it toward uniform, and $\tau = 1$ samples from the model's own distribution.
+- **Top-k** sampling keeps only the $k_{top}$ most probable tokens, renormalizes and samples; Fan et al. sampled "from the $k = 10$ most likely candidates" {cite}`fan2018hierarchical`.
+- **Top-p** (nucleus) sampling keeps the smallest set of most probable tokens whose total probability reaches $p_{top}$, so the number kept adapts to how confident the model is {cite}`holtzman2020curious`.
+
+The listing applies each rule to the same five logits:
+
+```python
+import torch
+
+vocab = ["the", "a", "cat", "dog", "pizza"]
+logits = torch.tensor([2.0, 1.5, 1.0, 0.5, -1.0])
+
+
+def show(name, probs):
+    print(f"{name:<15}", " ".join(f"{w}={p:.3f}" for w, p in zip(vocab, probs.tolist())))
+
+
+print("greedy:        ", vocab[int(logits.argmax())])
+for tau in (1.0, 0.5, 2.0):
+    show(f"tau = {tau}", torch.softmax(logits / tau, dim=-1))
+
+probs = torch.softmax(logits, dim=-1)
+k_top = 2
+top_k = torch.where(logits >= logits.topk(k_top).values[-1], probs, torch.zeros_like(probs))
+show("top-k, k = 2", top_k / top_k.sum())
+
+p_top = 0.9
+sorted_p, order = probs.sort(descending=True)
+keep = sorted_p.cumsum(0) - sorted_p < p_top  # keep tokens until the kept mass first reaches p_top
+nucleus = torch.zeros_like(probs)
+nucleus[order[keep]] = probs[order[keep]]
+show("top-p, p = 0.9", nucleus / nucleus.sum())
+```
+
+% output
+
+```text
+greedy:         the
+tau = 1.0       the=0.445 a=0.270 cat=0.164 dog=0.099 pizza=0.022
+tau = 0.5       the=0.643 a=0.237 cat=0.087 dog=0.032 pizza=0.002
+tau = 2.0       the=0.325 a=0.253 cat=0.197 dog=0.153 pizza=0.072
+top-k, k = 2    the=0.622 a=0.378 cat=0.000 dog=0.000 pizza=0.000
+top-p, p = 0.9  the=0.455 a=0.276 cat=0.167 dog=0.102 pizza=0.000
+```
+
+Halving the temperature raises the top token from 0.445 to 0.643. Top-k with $k_{top} = 2$ keeps "the" and "a" and rescales them by $1/(0.445 + 0.270)$. Top-p with $p_{top} = 0.9$ needs four tokens, because the first three hold only $0.445 + 0.270 + 0.164 = 0.879$; on a more confident distribution the same $p_{top}$ would keep fewer. In practice temperature is combined with top-k or top-p, and the chosen token is then drawn from the result.
+
 (sec-ch1-training-process)=
 
 ### 6.2 Training Process
@@ -1205,6 +1460,39 @@ where $h^{(L)}_{i-1}$ is the hidden state of the last layer $L$ at position $i-1
 $$\text{Perplexity} = \exp\left(-\frac{1}{T} \sum_{i=1}^{T} \log p_\theta(x_i \mid x_{<i})\right) = \exp(\mathcal{L})$$
 
 Perplexity was introduced as the effective branching factor of a language model {cite}`jelinek1977perplexity`; lower is better. It correlates only loosely with downstream task accuracy, so large-scale evaluations report both {cite}`liang2022holistic`.
+
+(sec-ch1-bits-per-byte)=
+
+#### Perplexity Depends on the Tokenizer; Bits per Byte Does Not
+
+Perplexity is an average per token, so two models can only be compared by it if they cut the text into the same tokens. Suppose two models assign exactly the same probability to a 1 MB test text, a total of 700,000 nats, but model A's tokenizer splits it into 250,000 tokens and model B's into 200,000. Model A's loss is $700{,}000/250{,}000 = 2.80$ nats per token, a perplexity of $e^{2.80} = 16.44$; model B's is 3.50 nats, a perplexity of 33.12. B looks twice as bad while predicting the text exactly as well; it simply has fewer, larger tokens, each of which is harder to guess.
+
+**Bits per byte** removes the tokenizer by dividing the total by the number of UTF-8 bytes $n_{bytes}$ instead of the number of tokens, and converting nats to bits {cite}`gao2020pile`:
+
+$$\text{BPB} = \frac{T}{n_{bytes}} \cdot \frac{\mathcal{L}}{\ln 2}$$
+
+where $T\mathcal{L}$ is the total loss in nats. The Pile's authors prefer it "due to its invariance to different tokenization schemes". Both models above score 1.0099 bits per byte:
+
+```python
+import math
+
+n_bytes = 1_000_000  # the same 1 MB evaluation text
+total_nll = 700_000.0  # summed -ln p over the text, in nats, for both models
+for name, T in [("tokenizer A", 250_000), ("tokenizer B", 200_000)]:
+    loss = total_nll / T
+    print(f"{name}: {T:,} tokens, loss {loss:.2f} nats/token, perplexity {math.exp(loss):.2f}")
+print(f"bits per byte, either tokenizer: {total_nll / (n_bytes * math.log(2)):.4f}")
+```
+
+% output
+
+```text
+tokenizer A: 250,000 tokens, loss 2.80 nats/token, perplexity 16.44
+tokenizer B: 200,000 tokens, loss 3.50 nats/token, perplexity 33.12
+bits per byte, either tokenizer: 1.0099
+```
+
+Perplexities of models with the same tokenizer, such as checkpoints of one training run, can be compared directly; across tokenizers, compare bits per byte.
 
 ```{admonition} Language Modeling in Practice
 :class: note

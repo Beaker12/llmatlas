@@ -16,3 +16,7 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\mathcal{N}$ | normal distribution | C1-03 |  |
 | $\tilde{q}$ | RoPE-rotated query ($\tilde{q}_m = q_m \mathcal{R}_m^\top$) | D2, `sec-ch1-rope` |  |
 | $\tilde{k}$ | RoPE-rotated key ($\tilde{k}_{m'} = k_{m'} \mathcal{R}_{m'}^\top$) | D2, `sec-ch1-rope` |  |
+| $Y$ | decoder states that supply the queries of cross-attention | C1-13, `sec-ch1-encoder-decoder` |  |
+| $\mathcal{L}_{MLM}$ | masked-language-model loss, mean over the masked positions | C1-13, `sec-ch1-masked-lm` |  |
+| $\tilde{x}$ | corrupted input sequence of the masked-language-model objective | C1-13, `sec-ch1-masked-lm` |  |
+| $n_{ctx}$ | context length (number of learned position embeddings) | C1-13, `sec-ch1-parameter-count` |  |
