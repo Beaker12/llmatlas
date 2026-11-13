@@ -121,11 +121,13 @@ A WARC file is a sequence of gzip members, one per record, so that any record ca
 ```python
 import gzip
 import json
+import os
 import urllib.request
 import zlib
 
 BASE = "https://data.commoncrawl.org/"
-HEADERS = {"User-Agent": "llmatlas-notebook/0.1"}
+# LLMATLAS_USER_AGENT, when set, replaces the default agent string.
+HEADERS = {"User-Agent": os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")}
 
 
 def fetch(url, headers=None, timeout=60):
@@ -226,12 +228,13 @@ The Robots Exclusion Protocol (RFC 9309) lets a site state, in `/robots.txt`, wh
 Python's standard library parses the file:
 
 ```python
+import os
 import urllib.request
 import urllib.robotparser
 
 # Fetch with a named user agent: RobotFileParser.read() would send Python's default
 # agent, which Wikipedia answers with 403, and the parser would then disallow everything.
-req = urllib.request.Request("https://en.wikipedia.org/robots.txt", headers={"User-Agent": "llmatlas-notebook/0.1"})
+req = urllib.request.Request("https://en.wikipedia.org/robots.txt", headers={"User-Agent": os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")})
 robots_txt = urllib.request.urlopen(req, timeout=20).read().decode("utf-8", "replace")
 
 rp = urllib.robotparser.RobotFileParser()
