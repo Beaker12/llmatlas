@@ -76,7 +76,7 @@ def run_fence(marker):
     return namespace
 
 
-# Softmax saturation (sec-ch2-softmax-jacobian): dp_1/dz_1 = p_1 (1 - p_1) when z_1 leads the other logits by gap.
+# Softmax saturation (sec-ch2-softmax-jacobian): dp_i/dz_i = p_i (1 - p_i) when z_i leads the other logits by gap.
 def softmax_saturation(out):
     gap = np.linspace(0, 14, 400)
     fig, ax = plt.subplots(figsize=(7, 3.6))
@@ -87,7 +87,7 @@ def softmax_saturation(out):
         ax.plot(gap, p1 * (1 - p1), color=color, lw=2, label=f"{count} logits")
         p8 = math.exp(8) / (math.exp(8) + count - 1)
         ax.plot(8, p8 * (1 - p8), "o", color=color, ms=6)
-        ax.annotate(f"$p_1 = {p8:.4f}$, derivative {p8 * (1 - p8):.2g}", (8, p8 * (1 - p8)), xytext=offset,
+        ax.annotate(f"$p_i = {p8:.4f}$, derivative {p8 * (1 - p8):.2g}", (8, p8 * (1 - p8)), xytext=offset,
                     textcoords="offset points", ha=align[0], va=align[1], color=color)
     ax.axvline(8, color=GREY, ls="--", lw=1)
     ax.text(7.85, 1.3e-6, "gap 8: the standard deviation\nof one unscaled score at $d_k = 64$\n(the difference of two scores\nhas $8\\sqrt{2} = 11.3$)", ha="right",
@@ -95,8 +95,8 @@ def softmax_saturation(out):
     ax.set_yscale("log")
     ax.set_ylim(1e-6, 0.6)
     ax.set_xlim(0, 14)
-    ax.set_xlabel("logit gap $z_1 - z_j$ (all other logits equal)")
-    ax.set_ylabel(r"$\partial p_1 / \partial z_1 = p_1(1 - p_1)$")
+    ax.set_xlabel("logit gap $z_i - z_j$ (all other logits equal)")
+    ax.set_ylabel(r"$\partial p_i / \partial z_i = p_i(1 - p_i)$")
     ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=2, frameon=False)
     save(fig, out, "softmax-saturation")
 

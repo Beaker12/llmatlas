@@ -223,7 +223,7 @@ layer computes $xW$.
 | $B_{crit}$ | critical batch size, in tokens | {ref}`sec-ch2-critical-batch` |
 | $B_*$ | Kaplan's critical-batch constant, in tokens | {ref}`sec-ch2-critical-batch` |
 | $B_{noise}$ | gradient noise scale with the Hessian included | {ref}`sec-ch2-critical-batch` |
-| $B_{simple}$ | simple noise scale, $$\operatorname{tr}(\Sigma)/$; also index.md, {ref}`sec-ch2-critical-batch` | {ref}`sec-ch2-critical-batch` |
+| $B_{simple}$ | simple noise scale, $\operatorname{tr}(\Sigma)/\lVert G\rVert^2$ | {ref}`sec-ch2-critical-batch` |
 | $S_{\min}$ | fewest steps that reach a given loss | {ref}`sec-ch2-critical-batch` |
 | $E_{\min}$ | fewest examples that reach a given loss | {ref}`sec-ch2-critical-batch` |
 | $\alpha_B$ | exponent of the critical batch size in the loss | {ref}`sec-ch2-critical-batch` |
