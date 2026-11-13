@@ -38,7 +38,7 @@ NOT_A_RESULT: dict[str, str] = {
     r"and diffing two versions": "names the two inputs of the diff (an old and a new version), not a measured result",
     r"checks resumption at a hundred random steps": "the number of resumption points the notebook tests, an "
                                                     "experiment setting it asserts over, not a result",
-    r"simulates shard assignment for one, two, four and eight ranks": "the simulated world sizes and shard count, experiment settings, not results",
+    r"simulates shard assignment for one, two,\s+four and eight ranks": "the simulated world sizes and shard count, experiment settings, not results",
 }
 
 MIN_FIGURES: int = 13
@@ -59,9 +59,7 @@ ANSWERS = {
     1: [r"608,751 tokens in 2,000 documents", r"uint16 binary +2\.00 bytes per token", r"uint32 binary +4\.00 bytes"],
     2: [r"kept 850 at 0\.30 and 838 at 0\.27: 12 documents removed", r"count layout: 16 of 17 shards changed",
         r"hash  layout: 12 of 64 shards changed"],
-    3: [r"mean    100: chunking splits 2\.4% of documents; best-fit pads 0\.04% and splits 0\.0%",
-        r"mean  1,000: chunking splits 23\.2% of documents; best-fit pads 0\.03% and splits 1\.6%",
-        r"mean 10,000: chunking splits 84\.0% of documents; best-fit pads 0\.48% and splits 66\.5%"],
+    3: [r"(?m)^ *100 +2\.4% +0\.04% +0\.0%$", r"(?m)^ *1,000 +23\.2% +0\.03% +1\.6%$", r"(?m)^ *10,000 +84\.0% +0\.48% +66\.5%$"],
     4: [r"removes 62\.0% of the causal pairs", r"changes the context of 75\.6% of the tokens",
         r"seed 0, gap to document mask ", r"seed 1, gap to mask, EOD opens "],
     5: [r"agrees with iterating at 1000 random steps", r"step 5,000: \{'code': 750, 'web': 3500, 'wiki': 750\}",

@@ -139,7 +139,8 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-# 1,000 documents written in order of length, as a build that sorts by length would write them
+# 1,000 documents written in order of length, as a build that sorts by length would
+# write them
 n = 1000
 table = pa.table({
     "id": [f"doc{i:04d}" for i in range(n)],
@@ -152,7 +153,8 @@ with tempfile.TemporaryDirectory() as tmp:
     path = Path(tmp) / "part-00000.parquet"
     pq.write_table(table, path, row_group_size=250, compression="zstd")
 
-    # The footer alone: schema, row groups, and per-column min and max for every row group
+    # The footer alone: schema, row groups, and per-column min and max for every row
+    # group
     pf = pq.ParquetFile(path)
     meta = pf.metadata
     col = pf.schema_arrow.get_field_index("num_tokens")
@@ -164,17 +166,20 @@ with tempfile.TemporaryDirectory() as tmp:
         for g in range(meta.num_row_groups)
     ]
     print(
-        f"{meta.num_rows} rows, {meta.num_row_groups} row groups, {meta.num_columns} columns"
+        f"{meta.num_rows} rows, {meta.num_row_groups} row groups, {meta.num_columns} "
+        "columns"
     )
     print("num_tokens min and max per row group:", bounds)
 
-    # Predicate push-down by hand: only row groups whose range can hold num_tokens >= 900 are read,
+    # Predicate push-down by hand: only row groups whose range can hold num_tokens >=
+    # 900 are read,
     # and only two of the four columns (column projection)
     wanted = [g for g, (lo, hi) in enumerate(bounds) if hi >= 900]
     long_docs = pf.read_row_groups(wanted, columns=["id", "num_tokens"])
     long_docs = long_docs.filter(pa.compute.greater_equal(long_docs["num_tokens"], 900))
     print(
-        f"row groups read: {wanted}, columns read: {long_docs.column_names}, rows kept: {long_docs.num_rows}"
+        f"row groups read: {wanted}, columns read: {long_docs.column_names}, rows "
+        f"kept: {long_docs.num_rows}"
     )
     assert wanted == [3] and long_docs.num_rows == 110
     # The library does the same from a filter expression
@@ -195,7 +200,8 @@ with tempfile.TemporaryDirectory() as tmp:
         cached = pa.ipc.open_file(source).read_all()
         assert cached.equals(table)
         print(
-            f"Arrow cache: {cached.num_rows} rows, {cached.nbytes:,} bytes of buffers mapped from disk"
+            f"Arrow cache: {cached.num_rows} rows, {cached.nbytes:,} bytes of buffers "
+            "mapped from disk"
         )
 ```
 
@@ -246,7 +252,8 @@ def write_jsonl_shards(docs, out_dir: Path, docs_per_shard: int, prefix: str = "
         raw = b"".join(
             json.dumps(d, ensure_ascii=False).encode("utf-8") + b"\n" for d in batch
         )
-        # filename="" and mtime=0 keep the temporary file name and the time of writing out of the gzip header
+        # filename="" and mtime=0 keep the temporary file name and the time of writing
+        # out of the gzip header
         with open(tmp, "wb") as out, gzip.GzipFile(
             filename="", fileobj=out, mode="wb", compresslevel=6, mtime=0
         ) as f:
@@ -295,7 +302,8 @@ with tempfile.TemporaryDirectory() as tmp:
         d["id"] for d in docs
     ]
     assert not list(Path(tmp).glob("*.tmp"))
-    # The same documents under another name: same content identity and, with the header fixed, the same bytes
+    # The same documents under another name: same content identity and, with the header
+    # fixed, the same bytes
     renamed = write_jsonl_shards(
         docs, Path(tmp) / "renamed", docs_per_shard=4, prefix="part"
     )
@@ -352,7 +360,8 @@ class TokenShard:
         meta = json.loads(path.with_suffix(".json").read_text())
         if meta["tokenizer_hash"] != tokenizer_hash:
             raise ValueError(
-                f"{path.name} was built with tokenizer {meta['tokenizer_hash']}, not {tokenizer_hash}"
+                f"{path.name} was built with tokenizer {meta['tokenizer_hash']}, not "
+                f"{tokenizer_hash}"
             )
         self.dtype = np.dtype(meta["dtype"])
         self.tokenizer_hash = meta["tokenizer_hash"]
@@ -414,7 +423,8 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError:
         pass
     print(
-        f"{len(shard)} documents, offsets {shard.offsets.tolist()}, dtype {shard.tokens.dtype}"
+        f"{len(shard)} documents, offsets {shard.offsets.tolist()}, dtype "
+        f"{shard.tokens.dtype}"
     )
     print("document 1:", shard.document(1).tolist())
 ```
@@ -455,8 +465,8 @@ BOS, EOD = 1, 0
 
 
 def with_special_tokens(token_docs, policy: str) -> np.ndarray:
-    """Concatenate documents under a special-token policy: "eod" puts EOD after each document,
-    "bos+eod" also puts BOS before each one."""
+    """Concatenate documents under a special-token policy: "eod" puts EOD after each
+    document, "bos+eod" also puts BOS before each one."""
     stream = []
     for doc in token_docs:
         if policy == "bos+eod":
@@ -467,8 +477,8 @@ def with_special_tokens(token_docs, policy: str) -> np.ndarray:
 
 
 def loss_mask(stream: np.ndarray) -> np.ndarray:
-    """One flag per next-token target stream[1:]: BOS is never a prediction target, since it
-    follows EOD by rule and carries nothing to learn."""
+    """One flag per next-token target stream[1:]: BOS is never a prediction target,
+    since it follows EOD by rule and carries nothing to learn."""
     return stream[1:] != BOS
 
 
@@ -479,7 +489,8 @@ for policy in ("eod", "bos+eod"):
     stream = with_special_tokens(docs, policy)
     special = 1 - content / stream.size
     print(
-        f"{policy:8s} {stream.size:,} tokens, {special:.2%} special, {int(loss_mask(stream).sum()):,} trained targets"
+        f"{policy:8s} {stream.size:,} tokens, {special:.2%} special, "
+        f"{int(loss_mask(stream).sum()):,} trained targets"
     )
 stream = with_special_tokens(docs, "bos+eod")
 starts = np.flatnonzero(stream == BOS)
@@ -517,7 +528,8 @@ import time
 import numpy as np
 import pyarrow as pa
 
-# Sizes and timings depend on the machine and the library builds; the order of the codecs is the result
+# Sizes and timings depend on the machine and the library builds; the order of the
+# codecs is the result
 rng = np.random.default_rng(0)
 vocab = [f"w{i}" for i in range(20_000)]
 zipf = rng.zipf(1.2, size=800_000)
@@ -540,7 +552,8 @@ for name, level in [
     label = name if level is None else f"{name}-{level}"
     results[label] = len(text) / len(packed)
     print(
-        f"{label:9s} ratio {len(text) / len(packed):.3g}, compress {len(text) / (t1 - t0) / 1e6:.0f} MB/s, "
+        f"{label:9s} ratio {len(text) / len(packed):.3g}, compress "
+        f"{len(text) / (t1 - t0) / 1e6:.0f} MB/s, "
         f"decompress {len(text) / (t2 - t1) / 1e6:.0f} MB/s"
     )
 assert results["zstd-19"] > results["zstd-3"] > results["lz4"]
@@ -673,7 +686,8 @@ old_proof_valid = verify_inclusion(
 )
 assert root_v2 != root and not old_proof_valid
 print(
-    f"one byte of shard_006 changed: {root_v2[:16]}..., old proof valid: {old_proof_valid}"
+    f"one byte of shard_006 changed: {root_v2[:16]}..., old proof valid: "
+    f"{old_proof_valid}"
 )
 ```
 
@@ -722,6 +736,7 @@ d1, changes. The other two shards keep their hashes and their storage.
 ```python
 import hashlib
 import json
+from pprint import pprint
 
 
 def diff_manifests(old, new):
@@ -755,13 +770,16 @@ assert diff_manifests(v1, v2) == {
     "changed": ["shard_002"],
     "unchanged": 3,
 }
-print(diff_manifests(v1, v2))
+pprint(diff_manifests(v1, v2), width=88, sort_dicts=False)
 ```
 
 % output
 
 ```text
-{'added': ['shard_005'], 'removed': ['shard_000'], 'changed': ['shard_002'], 'unchanged': 3}
+{'added': ['shard_005'],
+ 'removed': ['shard_000'],
+ 'changed': ['shard_002'],
+ 'unchanged': 3}
 ```
 
 (sec-ch5-immutability-naming)=
@@ -784,7 +802,8 @@ FULL_COMMIT = re.compile(r"[0-9a-f]{40}")
 
 
 def check_data_pin(config: dict) -> list:
-    """Problems with a run configuration's data reference: the revision must be a full commit hash."""
+    """Problems with a run configuration's data reference: the revision must be a
+    full commit hash."""
     revision = config.get("revision", "main")
     if FULL_COMMIT.fullmatch(revision):
         return []
@@ -836,7 +855,8 @@ import json
 def lineage_record(
     output_root: str, inputs: dict, code_commit: str, config: dict, tokenizer_hash=None
 ) -> dict:
-    """How a version was made; the record hash covers every field, so an edited record is detected."""
+    """How a version was made; the record hash covers every field, so an edited
+    record is detected."""
     record = {
         "output": output_root,
         "inputs": dict(sorted(inputs.items())),
@@ -849,7 +869,8 @@ def lineage_record(
 
 
 def verify_record(record: dict, known_roots: set) -> list:
-    """Problems with a record: a hash that does not match its fields, or an input that is not a known version."""
+    """Problems with a record: a hash that does not match its fields, or an input
+    that is not a known version."""
     fields = {k: v for k, v in record.items() if k != "record_hash"}
     problems = []
     if (
@@ -905,10 +926,8 @@ assert all(verify_record(r, known) == [] for r in records)
 tampered = {**tokens, "config": {"seq_len": 8192}}
 assert verify_record(tampered, known) == ["record hash does not match its contents"]
 affected = descendants(records, "r-wiki")
-print(
-    "record for t-v1.2.0:",
-    json.dumps({k: tokens[k] for k in ("inputs", "code", "tokenizer")}),
-)
+print("record for t-v1.2.0:")
+print(json.dumps({k: tokens[k] for k in ("inputs", "code", "tokenizer")}))
 print("versions built from wiki-2024-03:", sorted(affected))
 assert affected == {"c-v1.2.0", "t-v1.2.0", "m-run17"}
 ```
@@ -916,7 +935,8 @@ assert affected == {"c-v1.2.0", "t-v1.2.0", "m-run17"}
 % output
 
 ```text
-record for t-v1.2.0: {"inputs": {"corpus": "c-v1.2.0"}, "code": "9f3c2e1", "tokenizer": "tok-5d41"}
+record for t-v1.2.0:
+{"inputs": {"corpus": "c-v1.2.0"}, "code": "9f3c2e1", "tokenizer": "tok-5d41"}
 versions built from wiki-2024-03: ['c-v1.2.0', 'm-run17', 't-v1.2.0']
 ```
 
@@ -943,7 +963,8 @@ import numpy as np
 
 
 def split_of(key: str, salt: str = "split-v1", validation: float = 0.01) -> str:
-    """Stable split by a hash of the key: the same key lands in the same split in every version."""
+    """Stable split by a hash of the key: the same key lands in the same split in
+    every version."""
     u = int(hashlib.sha256(f"{salt}:{key}".encode()).hexdigest()[:15], 16) / 16**15
     return "validation" if u < validation else "train"
 
@@ -954,7 +975,8 @@ v2 = [d for d in v1 if rng.random() > 0.05] + [
     f"new{i}" for i in range(8000)
 ]  # 5% removed, 8,000 added
 
-# A fresh random 1% split per version puts most of v1's validation set into v2's training set
+# A fresh random 1% split per version puts most of v1's validation set into v2's
+# training set
 val_v1 = set(rng.choice(v1, size=len(v1) // 100, replace=False))
 val_v2 = set(rng.choice(v2, size=len(v2) // 100, replace=False))
 train_v2_random = set(v2) - val_v2
@@ -965,11 +987,13 @@ val_v1_hash = {d for d in v1 if split_of(d) == "validation"}
 train_v2_hash = {d for d in v2 if split_of(d) == "train"}
 leak_hash = len(val_v1_hash & train_v2_hash) / len(val_v1_hash)
 print(
-    f"v1 validation documents in v2 training: random split {leak_random:.1%}, hash split {leak_hash:.1%}"
+    f"v1 validation documents in v2 training: random split {leak_random:.1%}, hash "
+    f"split {leak_hash:.1%}"
 )
 assert leak_random > 0.9 and leak_hash == 0.0
 
-# Near-duplicates must share a split: key the hash on the duplicate cluster, not the document
+# Near-duplicates must share a split: key the hash on the duplicate cluster, not the
+# document
 pairs = [
     (f"page{i}", f"page{i}-mirror") for i in range(20_000)
 ]  # each page and a near-copy of it
@@ -980,9 +1004,8 @@ split_by_doc = sum(split_of(a) != split_of(b) for a, b in pairs)
 split_by_cluster = sum(
     split_of(cluster_of[a]) != split_of(cluster_of[b]) for a, b in pairs
 )
-print(
-    f"near-duplicate pairs split across train and validation: keyed by document {split_by_doc}, by cluster {split_by_cluster}"
-)
+print("near-duplicate pairs split across train and validation:")
+print(f"  keyed by document {split_by_doc}, by cluster {split_by_cluster}")
 assert split_by_doc > 0 and split_by_cluster == 0
 ```
 
@@ -990,7 +1013,8 @@ assert split_by_doc > 0 and split_by_cluster == 0
 
 ```text
 v1 validation documents in v2 training: random split 94.2%, hash split 0.0%
-near-duplicate pairs split across train and validation: keyed by document 383, by cluster 0
+near-duplicate pairs split across train and validation:
+  keyed by document 383, by cluster 0
 ```
 
 (sec-ch5-tokenization-packing)=
@@ -1066,7 +1090,8 @@ packed, pad_frac = best_fit_pack(docs, seq_len=256)
 assert split_frac > 0.1  # chunking splits many documents
 assert pad_frac < 0.05  # packing wastes little
 assert packed.shape[1] == 256 and chunked.shape[1] == 256
-# Packing needs more sequences than chunking, by about the padding fraction (nothing is dropped)
+# Packing needs more sequences than chunking, by about the padding fraction (nothing is
+# dropped)
 assert chunked.shape[0] <= packed.shape[0] <= chunked.shape[0] * 1.1
 assert (packed != -1).sum() == sum(
     len(d) + 1 for d in docs
@@ -1129,7 +1154,8 @@ import numpy as np
 
 
 def segment_ids(sequence, eod: int = 0) -> np.ndarray:
-    """Document index of each position; the EOD token belongs to the document it ends."""
+    """Document index of each position; the EOD token belongs to the document it
+    ends."""
     ends = np.asarray(sequence) == eod
     return np.concatenate([[0], np.cumsum(ends)[:-1]])
 
@@ -1206,7 +1232,8 @@ import numpy as np
 
 
 def padding_fraction(lengths, batch_size: int, bucketed: bool, rng) -> float:
-    """Fraction of a padded batch that is padding, each batch padded to its longest example."""
+    """Fraction of a padded batch that is padding, each batch padded to its longest
+    example."""
     order = rng.permutation(len(lengths))
     if (
         bucketed
@@ -1316,9 +1343,11 @@ for label, p in (
     draws_to_cap = 4 * docs / p  # expected draws until each source has had four epochs
     first = int(np.argmin(draws_to_cap))
     tokens = draws_to_cap[first] * (p * mean_len).sum()
-    print(f"{label}: token shares {dict(zip(names, share.round(3).tolist()))}")
+    print(f"{label}:")
+    print(f"  token shares {dict(zip(names, share.round(3).tolist()))}")
     print(
-        f"  first cap to bind: {names[first]}, after {draws_to_cap[first]:,.0f} documents and {tokens / 1e6:.2f}M tokens"
+        f"  first cap to bind: {names[first]}, after {draws_to_cap[first]:,.0f} "
+        f"documents and {tokens / 1e6:.2f}M tokens"
     )
     if label == "weights as token shares":
         assert np.allclose(share, w)
@@ -1327,9 +1356,11 @@ for label, p in (
 % output
 
 ```text
-weights as document probabilities: token shares {'web': 0.326, 'wiki': 0.543, 'code': 0.13}
+weights as document probabilities:
+  token shares {'web': 0.326, 'wiki': 0.543, 'code': 0.13}
   first cap to bind: wiki, after 1,920 documents and 1.77M tokens
-weights as token shares: token shares {'web': 0.6, 'wiki': 0.25, 'code': 0.15}
+weights as token shares:
+  token shares {'web': 0.6, 'wiki': 0.25, 'code': 0.15}
   first cap to bind: web, after 3,025 documents and 2.00M tokens
 ```
 
@@ -1433,7 +1464,8 @@ print(
     dict(zip(flat.names, flat.probs.round(4).tolist())),
 )
 
-# A checkpoint holds the generator state with the cursors; the cursors alone do not resume the stream
+# A checkpoint holds the generator state with the cursors; the cursors alone do not
+# resume the stream
 ckpt = MixtureSampler(sizes, weights, seed=1).seek(300)
 saved = {
     "step": ckpt.step,
@@ -1448,9 +1480,8 @@ restored.rng.bit_generator.state = saved["rng"]
 assert [next(restored) for _ in range(200)] == stream[300:]
 differ = sum(x != y for x, y in zip(cursors_only, stream[300:]))
 assert differ > 0
-print(
-    f"restored at step 300 from the cursors alone: {differ} of the next 200 draws differ; with the generator state: 0"
-)
+print(f"restored at step 300 from the cursors alone: {differ} of the next 200 differ")
+print("restored with the generator state as well: 0 differ")
 ```
 
 % output
@@ -1459,7 +1490,8 @@ print(
 wiki draws in 500 steps: 66
 probabilities at temperature 1: {'code': 0.15, 'web': 0.7, 'wiki': 0.15}
 probabilities at temperature 3: {'code': 0.2724, 'web': 0.4552, 'wiki': 0.2724}
-restored at step 300 from the cursors alone: 176 of the next 200 draws differ; with the generator state: 0
+restored at step 300 from the cursors alone: 176 of the next 200 differ
+restored with the generator state as well: 0 differ
 ```
 
 The `seek` method replays draws, which is fine for millions of steps and a few sources. Constant work per step needs two further constructions, and it is worth seeing why seeding alone does not give it. Seeding each permutation by `(seed, source, epoch)`, as `_permutation` does, makes an epoch's order reproducible without replay, but `permutation` still builds the whole array, $\mathcal{O}(n_{ex})$ work and memory for a source of $n_{ex}$ documents, to read one element of it. And the cursor, $\operatorname{drawn}_s(t)$, the number of documents of source $s$ drawn before step $t$, is a sum over $t$ independent source draws: hashing each slot fixes every term, but it does not give the sum without adding up the terms.
@@ -1474,7 +1506,8 @@ import hashlib
 
 
 class FeistelPermutation:
-    """Keyed bijection on range(n): a balanced Feistel network on 2 * half bits, with cycle-walking."""
+    """Keyed bijection on range(n): a balanced Feistel network on 2 * half bits,
+    with cycle-walking."""
 
     def __init__(self, n: int, key: bytes, rounds: int = 4):
         self.n, self.key, self.rounds = n, key, rounds
@@ -1546,14 +1579,16 @@ def stride_schedule(weights: dict, period: int, exact: bool = False):
 
 
 class StrideSampler:
-    """Random access to the stream: sample t is computed from (seed, t) alone, with no replay."""
+    """Random access to the stream: sample t is computed from (seed, t) alone, with
+    no replay."""
 
     def __init__(self, sizes: dict, weights: dict, seed: int, period: int = 20):
         self.sizes, self.seed = sizes, seed
         self.pattern, self.prefix = stride_schedule(weights, period)
 
     def drawn(self, s: str, t: int) -> int:
-        """Documents of source s drawn before step t: whole periods plus a prefix count."""
+        """Documents of source s drawn before step t: whole periods plus a
+        prefix count."""
         periods, r = divmod(t, len(self.pattern))
         return periods * self.prefix[s][-1] + self.prefix[s][r]
 
@@ -1579,7 +1614,8 @@ assert order[:20] != list(range(20))  # and not the identity
 walk = perm.evaluations / 1000
 assert walk < 4  # 4**half / n bounds the expected walk length; here 1024 / 1000
 print(
-    f"Feistel on range(1000): permutation {sorted(order) == list(range(1000))}, {walk:.3f} encryptions per index"
+    f"Feistel on range(1000): permutation {sorted(order) == list(range(1000))}, "
+    f"{walk:.3f} encryptions per index"
 )
 
 sampler = StrideSampler(sizes, weights, seed=1)
@@ -1693,10 +1729,12 @@ position_only = ShuffleBuffer(docs, size=1000, seed=3)
 position_only.position = state["position"]
 lost = set(docs) - set(seen) - set(position_only)
 print(
-    f"checkpoint after {len(seen):,} documents: read position {state['position']:,}, {len(state['buffer']):,} buffered"
+    f"checkpoint after {len(seen):,} documents: read position {state['position']:,}, "
+    f"{len(state['buffer']):,} buffered"
 )
 print(
-    f"restoring the read position alone loses {len(lost):,} documents for the rest of the epoch"
+    f"restoring the read position alone loses {len(lost):,} documents for the rest of "
+    "the epoch"
 )
 assert lost == set(state["buffer"])
 
@@ -1806,7 +1844,8 @@ def sample(t: int, seed: int, index: dict):
 
 
 def rank_batch(step, rank, n_ranks, batch, seed, index) -> np.ndarray:
-    """The rows a rank reads at `step`: positions step * batch + i, i = rank mod n_ranks."""
+    """The rows a rank reads at `step`: positions step * batch + i, i = rank mod
+    n_ranks."""
     drawn = [sample(step * batch + i, seed, index) for i in range(rank, batch, n_ranks)]
     return np.stack([index[s][j] for s, j in drawn])
 
@@ -1868,7 +1907,8 @@ import numpy as np
 
 
 def rank_shards(num_shards: int, rank: int, world_size: int):
-    """Shard assignment: rank r takes shards r, r + world_size, r + 2 * world_size, ..."""
+    """Shard assignment: rank r takes shards r, r + world_size, r + 2 * world_size,
+    ..."""
     return list(range(rank, num_shards, world_size))
 
 
@@ -1911,7 +1951,9 @@ for n_ranks in (1, 2, 4, 8, 16):
         [global_batch_slice(step, B, r, n_ranks) for r in range(n_ranks)]
     )
     assert sorted(ids.tolist()) == list(range(step * B, (step + 1) * B))
-print("rank 1 of 4 at step 7:", global_batch_slice(7, 64, 1, 4).tolist())
+batch = global_batch_slice(7, 64, 1, 4).tolist()
+assert batch == list(range(batch[0], batch[0] + 16))
+print(f"rank 1 of 4 at step 7: ids {batch[0]} to {batch[-1]}, {len(batch)} consecutive")
 print(
     "shard assignment, step 3, 2 vs 4 ranks:",
     shard_assignment_batch(3, 8, 2, 10, 16)[:4],
@@ -1922,7 +1964,7 @@ print(
 % output
 
 ```text
-rank 1 of 4 at step 7: [464, 465, 466, 467, 468, 469, 470, 471, 472, 473, 474, 475, 476, 477, 478, 479]
+rank 1 of 4 at step 7: ids 464 to 479, 16 consecutive
 shard assignment, step 3, 2 vs 4 ranks: [12, 13, 14, 15] [6, 7, 22, 23]
 ```
 
@@ -2027,8 +2069,9 @@ def rank_stream(rank: int, world_size: int, n: int):
 
 
 def worker_items(rank, world_size, n, worker_id, num_workers, split_by_worker: bool):
-    """What one DataLoader worker of one rank yields from an iterable dataset. Each worker holds
-    a full replica, so without splitting each one yields the rank's whole stream."""
+    """What one DataLoader worker of one rank yields from an iterable dataset. Each
+    worker holds a full replica, so without splitting each one yields the rank's
+    whole stream."""
     stream = rank_stream(rank, world_size, n)
     return list(stream[worker_id::num_workers]) if split_by_worker else list(stream)
 
@@ -2042,7 +2085,8 @@ for split in (False, True):
         for x in worker_items(r, world_size, n, w, n_loader, split)
     ]
     print(
-        f"split by worker {split!s:5s}: {len(seen):,} samples yielded, {len(set(seen)):,} distinct, "
+        f"split by worker {split!s:5s}: {len(seen):,} samples yielded, "
+        f"{len(set(seen)):,} distinct, "
         f"each seen {len(seen) / len(set(seen)):.0f} times"
     )
 naive = [
@@ -2381,7 +2425,8 @@ import numpy as np
 
 
 def constituent(doc_id: str, n_shards: int) -> int:
-    """SISA-style assignment: each document trains exactly one of n_shards constituent models."""
+    """SISA-style assignment: each document trains exactly one of n_shards
+    constituent models."""
     return int(hashlib.sha256(doc_id.encode()).hexdigest(), 16) % n_shards
 
 
@@ -2392,7 +2437,8 @@ requests = [
 for n_shards in (1, 8, 64):
     hit = {constituent(d, n_shards) for d in requests}
     print(
-        f"{n_shards:2d} constituent models: {len(hit)} retrained, {len(hit) / n_shards:.1%} of the training compute"
+        f"{n_shards:2d} constituent models: {len(hit)} retrained, "
+        f"{len(hit) / n_shards:.1%} of the training compute"
     )
 assert len({constituent(d, 64) for d in requests}) <= 5  # at most one model per request
 ```
@@ -2515,16 +2561,18 @@ formats = [("gzip JSON Lines", read_jsonl, len(jsonl)),
            ("uint32 binary", lambda: read_binary("uint32"), len(binary["uint32"]))]
 for name, read, size in formats:
     timings = []
+    # the fastest of three reads, so that a cold first call does not decide the order
     for _ in range(
         3
-    ):  # the fastest of three reads, so that a cold first call does not decide the order
+    ):
         start = time.perf_counter()
         back = read()
         timings.append(time.perf_counter() - start)
     ms = 1000 * min(timings)
     assert all(np.array_equal(a, b) for a, b in zip(back, docs))
     print(
-        f"{name:16s} {size / n_tokens:.2f} bytes per token, every document read back in {ms:.0f} ms"
+        f"{name:16s} {size / n_tokens:.2f} bytes per token, every document read back "
+        f"in {ms:.0f} ms"
     )
 assert len(binary["uint16"]) == 2 * n_tokens and len(binary["uint32"]) == 4 * n_tokens
 ```
@@ -2623,7 +2671,8 @@ for layout in ("count", "hash"):
     a, b = manifest(v1, layout), manifest(v2, layout)
     changed = diff(a, b)
     print(
-        f"{layout:5s} layout: {len(changed)} of {len(a | b)} shards changed, first {changed[0]}"
+        f"{layout:5s} layout: {len(changed)} of {len(a | b)} shards changed, first "
+        f"{changed[0]}"
     )
 first_removed = v1.index(removed[0])
 assert (
@@ -2667,15 +2716,17 @@ SEQ_LEN = 4096
 
 
 def chunking_split_rate(lengths) -> float:
-    """Concatenate and cut every SEQ_LEN tokens: the share of documents that straddle a cut."""
+    """Concatenate and cut every SEQ_LEN tokens: the share of documents that
+    straddle a cut."""
     ends = np.cumsum(lengths)
     starts = ends - lengths
     return float(np.mean(starts // SEQ_LEN != (ends - 1) // SEQ_LEN))
 
 
 def best_fit_padding(lengths) -> float:
-    """Best-fit decreasing: each piece goes into the open sequence with the least room that holds it.
-    A document longer than SEQ_LEN is cut into full sequences first. Returns the share of padding.
+    """Best-fit decreasing: each piece goes into the open sequence with the least
+    room that holds it. A document longer than SEQ_LEN is cut into full sequences
+    first. Returns the share of padding.
     """
     pieces = sorted(
         (p for n in lengths for p in [SEQ_LEN] * (n // SEQ_LEN) + [n % SEQ_LEN] if p),
@@ -2694,21 +2745,26 @@ def best_fit_padding(lengths) -> float:
 
 
 rng = np.random.default_rng(0)
+print(f"best-fit splits the documents longer than {SEQ_LEN:,} tokens")
+header = ("mean", "chunking splits", "best-fit pads", "best-fit splits")
+print(f"{header[0]:>6} {header[1]:>16} {header[2]:>14} {header[3]:>16}")
 for mean in (100, 1_000, 10_000):
     lengths = rng.geometric(1 / mean, size=2_000_000 // mean)
     longer = float(np.mean(lengths > SEQ_LEN))
     print(
-        f"mean {mean:>6,}: chunking splits {chunking_split_rate(lengths):.1%} of documents; "
-        f"best-fit pads {best_fit_padding(lengths):.2%} and splits {longer:.1%} (those longer than {SEQ_LEN:,})"
+        f"{mean:>6,} {chunking_split_rate(lengths):>16.1%} "
+        f"{best_fit_padding(lengths):>14.2%} {longer:>16.1%}"
     )
 ```
 
 % output
 
 ```text
-mean    100: chunking splits 2.4% of documents; best-fit pads 0.04% and splits 0.0% (those longer than 4,096)
-mean  1,000: chunking splits 23.2% of documents; best-fit pads 0.03% and splits 1.6% (those longer than 4,096)
-mean 10,000: chunking splits 84.0% of documents; best-fit pads 0.48% and splits 66.5% (those longer than 4,096)
+best-fit splits the documents longer than 4,096 tokens
+  mean  chunking splits  best-fit pads  best-fit splits
+   100             2.4%          0.04%             0.0%
+ 1,000            23.2%          0.03%             1.6%
+10,000            84.0%          0.48%            66.5%
 ```
 
 At a mean of 100 tokens, chunking splits only 2.4% of documents, so packing buys little. At 1,000 it splits 23.2%, while best-fit splits only the 1.6% of documents longer than the sequence, for 0.03% padding: this is where packing pays. At 10,000 most documents are longer than the sequence and are split by either method, 84.0% against 66.5%, and the gain shrinks again. Packing stops being worth its complexity when documents are either much shorter than the sequence or mostly longer than it.
@@ -2984,7 +3040,8 @@ ENDS = [start for start, _ in PHASES[1:]] + [None]
 
 
 def drawn(s: str, t: int) -> int:
-    """Documents of source s drawn before step t: the closed form per phase, summed over the phases begun."""
+    """Documents of source s drawn before step t: the closed form per phase, summed
+    over the phases begun."""
     total = 0
     for (start, pattern, prefix), end in zip(SCHEDULES, ENDS):
         if t <= start:
@@ -3055,7 +3112,8 @@ def global_indexing(n_ranks: int, step: int):
 
 
 def shard_assignment(n_ranks: int, step: int):
-    """Rank r owns shards r, r + n_ranks, ... and reads them in a seeded order, B / n_ranks samples per step."""
+    """Rank r owns shards r, r + n_ranks, ... and reads them in a seeded order, B /
+    n_ranks samples per step."""
     per_rank = B // n_ranks
     out = []
     for r in range(n_ranks):
@@ -3075,7 +3133,8 @@ for name, loader in (
             np.add.at(seen, part, 1)
     repeated, skipped = int(np.sum(seen > 1)), int(np.sum(seen == 0))
     print(
-        f"{name:16s}: {repeated:,} samples seen twice, {skipped:,} never seen in the epoch"
+        f"{name:16s}: {repeated:,} samples seen twice, {skipped:,} never seen in the "
+        "epoch"
     )
     if loader is global_indexing:
         assert repeated == skipped == 0
@@ -3110,7 +3169,8 @@ def document_hash(text: str) -> str:
 
 
 def build(first: int, last: int, per_shard: int = 100) -> dict:
-    """Documents first..last - 1, in shards s0, s1, ... of per_shard consecutive document numbers."""
+    """Documents first..last - 1, in shards s0, s1, ... of per_shard consecutive
+    document numbers."""
     shards = {}
     for i in range(first, last):
         shards.setdefault(f"s{i // per_shard}", []).append(f"document {i}")
@@ -3140,9 +3200,8 @@ for version, contents in versions.items():
             index.setdefault(document_hash(text), []).append((version, shard))
 where = index[document_hash(target)]
 scanned = sum(len(docs) for contents in versions.values() for docs in contents.values())
-print(
-    f"located in {where} by one lookup; without the index, {scanned:,} documents are read and hashed"
-)
+print(f"located in {where} by one lookup")
+print(f"without the index, {scanned:,} documents are read and hashed")
 
 # Step 2, cut v1.3 without it; the manifest diff names the one shard that changed
 latest = versions["v1.2"]
@@ -3165,7 +3224,8 @@ assert (
 % output
 
 ```text
-located in [('v1.0', 's1'), ('v1.1', 's1'), ('v1.2', 's1')] by one lookup; without the index, 2,900 documents are read and hashed
+located in [('v1.0', 's1'), ('v1.1', 's1'), ('v1.2', 's1')] by one lookup
+without the index, 2,900 documents are read and hashed
 v1.3 differs from v1.2 in ['s1']
 models affected: ['model-a', 'model-b', 'model-c']
 ```
