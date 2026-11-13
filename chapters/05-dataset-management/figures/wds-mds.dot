@@ -9,7 +9,7 @@ digraph wds_mds {
   wsample -> index [style=invis];
   subgraph cluster_mds { label="Mosaic Streaming (MDS): a directory"; style="rounded,filled"; fillcolor="#edf2f7"; color="#4a5568"; fontsize=14;
     index [shape=note, style=filled, fillcolor="#ffffff", label="index.json (version 2)\lone entry per shard: basename, samples,\lcolumn_names, column_encodings, hashes\l"];
-    shard [shape=plain, style="", label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" COLOR="#4a5568"><TR><TD COLSPAN="5" BORDER="0"><B>shard.00000.mds</B></TD></TR><TR><TD COLSPAN="5" BORDER="0">random access: sample i is bytes offsets[i] to offsets[i + 1]</TD></TR><TR><TD BGCOLOR="#edf2f7">n<BR/>uint32</TD><TD BGCOLOR="#edf2f7" PORT="off">offsets<BR/>uint32 × (n + 1)</TD><TD BGCOLOR="#edf2f7">config<BR/>JSON</TD><TD BGCOLOR="#dbeafe" PORT="s0">sample 0</TD><TD BGCOLOR="#fde7cf">sample 1 …</TD></TR></TABLE>>];
+    shard [shape=plain, style="", label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" COLOR="#4a5568"><TR><TD COLSPAN="5" BORDER="0"><B>shard.00000.mds</B></TD></TR><TR><TD COLSPAN="5" BORDER="0">random access: a sample runs from its offset to the next offset</TD></TR><TR><TD BGCOLOR="#edf2f7">sample count<BR/>uint32</TD><TD BGCOLOR="#edf2f7" PORT="off">offsets<BR/>uint32 × (count + 1)</TD><TD BGCOLOR="#edf2f7">config<BR/>JSON</TD><TD BGCOLOR="#dbeafe" PORT="s0">sample 0</TD><TD BGCOLOR="#fde7cf">sample 1 …</TD></TR></TABLE>>];
     msample [label="sample = sizes of variable-size columns (uint32)\nthen each column's bytes"];
     index -> shard [label="lists"];
     shard:s0:s -> msample;

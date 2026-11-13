@@ -12,36 +12,21 @@
 <g id="clust1" class="cluster">
 <title>cluster_sa</title>
 <path fill="#edf2f7" stroke="#4a5568" d="M20,-277.8C20,-277.8 572,-277.8 572,-277.8 578,-277.8 584,-283.8 584,-289.8 584,-289.8 584,-577.4 584,-577.4 584,-583.4 578,-589.4 572,-589.4 572,-589.4 20,-589.4 20,-589.4 14,-589.4 8,-583.4 8,-577.4 8,-577.4 8,-289.8 8,-289.8 8,-283.8 14,-277.8 20,-277.8"/>
-<text xml:space="preserve" text-anchor="start" x="90.64" y="-575.6" font-family="DejaVu Sans" font-size="12.00">Shard assignment: rank </text>
-<text xml:space="preserve" text-anchor="start" x="237.9" y="-575.6" font-family="DejaVu Sans" font-style="italic" font-size="12.00">r</text>
-<text xml:space="preserve" text-anchor="start" x="242.83" y="-575.6" font-family="DejaVu Sans" font-size="12.00"> reads shards </text>
-<text xml:space="preserve" text-anchor="start" x="327.83" y="-575.6" font-family="DejaVu Sans" font-style="italic" font-size="12.00">r</text>
-<text xml:space="preserve" text-anchor="start" x="332.76" y="-575.6" font-family="DejaVu Sans" font-size="12.00">, </text>
-<text xml:space="preserve" text-anchor="start" x="340.39" y="-575.6" font-family="DejaVu Sans" font-style="italic" font-size="12.00">r</text>
-<text xml:space="preserve" text-anchor="start" x="345.32" y="-575.6" font-family="DejaVu Sans" font-size="12.00"> + </text>
-<text xml:space="preserve" text-anchor="start" x="363" y="-575.6" font-family="DejaVu Sans" font-style="italic" font-size="12.00">n</text>
-<text xml:space="preserve" text-anchor="start" x="370.61" y="-575.6" font-family="DejaVu Sans" baseline-shift="sub" font-size="12.00">ranks</text>
-<text xml:space="preserve" text-anchor="start" x="403.7" y="-575.6" font-family="DejaVu Sans" font-size="12.00">, </text>
-<text xml:space="preserve" text-anchor="start" x="411.33" y="-575.6" font-family="DejaVu Sans" font-style="italic" font-size="12.00">r</text>
-<text xml:space="preserve" text-anchor="start" x="416.27" y="-575.6" font-family="DejaVu Sans" font-size="12.00"> + 2</text>
-<text xml:space="preserve" text-anchor="start" x="441.58" y="-575.6" font-family="DejaVu Sans" font-style="italic" font-size="12.00">n</text>
-<text xml:space="preserve" text-anchor="start" x="449.19" y="-575.6" font-family="DejaVu Sans" baseline-shift="sub" font-size="12.00">ranks</text>
-<text xml:space="preserve" text-anchor="start" x="482.28" y="-575.6" font-family="DejaVu Sans" font-size="12.00">, …</text>
+<text xml:space="preserve" text-anchor="start" x="22.01" y="-575.6" font-family="DejaVu Sans" font-size="12.00">Shard assignment: each rank reads every </text>
+<text xml:space="preserve" text-anchor="start" x="277.08" y="-575.6" font-family="DejaVu Sans" font-style="italic" font-size="12.00">n</text>
+<text xml:space="preserve" text-anchor="start" x="284.69" y="-575.6" font-family="DejaVu Sans" baseline-shift="sub" font-size="12.00">ranks</text>
+<text xml:space="preserve" text-anchor="start" x="317.78" y="-575.6" font-family="DejaVu Sans" font-size="12.00">&#45;th shard, starting at its own rank number</text>
 </g>
 <g id="clust2" class="cluster">
 <title>cluster_gi</title>
 <path fill="#edf2f7" stroke="#4a5568" d="M46,-8C46,-8 546,-8 546,-8 552,-8 558,-14 558,-20 558,-20 558,-257.2 558,-257.2 558,-263.2 552,-269.2 546,-269.2 546,-269.2 46,-269.2 46,-269.2 40,-269.2 34,-263.2 34,-257.2 34,-257.2 34,-20 34,-20 34,-14 40,-8 46,-8"/>
-<text xml:space="preserve" text-anchor="start" x="79.15" y="-255.4" font-family="DejaVu Sans" font-size="12.00">Global indexing: rank </text>
-<text xml:space="preserve" text-anchor="start" x="211.36" y="-255.4" font-family="DejaVu Sans" font-style="italic" font-size="12.00">r</text>
-<text xml:space="preserve" text-anchor="start" x="216.29" y="-255.4" font-family="DejaVu Sans" font-size="12.00"> takes slice </text>
-<text xml:space="preserve" text-anchor="start" x="287.28" y="-255.4" font-family="DejaVu Sans" font-style="italic" font-size="12.00">r</text>
-<text xml:space="preserve" text-anchor="start" x="292.21" y="-255.4" font-family="DejaVu Sans" font-size="12.00"> of global positions 3</text>
-<text xml:space="preserve" text-anchor="start" x="417.05" y="-255.4" font-family="DejaVu Sans" font-style="italic" font-size="12.00">B</text>
-<text xml:space="preserve" text-anchor="start" x="425.28" y="-255.4" font-family="DejaVu Sans" font-size="12.00"> … 3</text>
-<text xml:space="preserve" text-anchor="start" x="451.99" y="-255.4" font-family="DejaVu Sans" font-style="italic" font-size="12.00">B</text>
-<text xml:space="preserve" text-anchor="start" x="460.22" y="-255.4" font-family="DejaVu Sans" font-size="12.00"> + </text>
-<text xml:space="preserve" text-anchor="start" x="477.91" y="-255.4" font-family="DejaVu Sans" font-style="italic" font-size="12.00">B</text>
-<text xml:space="preserve" text-anchor="start" x="486.14" y="-255.4" font-family="DejaVu Sans" font-size="12.00"> − 1</text>
+<text xml:space="preserve" text-anchor="start" x="48.18" y="-255.4" font-family="DejaVu Sans" font-size="12.00">Global indexing: each rank takes its own slice of global positions 3</text>
+<text xml:space="preserve" text-anchor="start" x="448.02" y="-255.4" font-family="DejaVu Sans" font-style="italic" font-size="12.00">B</text>
+<text xml:space="preserve" text-anchor="start" x="456.25" y="-255.4" font-family="DejaVu Sans" font-size="12.00"> … 3</text>
+<text xml:space="preserve" text-anchor="start" x="482.96" y="-255.4" font-family="DejaVu Sans" font-style="italic" font-size="12.00">B</text>
+<text xml:space="preserve" text-anchor="start" x="491.19" y="-255.4" font-family="DejaVu Sans" font-size="12.00"> + </text>
+<text xml:space="preserve" text-anchor="start" x="508.88" y="-255.4" font-family="DejaVu Sans" font-style="italic" font-size="12.00">B</text>
+<text xml:space="preserve" text-anchor="start" x="517.11" y="-255.4" font-family="DejaVu Sans" font-size="12.00"> − 1</text>
 </g>
 <!-- sa2 -->
 <g id="node1" class="node">

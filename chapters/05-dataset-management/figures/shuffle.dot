@@ -1,7 +1,7 @@
 digraph shuffle {
-  graph [fontname="DejaVu Sans", fontsize=13, nodesep=0.3, ranksep=0.45, pad=0.2];
-  node [fontname="DejaVu Sans", fontsize=12, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=11, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
-  subgraph cluster_storage { label="object storage"; style="rounded,filled"; fillcolor="#edf2f7"; color="#4a5568"; fontsize=12;
+  graph [fontname="DejaVu Sans", fontsize=20, nodesep=0.3, ranksep=0.45, pad=0.2];
+  node [fontname="DejaVu Sans", fontsize=18, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=16, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
+  subgraph cluster_storage { label="object storage"; style="rounded,filled"; fillcolor="#edf2f7"; color="#4a5568"; fontsize=18;
     s0 [label="shard 0"]; s1 [label="shard 1"]; s2 [label="shard 2"]; s3 [label="shard 3"];
   }
   order [label="1. Across shards\nvisit in a seeded order:\n2, 0, 3, 1", fillcolor="#dbeafe"];
