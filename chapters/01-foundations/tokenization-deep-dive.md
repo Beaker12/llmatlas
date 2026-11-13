@@ -128,9 +128,193 @@ def build_vocab_coverage(corpus, coverage_threshold=0.95):
     return vocab
 ```
 
+(sec-tdd-subword-algorithms)=
+
+## T.2 Subword Algorithms in Practice
+
+The chapter builds byte pair encoding (BPE) by hand. Production tokenizers use four related schemes: WordPiece, the unigram language model, byte-level BPE and the SentencePiece library, which implements BPE and unigram. They differ in how they choose the vocabulary and in how they split a word once the vocabulary is fixed. The listing at the end of this section runs a small version of each.
+
+(sec-tdd-wordpiece)=
+
+### WordPiece
+
+WordPiece comes from Google's speech and translation systems {cite}`wu2016google` and is the tokenizer of BERT {cite}`devlin2018bert`. Training starts, as BPE does, from single characters and merges pairs, but it does not merge the most frequent pair. It merges the pair that most increases the likelihood of the training data {cite}`kudo2018subword`, which the [Hugging Face implementation](https://huggingface.co/learn/llm-course/chapter6/6) computes as
+
+$$\operatorname{score}(\text{pair}) = \frac{\operatorname{count}(\text{pair})}{\operatorname{count}(\text{first piece}) \cdot \operatorname{count}(\text{second piece})}.$$
+
+Dividing by the counts of the parts favors pairs whose parts rarely occur apart. In the listing's corpus the pair `##u ##g` occurs 20 times, the most of any pair, but `##u` and `##g` are both common on their own, so its score is $20 / (36 \cdot 20) = 0.0278$; `##g ##s` occurs only 5 times, but `##s` never occurs without `##g` before it, so its score is $5 / (20 \cdot 5) = 0.05$ and WordPiece merges it first.
+
+Pieces that continue a word carry the prefix `##`, so `##ing` and `ing` are different tokens. WordPiece keeps only the final vocabulary, not the merge order, and encodes a word greedily: take the longest vocabulary entry that starts the word, then the longest `##` entry that continues it, and so on. If at some point no entry fits, the whole word becomes `[UNK]`, not just the character that failed.
+
+(sec-tdd-unigram)=
+
+### Unigram Language Model
+
+The unigram model {cite}`kudo2018subword` works in the opposite direction. It starts from a large seed vocabulary (all characters plus the most frequent substrings of the corpus) and shrinks it. The probability of a segmentation of a word is the product of the probabilities of its pieces, which the model treats as independent. Training repeats three steps until the vocabulary has the target size:
+
+1. With the vocabulary fixed, estimate the piece probabilities with the EM algorithm, treating the segmentation of each sentence as hidden.
+2. For each piece, compute the loss: how much the likelihood of the corpus falls if that piece is removed.
+3. Keep the pieces with the smallest loss, for example the best 80%, but always keep single characters so that no input becomes unrepresentable.
+
+Encoding picks the most probable segmentation with the Viterbi algorithm, a dynamic program over the end positions of the word. Because the model assigns a probability to every segmentation, it can also *sample* one: subword regularization trains a translation model on segmentations sampled afresh at each update, so the model sees a word split in several ways {cite}`kudo2018subword`. In the listing, "unhappiness" has 12 segmentations; Viterbi returns `un happiness`, and sampling returns `un happi ness` one time in five.
+
+(sec-tdd-byte-level-bpe)=
+
+### Byte-Level BPE
+
+A BPE vocabulary over Unicode characters would need over 130,000 base symbols to cover every string. GPT-2 runs BPE over UTF-8 bytes instead, so the base vocabulary is 256 symbols and every string can be encoded {cite}`radford2019language`. Two details make this work:
+
+- **Pre-tokenization.** Before any merge, a regular expression splits the text into chunks: common English contractions, runs of letters, runs of digits, runs of other symbols, and whitespace. A space stays attached to the start of the following chunk (`" world"`). Merges never cross chunk boundaries, which keeps BPE from learning separate tokens for `dog.`, `dog!` and `dog?` {cite}`radford2019language`.
+- **Printable bytes.** The released code maps each of the 256 bytes to a printable Unicode character, so the BPE code only ever handles strings without whitespace or control characters. Printable ASCII and Latin-1 bytes map to themselves; the others, including the space (byte 32), map to characters from U+0100 upward. The space becomes `Ġ` (U+0120), which is why GPT-2 vocabularies are full of tokens like `Ġworld`. A non-ASCII character spans several bytes and so several symbols: `é` is the two bytes `0xC3 0xA9`, shown as `Ã©` until a merge joins them.
+(sec-tdd-sentencepiece-library)=
+
+### SentencePiece
+
+SentencePiece {cite}`kudo2018sentencepiece` is a library that trains and runs BPE or unigram models directly on raw text, with no language-specific pre-tokenization. It treats whitespace as an ordinary symbol, writing it as `▁` (U+2581), so `Hello world.` becomes `[Hello] [▁wor] [ld] [.]` and decoding is a matter of joining the pieces and turning `▁` back into a space. Three training options matter most in practice ([option reference](https://github.com/google/sentencepiece/blob/master/doc/options.md)):
+
+- `normalization_rule_name`: the input is Unicode-normalized before training and encoding, by default with a variant of Unicode NFKC normalization (`nmt_nfkc`).
+- `character_coverage`: the fraction of the corpus's characters that the base alphabet must cover; rarer characters are dropped from it. The documentation recommends 1.0 for languages with small alphabets and the default 0.9995 for Chinese, Japanese and Korean.
+- `byte_fallback`: a character outside the vocabulary is encoded as its UTF-8 bytes, each a token of its own, instead of as `<unk>`. LLaMA's tokenizer uses SentencePiece's BPE with this option and also splits every number into single digits {cite}`touvron2023llama`.
+
+The chapter's {ref}`sec-ch1-sentencepiece` trains such a model with `byte_fallback=True`.
+
+(sec-tdd-which-model-which-tokenizer)=
+
+### Which Model Uses Which
+
+| Model | Tokenizer | Vocabulary | Source |
+| ----- | --------- | ---------- | ------ |
+| BERT | WordPiece | 30,000 | {cite}`devlin2018bert` |
+| GPT-2 | Byte-level BPE | 50,257 | {cite}`radford2019language` |
+| T5 | SentencePiece | 32,000 | {cite}`raffel2019exploring` |
+| Llama 2 | SentencePiece BPE, digits split, byte fallback | 32k | {cite}`touvron2023llama2` |
+
+T5's paper calls its pieces "wordpieces" but builds them with SentencePiece. Larger vocabularies and the tokenizers of more recent models are in {ref}`sec-tdd-choosing-vocabulary-size`.
+
+(sec-tdd-subword-listing)=
+
+### The Four Schemes in Code
+
+The listing trains one WordPiece step on a toy word-count corpus, encodes words greedily, runs Viterbi and sampling over a toy unigram vocabulary, and shows GPT-2's pre-tokenization and byte characters. The byte map is GPT-2's own `bytes_to_unicode`, rewritten more compactly; the pattern is GPT-2's with its Unicode letter and digit classes narrowed to ASCII, because Python's `re` module has no `\p{L}`.
+
+```python
+import math
+import random
+import re
+from collections import Counter
+
+# --- WordPiece training: score = count(ab) / (count(a) * count(b)) ---
+word_counts = {"hug": 10, "pug": 5, "pun": 12, "bun": 4, "hugs": 5}
+splits = {w: [w[0]] + ["##" + c for c in w[1:]] for w in word_counts}  # h ##u ##g
+
+
+def wordpiece_scores(splits):
+    unit, pair = Counter(), Counter()
+    for word, pieces in splits.items():
+        for p in pieces:
+            unit[p] += word_counts[word]
+        for a, b in zip(pieces, pieces[1:]):
+            pair[a, b] += word_counts[word]
+    return pair, {ab: n / (unit[ab[0]] * unit[ab[1]]) for ab, n in pair.items()}
+
+
+pair_counts, scores = wordpiece_scores(splits)
+frequent, best = max(pair_counts, key=pair_counts.get), max(scores, key=scores.get)
+print(f"BPE would merge:  {frequent} (count {pair_counts[frequent]}, score {scores[frequent]:.4f})")
+print(f"WordPiece merges: {best} (count {pair_counts[best]}, score {scores[best]:.4f})")
+
+
+# --- WordPiece encoding: greedy longest match, continuation pieces start with ## ---
+def wordpiece_encode(word, vocab):
+    pieces, start = [], 0
+    while start < len(word):
+        for end in range(len(word), start, -1):
+            piece = word[start:end] if start == 0 else "##" + word[start:end]
+            if piece in vocab:
+                pieces.append(piece)
+                start = end
+                break
+        else:
+            return ["[UNK]"]  # no piece fits: the whole word is unknown
+    return pieces
+
+
+vocab = {"un", "##happ", "##i", "##ness", "##y", "h", "##a", "##p"}
+print("WordPiece:", wordpiece_encode("unhappiness", vocab), wordpiece_encode("unhappy", vocab),
+      wordpiece_encode("sad", vocab))
+
+# --- Unigram LM: Viterbi picks the most probable segmentation; sampling gives others ---
+probs = {"un": 0.08, "happi": 0.02, "ness": 0.06, "happiness": 0.002, "u": 0.03, "n": 0.05,
+         "h": 0.03, "a": 0.06, "p": 0.03, "i": 0.05, "e": 0.08, "s": 0.06, "unh": 0.001}
+logp = {piece: math.log(p) for piece, p in probs.items()}
+
+
+def segmentations(text):
+    if not text:
+        return [[]]
+    return [[text[:k]] + rest for k in range(1, len(text) + 1) if text[:k] in logp
+            for rest in segmentations(text[k:])]
+
+
+def viterbi(text):
+    best = [(0.0, [])] + [(-math.inf, None)] * len(text)  # best[i]: best score and pieces for text[:i]
+    for end in range(1, len(text) + 1):
+        for start in range(end):
+            piece = text[start:end]
+            if piece in logp and best[start][1] is not None:
+                score = best[start][0] + logp[piece]
+                if score > best[end][0]:
+                    best[end] = (score, best[start][1] + [piece])
+    return best[-1]
+
+
+score, pieces = viterbi("unhappiness")
+print(f"Unigram Viterbi: {pieces} (log p = {score:.3f})")
+candidates = segmentations("unhappiness")
+assert max(sum(logp[p] for p in seg) for seg in candidates) == score  # Viterbi found the best of all
+weights = [math.exp(sum(logp[p] for p in seg)) for seg in candidates]
+rng = random.Random(0)
+print(f"{len(candidates)} segmentations; five samples:",
+      [" ".join(rng.choices(candidates, weights)[0]) for _ in range(5)])
+
+
+# --- Byte-level BPE as in GPT-2: every byte maps to a printable character, so a space shows as G-dot ---
+def bytes_to_unicode():
+    printable = list(range(ord("!"), ord("~") + 1)) + list(range(ord("¡"), ord("¬") + 1)) + list(range(ord("®"), ord("ÿ") + 1))
+    chars, extra = printable[:], 0
+    for b in range(256):
+        if b not in printable:
+            printable.append(b)
+            chars.append(256 + extra)
+            extra += 1
+    return dict(zip(printable, map(chr, chars)))
+
+
+byte_char = bytes_to_unicode()
+# GPT-2's pre-tokenization pattern with \p{L} and \p{N} narrowed to ASCII letters and digits
+pattern = re.compile(r"""'s|'t|'re|'ve|'m|'ll|'d| ?[A-Za-z]+| ?[0-9]+| ?[^\sA-Za-z0-9]+|\s+(?!\S)|\s+""")
+chunks = pattern.findall("Hello world, it's 2024!")
+print("pre-tokenized:", chunks)
+print("as byte characters:", ["".join(byte_char[b] for b in c.encode("utf-8")) for c in chunks])
+print("base vocabulary:", len(byte_char), "| é becomes", "".join(byte_char[b] for b in "é".encode("utf-8")))
+```
+
+% output
+
+```text
+BPE would merge:  ('##u', '##g') (count 20, score 0.0278)
+WordPiece merges: ('##g', '##s') (count 5, score 0.0500)
+WordPiece: ['un', '##happ', '##i', '##ness'] ['un', '##happ', '##y'] ['[UNK]']
+Unigram Viterbi: ['un', 'happiness'] (log p = -8.740)
+12 segmentations; five samples: ['un happiness', 'un happiness', 'un happiness', 'un happi ness', 'un happiness']
+pre-tokenized: ['Hello', ' world', ',', ' it', "'s", ' 2024', '!']
+as byte characters: ['Hello', 'Ġworld', ',', 'Ġit', "'s", 'Ġ2024', '!']
+base vocabulary: 256 | é becomes Ã©
+```
+
 (sec-tdd-tokenization-impact-model-behavior)=
 
-## T.2 Tokenization Impact on Model Behavior
+## T.3 Tokenization Impact on Model Behavior
 
 (sec-tdd-sequence-length-cost)=
 
@@ -250,7 +434,7 @@ Different strategies for unknown tokens:
 
 (sec-tdd-special-tokens-their-roles)=
 
-## T.3 Special Tokens and Their Roles
+## T.4 Special Tokens and Their Roles
 
 (sec-tdd-common-special-tokens)=
 
@@ -297,7 +481,7 @@ class Tokenizer:
 
 (sec-tdd-practical-considerations)=
 
-## T.4 Practical Considerations
+## T.5 Practical Considerations
 
 (sec-tdd-choosing-vocabulary-size)=
 
@@ -362,7 +546,7 @@ def test_reversibility(tokenizer, texts):
 
 (sec-tdd-tokenization-challenges-solutions)=
 
-## T.5 Tokenization Challenges and Solutions
+## T.6 Tokenization Challenges and Solutions
 
 (sec-tdd-cross-lingual-tokenization)=
 
@@ -524,7 +708,7 @@ legal_text = "The aforementioned clause notwithstanding the heretofore provision
 
 (sec-tdd-tokenization-quality-practice)=
 
-## T.6 Measuring and Improving Tokenization
+## T.7 Measuring and Improving Tokenization
 
 The challenges above call for a way to tell a good tokenizer from a poor one. This section gives the measurements and then the practices they support.
 
@@ -706,7 +890,7 @@ def create_multi_domain_tokenizer(domain_corpora, vocab_size=32000):
 
 (sec-tdd-implementation-walkthrough)=
 
-## T.7 Practical Implementation
+## T.8 Practical Implementation
 
 This section implements a tokenizer end to end. It is byte-level BPE, the scheme GPT-2 introduced: the base vocabulary is the 256 byte values, so any UTF-8 text can be encoded without an unknown token; whitespace stays inside the tokens (a token can start with a space, and runs of spaces or newlines are tokens of their own), so decoding returns the input exactly; and every chunk of the training text counts, however rare. With only 39 merges on a five-sentence corpus, frequent words such as `The` become one token while an unseen word falls back to short pieces.
 
@@ -884,7 +1068,7 @@ This practical implementation provides a complete foundation for understanding a
 
 (sec-tdd-embeddings-in-practice)=
 
-## T.8 Embeddings in Practice
+## T.9 Embeddings in Practice
 
 This section extends the chapter's {ref}`sec-ch1-embeddings-positional-encoding`: how the embedding width is chosen, how to inspect a trained embedding table, what each positional scheme costs in parameters, and a complete embedding layer.
 

@@ -208,3 +208,24 @@ def test_evaluate_tokenization_quality_reports_only_measured_metrics():
     assert set(metrics) == {"chars_per_token", "bytes_per_token", "reversibility_errors"}
     assert metrics["chars_per_token"] > 1.0
     assert metrics["reversibility_errors"] == 0.0
+
+
+def test_subword_algorithms_listing_matches_the_deep_dive_prose():
+    ns = {}
+    exec(ch01_fence("def wordpiece_encode"), ns)  # noqa: S102
+    # WordPiece prefers the pair whose parts rarely occur apart: ##g ##s (5 / (20 * 5)) over ##u ##g (20 / (36 * 20))
+    assert ns["frequent"] == ("##u", "##g") and abs(ns["scores"]["##u", "##g"] - 20 / (36 * 20)) < 1e-12
+    assert ns["best"] == ("##g", "##s") and ns["scores"]["##g", "##s"] == 0.05
+    vocab = ns["vocab"]
+    assert ns["wordpiece_encode"]("unhappiness", vocab) == ["un", "##happ", "##i", "##ness"]
+    assert ns["wordpiece_encode"]("sad", vocab) == ["[UNK]"]  # the whole word, not one character
+    # Viterbi equals the exhaustive best over all 12 segmentations
+    assert len(ns["candidates"]) == 12
+    score, pieces = ns["viterbi"]("unhappiness")
+    assert pieces == ["un", "happiness"]
+    assert score == max(sum(ns["logp"][p] for p in seg) for seg in ns["candidates"])
+    # GPT-2's byte map: 256 printable symbols, space is U+0120, e-acute is two symbols
+    byte_char = ns["byte_char"]
+    assert len(set(byte_char.values())) == 256 and byte_char[32] == "Ġ"
+    assert all(not ch.isspace() and ch.isprintable() for ch in byte_char.values())
+    assert "".join(byte_char[b] for b in "é".encode("utf-8")) == "Ã©"

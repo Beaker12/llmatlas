@@ -319,7 +319,7 @@ With byte fallback, the four Chinese characters, absent from the learned pieces,
 
 ```{admonition} Tokenization Implementation
 :class: tip
-The notebook's tokenization section ({ref}`nb-attn-tokenization`) builds a tiny word-level vocabulary and runs the BPE merge loop step by step, printing the splits after every merge. For WordPiece, unigram and SentencePiece in practice, see {doc}`tokenization-deep-dive`.
+The notebook's tokenization section ({ref}`nb-attn-tokenization`) builds a tiny word-level vocabulary and runs the BPE merge loop step by step, printing the splits after every merge. For WordPiece, unigram, byte-level BPE and SentencePiece in practice, see {ref}`sec-tdd-subword-algorithms`.
 ```
 
 (sec-ch1-embeddings-positional-encoding)=
@@ -1039,7 +1039,7 @@ A decoder-only language model is these pieces in a fixed order. For a batch of $
 4. **Final normalization** of the last block's output (pre-LN models need it, because their residual stream is never normalized inside a block). Shape still $B \times n \times d$.
 5. **Unembedding**: multiplying by $W_{\text{out}} \in \mathbb{R}^{d \times |\mathcal{V}|}$ gives one score per vocabulary entry, shape $B \times n \times |\mathcal{V}|$. The softmax of row $i$ is the model's distribution over the token at position $i + 1$ ({ref}`sec-ch1-training-process`).
 
-GPT-2 small, for example, has $|\mathcal{V}| = 50{,}257$, $d = 768$ and $L = 12$ blocks of 12 heads {cite}`radford2019language`, so a batch of 8 sequences of 1,024 tokens goes from an $8 \times 1024$ array of ids to $8 \times 1024 \times 768$ hidden states and finally to $8 \times 1024 \times 50{,}257$ scores, about 412 million numbers. The listing runs the same path at toy size, with PyTorch's own pre-LN block standing in for the block above:
+The smallest GPT-2, for example, has $|\mathcal{V}| = 50{,}257$, $d = 768$, $L = 12$ blocks and a context of 1,024 tokens {cite}`radford2019language`, so a batch of 8 sequences of 1,024 tokens goes from an $8 \times 1024$ array of ids to $8 \times 1024 \times 768$ hidden states and finally to $8 \times 1024 \times 50{,}257 = 411{,}705{,}344$ scores. The listing runs the same path at toy size. Its blocks are PyTorch's `nn.TransformerEncoderLayer` with `norm_first=False`, which computes the same post-LN block as `TransformerBlock` above (attention, then a ReLU feed-forward network of width $4d$, each followed by a residual connection and LayerNorm). It stands in for `TransformerBlock` only because every listing on this page runs on its own, and repeating the attention and block classes here would add over a hundred lines:
 
 ```python
 import torch
@@ -1051,10 +1051,10 @@ vocab_size, d_model, num_heads, num_layers, max_len = 1000, 64, 4, 2, 16
 embed = nn.Embedding(vocab_size, d_model)  # W_E
 positions = nn.Embedding(max_len, d_model)  # learned absolute positions
 blocks = nn.ModuleList(
-    nn.TransformerEncoderLayer(d_model, num_heads, 4 * d_model, dropout=0.0, batch_first=True, norm_first=True)
+    nn.TransformerEncoderLayer(d_model, num_heads, 4 * d_model, dropout=0.0, batch_first=True, norm_first=False)
     for _ in range(num_layers)
 )
-final_norm = nn.LayerNorm(d_model)
+final_norm = nn.LayerNorm(d_model)  # needed by pre-LN models; kept so the path matches step 4
 unembed = nn.Linear(d_model, vocab_size, bias=False)  # W_out
 
 ids = torch.randint(0, vocab_size, (2, 10))  # B = 2 sequences of n = 10 tokens
