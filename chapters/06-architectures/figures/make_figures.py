@@ -299,7 +299,7 @@ def norm_sweep(out):
         ax.set_xlabel("learning rate")
         ax.set_title("no warm-up" if warmup == 0 else f"{warmup}-step warm-up")
         ax.grid(axis="y", color="#e5e7eb")
-    axes[0].set_ylabel("final training loss")
+    axes[0].set_ylabel("training loss after 400 steps")
     axes[0].legend(loc="upper left", fontsize=9.5)
     fig.tight_layout()
     save(fig, out / "norm-sweep.svg")

@@ -225,7 +225,7 @@ print(f"Gemma 3 12B text decoder: {non_embedding / 1e6:,.0f}M non-embedding, as 
 PUBLISHED = {
     "Qwen/Qwen2.5-7B": (7.61, 0.01, None, None, None),
     "Qwen/Qwen3-8B-Base": (8.2, 0.05, None, None, None),
-    "allenai/OLMoE-1B-7B-0924": (6.9, 0.05, 1.3, "with", 0.05),
+    "allenai/OLMoE-1B-7B-0924": (7, 0.5, 1.3, "with", 0.05),  # paper: "7 billion (B) parameters"
     "deepseek-ai/DeepSeek-V2-Lite": (15.7, 0.05, 2.4, "without", 0.1),
     "deepseek-ai/DeepSeek-V3": (671, 0.5, 37, "without", 0.5),
     "mistralai/Mistral-7B-v0.1": (7.3, 0.1, None, None, None),
@@ -756,7 +756,7 @@ def norm_claims(arms):
             bool((top["post"] > STUCK).all() and (top["pre"] < TRAINS).all()),
         "at 3e-3 with warm-up, post-norm trains in some seeds but not in all":
             bool((warm < TRAINS).any() and (warm > STUCK).any()),
-        "at 1e-3 and 3e-4, with and without warm-up, post-norm ends lower than pre-norm in every seed":
+        "at 1e-3 and 3e-4, with and without warm-up, post-norm's loss after 400 steps is below pre-norm's in every seed":
             bool(all((by[key]["post"] < by[key]["pre"]).all() for key in lower)),
     }
 """.strip("\n")
@@ -766,9 +766,9 @@ md(r"""
 (nb-arch-train)=
 ## Post-Norm Against Pre-Norm
 
-A six-layer byte-level model is trained on the first 150 KB of *Pride and Prejudice*, once with each norm placement, for 400 steps of 8 sequences of 64 bytes. A model that has only learned byte frequencies sits near the entropy of the text's byte distribution, which the next cell computes with the model's size; anything clearly lower means it is using context. For each of five seeds both variants see the same batches. The score is the mean training loss over the last 20 steps. Everything is single-threaded and deterministic, so a seed reproduces exactly.
+A six-layer byte-level model is trained on the first 150 KB of *Pride and Prejudice*, once with each norm placement, for 400 steps of 8 sequences of 64 bytes. A model that has only learned byte frequencies sits near the entropy of the text's byte distribution, which the next cell computes with the model's size; anything clearly lower means it is using context. For each of five seeds both variants see the same batches. The score is the mean training loss over the last 20 of the 400 steps (steps 381 to 400): it measures how far each arrangement gets in 400 steps, not where it would end with longer training. Everything is single-threaded and deterministic, so a seed reproduces exactly.
 
-The comparison is a sweep over three learning rates ($3 \times 10^{-3}$, $10^{-3}$, $3 \times 10^{-4}$), each with no warm-up and with a linear warm-up over the first 100 steps: six arms of ten runs. **Live:** the $3 \times 10^{-3}$, no-warm-up arm is trained below. **Loaded:** the other five arms are read from `data/norm_sweep.json`, which `tools/build_architecture_notebook.py --sweep` wrote by running this notebook's own training cell; the file records that cell's SHA-256 and the torch version, and `--sweep --check` recomputes every arm.
+The comparison is a sweep over three learning rates ($3 \times 10^{-3}$, $10^{-3}$, $3 \times 10^{-4}$), each with no warm-up and with a linear warm-up over the first 100 steps: six arms of ten runs. **Live:** the $3 \times 10^{-3}$, no-warm-up arm is trained below. **Loaded:** the other five arms are read from `data/norm_sweep.json`, which `tools/build_architecture_notebook.py --sweep` wrote by running this notebook's own training cell; the file records that cell's SHA-256 and the torch version. `--sweep --check` recomputes every arm, writes nothing, and fails unless the cell's hash matches, every recomputed score is within $10^{-4}$ of the recorded score for the same arm and seed, and each statement asserted below still holds.
 """, tags=("static-numbers",))  # experiment settings: model size, data, steps, rates, seeds
 code(r'''
 import numpy as np
@@ -826,7 +826,7 @@ for _style in ("pre", "post"):
         code(f'''
 with timed("{_style}-norm, seed {_seed}"):
     RESULTS["{_style}"].append(train("{_style}", {_seed}))
-print("final loss (mean of last 20 steps):", round(float(np.mean(RESULTS["{_style}"][-1][-20:])), 3))
+print("loss after 400 steps (mean of steps 381-400):", round(float(np.mean(RESULTS["{_style}"][-1][-20:])), 3))
 ''')
 code(r'''
 final = {style: np.array([np.mean(r[-20:]) for r in runs]) for style, runs in RESULTS.items()}
@@ -891,7 +891,7 @@ for style, color in (("pre", "#4c72b0"), ("post", "#c44e52")):
 ax.axhline(BYTE_FREQ_LOSS, color="gray", lw=0.8, ls=":")
 ax.set_xscale("log")
 ax.set_xlabel("peak learning rate")
-ax.set_ylabel("final loss (nats per byte; mean, min-max over 5 seeds)")
+ax.set_ylabel("loss after 400 steps (nats per byte;\nmean, min-max over 5 seeds)")
 ax.legend(fontsize=8)
 plt.tight_layout()
 plt.show()
@@ -989,7 +989,7 @@ def run_sweep(processes: int) -> dict:
         scores = dict(pool.map(_sweep_run, jobs, chunksize=1))
     import torch
     return {
-        "description": "Final training loss (mean of the last 20 of 400 steps) of the Section 7 model, per arm "
+        "description": "Training loss after 400 steps (mean of steps 381 to 400) of the Section 7 model, per arm "
                        "and seed; written by tools/build_architecture_notebook.py --sweep.",
         "torch": torch.__version__,
         "train_cell_sha256": train_cell_sha256(),

@@ -90,7 +90,7 @@ def config(repo: str) -> dict:
 PUBLISHED = {
     "Qwen/Qwen2.5-7B": (7.61, 0.01, None, None, None),  # consistent with truncating 7.6156
     "Qwen/Qwen3-8B-Base": (8.2, 0.05, None, None, None),  # model card at the pinned commit
-    "allenai/OLMoE-1B-7B-0924": (6.9, 0.05, 1.3, "with", 0.05),
+    "allenai/OLMoE-1B-7B-0924": (7, 0.5, 1.3, "with", 0.05),  # paper: "7 billion (B) parameters"
     "deepseek-ai/DeepSeek-V2-Lite": (15.7, 0.05, 2.4, "without", 0.1),  # vendor truncates 2.451
     "deepseek-ai/DeepSeek-V3": (671, 0.5, 37, "without", 0.5),
     "mistralai/Mistral-7B-v0.1": (7.3, 0.1, None, None, None),  # consistent with rounding 7.2417 up
