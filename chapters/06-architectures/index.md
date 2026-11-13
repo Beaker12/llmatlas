@@ -68,7 +68,7 @@ All twelve have the same outer structure: a token embedding, a stack of identica
 :alt: Two block diagrams side by side. Left, the 2017 block: multi-head attention, add, LayerNorm, ReLU feed-forward network, add, LayerNorm, with the residual skips entering each add. Right, the Llama 3.1 8B block: RMSNorm, grouped-query attention with RoPE, add, RMSNorm, SwiGLU network, add, with the residual skips bypassing the norms.
 :width: 100%
 
-The 2017 block and a 2025 block (Llama 3.1 8B). The outer structure is the same; what changed is the contents of each box (shaded blue) and where the normalization sits (orange). On the right, the residual path (orange arrows) runs from block to block without passing through a norm.
+The original transformer's block (2017) and Llama 3.1 8B's block (2024), whose layout the 2025 models of this chapter keep. The outer structure is the same; what changed is the contents of each box (shaded blue) and where the normalization sits (orange). On the right, the residual path (orange arrows) runs from block to block without passing through a norm.
 ```
 
 **Dense models.**
@@ -78,7 +78,7 @@ The 2017 block and a 2025 block (Llama 3.1 8B). The outer structure is the same;
 | Llama 3.1 8B | 32 | 4,096 | 32 / 8 × 128 | 14,336 | 128,256 | 500,000 | 128K | 8.03B | paper |
 | Llama 3.1 70B | 80 | 8,192 | 64 / 8 × 128 | 28,672 | 128,256 | 500,000 | 128K | 70.55B | paper |
 | Mistral 7B v0.1 | 32 | 4,096 | 32 / 8 × 128 | 14,336 | 32,000 | 10,000 | 8,192 (paper), 32,768 (config) | 7.24B | config |
-| Qwen2.5 7B | 28 | 3,584 | 28 / 4 × 128 | 18,944 | 152,064 | 1,000,000 | 131,072 (config; 32,768 trained, longer with YaRN) | 7.62B | config |
+| Qwen2.5 7B | 28 | 3,584 | 28 / 4 × 128 | 18,944 | 152,064 | 1,000,000 | 131,072 (config; pretrained at 4,096, extended to 32,768, longer with YaRN) | 7.62B | config |
 | Gemma 2 9B | 42 | 3,584 | 16 / 8 × 256 | 14,336 | 256,000 | not stated (Transformers default 10,000) | 8,192 | 9.24B | paper |
 | OLMo 2 7B (1124) | 32 | 4,096 | 32 / 32 × 128 | 11,008 | 100,352 | 500,000 | 4,096 | 7.30B | config |
 | Qwen3 8B (base) | 36 | 4,096 | 32 / 8 × 128 | 12,288 | 151,936 | 1,000,000 | 32,768 (config); 128K (paper) | 8.19B | config |
@@ -137,9 +137,9 @@ It is worth stating what is *constant*, because it explains why the field moved 
 
 ### 2.1 Pre-norm and post-norm
 
-The original transformer {cite}`vaswani2017attention` applied layer normalization *after* adding the sublayer output to the residual (post-norm): $x \leftarrow \mathrm{Norm}(x + F(x))$. Every layer's output passes through a normalization on the way to the next, which means the gradient reaching early layers is rescaled at each step. At initialization the gradients near the output are large, and Xiong et al. trace post-norm's reliance on a learning-rate warm-up to them {cite}`xiong2020layer`. How strict that reliance is depends on the learning rate: in the notebook section {ref}`nb-arch-train`, post-norm fails without warm-up only at the highest of three rates, and warm-up lets it train there in some seeds but not in all.
+The original transformer {cite}`vaswani2017attention` applied layer normalization *after* adding the sublayer output to the residual (post-norm): $x \leftarrow \mathrm{Norm}(x + F(x))$. Every layer's output passes through a normalization on the way to the next, which means the gradient reaching early layers is rescaled at each step. At initialization the gradients near the output are large, and {cite:t}`xiong2020layer` trace post-norm's reliance on a learning-rate warm-up to them. How strict that reliance is depends on the learning rate: in the notebook section {ref}`nb-arch-train`, post-norm fails without warm-up only at the highest of three rates, and warm-up lets it train there in some seeds but not in all.
 
-Pre-norm moves the normalization inside the branch: $x \leftarrow x + F(\mathrm{Norm}(x))$. The residual path from the embedding to the output is then an unnormalized identity, so gradients reach every layer directly. Xiong et al. show that this keeps the gradient scale stable at initialization and makes warm-up optional. The price is that the residual stream's magnitude grows with depth, so the representation of the last layers can be dominated by the accumulated sum; this is why every pre-norm model adds a final normalization before the output projection. The notebook section {ref}`nb-arch-train` trains both arrangements side by side at three learning rates, with and without warm-up. {numref}`fig-ch6-norm-sweep` plots the recorded runs behind its statements.
+Pre-norm moves the normalization inside the branch: $x \leftarrow x + F(\mathrm{Norm}(x))$. The residual path from the embedding to the output is then an unnormalized identity, so gradients reach every layer directly. {cite:t}`xiong2020layer` show that this keeps the gradient scale stable at initialization and makes warm-up optional. The price is that the residual stream's magnitude grows with depth, so the representation of the last layers can be dominated by the accumulated sum; this is why every pre-norm model adds a final normalization before the output projection. The notebook section {ref}`nb-arch-train` trains both arrangements side by side at three learning rates, with and without warm-up. {numref}`fig-ch6-norm-sweep` plots the recorded runs behind its statements.
 
 ```{figure} figures/norm-sweep.*
 :name: fig-ch6-norm-sweep
@@ -165,7 +165,7 @@ The argument is that the re-scaling is what matters and the re-centering is not.
 
 ### 2.3 Normalizing queries and keys
 
-Attention logits are dot products $q \cdot k / \sqrt{d_k}$. If a few directions in $q$ and $k$ grow large during training, the softmax saturates into a one-hot distribution, gradients through it vanish, and the loss spikes. Normalizing the queries and keys before the dot product (QK-norm) was proposed for translation models by {cite:t}`henry2020query`, and Dehghani et al. used it to stabilize a 22-billion-parameter vision transformer {cite}`dehghani2023scaling`. It bounds the logits regardless of how the projection weights drift.
+Attention logits are dot products $q \cdot k / \sqrt{d_k}$. If a few directions in $q$ and $k$ grow large during training, the softmax saturates into a one-hot distribution, gradients through it vanish, and the loss spikes. Normalizing the queries and keys before the dot product (QK-norm) was proposed for translation models by {cite:t}`henry2020query`, and {cite:t}`dehghani2023scaling` used it to stabilize a 22-billion-parameter vision transformer. It bounds the logits regardless of how the projection weights drift.
 
 OLMo 2 {cite}`olmo2024olmo2` and OLMoE {cite}`muennighoff2025olmoe` (whose configuration and model code show the same layout) apply an RMSNorm to the full query and key projections before they are split into heads; in the parameter count this adds $n_h d_k$ weights for the queries and $n_{kv} d_k$ for the keys per layer. Qwen3 {cite}`qwen2025qwen3` and Gemma 3 {cite}`gemma2025gemma3` normalize each head separately, with one weight vector of width $d_k$ shared by all query heads and another by all key heads, so the count is $2 d_k$ per layer. Both reports name the purpose: Qwen3 introduces QK-norm "to ensure stable training", and Gemma 3 uses it to "replace the soft-capping of Gemma 2" ({ref}`sec-ch6-sliding-window-interleaved-attention`). DeepSeek's multi-head latent attention normalizes the compressed latents instead ({ref}`sec-ch6-multi-head-latent-attention`).
 
@@ -193,7 +193,7 @@ The residual stream is a sum of $2L$ terms. If each term has unit variance at in
 
 ```{admonition} Norm Placement in Practice
 :class: note
-The notebook section {ref}`nb-arch-block` checks the chapter's RMSNorm against PyTorch's reference, and {ref}`nb-arch-train` trains a six-layer post-norm and pre-norm model from the same seeds at three learning rates, with and without warm-up: post-norm fails at the highest rate, where pre-norm still trains, and ends lower than pre-norm in every seed at the two lower rates.
+The notebook section {ref}`nb-arch-block` checks the chapter's RMSNorm against PyTorch's reference, and {ref}`nb-arch-train` trains a six-layer post-norm and pre-norm model from the same seeds at three learning rates, with and without warm-up: post-norm fails at the highest rate without warm-up, where pre-norm still trains, and ends lower than pre-norm in every seed at the two lower rates.
 ```
 
 (sec-ch6-feed-forward-network)=
@@ -204,7 +204,7 @@ The notebook section {ref}`nb-arch-block` checks the chapter's RMSNorm against P
 
 ### 3.1 From ReLU to gated units
 
-The 2017 feed-forward network is $\mathrm{ReLU}(x W_{up})\, W_{down}$ with a hidden width of $4d$; Chapter 1 sets it beside the gated form that replaced it ({ref}`sec-ch1-modern-block`). GPT-1, GPT-2 and BERT swapped ReLU for GELU {cite}`hendrycks2016gaussian`. Shazeer then tested gated variants, in which the hidden activation is the elementwise product of two projections, one passed through a nonlinearity {cite}`shazeer2020glu`:
+The 2017 feed-forward network is $\mathrm{ReLU}(x W_{up})\, W_{down}$ with a hidden width of $4d$; Chapter 1 sets it beside the gated form that replaced it ({ref}`sec-ch1-modern-block`). GPT-1, GPT-2 and BERT swapped ReLU for GELU {cite}`hendrycks2016gaussian`. {cite:t}`shazeer2020glu` then tested gated variants, in which the hidden activation is the elementwise product of two projections, one passed through a nonlinearity:
 
 $$\mathrm{SwiGLU}(x) = \big(\mathrm{SiLU}(x W_{gate}) \odot x W_{up}\big) W_{down}$$
 
@@ -222,7 +222,7 @@ Each feed-forward network has $3\,d \cdot d_{ff}$ parameters. Across the dense m
 
 ### 3.3 No biases
 
-Linear layers in these models have no bias terms, as the model code of each shows. PaLM's authors give a reason: removing the biases from the dense layers and layer norms "result[ed] in increased training stability for large models" {cite}`chowdhery2023palm`. The exception in the table is Qwen2.5, which keeps biases on the query, key and value projections only; this detail is fixed in the model code rather than in `config.json`, a pattern that matters for the parameter count in {ref}`sec-ch6-accounting`. Its successor drops them: Qwen3's report says "we remove QKV-bias used in Qwen2" and adds QK-norm in their place {cite}`qwen2025qwen3`. For Qwen3 8B that removes $36 \times (32 + 2 \times 8) \times 128 = 221{,}184$ bias parameters and adds $36 \times 2 \times 128 = 9{,}216$ norm weights.
+Linear layers in these models have no bias terms, as the model code of each shows. {cite:t}`chowdhery2023palm` give a reason: removing the biases from the dense layers and layer norms "result[ed] in increased training stability for large models". The exception in the table is Qwen2.5, which keeps biases on the query, key and value projections only; this detail is fixed in the model code rather than in `config.json`, a pattern that matters for the parameter count in {ref}`sec-ch6-accounting`. Its successor drops them: Qwen3's report says "we remove QKV-bias used in Qwen2" and adds QK-norm in their place {cite}`qwen2025qwen3`. For Qwen3 8B that removes $36 \times (32 + 2 \times 8) \times 128 = 221{,}184$ bias parameters and adds $36 \times 2 \times 128 = 9{,}216$ norm weights.
 
 (sec-ch6-attention-variants)=
 
@@ -370,7 +370,7 @@ A pure window gives up exact long-range retrieval in any single layer. Gemma 2 a
 
 Gemma 3 pushes the ratio further: "a pattern of 5 local layers for every global layer, starting with a local layer", with the local span cut to 1,024 tokens, and QK-norm in place of the soft-cap {cite}`gemma2025gemma3`. The authors report "minimal impact on perplexity" from the ratio. The cache arithmetic shows why it is worth having. Gemma 3 12B has 8 global and 40 local layers, each caching $2 \times 8 \times 256 = 4{,}096$ elements per token. At 128K tokens in bf16 the global layers hold $8 \times 4{,}096 \times 131{,}072 \times 2 = 8.59$ GB and the local layers only their last 1,024 tokens, $40 \times 4{,}096 \times 1{,}024 \times 2 = 0.34$ GB: 8.93 GB in all, against 51.5 GB if every layer were global. ModernBERT, an encoder, uses a similar alternation, with a global layer every third layer and a 128-token local window ({ref}`sec-ch6-encoders-encoder-decoders-today`).
 
-A property of window attention that surprises people: tokens near the start of a sequence receive a disproportionate share of attention even when they are irrelevant, as "attention sinks", and removing them from a windowed cache breaks the model. Xiao et al. exploit this to stream arbitrarily long text by always keeping the first few tokens plus a window {cite}`xiao2024efficient`. The streaming model does not remember what fell out of the window; it simply stays stable. {numref}`fig-ch6-attention-patterns` shows which keys each query scores under these patterns, and the order of local and global layers in Gemma 2 and Gemma 3.
+Trained softmax attention has a property that surprises people and that windowed eviction exposes: tokens near the start of a sequence receive a disproportionate share of attention even when they are irrelevant, as "attention sinks", and removing them from a windowed cache breaks the model. {cite:t}`xiao2024efficient` exploit this to stream arbitrarily long text by always keeping the first few tokens plus a window. The streaming model does not remember what fell out of the window; it simply stays stable. {numref}`fig-ch6-attention-patterns` shows which keys each query scores under these patterns, and the order of local and global layers in Gemma 2 and Gemma 3.
 
 ```{figure} figures/attention-patterns.*
 :name: fig-ch6-attention-patterns
@@ -395,16 +395,16 @@ The notebook section {ref}`nb-arch-kvcache` generates text with a cache and chec
 
 Chapter 1 implements rotary embeddings ({ref}`sec-ch1-rope`) {cite}`su2021roformer`; this section states the formulas. Each pair of dimensions $(2i, 2i+1)$ of a query or key at position $m$ is rotated by the angle $m\,\omega_i$, with $\omega_i = b^{-2i/d_k}$ for a base $b$ (10,000 in the original), $i = 0, \dots, d_k/2 - 1$ and $d_k$ the head width. The dot product between a query at position $m$ and a key at position $m'$ then depends only on $m - m'$.
 
-In complex form the rotation is a single multiplication, and the relative-offset property takes three lines. Write pair $i$ of the query at position $m$ as the complex number $q_{m,i} = q_{m,2i} + \mathrm{i}\, q_{m,2i+1}$, and pair $i$ of the key at position $m'$ likewise as $k_{m',i}$. RoPE multiplies each pair by a unit complex number:
+In complex form the rotation is a single multiplication, and the relative-offset property takes three lines. Write pair $i$ of the query at position $m$ as the complex number $\hat{q}_{m,i} = q_{m,2i} + \mathrm{i}\, q_{m,2i+1}$, and pair $i$ of the key at position $m'$ likewise as $\hat{k}_{m',i}$. RoPE multiplies each pair by a unit complex number:
 
-$$q_{m,i} \mapsto q_{m,i}\, e^{\mathrm{i}\, m\, \omega_i}, \qquad k_{m',i} \mapsto k_{m',i}\, e^{\mathrm{i}\, m'\, \omega_i}$$ (eq-ch6-rope-complex)
+$$\hat{q}_{m,i} \mapsto \hat{q}_{m,i}\, e^{\mathrm{i}\, m\, \omega_i}, \qquad \hat{k}_{m',i} \mapsto \hat{k}_{m',i}\, e^{\mathrm{i}\, m'\, \omega_i}$$ (eq-ch6-rope-complex)
 
-The dot product of two real 2-vectors equals the real part of the first, read as a complex number, times the complex conjugate of the second, which is written with a superscript star: for pair $i$ it is $\mathrm{Re}(q_{m,i}\, k_{m',i}^{*})$ before rotation. The contribution of pair $i$ to the attention score is therefore
+The dot product of two real 2-vectors equals the real part of the first, read as a complex number, times the complex conjugate of the second, which is written with a superscript star: for pair $i$ it is $\mathrm{Re}(\hat{q}_{m,i}\, \hat{k}_{m',i}^{*})$ before rotation. The contribution of pair $i$ to the attention score is therefore
 
 $$\begin{aligned}
-\mathrm{Re}\big[(q_{m,i}\, e^{\mathrm{i} m \omega_i})(k_{m',i}\, e^{\mathrm{i} m' \omega_i})^{*}\big]
-&= \mathrm{Re}\big[q_{m,i}\, k_{m',i}^{*}\, e^{\mathrm{i} m \omega_i}\, e^{-\mathrm{i} m' \omega_i}\big] \\
-&= \mathrm{Re}\big[q_{m,i}\, k_{m',i}^{*}\, e^{\mathrm{i} (m - m') \omega_i}\big].
+\mathrm{Re}\big[(\hat{q}_{m,i}\, e^{\mathrm{i} m \omega_i})(\hat{k}_{m',i}\, e^{\mathrm{i} m' \omega_i})^{*}\big]
+&= \mathrm{Re}\big[\hat{q}_{m,i}\, \hat{k}_{m',i}^{*}\, e^{\mathrm{i} m \omega_i}\, e^{-\mathrm{i} m' \omega_i}\big] \\
+&= \mathrm{Re}\big[\hat{q}_{m,i}\, \hat{k}_{m',i}^{*}\, e^{\mathrm{i} (m - m') \omega_i}\big].
 \end{aligned}$$
 
 The first step uses that the conjugate of a product is the product of the conjugates, and that conjugating $e^{\mathrm{i} m' \omega_i}$ negates its exponent; the second adds the exponents. The positions enter only through $m - m'$, and the score is the sum of these terms over the $d_k/2$ pairs, so it depends on the offset alone. Chapter 1 derives the same result with real $2 \times 2$ rotation matrices ({ref}`sec-ch1-rope`).
@@ -419,7 +419,7 @@ A model trained on sequences up to $n_{train}$ tokens has only ever seen rotatio
 
 Two families of fix change the frequencies, and both are used in the table:
 
-**A larger base.** Raising $b$ lowers every frequency, so the angles at position $m$ are those of a smaller position. Xiong et al. proposed raising the base from 10,000 to 500,000 for long-context training {cite}`xiong2024effective`, and Llama 3 uses that value {cite}`grattafiori2024llama`; Qwen2.5 and Mixtral use 1,000,000. It is the simplest approach: train from the start, or continue training, with the larger base.
+**A larger base.** Raising $b$ lowers every frequency, so the angles at position $m$ are those of a smaller position. {cite:t}`xiong2024effective` proposed raising the base from 10,000 to 500,000 for long-context training, and Llama 3 uses that value {cite}`grattafiori2024llama`; Qwen2.5 and Mixtral use 1,000,000. It is the simplest approach: train from the start, or continue training, with the larger base.
 
 **Rescaling an existing model.** Position interpolation divides every position by the length ratio $s_{ctx} = n'/n_{train}$ of a target context length $n'$ to the trained one, so positions up to the target length map into $[0, n_{train})$ and no angle exceeds what training saw {cite}`chen2023extending`. Its drawback is that it squeezes the high frequencies too, blurring the distinction between adjacent tokens. NTK-aware scaling, from a 2023 Reddit post by the pseudonymous {cite:t}`bloc972023ntk`, instead changes the base; the YaRN paper writes the rule out (its Eq. 22, arXiv v3) {cite}`peng2024yarn`:
 
@@ -464,6 +464,8 @@ lowest frequency divided by 8
 attention factor at s = 8: 1.208
 ```
 
+The paper defines the ramp on $\xi$, but DeepSeek-V3's released inference code (the function `precompute_freqs_cis` in its `inference/model.py`) ramps in the pair index $i$ instead: it finds the pair indices at which $\xi$ equals $\beta_{fast}$ and $\beta_{slow}$, rounds the first down and the second up to whole pairs, and blends linearly in $i$ between them. Because $\xi_i$ falls geometrically with $i$, the two forms give the blended pairs different weights. They agree on which pairs are kept, blended and interpolated in this example: the index form keeps pairs 0 to 20 and fully interpolates pairs 46 to 63, again 21, 25 and 18.
+
 {numref}`fig-ch6-rope-scaling` compares the three rescalings pair by pair for the same example.
 
 ```{figure} figures/rope-scaling.*
@@ -507,7 +509,7 @@ The notebook section {ref}`nb-arch-rope` asserts the identities above to $10^{-9
 
 ### 5.3 Alternatives to RoPE
 
-ALiBi adds a penalty to attention scores proportional to the distance between query and key, with a different slope per head, and no positional signal elsewhere {cite}`press2022train`. It extrapolates to longer sequences with no change, which was its selling point, but it has been displaced by RoPE with rescaling in most recent models. T5's bucketed biases {cite}`raffel2019exploring`, of which Chapter 1 implements a clipped-offset variant ({ref}`sec-ch1-relative-bias`), belong to the same family: a learned additive bias indexed by distance. Shaw et al. introduced relative positions earlier, as learned vectors added to the keys and values {cite}`shaw2018self`.
+ALiBi adds a penalty to attention scores proportional to the distance between query and key, with a different slope per head, and no positional signal elsewhere {cite}`press2022train`. It extrapolates to longer sequences with no change, which was its selling point, but it has been displaced by RoPE with rescaling in most recent models. T5's bucketed biases {cite}`raffel2019exploring`, which Chapter 1 implements with T5's 32 buckets and maximum distance of 128 ({ref}`sec-ch1-relative-bias`), belong to the same family: a learned additive bias indexed by distance. {cite:t}`shaw2018self` introduced relative positions earlier, as learned vectors added to the keys and values.
 
 (sec-ch6-long-context-training)=
 
@@ -525,7 +527,7 @@ Mistral 7B v0.1 is an example: its configuration says 32,768 positions, its pape
 
 ```{figure} figures/context-claims.*
 :name: fig-ch6-context-claims
-:alt: Dot chart on a log scale from 4K to 160K tokens. Mistral 7B v0.1: window 4K, pretraining 8K, configuration 32K. Qwen2.5 7B: trained 32K, configuration 128K. Llama 3 405B: pretraining 8K, long-context stage at 128K, configuration 128K. DeepSeek-V3: pretraining 4K, stages at 32K and 128K, configuration 160K.
+:alt: Dot chart on a log scale from 4K to 160K tokens. Mistral 7B v0.1: window 4K, pretraining 8K, configuration 32K. Qwen2.5 7B: pretraining 4K, long-context stage at 32K, configuration 128K. Llama 3 405B: pretraining 8K, long-context stage at 128K, configuration 128K. DeepSeek-V3: pretraining 4K, stages at 32K and 128K, configuration 160K.
 :width: 100%
 
 Context numbers from the sources cited in this chapter. The red bar is what the configuration accepts (claim 1); the markers are the lengths the reports say training used (claim 2). Where a long-context stage reaches the red bar, as for Llama 3, the two claims meet; for Mistral 7B v0.1 and Qwen2.5 7B the configuration accepts four times the trained length.
@@ -572,15 +574,30 @@ def route_top_k(x, router_weight, k):
     return top_i, gates, n_experts * (f * p).sum()
 
 
-print("auxiliary loss of a uniform router:",  # all logits equal: f_i = P_i = 1/8
-      route_top_k(torch.ones(64, 16), torch.zeros(8, 16), 2)[2].item())
+def fractions(ids, n_experts=8):
+    return torch.bincount(ids.flatten(), minlength=n_experts) / ids.numel()
+
+
+torch.manual_seed(0)
+ids, _, aux = route_top_k(torch.randn(4096, 8), torch.eye(8), 2)  # independent random logits
+f = fractions(ids)
+print("random logits: fractions", " ".join(f"{v:.3f}" for v in f.tolist()), f"loss {aux:.3f}")
+assert (f - 1 / 8).abs().max() < 0.01
+
+ids, _, aux = route_top_k(torch.ones(64, 16), torch.zeros(8, 16), 2)  # all logits tied
+f = fractions(ids).sort(descending=True).values
+print("tied logits:   fractions", " ".join(f"{v:.3f}" for v in f.tolist()), f"loss {aux:.3f}")
+assert (f > 0).sum() == 2
 ```
 
 % output
 
 ```text
-auxiliary loss of a uniform router: 1.0
+random logits: fractions 0.121 0.131 0.120 0.125 0.127 0.123 0.126 0.127 loss 1.000
+tied logits:   fractions 0.500 0.500 0.000 0.000 0.000 0.000 0.000 0.000 loss 1.000
 ```
+
+With independent random logits over 4,096 tokens every expert receives within 0.01 of an eighth of the routed slots, and the loss is 1. With all logits tied, `topk` sends every token to the same two experts and leaves six idle, yet the loss is still 1, because the mean probabilities stay uniform. That second router is the collapsed case {ref}`sec-ch6-keeping-experts-balanced` warns about: a loss near 1 does not certify balance.
 
 (sec-ch6-keeping-experts-balanced)=
 
@@ -588,11 +605,11 @@ auxiliary loss of a uniform router: 1.0
 
 Left alone, routers collapse: an expert that gets slightly more tokens trains faster, gets better, and receives still more. The remaining experts starve and their parameters are wasted. Three mechanisms counter this.
 
-**An auxiliary loss.** The Switch loss is $\lambda_{aux}\, E \sum_{i=1}^{E} f_i \bar{\rho}_i$, where $f_i$ is the fraction of tokens dispatched to expert $i$ and $\bar{\rho}_i$ is the mean router probability assigned to it {cite}`fedus2022switch`. With $\sum_i f_i = 1$ (defined over the routed slots when $n_{act} > 1$), the loss equals 1 under uniform routing. It is not a minimum over all routers: with two experts, 30% of tokens at $\rho = (1, 0)$ and 70% at $(0.49, 0.51)$ give 0.886. If $f$ tracked $\bar{\rho}$ exactly, the loss would be $E \sum_i \bar{\rho}_i^2 \geq 1$, with equality only for uniform routing, which is the sense in which Fedus et al. call it minimized. A value near 1 therefore does not certify balance. Because $f_i$ is not differentiable, the gradient flows through $\bar{\rho}_i$. The coefficient trades balance against quality: Mixtral's configuration has 0.02 and OLMoE's 0.01. ST-MoE adds a *router z-loss*, a penalty on the squared log-sum-exp of the router logits that keeps them small and the routing computation numerically stable in bf16 {cite}`zoph2022st`.
+**An auxiliary loss.** The Switch loss is $\lambda_{aux}\, E \sum_{i=1}^{E} f_i \bar{\rho}_i$, where $f_i$ is the fraction of tokens dispatched to expert $i$ and $\bar{\rho}_i$ is the mean router probability assigned to it {cite}`fedus2022switch`. With $\sum_i f_i = 1$ (defined over the routed slots when $n_{act} > 1$), the loss equals 1 under uniform routing. It is not a minimum over all routers: with two experts, 30% of tokens at $\rho = (1, 0)$ and 70% at $(0.49, 0.51)$ give 0.886. If $f$ tracked $\bar{\rho}$ exactly, the loss would be $E \sum_i \bar{\rho}_i^2 \geq 1$, with equality only for uniform routing, which is the sense in which {cite:t}`fedus2022switch` call it minimized. A value near 1 therefore does not certify balance. Because $f_i$ is not differentiable, the gradient flows through $\bar{\rho}_i$. The coefficient trades balance against quality: Mixtral's configuration has 0.02 and OLMoE's 0.01. ST-MoE adds a *router z-loss*, a penalty on the squared log-sum-exp of the router logits that keeps them small and the routing computation numerically stable in bf16 {cite}`zoph2022st`.
 
 **A capacity factor.** On parallel hardware each expert processes a fixed-size buffer of $\kappa = \lceil \phi\, n_{act}\, T / E \rceil$ tokens for $T$ tokens in a batch and capacity factor $\phi$. Tokens beyond an expert's capacity are dropped from that expert (they pass through the residual connection unchanged). A factor of 1.0 is fully balanced and drops any overload; larger values waste compute on padding. "Dropless" implementations such as MegaBlocks {cite}`gale2023megablocks`, used for OLMoE {cite}`muennighoff2025olmoe`, avoid the choice at the cost of irregular shapes.
 
-**Expert-choice routing.** Zhou et al. invert the direction: each expert chooses its top tokens, which makes balance exact by construction, though it complicates autoregressive decoding, where the future tokens that would compete for an expert are not yet known {cite}`zhou2022mixture`.
+**Expert-choice routing.** {cite:t}`zhou2022mixture` invert the direction: each expert chooses its top tokens, which makes balance exact by construction, though it complicates autoregressive decoding, where the future tokens that would compete for an expert are not yet known.
 
 (sec-ch6-fine-grained-shared-experts)=
 
@@ -608,7 +625,11 @@ DeepSeekMoE makes two changes to the conventional layout of GShard-style top-$n_
 One token through a mixture-of-experts layer with a shared expert. The router scores all $E$ routed experts but only the $n_{act}$ selected (bold) run, each weighted by its renormalized probability $\tilde{\rho}_i$; the shared expert runs for every token. Compute per token follows the bold boxes, memory follows all of them.
 ```
 
-DeepSeek-V3 adds three more refinements {cite}`deepseek2024v3`. Its router uses sigmoid scores (normalized over the selected experts, then multiplied by 2.5), rather than softmax. Routing is node-limited, as DeepSeek-V2 already did with devices: the 256 experts are divided into 8 groups, a token chooses its best 4 groups and then the top 8 experts among them, which bounds cross-node communication. And it replaces the auxiliary loss with *auxiliary-loss-free* balancing {cite}`wang2024auxiliary`: a per-expert bias is added to the scores for the *selection* of the top experts only (not for the gate weights), and after each step the bias of overloaded experts is lowered and of underloaded ones raised. No gradient from a balancing objective competes with the language-modeling loss; a very small sequence-level auxiliary loss remains as a safeguard. The bias is stored per layer, one value per expert, which is why V3's router has $E$ extra parameters per layer in {ref}`sec-ch6-accounting`.
+DeepSeek-V3 adds three more refinements {cite}`deepseek2024v3`. Its router uses sigmoid scores rather than softmax, normalizes them over the selected experts and multiplies them by 2.5 (Eqs. 12 to 15 of the paper, with the factor from the configuration):
+
+$$\rho_i = \mathrm{sigmoid}(r_i) = \frac{1}{1 + e^{-r_i}}, \qquad \tilde{\rho}_i = 2.5\, \frac{\rho_i}{\sum_{j \in \mathrm{TopK}} \rho_j} \quad \text{for } i \in \mathrm{TopK},$$
+
+where $\mathrm{TopK}$ is the set of $n_{act}$ selected experts (chosen with the bias described below) and the unselected experts get no weight. Unlike softmax probabilities, the sigmoid scores do not compete: each lies in $(0, 1)$ on its own, and only the normalization couples them. Routing is node-limited, as DeepSeek-V2 already did with devices: the 256 experts are divided into 8 groups, a token chooses its best 4 groups and then the top 8 experts among them, which bounds cross-node communication. And it replaces the auxiliary loss with *auxiliary-loss-free* balancing {cite}`wang2024auxiliary`: a per-expert bias is added to the scores for the *selection* of the top experts only (not for the gate weights), and after each step the bias of overloaded experts is lowered and of underloaded ones raised. No gradient from a balancing objective competes with the language-modeling loss; a very small sequence-level auxiliary loss remains as a safeguard. The bias is stored per layer, one value per expert, which is why V3's router has $E$ extra parameters per layer in {ref}`sec-ch6-accounting`.
 
 The first layers of both DeepSeek models are dense (one in V2-Lite, three in V3); the configuration's `first_k_dense_replace` says how many.
 
@@ -643,7 +664,7 @@ The notebook section {ref}`nb-arch-moe` routes 4,096 random tokens through a top
 
 ### 7.1 Exact attention, faster
 
-Before FlashAttention, the usual answer to the quadratic cost of attention was to approximate it. Linformer observes that the attention matrix is approximately low-rank and projects the keys and values along the sequence to a fixed length, which makes time and memory linear in $n$ {cite}`wang2020linformer`. Performers approximate the softmax kernel with random features, also in linear time and space {cite}`choromanski2021rethinking`. Sparse patterns such as Longformer's window restrict which pairs are scored at all {cite}`beltagy2020longformer`. None of the twelve models in this chapter uses an approximation; the sliding windows of Mistral and Gemma are exact attention over a shorter span. Dao et al. name the reason: approximate methods trade "model quality to reduce the compute complexity, but often do not achieve wall-clock speedup" {cite}`dao2022flashattention`. On a GPU the cost of attention was the memory traffic of the score matrix, which for one head at $n = 131{,}072$ would be $131{,}072^2 \times 2$ bytes $= 34.4$ GB in bf16, not the arithmetic, and an exact algorithm that avoids that traffic removed the reason to approximate.
+Before FlashAttention, the usual answer to the quadratic cost of attention was to approximate it. Linformer observes that the attention matrix is approximately low-rank and projects the keys and values along the sequence to a fixed length, which makes time and memory linear in $n$ {cite}`wang2020linformer`. Performers approximate the softmax kernel with random features, also in linear time and space {cite}`choromanski2021rethinking`. Sparse patterns such as Longformer's window restrict which pairs are scored at all {cite}`beltagy2020longformer`. None of the twelve models in this chapter uses an approximation; the sliding windows of Mistral and Gemma are exact attention over a shorter span. {cite:t}`dao2022flashattention` name the reason: approximate methods trade "model quality to reduce the compute complexity, but often do not achieve wall-clock speedup". On a GPU the cost of attention was the memory traffic of the score matrix, which for one head at $n = 131{,}072$ would be $131{,}072^2 \times 2$ bytes $= 34.4$ GB in bf16, not the arithmetic, and an exact algorithm that avoids that traffic removed the reason to approximate.
 
 FlashAttention computes exactly the same attention output as the textbook implementation but never writes the $n \times n$ score matrix to GPU main memory. It processes blocks that fit in on-chip SRAM, keeping running softmax statistics, so the extra memory is linear rather than quadratic in sequence length and the traffic to main memory falls by a large constant factor {cite}`dao2022flashattention`. FlashAttention-2 improves the work partition across thread blocks and warps {cite}`dao2024flashattention2`. Because the result is identical up to floating-point rounding, these are kernel choices, not architectural ones, but they changed what is affordable: attention memory stopped limiting sequence length, and the architectural cost that remains is the KV cache. PyTorch's `scaled_dot_product_attention`, used in this chapter's notebook, dispatches to such a kernel when one is available.
 
@@ -657,7 +678,7 @@ Paged attention manages the KV cache like virtual memory, in fixed-size blocks a
 
 ### 7.3 Multi-token prediction
 
-Standard training predicts one next token per position. Gloeckle et al. add extra heads that predict tokens 2, 3 and 4 positions ahead from the same hidden state, which improved code benchmarks at larger scales and allows speculative decoding without a separate draft model {cite}`gloeckle2024better`. DeepSeek-V3 uses a variant in which the additional prediction is made by a one-layer transformer module that takes the main model's hidden state and the next token's embedding, keeping the causal chain {cite}`deepseek2024v3`. The module is used as a training objective; it is not needed at inference (it can be dropped, or used for speculative decoding). Its layer accounts for the 13.46B elements that are in V3's checkpoint but not in its 671B (about 11.6B of them are the module's own weights; the rest are copies of the shared embedding and output head).
+Standard training predicts one next token per position. {cite:t}`gloeckle2024better` add extra heads that predict tokens 2, 3 and 4 positions ahead from the same hidden state, which improved code benchmarks at larger scales and allows speculative decoding without a separate draft model. DeepSeek-V3 uses a variant in which the additional prediction is made by a one-layer transformer module that takes the main model's hidden state and the next token's embedding, keeping the causal chain {cite}`deepseek2024v3`. The module is used as a training objective; it is not needed at inference (it can be dropped, or used for speculative decoding). Its layer accounts for the 13.46B elements that are in V3's checkpoint but not in its 671B (about 11.6B of them are the module's own weights; the rest are copies of the shared embedding and output head).
 
 (sec-ch6-embeddings-vocabulary)=
 
@@ -792,7 +813,7 @@ For a dense model with $N$ parameters in matrix multiplications, the forward pas
 
 First, the embedding lookup is not a multiplication, so $N$ should exclude the input embedding table. The output projection is a multiplication and stays in. For a sparse model, $N$ is the *active* count, with the router included.
 
-Second, attention scores and their application to the values add a term proportional to the context length $n$, which the $6N$ rule omits. In Kaplan et al.'s accounting, the forward pass per token is $2N + 2\,L\,n\,d_{attn}$, where $d_{attn} = n_h d_k$ is the attention width, and training is three times that (up to a factor of two lower under causal masking, which skips half of the scores). The attention term is below about 10% of the total while the context is no longer than the model width, and grows past it. At 128K it is the larger term. For Llama 3.1 8B a token that attends to all 131,072 earlier positions costs $2 \times 32 \times 131{,}072 \times 4{,}096 = 34.4$ GFLOPs in the attention term of the forward pass, against $2N = 2 \times 7.50\text{B} = 15.0$ GFLOPs for the weights, 2.3 times as much. Averaged over a causal sequence of that length each token attends to half the positions, 17.2 GFLOPs, still more than $2N$. {numref}`fig-ch6-flops-context` follows both terms from short to long context.
+Second, attention scores and their application to the values add a term proportional to the context length $n$, which the $6N$ rule omits. In the accounting of {cite:t}`kaplan2020scaling`, the forward pass per token is $2N + 2\,L\,n\,d_{attn}$, where $d_{attn} = n_h d_k$ is the attention width, and training is three times that (up to a factor of two lower under causal masking, which skips half of the scores). The attention term is below about 10% of the total while the context is no longer than the model width, and grows past it. At 128K it is the larger term. For Llama 3.1 8B a token that attends to all 131,072 earlier positions costs $2 \times 32 \times 131{,}072 \times 4{,}096 = 34.4$ GFLOPs in the attention term of the forward pass, against $2N = 2 \times 7.50\text{B} = 15.0$ GFLOPs for the weights, 2.3 times as much. Averaged over a causal sequence of that length each token attends to half the positions, 17.2 GFLOPs, still more than $2N$. {numref}`fig-ch6-flops-context` follows both terms from short to long context.
 
 ```{figure} figures/flops-context.*
 :name: fig-ch6-flops-context
@@ -876,7 +897,7 @@ T5-base: 222,903,552 (encoder 84,954,240, decoder 113,275,008, ratio to BERT-bas
 
 (sec-ch6-summary)=
 
-## 10. Summary
+## Summary
 
 - A 2025 decoder block is the 2017 block with the normalization moved or added so that residual contributions stay bounded, a gated feed-forward network without biases, rotary positions, and grouped or latent key/value sharing.
 - In the notebook's six-layer model, post-norm fails at the highest of three learning rates without warm-up while pre-norm trains, warm-up rescues post-norm there in some seeds but not all, and at the two lower rates post-norm ends lower than pre-norm in every seed.
@@ -970,7 +991,7 @@ equal heads, scores unchanged: True
 independent heads, relative change of the scores: 0.93
 ```
 
-The conversion removes 9.4 billion of Llama 3.1 70B's 70.6 billion parameters and divides the cache per token by 8, from the 2,621,440 bytes of multi-head attention to the 327,680 of the table in {ref}`sec-ch6-multi-query-grouped-query-attention`. The pooled layer reproduces the original exactly only when the heads of a group were equal. Heads trained independently are not, and with fully independent random heads the scores move by about as much as their own size. Mean-pooling is the starting point that keeps as much as an average can, and the paper's short uptraining, 5% of the original pretraining compute, lets the model adapt to the shared heads.
+The conversion removes 9.4 billion of the 79.9 billion parameters of the multi-head model of the same shape, leaving Llama 3.1 70B's 70.6 billion, and divides the cache per token by 8, from the 2,621,440 bytes of multi-head attention to the 327,680 of the table in {ref}`sec-ch6-multi-query-grouped-query-attention`. The pooled layer reproduces the original exactly only when the heads of a group were equal. Heads trained independently are not, and with fully independent random heads the scores move by about as much as their own size. Mean-pooling is the starting point that keeps as much as an average can, and the paper's short uptraining, 5% of the original pretraining compute, lets the model adapt to the shared heads.
 ````
 
 1. **A forgotten bias.** Suppose you count Qwen2.5 7B ($d = 3{,}584$, $L = 28$, $n_{kv} = 4$ key/value heads of $d_k = 128$) without the biases on its query, key and value projections ({ref}`sec-ch6-no-biases`). By how much is the count short, and which of the three checks of {ref}`sec-ch6-validation` notices?

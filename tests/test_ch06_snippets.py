@@ -431,3 +431,30 @@ def test_exercise_inputs_match_the_configurations_and_the_counter():
         assert (cfg["vocab_size"], cfg["hidden_size"]) == (vocab, width)
         assert (counts["total"], counts[key]) == (total, active)
         assert counts["active_with_embedding"] - counts["active_without_embedding"] == vocab * width
+
+
+def _yarn_reference_counts(dim, base, n_train, beta_fast=32.0, beta_slow=1.0):
+    """Kept, blended and interpolated pairs under the ramp in pair index of DeepSeek-V3's inference code
+    (precompute_freqs_cis: floor/ceil of the correction dimensions, then a linear ramp in the pair index)."""
+    import math
+    def correction(turns):
+        return dim * math.log(n_train / (turns * 2 * math.pi)) / (2 * math.log(base))
+    low, high = max(math.floor(correction(beta_fast)), 0), min(math.ceil(correction(beta_slow)), dim - 1)
+    ramp = [min(max((i - low) / (high - low), 0.0), 1.0) for i in range(dim // 2)]
+    return (sum(r == 0 for r in ramp), sum(0 < r < 1 for r in ramp), sum(r == 1 for r in ramp)), (low, high)
+
+
+def test_yarn_reference_ramp_in_pair_index_agrees_on_the_counts():
+    """5.2: the index-form ramp keeps pairs 0-20 and interpolates 46-63 (21, 25, 18), as the page's xi form does;
+    Exercise 1's DeepSeek-V3 rotary dimensions give 11, 12, 9 both ways."""
+    assert _yarn_reference_counts(128, 10000.0, 4096) == ((21, 25, 18), (20, 46))
+    assert _yarn_reference_counts(64, 10000.0, 4096)[0] == (11, 12, 9)
+    text = CHAPTER.read_text(encoding="utf-8")
+    assert "keeps pairs 0 to 20 and fully interpolates pairs 46 to 63, again 21, 25 and 18" in text
+
+
+def test_solution2_multi_head_base():
+    """Solution 2: the multi-head model of Llama 3.1 70B's shape has 79.9B parameters; GQA removes 9.4B of them."""
+    gqa = 70_553_706_496
+    extra = 80 * 2 * 8192 * (64 - 8) * 128
+    assert round((gqa + extra) / 1e9, 1) == 79.9 and round(extra / 1e9, 1) == 9.4

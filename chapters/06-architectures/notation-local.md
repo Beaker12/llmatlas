@@ -15,3 +15,5 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\omega_{d_k/2-1}$ | lowest RoPE frequency | index.md:L261 | $\theta_{d/2-1}$ at L261, L293 |
 
 In the complex-form RoPE proof (C6-12a) the complex conjugate is a superscript star, $k^{*}$, which is not a symbol ($k^{*}$ lists as $k$); never an overline, because the bar accent already means a batch mean ($\bar{\rho}$).
+| $\hat{q}$ | pair i of a query read as a complex number ($\hat{q}_{m,i}$ at position m; $\hat{k}$ likewise for a key) | ch6 acceptance item 10 |  |
+| $\hat{k}$ | pair i of a key read as a complex number ($\hat{k}_{m',i}$ at position m') | ch6 acceptance item 10 |  |

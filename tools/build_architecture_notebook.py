@@ -142,7 +142,7 @@ for repo in PINS:
 ''')
 
 md(r"""
-The four gated models, transcribed from their papers, except Gemma 2's vocabulary and Gemma 3's layer shapes, which come from Google's reference implementation (the paper gives the counts but not the shapes); Gemma 3 is the text decoder of a multimodal model. Gemma 2's vocabulary: the paper's Table 1 lists 256,128 entries, the released checkpoint has 256,000 rows, and the hub's total is reproduced with 256,000. Gemma 2's head dimension (256) is larger than $d/n_h$, and its embeddings are tied.
+The four gated models, transcribed from their papers, except Gemma 2's vocabulary, which is the released checkpoint's as the hub reports it, and Gemma 3's layer shapes, which come from Google's reference implementation (the paper gives the counts but not the shapes); Gemma 3 is the text decoder of a multimodal model. Gemma 2's vocabulary: the paper's Table 1 lists 256,128 entries, the released checkpoint has 256,000 rows, and the hub's total is reproduced with 256,000. Gemma 2's head dimension (256) is larger than $d/n_h$, and its embeddings are tied.
 """, tags=("static-numbers",))  # literature constants: the paper's and the checkpoint's vocabulary and head sizes
 code(r'''
 PAPER_CONFIGS = {
@@ -741,10 +741,20 @@ md(r"""
 (nb-arch-train)=
 ## Post-Norm Against Pre-Norm
 
-A six-layer byte-level model (about 0.3 million parameters) is trained on the first 150 KB of *Pride and Prejudice*, once with each norm placement, for 400 steps of 8 sequences of 64 bytes. A model that has only learned byte frequencies sits near a loss of 3.11 nats; anything clearly lower means it is using context. For each of five seeds both variants see the same batches. The score is the mean training loss over the last 20 steps. Everything is single-threaded and deterministic, so a seed reproduces exactly.
+A six-layer byte-level model is trained on the first 150 KB of *Pride and Prejudice*, once with each norm placement, for 400 steps of 8 sequences of 64 bytes. A model that has only learned byte frequencies sits near the entropy of the text's byte distribution, which the next cell computes with the model's size; anything clearly lower means it is using context. For each of five seeds both variants see the same batches. The score is the mean training loss over the last 20 steps. Everything is single-threaded and deterministic, so a seed reproduces exactly.
 
 The comparison is a sweep over three learning rates ($3 \times 10^{-3}$, $10^{-3}$, $3 \times 10^{-4}$), each with no warm-up and with a linear warm-up over the first 100 steps: six arms of ten runs. **Live:** the $3 \times 10^{-3}$, no-warm-up arm is trained below. **Loaded:** the other five arms are read from `data/norm_sweep.json`, which `tools/build_architecture_notebook.py --sweep` wrote by running this notebook's own training cell; the file records that cell's SHA-256 and the torch version, and `--sweep --check` recomputes every arm.
 """, tags=("static-numbers",))  # experiment settings: model size, data, steps, rates, seeds
+code(r'''
+import numpy as np
+
+_counts = np.bincount(np.frombuffer((DATA / "pride_and_prejudice_150k.txt").read_bytes(), dtype=np.uint8), minlength=256)
+_freq = _counts[_counts > 0] / _counts.sum()
+BYTE_FREQ_LOSS = float(-(_freq * np.log(_freq)).sum())
+n_params = sum(p.numel() for p in TinyLM(n_layers=6, n_kv_heads=4).parameters())
+print(f"model: {n_params:,} parameters; byte-frequency loss of the text: {BYTE_FREQ_LOSS:.2f} nats")
+assert n_params == 311_360 and round(BYTE_FREQ_LOSS, 2) == 3.11
+''')
 TRAIN_CELL = r'''
 raw = (DATA / "pride_and_prejudice_150k.txt").read_bytes()
 assert sha256(raw) == CHECKSUMS["pride_and_prejudice_150k.txt"]
@@ -785,7 +795,7 @@ print(f"{sum(p.numel() for p in TinyLM(n_layers=6, n_kv_heads=4).parameters()):,
 RESULTS = {"pre": [], "post": []}
 '''
 code(TRAIN_CELL)
-md("One cell per run keeps each well inside the time limit of a notebook cell on a small machine (a run takes about twenty seconds on one thread).")
+md("One cell per run keeps each well inside the time limit of a notebook cell on a small machine; each cell prints the time its run took.")
 for _style in ("pre", "post"):
     for _seed in range(5):
         code(f'''
@@ -853,7 +863,7 @@ for style, color in (("pre", "#4c72b0"), ("post", "#c44e52")):
         high = np.array([np.max(a[style]) for a in rows]) - mean
         ax.errorbar(rates, mean, yerr=[low, high], fmt="o" + line, color=color, capsize=3,
                     label=f"{style}-norm, {'no warm-up' if warmup == 0 else f'{warmup}-step warm-up'}")
-ax.axhline(3.11, color="gray", lw=0.8, ls=":")
+ax.axhline(BYTE_FREQ_LOSS, color="gray", lw=0.8, ls=":")
 ax.set_xscale("log")
 ax.set_xlabel("peak learning rate")
 ax.set_ylabel("final loss (nats per byte; mean, min-max over 5 seeds)")
