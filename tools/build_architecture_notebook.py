@@ -82,6 +82,7 @@ plt.rcParams["figure.dpi"] = 100
 
 DATA = Path("data")
 OFFLINE = os.environ.get("LLMATLAS_OFFLINE") == "1"
+USER_AGENT = os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")
 
 
 @contextmanager
@@ -116,7 +117,7 @@ def load_config(repo):
     if live_ok:
         url = f"https://huggingface.co/{repo}/resolve/{PINS[repo]}/config.json"
         try:
-            request = urllib.request.Request(url, headers={"User-Agent": "llmatlas-notebook/0.1"})
+            request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
             with urllib.request.urlopen(request, timeout=10) as response:
                 live = response.read()
             if sha256(live) == CHECKSUMS[name]:

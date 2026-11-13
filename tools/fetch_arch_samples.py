@@ -20,6 +20,7 @@ from __future__ import annotations
 import concurrent.futures
 import hashlib
 import json
+import os
 import pathlib
 import re
 import struct
@@ -27,7 +28,7 @@ import sys
 import time
 import urllib.request
 
-UA = {"User-Agent": "llmatlas-notebook/0.1"}
+UA = {"User-Agent": os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")}
 HUB = "https://huggingface.co"
 
 CANDIDATES = [
