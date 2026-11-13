@@ -35,7 +35,7 @@ By the end of this chapter, you will be able to:
 - Apply the Gopher quality and repetition rules, rank documents by perplexity under a reference model, and train a hashed n-gram quality classifier whose score feeds a Pareto keep rule
 - Explain why machine-generated text is hard to filter, using the base-rate arithmetic of a detector
 - Measure whether a filter helps with a controlled ablation that reports the retained fraction
-- Implement exact (hash and Bloom filter), line- and paragraph-level, near-duplicate (MinHash with LSH, SimHash) and substring (suffix array) deduplication, choose the LSH bands and rows for a similarity threshold, and say how per-snapshot and global deduplication differ
+- Implement exact (hash and Bloom filter), sentence-span, line- and paragraph-level, near-duplicate (MinHash with LSH, SimHash) and substring (suffix array) deduplication, choose the LSH bands and rows for a similarity threshold, and say how per-snapshot and global deduplication differ
 - Redact personal data, detect secrets in code, and decontaminate a corpus against benchmarks with $n$-gram overlap, knowing what each misses
 - Adapt the pipeline to source code, mathematics and multilingual text
 - Assemble the stages into an ordered, sharded, idempotent pipeline with auditable drop statistics
@@ -108,7 +108,7 @@ Most published pipelines are a variation of the following sequence. The order ma
 | PII and toxicity        | Microseconds to milliseconds | Modifies rather than drops | Final text            |
 | Decontamination         | Microseconds              | Under 1%          | Benchmark set                    |
 
-The percentages compound. A document that survives language identification with probability 0.3, quality rules with 0.7 and deduplication with 0.6 has about a one in eight chance of being trained on, which is why starting material measured in petabytes produces corpora measured in terabytes. {numref}`fig-ch4-retention-funnel` shows the same compounding in a published pipeline.
+The percentages compound. A document that survives language identification with probability 0.3, quality rules with 0.7 and deduplication with 0.6 has about a one in eight chance of being trained on. That factor of eight is not what turns petabytes of crawl into terabytes of corpus: most of that reduction happens before any filter runs, at text extraction, because a WARC record stores the whole HTTP response (headers, markup, scripts and styles) and the visible text extracted from it is a small part of those bytes. {numref}`fig-ch4-retention-funnel` shows the same compounding in a published pipeline.
 
 ```{figure} figures/retention-funnel.*
 :name: fig-ch4-retention-funnel
@@ -126,7 +126,7 @@ How much of Common Crawl survives each stage of RefinedWeb's pipeline, from Figu
 
 ### 2.1 From HTML to text
 
-Common Crawl distributes each snapshot in two forms: WARC files containing the raw HTTP responses, and WET files containing text that Common Crawl's own extractor pulled from the HTML. The WET extraction keeps navigation menus, cookie banners, footers and repeated headers, and early corpora such as C4 built on top of it. RefinedWeb {cite}`penedo2023refinedweb` and FineWeb {cite}`penedo2024fineweb` both re-extract from WARC with the boilerplate-aware extractor trafilatura {cite}`barbaresi2021trafilatura` and report that this single change gives a measurable improvement in downstream performance, because the model no longer spends capacity learning that "Skip to main content" follows every title.
+Common Crawl distributes each snapshot in two forms: WARC files containing the raw HTTP responses, and WET files containing text that Common Crawl's own extractor pulled from the HTML. The WET extraction keeps navigation menus, cookie banners, footers and repeated headers, and early corpora such as C4 built on top of it. RefinedWeb {cite}`penedo2023refinedweb` and FineWeb {cite}`penedo2024fineweb` both re-extract from WARC with the boilerplate-aware extractor trafilatura {cite}`barbaresi2021trafilatura`. FineWeb measured the effect: small models trained on trafilatura's text from WARC files scored higher on its benchmarks than models trained on the WET text of the same crawl, a gain the authors attribute to the boilerplate and menu text that WET files retain, text a model would otherwise spend capacity learning, such as that "Skip to main content" follows every title.
 
 A boilerplate remover works from the structure of the page rather than its words. The usual signals are:
 
@@ -301,8 +301,8 @@ assert decomposed != composed
 assert normalize_text(decomposed) == normalize_text(composed) == "café"
 
 # NFKC folds compatibility characters; NFC does not:
-assert normalize_text("ﬁle Ａ", form="NFKC") == "file A"
-assert normalize_text("ﬁle Ａ", form="NFC") == "ﬁle Ａ"
+assert normalize_text("\ufb01le \uff21", form="NFKC") == "file A"  # U+FB01 is the "fi" ligature, U+FF21 a full-width A
+assert normalize_text("\ufb01le \uff21", form="NFC") == "\ufb01le \uff21"
 
 # The Persian word "mi-shavad" needs its zero-width non-joiner; only the English-only option removes it:
 persian = "\u0645\u06cc\u200c\u0634\u0648\u062f"
@@ -753,9 +753,9 @@ The strongest results in recent corpus construction come from training a classif
 
 **GPT-3** {cite}`brown2020language` trained a logistic regression on hashed word features (Spark's tokenizer and HashingTF) to separate Common Crawl pages from a positive set of WebText, Wikipedia and books. Rather than thresholding, each page was kept if
 
-$$\text{np.random.pareto}(9) > 1 - \text{score}$$
+$$\text{Pareto}(9) > 1 - \hat{p}$$
 
-which keeps a document with a probability that rises steeply with its score, so that the corpus stays diverse without a hard cut-off. The Pile {cite}`gao2020pile` used the same Pareto thresholding, with shape 3 instead of 9, to filter its Common Crawl subset.
+where $\hat{p}$ is the classifier's score of the page and the left side is a fresh draw from a Pareto distribution with shape 9 (`np.random.pareto(9)` in NumPy, whose draws start at 0). The rule keeps a document with a probability that rises steeply with its score, so that the corpus stays diverse without a hard cut-off. The Pile {cite}`gao2020pile` used the same Pareto thresholding, with shape 3 instead of 9, to filter its Common Crawl subset.
 
 **FineWeb-Edu** {cite}`penedo2024fineweb` annotated 460,000 FineWeb documents with a 0 to 5 "educational value" score produced by Llama 3 70B with a rubric prompt, trained a small regression head on embeddings from a 110M-parameter encoder to predict the score, and kept documents scoring 3 or higher. The result was a 1.3T-token subset that outperformed the 15T-token parent on knowledge and reasoning benchmarks at every training budget tested.
 
@@ -826,9 +826,12 @@ def hashed_features(text: str, n_buckets: int = N_BUCKETS) -> np.ndarray:
 
 
 def windows(text: str, size: int = 20) -> list:
-    """Cut a document into windows of `size` words, so long and short documents weigh alike."""
+    """Cut a document into consecutive windows of `size` words; the last window holds the remainder."""
     words = text.split()
-    return [" ".join(words[i : i + size]) for i in range(0, max(1, len(words) - size + 1), size)]
+    return [" ".join(words[i : i + size]) for i in range(0, max(1, len(words)), size)]
+
+
+assert [len(w.split()) for w in windows(" ".join(["word"] * 39))] == [20, 19]  # no word is left unscored
 
 
 def train_logreg(X: np.ndarray, y: np.ndarray, steps: int = 500, lr: float = 1.0, l2: float = 1e-3):
@@ -980,11 +983,11 @@ duplicate flags: [False, False, True, False, True]
 
 Exact matching over the whole document misses the common case where two copies differ by a date, a byline or a trailing menu. The usual mitigation is to hash a normalized key: lowercase, punctuation removed, digits replaced by a placeholder. Even then, near-duplicates need their own method.
 
-At the scale of paragraphs rather than documents, the global set of hashes no longer fits in memory, and Dolma {cite}`soldaini2024dolma` replaces it with a Bloom filter {cite}`bloom1970space`: a bit array of $n_{bits}$ bits, all zero at the start, and $n_{hash}$ hash functions. Inserting an item sets the $n_{hash}$ bits its hashes point to; an item is reported as seen when all $n_{hash}$ of its bits are set. A Bloom filter never misses an item it has seen, but it can report an unseen item as seen. After $n_{items}$ insertions a given bit is still zero with probability $(1 - 1/n_{bits})^{n_{hash} n_{items}} \approx e^{-n_{hash} n_{items} / n_{bits}}$, so an unseen item is a false positive with probability
+At the scale of paragraphs rather than documents, the global set of hashes no longer fits in memory, and Dolma {cite}`soldaini2024dolma` replaces it with a Bloom filter {cite}`bloom1970space`: a bit array of $n_{bits}$ bits, all zero at the start, and $n_{probe}$ hash functions. Inserting an item sets the $n_{probe}$ bits its hashes point to; an item is reported as seen when all $n_{probe}$ of its bits are set. A Bloom filter never misses an item it has seen, but it can report an unseen item as seen. After $n_{items}$ insertions a given bit is still zero with probability $(1 - 1/n_{bits})^{n_{probe} n_{items}} \approx e^{-n_{probe} n_{items} / n_{bits}}$, so an unseen item is a false positive with probability
 
-$$\Pr[\text{false positive}] \approx \left(1 - e^{-n_{hash} n_{items} / n_{bits}}\right)^{n_{hash}}$$
+$$\Pr[\text{false positive}] \approx \left(1 - e^{-n_{probe} n_{items} / n_{bits}}\right)^{n_{probe}}$$
 
-which is smallest at $n_{hash} = (n_{bits} / n_{items}) \ln 2$. About 9.6 bits per item and 7 hash functions give a 1% false-positive rate, whatever the size of the items. In deduplication a false positive deletes a paragraph that was not a duplicate, so the rate is the fraction of unique text lost.
+which is smallest at $n_{probe} = (n_{bits} / n_{items}) \ln 2$. About 9.6 bits per item and 7 hash functions give a 1% false-positive rate once $n_{items}$ items are in, whatever the size of the items. That rate is not a constant of the filter: it grows with every insertion. In deduplication each paragraph is checked against a filter holding every paragraph before it, and a false positive deletes a paragraph that was not a duplicate. A filter sized for its stream therefore loses less than the final rate (early paragraphs meet a nearly empty filter), and a filter that receives more items than it was sized for loses a rapidly growing share. The listing measures all three.
 
 ```python
 import hashlib
@@ -992,16 +995,16 @@ import math
 
 
 class BloomFilter:
-    """A bit array of n_bits bits and n_hash hash functions; no false negatives, some false positives."""
+    """A bit array of n_bits bits and n_probe hash functions; no false negatives, some false positives."""
 
-    def __init__(self, n_bits: int, n_hash: int):
-        self.n_bits, self.n_hash = n_bits, n_hash
+    def __init__(self, n_bits: int, n_probe: int):
+        self.n_bits, self.n_probe = n_bits, n_probe
         self.bits = bytearray((n_bits + 7) // 8)
 
     def _positions(self, item: str):
         digest = hashlib.sha256(item.encode("utf-8")).digest()
         h1, h2 = int.from_bytes(digest[:8], "little"), int.from_bytes(digest[8:16], "little")
-        return [(h1 + i * h2) % self.n_bits for i in range(self.n_hash)]  # double hashing
+        return [(h1 + i * h2) % self.n_bits for i in range(self.n_probe)]  # double hashing
 
     def add(self, item: str):
         for p in self._positions(item):
@@ -1011,26 +1014,45 @@ class BloomFilter:
         return all(self.bits[p // 8] >> (p % 8) & 1 for p in self._positions(item))
 
 
-n_items, n_bits, n_hash = 10_000, 96_000, 7
-bloom = BloomFilter(n_bits, n_hash)
+def fp_rate(bloom, n_inserted):
+    measured = sum(f"other paragraph {i}" in bloom for i in range(20_000)) / 20_000
+    return measured, (1 - math.exp(-bloom.n_probe * n_inserted / bloom.n_bits)) ** bloom.n_probe
+
+
+n_items, n_bits, n_probe = 10_000, 96_000, 7
+bloom = BloomFilter(n_bits, n_probe)
+lost = 0
 for i in range(n_items):
+    lost += f"paragraph {i}" in bloom  # a unique paragraph reported as seen would be deleted
     bloom.add(f"paragraph {i}")
 assert all(f"paragraph {i}" in bloom for i in range(n_items))  # every inserted item is found
 
-measured = sum(f"other paragraph {i}" in bloom for i in range(20_000)) / 20_000
-predicted = (1 - math.exp(-n_hash * n_items / n_bits)) ** n_hash
-best_n_hash = n_bits / n_items * math.log(2)
-print(f"false-positive rate: measured {measured:.4f}, predicted {predicted:.4f}")
-print(f"bits per item {n_bits / n_items:.1f}, best n_hash {best_n_hash:.2f}")
-assert abs(measured - predicted) < 0.003
+measured, predicted = fp_rate(bloom, n_items)
+best_n_probe = n_bits / n_items * math.log(2)
+print(f"false-positive rate at {n_items:,} items: measured {measured:.4f}, predicted {predicted:.4f}")
+print(f"bits per item {n_bits / n_items:.1f}, best n_probe {best_n_probe:.2f}")
+print(f"unique paragraphs deleted while filling: {lost / n_items:.4f}")
+assert abs(measured - predicted) < 0.003 and lost / n_items < predicted
+for total in (20_000, 40_000):  # keep inserting past the size the filter was built for
+    for i in range(n_items, total):
+        bloom.add(f"paragraph {i}")
+    n_items = total
+    measured, predicted = fp_rate(bloom, n_items)
+    print(f"false-positive rate at {n_items:,} items: measured {measured:.4f}, predicted {predicted:.4f}")
+    assert abs(measured - predicted) < 0.02
 ```
 
 % output
 
 ```text
-false-positive rate: measured 0.0099, predicted 0.0100
-bits per item 9.6, best n_hash 6.65
+false-positive rate at 10,000 items: measured 0.0099, predicted 0.0100
+bits per item 9.6, best n_probe 6.65
+unique paragraphs deleted while filling: 0.0017
+false-positive rate at 20,000 items: measured 0.1573, predicted 0.1567
+false-positive rate at 40,000 items: measured 0.6806, predicted 0.6774
 ```
+
+Filled to the 10,000 items it was sized for, the filter deleted 0.17% of the unique paragraphs on the way, a sixth of the 1% rate it ends at. Given twice that many items its false-positive rate is 16%, and at four times 68%. A Bloom filter used for deduplication is therefore sized for the largest stream it will receive, and a pipeline that cannot bound the stream splits it across several filters or uses a scalable variant that adds a new array as each one fills.
 
 Dolma deduplicates the web subset of its corpus at the paragraph level this way, which tagged 19.1% of its UTF-8 characters for removal {cite}`soldaini2024dolma`.
 
@@ -1095,6 +1117,54 @@ paragraphs: [6, 3, 3] sentences per document
 
 Both rules keep the footer in the first document and delete it from the others, and both leave each document's own sentences alone. They differ on partial matches: a span rule catches three repeated sentences inside an otherwise new paragraph, which a paragraph rule misses, and a paragraph rule catches a repeated one- or two-sentence paragraph, which a three-sentence span rule misses. Either rule can leave a document that no longer reads as a whole, which is why pipelines run the document-level quality filters again afterwards or drop documents that lose too much.
 
+Line-level deduplication targets the boilerplate that extraction leaves on its own lines: navigation bars, cookie notices, "Share this article" rows, copyright lines. Each line is normalized and hashed, a first pass counts how many documents contain each line, and a second pass deletes every line found in more than a threshold number of documents, the first copy included. The threshold is what separates boilerplate from text that is legitimately repeated: a quotation carried by two news stories should survive, a menu printed on ten thousand pages should not. The listing sets the threshold at two documents.
+
+```python
+import re
+from collections import Counter
+
+
+def line_key(line: str) -> str:
+    """Normalize a line so that case, spacing and digits do not hide a repeat."""
+    return re.sub(r"\d+", "0", " ".join(line.lower().split()))
+
+
+def dedup_lines(docs: list, max_docs: int = 2) -> list:
+    """Delete every line that occurs in more than `max_docs` documents (two passes over the corpus)."""
+    doc_freq = Counter()
+    for doc in docs:
+        doc_freq.update({line_key(line) for line in doc.split("\n") if line.strip()})
+    return ["\n".join(line for line in doc.split("\n") if doc_freq[line_key(line)] <= max_docs) for doc in docs]
+
+
+NAV = "Home | News | Sport | Contact"
+COOKIE = "We use cookies to improve your experience. Accept all"
+QUOTE = '"We have never seen waves like it," said the harbor master.'
+docs = [
+    f"{NAV}\nCouncil approves new library.\nWork starts in spring.\n{COOKIE}",
+    f"{NAV}\nStorm closes the harbor.\n{QUOTE}\n{COOKIE}",
+    f"{NAV}\nHarbor reopens after the storm.\n{QUOTE}\n{COOKIE.upper()}",
+    f"{NAV}\nPrices rose in March.\nRents rose faster.",
+]
+out = dedup_lines(docs)
+before = sum(len(d.split("\n")) for d in docs)
+after = sum(len(d.split("\n")) for d in out)
+print(f"lines: {before} before, {after} after")
+print(out[2])
+assert all(NAV not in d and COOKIE.lower() not in d.lower() for d in out)  # boilerplate gone everywhere
+assert sum(QUOTE in d for d in out) == 2  # a line in only two documents survives
+```
+
+% output
+
+```text
+lines: 15 before, 8 after
+Harbor reopens after the storm.
+"We have never seen waves like it," said the harbor master.
+```
+
+The normalization catches the cookie notice even where one site prints it in capitals. Unlike the paragraph rule above, which keeps the first copy of every repeated paragraph, the line rule removes boilerplate from every document, including the first, and keeps short repeats that a keep-the-first rule would delete from the second story.
+
 (sec-ch4-dedup-scope)=
 
 ### 5.3 Near-duplicate detection with MinHash and LSH
@@ -1123,7 +1193,37 @@ which is a steep S-curve whose threshold, the similarity at which it is steepest
 Banding two MinHash signatures (illustrative values) with $n_{hash} = 16$, $b = 4$ and $r = 4$. Green positions hold the same minimum in both documents, red ones differ. Twelve of the sixteen agree, so the signature estimates $J \approx 0.75$. A band is hashed as a whole, so bands 1, 3 and 4, each with at least one differing position, land in different buckets; band 2 matches in all four rows, and one matching band is enough to make the pair a candidate.
 ```
 
-Gopher {cite}`rae2021scaling` used 13-word shingles and removed one document of any pair with Jaccard similarity above 0.8; it does not report the number of hash functions. {cite:t}`lee2022deduplicating` used 5-word shingles with a 9,000-value signature in $b = 20$ bands of $r = 450$ rows, then confirmed candidate pairs with edit similarity above 0.8. RefinedWeb {cite}`penedo2023refinedweb` copied those MinHash settings (9,000 hashes in 20 buckets of 450) without a separate verification step; at those settings the banding curve's threshold is $(1/20)^{1/450} \approx 0.993$, so banding alone catches only near-identical pairs. FineWeb used 5-word shingles with 112 hash functions in 14 bands of 8 rows, which it describes as targeting documents at least 75% similar: a pair at $J = 0.75$ becomes a candidate with probability $1 - (1 - 0.75^8)^{14} \approx 0.77$, and the curve crosses 0.5 near $J = 0.69$. Dolma relied on exact matching of URLs, documents and paragraphs through a Bloom filter rather than MinHash. The implementation below uses a universal hash family $h_i(\chi) = (a_{i,1} \chi + a_{i,0}) \bmod P$ over the 32-bit integer id $\chi$ of a shingle, with $P$ a large prime, which is what most production implementations do.
+Gopher {cite}`rae2021scaling` used 13-word shingles and removed one document of any pair with Jaccard similarity above 0.8; it does not report the number of hash functions. {cite:t}`lee2022deduplicating` used 5-word shingles and a 9,000-value signature. They write the candidate probability as $1-(1-s^{b})^{r}$ with their $b = 20$ and $r = 450$, so their $b$ is the exponent, the rows per band, and their $r$ is the number of bands: in this page's symbols, $b = 450$ bands of $r = 20$ rows. They chose the setting "so as to make sure a collision at the desired Jaccard index threshold of 0.8 had a high probability of occurring", and then confirmed each candidate pair by requiring edit similarity above 0.8. RefinedWeb {cite}`penedo2023refinedweb` used "the same parameters as Lee et al. (2022)", described as signatures "split into r buckets, each with b minhashes", and dropped the verification step. The listing computes what those bandings do.
+
+```python
+def banding_probability(J: float, b: int, r: int) -> float:
+    return 1 - (1 - J**r) ** b
+
+
+settings = {  # name: (bands b, rows per band r), in this page's symbols
+    "Lee et al. and RefinedWeb": (450, 20),
+    "Lee et al., stricter run": (40, 20),
+    "FineWeb": (14, 8),
+    "Lee's numbers, roles swapped": (20, 450),
+}
+for name, (b, r) in settings.items():
+    probs = ", ".join(f"J={J}: {banding_probability(J, b, r):.3f}" for J in (0.7, 0.75, 0.8, 0.9))
+    print(f"{name:<29} b={b:>3} r={r:>3} threshold {(1 / b) ** (1 / r):.3f}; {probs}")
+# RefinedWeb: "with similarity 0.75 or 0.8 will be marked as duplicates will be 76% and 99.4%"
+assert round(banding_probability(0.75, 450, 20), 2) == 0.76
+assert round(banding_probability(0.8, 450, 20), 3) == 0.995
+```
+
+% output
+
+```text
+Lee et al. and RefinedWeb     b=450 r= 20 threshold 0.737; J=0.7: 0.302, J=0.75: 0.761, J=0.8: 0.995, J=0.9: 1.000
+Lee et al., stricter run      b= 40 r= 20 threshold 0.832; J=0.7: 0.031, J=0.75: 0.119, J=0.8: 0.371, J=0.9: 0.994
+FineWeb                       b= 14 r=  8 threshold 0.719; J=0.7: 0.565, J=0.75: 0.772, J=0.8: 0.924, J=0.9: 1.000
+Lee's numbers, roles swapped  b= 20 r=450 threshold 0.993; J=0.7: 0.000, J=0.75: 0.000, J=0.8: 0.000, J=0.9: 0.000
+```
+
+At 450 bands of 20 rows the curve's threshold is about 0.74, and the probabilities at $J = 0.75$ and $0.8$ are the "76% and 99.4%" that RefinedWeb reports (the second rounds to 0.995 here). The banding is set a little below the 0.8 target, so that almost every pair above it becomes a candidate, and pairs between about 0.7 and 0.8 get through as well (30% of pairs at $J = 0.7$): Lee et al. remove those with the edit-similarity check, while RefinedWeb, which skips that check, removes them too. Lee et al.'s second run, 40 bands of 20 rows (800 hashes) for a target of 0.9, puts the threshold near 0.83. Read with the roles swapped, the same two numbers would give a threshold of 0.993 and a curve that catches almost nothing below near-identical copies. FineWeb used 5-word shingles with 112 hash functions in 14 bands of 8 rows, which it describes as targeting documents at least 75% similar: a pair at $J = 0.75$ becomes a candidate with probability $1 - (1 - 0.75^8)^{14} \approx 0.77$, and the curve crosses 0.5 near $J = 0.69$. Dolma relied on exact matching of URLs, documents and paragraphs through a Bloom filter rather than MinHash. The implementation below uses a universal hash family $h_i(\chi) = (a_{i,1} \chi + a_{i,0}) \bmod P$ over the 32-bit integer id $\chi$ of a shingle, with $P$ a large prime, which is what most production implementations do.
 
 ```python
 import hashlib
@@ -1148,15 +1248,15 @@ class MinHash:
     def __init__(self, num_perm: int = 128, seed: int = 0):
         rng = np.random.default_rng(seed)
         self.a = rng.integers(1, _MERSENNE, size=num_perm, dtype=np.int64)
-        self.b = rng.integers(0, _MERSENNE, size=num_perm, dtype=np.int64)
+        self.c = rng.integers(0, _MERSENNE, size=num_perm, dtype=np.int64)
         self.num_perm = num_perm
 
     def signature(self, shingle_set: set) -> np.ndarray:
         if not shingle_set:
             return np.full(self.num_perm, _MAX_HASH, dtype=np.int64)
         x = np.array([_hash32(s) for s in shingle_set], dtype=np.int64)
-        # (a*x + b) mod p, then fold to 32 bits; object dtype avoids int64 overflow
-        ax = (x[:, None].astype(object) * self.a.astype(object) + self.b.astype(object)) % _MERSENNE
+        # (a*x + c) mod P, then fold to 32 bits; object dtype avoids int64 overflow
+        ax = (x[:, None].astype(object) * self.a.astype(object) + self.c.astype(object)) % _MERSENNE
         hashes = np.array(ax, dtype=np.int64) & _MAX_HASH
         return hashes.min(axis=0)
 
@@ -1292,6 +1392,12 @@ for f in range(40):
         docs.append(words)
         family.append(f)
 true_pairs = {(i, j) for i, j in itertools.combinations(range(len(docs)), 2) if family[i] == family[j]}
+shingle_sets = [{" ".join(w[i : i + 5]) for i in range(len(w) - 4)} for w in docs]
+jac = {pair: len(shingle_sets[pair[0]] & shingle_sets[pair[1]]) / len(shingle_sets[pair[0]] | shingle_sets[pair[1]])
+       for pair in true_pairs}
+src_copy = np.mean([v for (i, j), v in jac.items() if i % 4 == 0])  # document 4f is the source of family f
+copy_copy = np.mean([v for (i, j), v in jac.items() if i % 4 != 0])
+print(f"mean J: source and copy {src_copy:.2f}, two copies {copy_copy:.2f}")
 
 sigs = minhash_signatures(docs, n_hash=128)
 results = {}
@@ -1309,12 +1415,13 @@ assert results[(32, 4)][1] == 1.0 > results[(16, 8)][1] > results[(8, 16)][1]
 % output
 
 ```text
+mean J: source and copy 0.75, two copies 0.59
 b=32 r= 4:  40 clusters, precision 1.000, recall 1.000
 b=16 r= 8:  64 clusters, precision 1.000, recall 0.721
 b= 8 r=16: 152 clusters, precision 1.000, recall 0.033
 ```
 
-With $b = 32$ bands of $r = 4$ rows the curve's threshold is $(1/32)^{1/4} \approx 0.42$, well below the copies' similarity, and every family is recovered. At $r = 8$ the threshold rises to about 0.71, near the similarity of two edited copies, and recall falls to 0.721; at $r = 16$ it is about 0.88 and almost nothing is found. Union-find adds recall that banding alone does not have: two copies that never share a bucket still land in one cluster when each shares one with the source. Precision is 1 at every setting here because random documents share no shingles; on a real crawl precision is limited by pages that share a template but not content, which is why the threshold is set by measuring both numbers on a labeled sample. {numref}`fig-ch4-lsh-curves` plots these curves with the notebook's measured candidate rates.
+With $b = 32$ bands of $r = 4$ rows the curve's threshold is $(1/32)^{1/4} \approx 0.42$, well below the copies' similarity, and every family is recovered. At $r = 8$ the threshold rises to about 0.71, near the similarity of a source and its edited copy (the listing measures a mean $J$ of 0.75 for that pair, and 0.59 for two copies of the same source), and recall falls to 0.721; at $r = 16$ it is about 0.88 and almost nothing is found. Union-find adds recall that banding alone does not have: two copies that never share a bucket still land in one cluster when each shares one with the source. Precision is 1 at every setting here because random documents share no shingles; on a real crawl precision is limited by pages that share a template but not content, which is why the threshold is set by measuring both numbers on a labeled sample. {numref}`fig-ch4-lsh-curves` plots these curves with the notebook's measured candidate rates.
 
 ```{figure} figures/lsh-curves.*
 :name: fig-ch4-lsh-curves
@@ -1324,17 +1431,17 @@ With $b = 32$ bands of $r = 4$ rows the curve's threshold is $(1/32)^{1/4} \appr
 The probability $1 - (1 - J^r)^b$ that a pair becomes a candidate, for the three bandings of the listing and FineWeb's 14 bands of 8 rows, with each curve's $(1/b)^{1/r}$ marked. The curves are the formula; the open circles are measured by the notebook cell tagged `figure:lsh-curves`, for $b = 16$, $r = 8$ on synthetic shingle sets, 300 signature draws per point; they follow the formula to within 0.041. The same signature length gives very different thresholds depending on how it is split.
 ```
 
-Which document to keep from a cluster is not a detail. Keeping the shortest copy drops the version with the comment thread; keeping the longest keeps the version with the navigation menu. FineWeb's authors found that deduplicating each Common Crawl snapshot independently produced *better* models than deduplicating globally across all snapshots, because global deduplication preferentially removed the oldest copy of good content while leaving the long tail of low-quality pages that were never duplicated. The content that survives many crawls is, on average, the content worth keeping. FineWeb-2 {cite}`penedo2025fineweb2` takes the other route: it deduplicates globally, as the first step before any filter, and records the size of each duplicate cluster in the kept document's metadata, so that copies can later be added back in proportion to how often a page was duplicated. {numref}`fig-ch4-dedup-scope` shows the mechanism on six pages.
+Which document to keep from a cluster is not a detail. Keeping the shortest copy drops the version with the comment thread; keeping the longest keeps the version with the navigation menu. FineWeb's authors found that deduplicating each Common Crawl snapshot independently produced *better* models than deduplicating globally across all snapshots, because global deduplication preferentially removed the oldest copy of good content while leaving the long tail of low-quality pages that were never duplicated. The content that survives many crawls is, on average, the content worth keeping. FineWeb-2 {cite}`penedo2025fineweb2` takes the other route: it deduplicates globally, as the first step before any filter, and records the size of each duplicate cluster in the kept document's metadata. It then "rehydrates" the corpus: each kept document is repeated with a weight between 1 and 10 that depends on its cluster size, chosen from how often the quality filters removed documents of that cluster size. Moderately duplicated pages get the highest weights; unique pages and the most-copied pages, which the filters remove more often than average, get the lowest. The authors reject weights that grow with the number of copies because, in their words, highly duplicated documents "are generally of lower quality, and therefore should be repeated less rather than more". {numref}`fig-ch4-snapshot-scope` shows the per-snapshot mechanism on six pages.
 
 ```{figure} figures/dedup-scope.*
-:name: fig-ch4-dedup-scope
+:name: fig-ch4-snapshot-scope
 :alt: Two grids of six pages by four snapshots. Per-snapshot deduplication keeps all ten copies; global deduplication hatches out four copies of the two good pages and keeps six, two of them good.
 :width: 100%
 
 Six pages over four crawl snapshots, an illustration rather than data. Pages A and B are good content that is crawled again and again; pages C to F are spam, each crawled once. Deduplicating within each snapshot keeps every copy, and 60% of what remains is good. Deduplicating across snapshots keeps only the newest copy of A and B, while the spam, never duplicated, all survives: the good share falls to 33%.
 ```
 
-SimHash {cite}`charikar2002similarity` is the other common near-duplicate fingerprint. Each feature of a document (here a word pair, weighted by its count) hashes to $n_{bits}$ bits and votes $+1$ or $-1$ times its weight on every bit; the fingerprint keeps the sign of each bit's total. Similar documents get fingerprints at a small Hamming distance $d_{Ham}$, the number of bit positions in which they differ. {cite:t}`manku2007detecting` used it at Google for web crawling and found that "for a repository of 8B web-pages, 64-bit simhash fingerprints and k = 3 are reasonable"; in their setting, two pages whose fingerprints are at $d_{Ham} \le 3$ count as near-duplicates.
+SimHash {cite}`charikar2002similarity` is the other common near-duplicate fingerprint. Each feature of a document (here a word pair, weighted by its count) hashes to $n_{fp}$ bits and votes $+1$ or $-1$ times its weight on every bit; the fingerprint keeps the sign of each bit's total. Similar documents get fingerprints at a small Hamming distance $d_{Ham}$, the number of bit positions in which they differ. {cite:t}`manku2007detecting` used it at Google for web crawling and found that "for a repository of 8B web-pages, 64-bit simhash fingerprints and k = 3 are reasonable"; in their setting, two pages whose fingerprints are at $d_{Ham} \le 3$ count as near-duplicates.
 
 ```python
 import hashlib
@@ -1342,16 +1449,16 @@ import re
 from collections import Counter
 
 
-def simhash(text: str, n_bits: int = 64) -> int:
+def simhash(text: str, n_fp: int = 64) -> int:
     """Charikar's fingerprint: each feature votes +w or -w on every bit by its own hash; keep the signs."""
     words = re.findall(r"\w+", text.lower())
     features = Counter(" ".join(words[i : i + 2]) for i in range(len(words) - 1))  # weight = count
-    votes = [0] * n_bits
+    votes = [0] * n_fp
     for feature, weight in features.items():
-        h = int.from_bytes(hashlib.sha1(feature.encode("utf-8")).digest()[: n_bits // 8], "little")
-        for bit in range(n_bits):
+        h = int.from_bytes(hashlib.sha1(feature.encode("utf-8")).digest()[: n_fp // 8], "little")
+        for bit in range(n_fp):
             votes[bit] += weight if h >> bit & 1 else -weight
-    return sum(1 << bit for bit in range(n_bits) if votes[bit] > 0)
+    return sum(1 << bit for bit in range(n_fp) if votes[bit] > 0)
 
 
 def d_ham(x: int, y: int) -> int:
@@ -1562,7 +1669,7 @@ def shannon_entropy(s: str) -> float:
 
 
 TOKEN = re.compile(r"[A-Za-z0-9+/=_-]{20,}")
-EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
+EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}")
 DUMMY_EMAILS = ("email@example.com", "firstname.lastname@example.org")  # datatrove's defaults
 
 
@@ -1597,7 +1704,7 @@ assert replace_emails(text).count("@example.") == 2
 5.222 bits/char  ks_live_9fQ2xLr7Vb3KpZt8NwYc4HdJ6mUe1Ao5
 3.672 bits/char  your_api_key_goes_here_please_change
 3.810 bits/char  /api/v1/users/profile/settings/update
-Write to email@example.com or to the desk at firstname.lastname@example.org
+Write to email@example.com or to the desk at firstname.lastname@example.org.
 ```
 
 The random key carries 5.222 bits per character, above the limit; the placeholder and the URL path, made of English words, stay below it. An entropy test has false positives too (hashes, UUIDs, minified code), which is why the StarCoder team reported many false positives from detect-secrets and added rules of its own.
@@ -1922,9 +2029,11 @@ The notebook section {ref}`nb-prep-pipeline` assembles normalization, language i
 - **Extraction and normalization come first** because every later stage compares strings: boilerplate is separated from main text by block-level statistics such as word count and link density, and Unicode normalization (NFC by default, NFKC where compatibility characters should fold) makes equal text compare equal ({ref}`sec-ch4-text-extraction-normalization`).
 - **Language identification** assigns each document a language and a confidence, and the threshold on that confidence decides how much low-resource and mixed-language text survives ({ref}`sec-ch4-language-identification`).
 - **Quality filters run from cheap to expensive:** heuristic rules and repetition measures remove pages that are not prose, a reference language model's perplexity scores fluency, and a classifier trained against a curated positive set selects for resemblance to it; each is judged by training small models with and without it at the same token budget and reporting the retained fraction ({ref}`sec-ch4-quality-filtering`).
-- **Deduplication works at three granularities:** exact hashing removes identical documents, lines and paragraphs; MinHash with LSH banding finds near-duplicates, with the band count $b$ and rows per band $r$ setting the similarity threshold of the S-curve $1 - (1 - J^r)^b$; and suffix arrays find repeated substrings inside documents. Whether deduplication runs per snapshot or across the whole corpus changes what is kept ({ref}`sec-ch4-deduplication`).
+- **Machine-generated text is hard to filter** because it is a small share of a crawl: at a 1% base rate even an accurate detector removes mostly human-written documents ({ref}`sec-ch4-spam-machine-generated-text`).
+- **Deduplication works at four granularities:** exact hashing removes identical documents, and a Bloom filter does so in fixed memory at a false-positive rate that rises as the filter fills; hashing three-sentence spans, lines and paragraphs removes repeated boilerplate inside otherwise distinct documents; MinHash with LSH banding finds near-duplicates, with the band count $b$ and rows per band $r$ setting the similarity threshold of the S-curve $1 - (1 - J^r)^b$, and SimHash does the same with one 64-bit fingerprint per document; suffix arrays find repeated substrings. Semantic deduplication (SemDeDup) removes documents that are close in embedding space even when they share few words. Whether deduplication runs per snapshot or across the whole corpus changes what is kept ({ref}`sec-ch4-deduplication`).
 - **Privacy and safety filtering** replaces personal data with placeholders, drops documents dense with it, and removes toxic or unlicensed content; pattern matching is cheap but its precision has to be measured on text full of look-alike numbers ({ref}`sec-ch4-privacy-toxicity-safety-filtering`).
 - **Decontamination** removes training text that shares long $n$-grams with evaluation sets; it misses paraphrases and translations, so it is reported as a procedure with its parameters and combined with fresh test sets ({ref}`sec-ch4-benchmark-decontamination`).
+- **Code, mathematics and multilingual text need their own rules:** code is filtered by license, file properties and secrets rather than by prose statistics; mathematical text needs extraction that keeps formulas; and thresholds tuned for English remove good text in other languages and scripts ({ref}`sec-ch4-domain-specific-preprocessing`).
 - **A pipeline is a fixed, sharded, idempotent sequence of stages** that records what each stage dropped and why, so that the corpus can be rebuilt and audited ({ref}`sec-ch4-assembling-pipeline`).
 
 (sec-ch4-exercises)=
@@ -2193,7 +2302,7 @@ n=13: verbatim 0.714, paraphrase 0.000, reworded 0.000, innocent 0.000
 n= 8: verbatim 0.833, paraphrase 0.333, reworded 0.000, innocent 0.222
 ```
 
-At $n = 13$ only the verbatim copy is flagged: the paraphrase keeps nine consecutive words of the question ("which of the following is the best explanation for why"), too few for a 13-gram. At $n = 8$ those nine words contain two 8-grams, so the paraphrase is caught, and so is the innocent sentence, which shares the same nine words and nothing else. Shortening $n$ trades missed paraphrases for false positives on stock phrases, and the full rewording is missed at both lengths. This is the trade-off every choice of $n$ makes, and the reason {ref}`sec-ch4-overlap-misses` recommends fresh test sets rather than a shorter $n$.
+At $n = 13$ only the verbatim copy is flagged: the paraphrase keeps eleven consecutive words of the question (the ten words "which of the following is the best explanation for why" and the "the" after them), too few for a 13-gram. At $n = 8$ those eleven words contain four 8-grams, 4 of the paraphrase's 12, hence 0.333, so the paraphrase is caught; so is the innocent sentence, which shares nine consecutive words with the question ("which of the following is the best explanation for"), two of its nine 8-grams, hence 0.222. Shortening $n$ trades missed paraphrases for false positives on stock phrases, and the full rewording is missed at both lengths. This is the trade-off every choice of $n$ makes, and the reason {ref}`sec-ch4-overlap-misses` recommends fresh test sets rather than a shorter $n$.
 ````
 
 7. **Designing a filter ablation.** An unfiltered corpus holds 10 billion tokens and the repetition filter keeps 82% of them. You will train two small models, one on each version, as in {ref}`sec-ch4-measuring-whether-filter-helps`. How many epochs of its corpus does each model see at a budget of 2 billion training tokens, and at 20 billion? What third model separates the effect of the filter from the effect of having less data?
