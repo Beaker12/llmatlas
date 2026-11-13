@@ -81,6 +81,69 @@ This is the identity behind the attention gradient in Section 3.3 and behind cro
 
 The operator norm $\|W\|_2$ is the largest factor by which $W$ can stretch a vector. A stack of $L$ layers multiplies these factors, which is why gradients vanish or explode geometrically with depth unless each layer is kept near norm 1, by initialization scale (Section 5.2), by normalization (Section 3.2) or by residual connections (Section 3.1). The Chapter 2 notebook measures all three on a twelve-layer stack.
 
+(sec-ch2-svd-low-rank)=
+
+### 0.4 Singular value decomposition and low rank
+
+Every real matrix factors as $W = U \Sigma R^\top$, where $U$ and $R$ have orthonormal columns and $\Sigma$ is diagonal, holding the singular values $\Sigma_{jj} \ge 0$ in decreasing order. Read as a map, $W$ rotates (by $R^\top$), stretches each axis by a singular value, and rotates again (by $U$); the operator norm of {ref}`sec-ch2-norms-conditioning-scale-matters` is the largest stretch, so $\|W\|_2$ is the largest singular value.
+
+Keeping only the $n_{rank}$ largest singular values, $\sum_{j=1}^{n_{rank}} \Sigma_{jj}\, U_{:,j} R_{:,j}^\top$, gives a matrix of rank $n_{rank}$. {cite:t}`eckart1936approximation` showed that no matrix of that rank is closer to $W$ in the Frobenius norm, and that the error is the root of the sum of the discarded squares, $\sqrt{\sum_{j > n_{rank}} \Sigma_{jj}^2}$; in the operator norm the error is the largest discarded singular value. A rank-$n_{rank}$ matrix stored as two factors costs $n_{rank}(d_{\text{in}} + d_{\text{out}})$ numbers instead of $d_{\text{in}} d_{\text{out}}$: for a $4096 \times 4096$ matrix and $n_{rank} = 8$ that is 65,536 instead of 16,777,216, or 0.39%. LoRA {cite}`hu2022lora` uses exactly this count, training the update to a frozen weight matrix as a product of two such thin factors.
+
+```python
+import torch
+
+torch.manual_seed(0)
+# a 64 x 64 matrix that is rank 4 plus a little noise
+W = torch.randn(64, 4) @ torch.randn(4, 64) + 0.01 * torch.randn(64, 64)
+U, S, Rh = torch.linalg.svd(W)
+for n_rank in (2, 4, 8):
+    W_r = U[:, :n_rank] @ torch.diag(S[:n_rank]) @ Rh[:n_rank]
+    err = torch.linalg.norm(W - W_r).item()
+    predicted = S[n_rank:].square().sum().sqrt().item()
+    print(f"rank {n_rank}: Frobenius error {err:.4g} (from the singular values {predicted:.4g})")
+print(f"parameters of a rank-8 factorization of 4096 x 4096: {8 * (4096 + 4096):,} of {4096 * 4096:,}")
+```
+
+% output
+
+```text
+rank 2: Frobenius error 78.64 (from the singular values 78.64)
+rank 4: Frobenius error 0.5906 (from the singular values 0.5906)
+rank 8: Frobenius error 0.5197 (from the singular values 0.5197)
+parameters of a rank-8 factorization of 4096 x 4096: 65,536 of 16,777,216
+```
+
+(sec-ch2-vjp)=
+
+### 0.5 Vector-Jacobian products
+
+For a layer that maps $x \in \mathbb{R}^{d_{\text{in}}}$ to $y \in \mathbb{R}^{d_{\text{out}}}$, the Jacobian $\partial y / \partial x$ is a $d_{\text{out}} \times d_{\text{in}}$ matrix. Backpropagation never builds it. It needs only the vector-Jacobian product (VJP): given the gradient $g = \partial \mathcal{L} / \partial y$ of a scalar loss, the chain rule gives
+
+$$\frac{\partial \mathcal{L}}{\partial x} = g^\top \frac{\partial y}{\partial x},$$
+
+and for the operations a transformer uses this product has a closed form far cheaper than the matrix. For a linear map $y = xW$ the VJP is $g W^\top$ (and the weight gradient is $x^\top g$); for an element-wise activation $y = \operatorname{act}(x)$ it is $g \odot \operatorname{act}'(x)$; for the softmax it is the formula of {ref}`sec-ch2-softmax-jacobian`, which costs $\mathcal{O}(d)$ instead of the $d^2$ entries of the Jacobian. The softmax over a 50,257-token vocabulary has a Jacobian of about 2.5 billion entries, while its VJP touches 50,257 numbers twice.
+
+```python
+import torch
+
+torch.manual_seed(0)
+z = torch.randn(6, dtype=torch.float64, requires_grad=True)
+g = torch.randn(6, dtype=torch.float64)
+p = torch.softmax(z, dim=0)
+(vjp_autograd,) = torch.autograd.grad(p, z, grad_outputs=g)
+jacobian = torch.autograd.functional.jacobian(lambda t: torch.softmax(t, dim=0), z.detach())
+vjp_closed_form = p.detach() * (g - (g * p.detach()).sum())
+print("g^T (dp/dz) equals autograd's VJP:", torch.allclose(g @ jacobian, vjp_autograd))
+print("closed form p * (g - <g, p>) equals it:", torch.allclose(vjp_closed_form, vjp_autograd))
+```
+
+% output
+
+```text
+g^T (dp/dz) equals autograd's VJP: True
+closed form p * (g - <g, p>) equals it: True
+```
+
 (sec-ch2-probability-information-theory)=
 
 ## 1. Probability and Information Theory
@@ -115,6 +178,16 @@ $$\mathcal{L}(\theta) = -\frac{1}{T} \sum_{i=1}^{T} \log p_{\theta}(x_i \mid x_{
 
 Cross-entropy is convex in the predicted probabilities, because $-\log q$ is a convex function of $q$, and its gradient with respect to the logits, $p_j - \delta_{j x_i}$ ({ref}`sec-ch2-softmax-jacobian`), stays large for as long as the model puts little probability on the correct token.
 
+(sec-ch2-perplexity-bpb)=
+
+#### Perplexity and Bits per Byte
+
+**Perplexity** is the exponential of the mean loss in nats, $\operatorname{PPL} = e^{\mathcal{L}}$. It is the size of a uniform choice that would be as uncertain as the model: a model with $\mathcal{L} = \ln 50$ is, on average, as unsure of the next token as a fair 50-sided die. Perplexity depends on the tokenizer, because the same text cut into fewer, longer tokens has fewer, harder predictions. **Bits per byte** removes that dependence by spreading the total loss over the bytes of the text instead of its tokens. The total loss of $T$ tokens is $T\mathcal{L}$ nats, which is $T\mathcal{L}/\ln 2$ bits, so for a text of $n_{bytes}$ bytes
+
+$$\text{bits per byte} = \frac{T\,\mathcal{L}}{n_{bytes} \ln 2}.$$
+
+The Pile reports its language-model results in bits per byte for this reason {cite}`gao2020pile`. With $\mathcal{L} = 2.0$ nats per token and 4 bytes per token on average, perplexity is $e^{2} = 7.389$ and the model spends $2.0/(4 \ln 2) = 0.7213$ bits per byte; a tokenizer that averaged 3 bytes per token at the same bits per byte would show a loss of 1.5 nats and a perplexity of 4.482, so perplexities are comparable only across models with the same tokenizer.
+
 (sec-ch2-information-theory-fundamentals)=
 
 ### 1.2 Information Theory Fundamentals
@@ -143,7 +216,11 @@ $$H(p, q) = -\sum_{x} p(x) \log q(x)$$
 
 $$D_{KL}(p \,\|\, q) = \sum_{x} p(x) \log \frac{p(x)}{q(x)} = H(p, q) - H(p)$$
 
-Minimizing cross-entropy loss is equivalent to minimizing KL divergence between data and model distributions.
+Training by maximum likelihood is the same as minimizing this divergence from the data distribution. The training loss of {ref}`sec-ch2-cross-entropy-loss` is the cross-entropy $H(p_{\text{data}}, p_\theta)$, so
+
+$$\mathcal{L}(\theta) = -\mathbb{E}_{x \sim p_{\text{data}}}[\log p_\theta(x)] = H(p_{\text{data}}) + D_{KL}(p_{\text{data}} \,\|\, p_\theta).$$
+
+The entropy of the data does not depend on $\theta$, so any change of $\theta$ that lowers the loss lowers the KL divergence by exactly the same amount, and the loss can never fall below $H(p_{\text{data}})$, which is reached only when $p_\theta = p_{\text{data}}$. For a worked case take $p = (0.5, 0.25, 0.25)$ and $q = (0.25, 0.5, 0.25)$. In bits, $H(p) = 0.5 \cdot 1 + 0.25 \cdot 2 + 0.25 \cdot 2 = 1.5$, $H(p, q) = 0.5 \cdot 2 + 0.25 \cdot 1 + 0.25 \cdot 2 = 1.75$, and $D_{KL}(p \,\|\, q) = 0.5 \log_2 2 + 0.25 \log_2 0.5 + 0 = 0.25 = 1.75 - 1.5$.
 
 (sec-ch2-mutual-information)=
 
@@ -156,6 +233,36 @@ $$\operatorname{MI}(\mathrm{X}; \mathrm{Y}) = \sum_{x, x'} p(x, x') \log \frac{p
 where $x$ ranges over the values of $\mathrm{X}$ and $x'$ over the values of $\mathrm{Y}$.
 
 Mutual information is the quantity that language modeling implicitly exploits: a context that shares a lot of information with the next token makes that token predictable.
+
+(sec-ch2-temperature)=
+
+#### Temperature
+
+Dividing the logits by a **temperature** $\tau > 0$ before the softmax, $p_i = e^{z_i/\tau} / \sum_j e^{z_j/\tau}$, changes how peaked the distribution is without changing the order of the tokens. As $\tau \to 0$ the distribution approaches a one-hot vector on the largest logit; as $\tau \to \infty$ it approaches uniform. A probability ratio $p_i/p_j = e^{(z_i - z_j)/\tau}$ shows why: the temperature divides every logit gap. {cite:t}`hinton2015distilling` raise the temperature of a teacher's softmax to produce soft targets for distillation; at sampling time a temperature below one makes generation more conservative. The entropy of {ref}`sec-ch2-entropy-language` measures the effect.
+
+```python
+import torch
+
+z = torch.tensor([2.0, 1.0, 0.0])
+for tau in (0.5, 1.0, 2.0):
+    p = torch.softmax(z / tau, dim=0)
+    entropy_bits = -(p * torch.log2(p)).sum().item()
+    print(f"tau={tau}: p = {[round(v, 4) for v in p.tolist()]}, entropy {entropy_bits:.4g} bits")
+```
+
+% output
+
+```text
+tau=0.5: p = [0.8668, 0.1173, 0.0159], entropy 0.6363 bits
+tau=1.0: p = [0.6652, 0.2447, 0.09], entropy 1.201 bits
+tau=2.0: p = [0.5065, 0.3072, 0.1863], entropy 1.472 bits
+```
+
+(sec-ch2-label-smoothing)=
+
+#### Label Smoothing
+
+**Label smoothing** {cite}`szegedy2016rethinking` replaces the one-hot target with a mixture of the one-hot vector and the uniform distribution over the vocabulary, $y_j = (1 - \epsilon_{ls})\,\delta_{j x_i} + \epsilon_{ls}/|\mathcal{V}|$. The gradient with respect to the logits becomes $p_j - y_j$, so the loss is minimized not by a one-hot prediction but by $p = y$: the largest logit stops being pushed away from the others once the correct token holds probability $1 - \epsilon_{ls} + \epsilon_{ls}/|\mathcal{V}|$. Szegedy et al. used $\epsilon_{ls} = 0.1$, and so did the original transformer {cite}`vaswani2017attention`. With $|\mathcal{V}| = 4$ and $\epsilon_{ls} = 0.1$ the target is $(0.925, 0.025, 0.025, 0.025)$ for the correct token first, and the smallest loss the model can reach is the entropy of that target, $H(y) = 0.3488$ nats rather than zero. PyTorch implements this as the `label_smoothing` argument of `F.cross_entropy`.
 
 (sec-ch2-practical-applications)=
 
@@ -231,6 +338,12 @@ def perplexity(loss: torch.Tensor) -> torch.Tensor:
         Perplexity value
     """
     return torch.exp(loss)
+```
+
+% output
+
+```text
+
 ```
 
 ```{admonition} Hands-On Practice
@@ -381,6 +494,12 @@ class AdamWWithWarmup:
             p.addcdiv_(m_hat, v_hat.sqrt() + self.eps, value=-lr)
 ```
 
+% output
+
+```text
+
+```
+
 ```{admonition} Interactive Exploration
 :class: note
 The notebook section {ref}`nb-math-optimizers` implements SGD, momentum and Adam from scratch (Adam is asserted to match `torch.optim.Adam`), compares them on the Rosenbrock function ({ref}`nb-math-rosenbrock`), and plots warm-up with cosine, inverse-square-root and constant schedules ({ref}`nb-math-schedules`).
@@ -487,6 +606,12 @@ def attention_gradients(Q, K, V, grad_output):
     grad_K = torch.matmul(grad_scores.transpose(-2, -1), Q) / math.sqrt(d_k)
 
     return grad_Q, grad_K, grad_V
+```
+
+% output
+
+```text
+
 ```
 
 ```{admonition} Gradient Flow Analysis
@@ -618,6 +743,14 @@ print(f"weights + optimizer state: {gpt3['param_and_optimizer_GB']:.0f} GB")  # 
 print(f"activations (batch 8, no recomputation): {gpt3['activation_GB']:.0f} GB")
 ```
 
+% output
+
+```text
+parameters: 174.6 B
+weights + optimizer state: 2793 GB
+activations (batch 8, no recomputation): 2203 GB
+```
+
 Weights and optimizer state alone are close to three terabytes, which is why a 175B-parameter model is trained across hundreds of accelerators with the parameters, gradients and optimizer state sharded between them.
 
 ```{admonition} Scaling Laws Visualization
@@ -718,6 +851,12 @@ def train_with_gradient_accumulation(model, data_loader, optimizer, accumulation
             optimizer.zero_grad()
 
     return running_loss / max(num_batches, 1)  # mean per-batch loss, unscaled
+```
+
+% output
+
+```text
+
 ```
 
 ```{admonition} Numerical Stability Demonstrations
