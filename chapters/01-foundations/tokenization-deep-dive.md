@@ -258,7 +258,7 @@ base vocabulary: 256 | remapped: 68 | é becomes Ã©
 
 ### Tiktoken (OpenAI's Tokenizer)
 
-OpenAI's `tiktoken` library runs the byte-level BPE of {ref}`sec-tdd-byte-level-bpe` with the vocabularies of its models: `gpt2` (50,257 entries), `cl100k_base` and `o200k_base`; the library's `MODEL_TO_ENCODING` table (`tiktoken/model.py`) maps `gpt-4` to `cl100k_base` and `gpt-4o` to `o200k_base`. Each encoding pairs a merge table with its own pre-tokenization pattern and a few special tokens such as `<|endoftext|>`. The listing downloads `cl100k_base` and splits a short string that mixes prose and code. Each `# network` listing on the page carries the same download helper, so that it runs on its own:
+OpenAI's `tiktoken` library runs the byte-level BPE of {ref}`sec-tdd-byte-level-bpe` with the vocabularies of its models: `gpt2` (50,257 entries), `cl100k_base` and `o200k_base`; the library's `MODEL_TO_ENCODING` table (`tiktoken/model.py` in release 0.8.0 {cite}`openai2024tiktokenmodel`) maps `gpt-4` to `cl100k_base` and `gpt-4o` to `o200k_base`. Each encoding pairs a merge table with its own pre-tokenization pattern and a few special tokens such as `<|endoftext|>`. The listing downloads `cl100k_base` and splits a short string that mixes prose and code. Each `# network` listing on the page carries the same download helper, so that it runs on its own:
 
 ```python
 # network
@@ -1337,7 +1337,7 @@ the right.
 
 {numref}`fig-ch1-word-frequency` shows the plot. A text this short shows the shape only roughly: Zipf's law describes large corpora, and a few hundred words cannot hold a long sequence of ranks with distinct counts. Even here 127 of the 140 distinct words occur fewer than five times. A word-level vocabulary would have to hold this long tail or map it to an unknown token; a subword vocabulary instead spends its entries on frequent strings and spells a rare word from smaller pieces, down to single bytes in a byte-level tokenizer ({ref}`sec-tdd-out-of-vocabulary-handling`).
 
-**4. Multi-Domain Tokenization**: A tokenizer trained on one mixed corpus learns the merges of whichever domain dominates it. To serve several domains, sample the training text so that each domain contributes the same amount, train once, and report the metrics of `evaluate_tokenization_quality` for each domain separately, so that a domain the tokenizer serves poorly shows up as a low bytes-per-token figure. The medical and code examples of {ref}`sec-tdd-hard-inputs` show the size of the effect: the same text costs from 12 to 16 tokens, or from 28 to 49, depending on what the vocabulary was trained on.
+**4. Multi-Domain Tokenization**: A tokenizer trained on one mixed corpus learns the merges of whichever domain dominates it. The share of each domain in the training text is therefore a design choice, and the metrics of `evaluate_tokenization_quality` should be reported for each domain separately, so that a domain the tokenizer serves poorly shows up as a low bytes-per-token figure. The medical and code examples of {ref}`sec-tdd-hard-inputs` show the size of the effect: the same text costs from 12 to 16 tokens, or from 28 to 49, depending on what the vocabulary was trained on.
 
 (sec-tdd-embeddings-in-practice)=
 
@@ -1367,11 +1367,80 @@ Width grows with model size, but much more slowly than the parameter count: from
 
 To see whether related tokens sit close together, take their rows of a trained embedding table, one vector of width $d$ per token, and project them onto two dimensions. Principal component analysis (PCA) is the usual choice: subtract the mean row, then keep the two directions along which the rows vary most, which are the first two right singular vectors of the centered matrix. Each token becomes a point in the plane, and the share of the variance the two directions carry says how much of the table the picture shows; when that share is small, two points that look close may be far apart in the full $d$ dimensions, so compare suspected neighbors by their cosine similarity in the full space as well. A table worth inspecting must be trained first: the chapter's notebook (`examples/attention_mechanisms_demo.ipynb`) trains a small character-level language model, and its embedding table, `char_model.embed.embedding.weight` (64 numbers per character), is a matrix to which this method applies.
 
+The listing does this on a table small enough to build in a second: positive pointwise mutual information (PPMI) of word co-occurrences in a toy corpus, reduced by a singular value decomposition (SVD) to width $d = 8$, a classical way to obtain word vectors by counting {cite}`levy2015improving`. The table is then centered and projected exactly as described:
+
+```python
+import numpy as np
+
+# A tiny corpus in which cats and dogs, and cars and trucks, share contexts.
+sentences = [
+    "the cat chased the mouse", "the dog chased the ball",
+    "the cat ate the fish", "the dog ate the bone",
+    "the cat slept on the sofa", "the dog slept on the rug",
+    "the car drove down the road", "the truck drove down the road",
+    "the car stopped at the light", "the truck stopped at the light",
+    "the cat purred on the sofa", "the dog barked at the cat",
+    "the car honked at the truck", "the truck followed the car",
+] * 20
+words = sorted({w for s in sentences for w in s.split()})
+index = {w: i for i, w in enumerate(words)}
+
+# Count co-occurrences within two words, then take positive PMI.
+counts = np.zeros((len(words), len(words)))
+for s in sentences:
+    toks = [index[w] for w in s.split()]
+    for i, a in enumerate(toks):
+        for j in range(max(0, i - 2), min(len(toks), i + 3)):
+            if j != i:
+                counts[a, toks[j]] += 1
+p = counts / counts.sum()
+marginal = p.sum(axis=1, keepdims=True) @ p.sum(axis=0, keepdims=True)
+with np.errstate(divide="ignore"):
+    ppmi = np.maximum(np.log(p / marginal), 0)
+
+# An embedding table: one row of width d = 8 per word.
+u, s, _ = np.linalg.svd(ppmi)
+table = u[:, :8] * s[:8]
+
+# Center the rows, then project onto the first two principal directions.
+centered = table - table.mean(axis=0)
+_, sv, vt = np.linalg.svd(centered, full_matrices=False)
+points = centered @ vt[:2].T
+share = (sv[:2] ** 2).sum() / (sv ** 2).sum()
+print(f"variance in the first two components: {share:.1%}")
+
+
+def cosine(a, b):
+    x, y = table[index[a]], table[index[b]]
+    return float(x @ y / np.linalg.norm(x) / np.linalg.norm(y))
+
+
+print(f"cos(cat, dog) = {cosine('cat', 'dog'):.2f}")
+print(f"cos(car, truck) = {cosine('car', 'truck'):.2f}")
+print(f"cos(cat, car) = {cosine('cat', 'car'):.2f}")
+near = np.linalg.norm(points[index["cat"]] - points[index["dog"]])
+far = np.linalg.norm(points[index["cat"]] - points[index["car"]])
+print(f"distance in the plane: cat-dog {near:.2f}, cat-car {far:.2f}")
+assert near < far and cosine("cat", "dog") > cosine("cat", "car")
+```
+
+% output
+
+```text
+variance in the first two components: 35.6%
+cos(cat, dog) = 0.89
+cos(car, truck) = 1.00
+cos(cat, car) = 0.02
+distance in the plane: cat-dog 0.46, cat-car 2.80
+```
+
+Cats and dogs, which occur in the same contexts, are close both in the plane and in the full space, and far from cars. The two components carry only 35.6% of the variance, though, so the plane shows part of the structure: distances in the plane are a hint, and the cosine similarity in the full $d$ dimensions is the measurement. The same steps apply to the rows of a trained model's table, such as the `char_model.embed.embedding.weight` of the notebook, with the rows of the tokens of interest in place of `table`.
+
 (sec-tdd-position-encoding-trade-offs)=
 
 ### Position Encoding Trade-offs
 
-The listing compares the extra parameters each scheme of {ref}`sec-ch1-positional-encodings` adds as the maximum length grows, at the sizes of T5-small ($d = 512$, 8 heads, 32 buckets). T5 keeps one bias table in the encoder's self-attention and one in the decoder's, each shared by all the layers of its stack; T5-small's released configuration (`relative_attention_num_buckets` 32, `num_heads` 8) gives $2 \times 32 \times 8 = 512$ parameters. A token embedding table for a 32,000-entry vocabulary is drawn for scale. The vertical axis is logarithmic, so lines that differ by orders of magnitude stay apart; the schemes that add no parameters (sinusoidal, RoPE, ALiBi) cannot be drawn on it and are listed instead.
+The listing compares the extra parameters each scheme of {ref}`sec-ch1-positional-encodings` adds as the maximum length grows, at the sizes of T5-small ($d = 512$, 8 heads, 32 buckets). T5 keeps one bias table in the encoder's self-attention and one in the decoder's, each shared by all the layers of its stack; T5-small's released configuration (`relative_attention_num_buckets` 32, `num_heads` 8) {cite}`google2023t5smallconfig` gives $2 \times 32 \times 8 = 512$ parameters. A token embedding table for a 32,000-entry vocabulary is drawn for scale. The vertical axis is logarithmic, so lines that differ by orders of magnitude stay apart; the schemes that add no parameters (sinusoidal, RoPE, ALiBi) cannot be drawn on it and are listed instead.
 
 ```python
 import matplotlib.pyplot as plt

@@ -82,26 +82,21 @@ A **token** is the fundamental unit of text that a language model processes. Tok
 
 The choice of tokenization granularity creates fundamental trade-offs:
 
-```{tabularcolumns} \Y{0.20}\Y{0.23}\Y{0.18}\Y{0.21}\Y{0.18}
+```{tabularcolumns} \Y{0.22}\Y{0.26}\Y{0.22}\Y{0.30}
 ```
 
-| Granularity | Vocabulary Size    | Sequence Length | OOV Handling | Semantic Coherence |
-| ----------- | ------------------ | --------------- | ------------ | ------------------ |
-| Word-level  | Very Large (>100k) | Short           | Poor         | High               |
-| Subword     | 32k-256k           | Medium          | Good         | Medium             |
-| Character   | ~10²–10⁴ (script dependent) | Very Long | Good (unseen characters are still OOV) | Low |
-| Byte-level  | Fixed (256)        | Longest         | Perfect      | Lowest             |
+| Granularity | Vocabulary Size    | Sequence Length | OOV Handling |
+| ----------- | ------------------ | --------------- | ------------ |
+| Word-level  | Very Large (>100k) | Short           | Poor         |
+| Subword     | 32k-256k           | Medium          | Good         |
+| Character   | ~10²–10⁴ (script dependent) | Very Long | Good (unseen characters are still OOV) |
+| Byte-level  | Fixed (256)        | Longest         | Perfect      |
 
 (sec-ch1-vocabulary-size-dilemma)=
 
 #### The Vocabulary Size Dilemma
 
-Vocabulary size directly impacts:
-
-1. **Model parameters**: the embedding matrix holds $|\mathcal{V}|\,d$ parameters
-1. **Computational cost**: Output projection scales with vocabulary size
-1. **Memory requirements**: Larger vocabularies require more memory
-1. **Out-of-vocabulary handling**: Smaller vocabularies struggle with rare words
+The vocabulary size $|\mathcal{V}|$ sets the size of two matrices: the embedding table $W_E$ holds $|\mathcal{V}|\,d$ parameters, and the output projection that scores every token at every position has $d\,|\mathcal{V}|$ more unless it is tied to $W_E$ ({ref}`sec-ch1-embedding-sharing-tying`). A larger vocabulary therefore costs memory and compute at both ends, but it shortens sequences, which cuts the cost of attention; a smaller one costs less per token but needs more tokens per text, and a vocabulary without a piece for a rare word must split it or give up on it as an out-of-vocabulary (OOV) item.
 
 For example, $|\mathcal{V}| = 50{,}000$ and $d = 4{,}096$ give $|\mathcal{V}|\,d = 204{,}800{,}000$ embedding parameters before any transformer block.
 
@@ -116,9 +111,10 @@ For example, $|\mathcal{V}| = 50{,}000$ and $d = 4{,}096$ give $|\mathcal{V}|\,d
 The simplest approach splits text on whitespace and punctuation:
 
 ```python
-def word_tokenize(text):
-    import re
+import re
 
+
+def word_tokenize(text):
     # Split on whitespace and punctuation
     tokens = re.findall(r"\w+|[^\w\s]", text.lower())
     return tokens
@@ -136,12 +132,7 @@ print(tokens)
 ['hello', ',', 'world', '!', 'how', 'are', 'you', '?']
 ```
 
-**Limitations**:
-
-- Enormous vocabularies for real-world text
-- Poor handling of morphologically rich languages
-- Out-of-vocabulary (OOV) words become `<UNK>` tokens
-- Inefficient for languages without clear word boundaries (Chinese, Japanese)
+Its vocabulary must hold every word form of the training text, which for real corpora means hundreds of thousands of entries, and every other word, including each inflected form a morphologically rich language adds, becomes the unknown token `<UNK>`. Languages written without spaces between words, such as Chinese and Japanese, give it no boundaries to split on.
 
 (sec-ch1-character-level-tokenization)=
 
@@ -158,25 +149,18 @@ def char_tokenize(text):
 text = "Hello"
 tokens = char_tokenize(text)
 print(tokens)
+# the sentence of the word-level example: 8 word tokens
+print(len(char_tokenize("Hello, world! How are you?")), "characters")
 ```
 
 % output
 
 ```text
 ['H', 'e', 'l', 'l', 'o']
+26 characters
 ```
 
-**Advantages**:
-
-- Small, fixed vocabulary
-- No OOV problems
-- Language-agnostic
-
-**Disadvantages**:
-
-- Very long sequences
-- Loss of semantic coherence
-- Difficult to learn word-level patterns
+The vocabulary is just the character set of the training text, so it is small, needs no pre-tokenization and has no OOV words for text in that set. The price is length: the eight word tokens of the previous example are 26 characters, more than three times as many positions, and attention cost grows with the square of the length ({ref}`sec-ch1-attention-complexity`). The model must also learn from the characters alone which sequences form words.
 
 (sec-ch1-byte-pair-encoding-bpe)=
 
@@ -434,7 +418,7 @@ RMS of a sinusoidal encoding:    0.707
 
 #### Embedding Sharing and Tying
 
-Many architectures share the input embedding matrix with the output projection {cite}`press2017using`. GPT-2's released code computes the output scores with its token-embedding matrix `wte` {cite}`radford2019language`, and Gemma 2's architecture table lists "Tied embedding: yes" for all three sizes {cite}`gemma2024gemma2`. Mistral 7B keeps the two separate (its released configuration sets `tie_word_embeddings` to false) {cite}`jiang2023mistral`, and so does the original LLaMA, whose reference code builds them as separate modules {cite}`touvron2023llama`; by contrast, the Llama 3.2 model card marks "Shared Embeddings: Yes" for its 1B and 3B text models {cite}`meta2024llama32card`:
+Many architectures share the input embedding matrix with the output projection {cite}`press2017using`. GPT-2's released code computes the output scores with its token-embedding matrix `wte` {cite}`radford2019language`, and Gemma 2's architecture table lists "Tied embedding: yes" for all three sizes {cite}`gemma2024gemma2`. Mistral 7B keeps the two separate (its released configuration sets `tie_word_embeddings` to false) {cite}`mistral2023config`, and so does the original LLaMA, whose reference code builds them as separate modules {cite}`touvron2023llama`; by contrast, the Llama 3.2 model card marks "Shared Embeddings: Yes" for its 1B and 3B text models {cite}`meta2024llama32card`:
 
 ```python
 # pseudo-code: `TransformerStack` stands for the model body;
@@ -700,7 +684,7 @@ The function $\operatorname{bucket}$ maps an offset to one of 32 buckets. Small 
 
 $$8 + \left\lfloor 8 \, \frac{\ln\big((m - m')/8\big)}{\ln 16} \right\rfloor,$$
 
-so offset 12 lands in bucket $8 + \lfloor 8 \times 0.146 \rfloor = 9$, offset 16 in bucket 10, offset 64 in bucket 14, and every offset from 128 on in bucket 15. A key after the query uses the same rule on $m' - m$ plus 16. A causal decoder never sees keys after the query, so it spends all 32 buckets on the past: offsets 0 to 15 exactly, then 16 log-spaced buckets up to 128. The table $\operatorname{rb}$ holds one scalar per bucket and head, and within a stack it is *shared across all layers*: T5 computes the bias once in the first layer of the encoder and once in the first layer of the decoder, and adds the same $n_h \times n \times n$ tensor in every layer of that stack {cite}`raffel2019exploring`. T5-small's released configuration has 32 buckets and $n_h = 8$ heads, so each stack spends $32 \times 8 = 256$ parameters on position and the encoder-decoder model $2 \times 256 = 512$.
+so offset 12 lands in bucket $8 + \lfloor 8 \times 0.146 \rfloor = 9$, offset 16 in bucket 10, offset 64 in bucket 14, and every offset from 128 on in bucket 15. A key after the query uses the same rule on $m' - m$ plus 16. A causal decoder never sees keys after the query, so it spends all 32 buckets on the past: offsets 0 to 15 exactly, then 16 log-spaced buckets up to 128. The table $\operatorname{rb}$ holds one scalar per bucket and head, and within a stack it is *shared across all layers*: T5 computes the bias once in the first layer of the encoder and once in the first layer of the decoder, and adds the same $n_h \times n \times n$ tensor in every layer of that stack {cite}`raffel2019exploring`. T5-small's released configuration has 32 buckets and $n_h = 8$ heads {cite}`google2023t5smallconfig`, so each stack spends $32 \times 8 = 256$ parameters on position and the encoder-decoder model $2 \times 256 = 512$.
 
 ```python
 import math
@@ -779,7 +763,7 @@ bias shape: (8, 16, 16) | parameters: 256
 
 #### Rotary Position Embedding (RoPE)
 
-Rotary position embedding {cite}`su2021roformer` is used by LLaMA {cite}`touvron2023llama`, Qwen2.5 {cite}`qwen2024qwen25` and Gemma 2 {cite}`gemma2024gemma2`, and Mistral 7B's released configuration sets its base (`rope_theta`) {cite}`jiang2023mistral`. It has no parameters, and like the relative bias it acts *inside* attention: it rotates the queries and keys, never the values or the input embeddings. Split a query or key row vector of width $d_k$ into $d_k/2$ consecutive pairs of components: pair $i$ is components $2i$ and $2i+1$ of the row (counting from 0), $0 \le i < d_k/2$. Rotate pair $i$ at position $m$ by the angle $m\,\omega_i$, with the frequencies $\omega_i = b^{-2i/d_k}$ of the sinusoidal encoding and base $b = 10000$. As a matrix, the rotation at position $m$ is block diagonal:
+Rotary position embedding {cite}`su2021roformer` is used by LLaMA {cite}`touvron2023llama`, Qwen2.5 {cite}`qwen2024qwen25` and Gemma 2 {cite}`gemma2024gemma2`, and Mistral 7B's released configuration sets its base (`rope_theta`) {cite}`mistral2023config`. It has no parameters, and like the relative bias it acts *inside* attention: it rotates the queries and keys, never the values or the input embeddings. Split a query or key row vector of width $d_k$ into $d_k/2$ consecutive pairs of components: pair $i$ is components $2i$ and $2i+1$ of the row (counting from 0), $0 \le i < d_k/2$. Rotate pair $i$ at position $m$ by the angle $m\,\omega_i$, with the frequencies $\omega_i = b^{-2i/d_k}$ of the sinusoidal encoding and base $b = 10000$. As a matrix, the rotation at position $m$ is block diagonal:
 
 ```{math}
 :label: eq-ch1-rope
@@ -1298,7 +1282,7 @@ $$\text{FFN}(x) = \max(0, xW_{\text{up}})W_{\text{down}}$$
 
 with $W_{\text{up}} \in \mathbb{R}^{d \times d_{ff}}$ and $W_{\text{down}} \in \mathbb{R}^{d_{ff} \times d}$. Bias terms are left out of the formulas in this chapter. The network provides non-linear transformations, and the original transformer sets the hidden width $d_{ff} = 4d$.
 
-The original activation is ReLU, $\max(0, \cdot)$. BERT and the GPT models use the **Gaussian error linear unit** instead {cite}`hendrycks2016gaussian`, applied elementwise: $\mathrm{GELU}(x) = \tfrac{x}{2}\bigl(1 + \operatorname{erf}(x/\sqrt{2})\bigr)$, which is $x$ times the probability that a standard normal variable lies below $x$. Instead of cutting at 0 it weights each input by that probability, so $\mathrm{GELU}(1) = 0.841$, $\mathrm{GELU}(-1) = -0.159$ and the curve is smooth where ReLU has a kink. BERT's authors "use a gelu activation (Hendrycks and Gimpel, 2016) rather than the standard relu, following OpenAI GPT" {cite}`devlin2018bert`, and GPT-2's released code (`src/model.py` of the `openai/gpt-2` repository) applies the tanh approximation of GELU in its feed-forward network. The gated variant used by later models is in {ref}`sec-ch1-modern-block`.
+The original activation is ReLU, $\max(0, \cdot)$. BERT and the GPT models use the **Gaussian error linear unit** instead {cite}`hendrycks2016gaussian`, applied elementwise: $\mathrm{GELU}(x) = \tfrac{x}{2}\bigl(1 + \operatorname{erf}(x/\sqrt{2})\bigr)$, which is $x$ times the probability that a standard normal variable lies below $x$. Instead of cutting at 0 it weights each input by that probability, so $\mathrm{GELU}(1) = 0.841$, $\mathrm{GELU}(-1) = -0.159$ and the curve is smooth where ReLU has a kink. BERT's authors "use a gelu activation (Hendrycks and Gimpel, 2016) rather than the standard relu, following OpenAI GPT" {cite}`devlin2018bert`, and GPT-2's released code {cite}`openai2019gpt2code` applies the tanh approximation of GELU in its feed-forward network. The gated variant used by later models is in {ref}`sec-ch1-modern-block`.
 
 (sec-ch1-assembling-block)=
 
@@ -1585,11 +1569,11 @@ Encoders trained this way are strong at understanding tasks such as classificati
 The block above is the 2017 design. Later models change it in some of the following ways, aimed at training stability or inference cost; not every model adopts every change (GPT-2 and GPT-3, for example, adopt only the first):
 
 - **Pre-LN instead of post-LN.** Normalizing each sublayer's input, $x \leftarrow x + \mathrm{MHA}(\mathrm{Norm}(x))$, instead of the sum makes training less sensitive to the learning rate: post-LN can fail at learning rates where pre-LN trains ({ref}`sec-ch2-pre-post-ln`).
-- **RMSNorm instead of LayerNorm.** Dropping the mean subtraction and the bias, $\mathrm{RMSNorm}(x) = \gamma \odot x / \sqrt{\lVert x \rVert_2^2 / d + \epsilon}$, is cheaper and trains just as well {cite}`zhang2019root`. LLaMA {cite}`touvron2023llama`, Qwen2.5 {cite}`qwen2024qwen25` and Gemma 2 {cite}`gemma2024gemma2` use it, and Mistral 7B's released configuration sets its $\epsilon$ (`rms_norm_eps`) {cite}`jiang2023mistral`.
+- **RMSNorm instead of LayerNorm.** Dropping the mean subtraction and the bias, $\mathrm{RMSNorm}(x) = \gamma \odot x / \sqrt{\lVert x \rVert_2^2 / d + \epsilon}$, is cheaper and trains just as well {cite}`zhang2019root`. LLaMA {cite}`touvron2023llama`, Qwen2.5 {cite}`qwen2024qwen25` and Gemma 2 {cite}`gemma2024gemma2` use it, and Mistral 7B's released configuration sets its $\epsilon$ (`rms_norm_eps`) {cite}`mistral2023config`.
 - **Gated activations.** The feed-forward network becomes $\mathrm{FFN}(x) = (\mathrm{SiLU}(xW_{\text{gate}}) \odot xW_{\text{up}})W_{\text{down}}$ (SwiGLU), with the hidden width reduced to about $\tfrac{8}{3}d$ to keep the parameter count unchanged {cite}`shazeer2020glu`.
 - **Rotary position embeddings.** Positions enter through RoPE on the queries and keys ({ref}`sec-ch1-rope`), not through vectors added to the input {cite}`su2021roformer`.
 - **Grouped-query attention.** Several query heads share one key/value head, shrinking the KV cache that dominates inference memory at long context {cite}`ainslie2023gqa`.
-- **No biases, tied or untied embeddings, larger vocabularies.** Linear layers usually drop their bias terms; vocabularies grew from 32k to 128k-256k (see {ref}`sec-tdd-choosing-vocabulary-size`).
+- **No biases and larger vocabularies.** Linear layers usually drop their bias terms, which removes $4d$ attention and $5d$ feed-forward parameters per block ({ref}`sec-ch1-parameter-count`), and vocabularies grew from 32k to 128k-256k (see {ref}`sec-tdd-choosing-vocabulary-size`). Whether the unembedding is tied to $W_E$ or separate varies between models ({ref}`sec-ch1-embedding-sharing-tying`).
 
 {numref}`fig-ch1-transformer-block-norms` shows the first change for the attention sublayer; the feed-forward sublayer repeats the pattern.
 
@@ -2002,7 +1986,7 @@ and gradient flow are in the Chapter 2 notebook ({ref}`nb-math-optimizers`,
 - An embedding table maps each id to a vector of width $d$. Attention by itself ignores order, so position enters as an added sinusoidal or learned vector, as a bias on the scores (T5, ALiBi) or as a rotation of the queries and keys (RoPE), whose scores depend only on the offset $m' - m$ ({ref}`sec-ch1-rope`).
 - Language modeling went from n-gram counts through recurrent networks to the transformer, whose attention lets every position read any other in a single step; pretraining at scale and instruction tuning followed ({ref}`sec-ch1-historical-context`).
 - Scaled dot-product attention computes $\text{softmax}(QK^\top/\sqrt{d_k})\,V$: every row of weights is positive and sums to 1, and each output is a weighted average of the value vectors. The scores take $\mathcal{O}(n^2)$ memory per head ({ref}`sec-ch1-attention-complexity`). Multi-head attention runs several such maps on slices of width $d_k$ and concatenates them.
-- A transformer block adds an attention sublayer and a feed-forward sublayer to a residual stream, each with a normalization. With biases and $d_{ff} = 4d$ a block holds $12d^2 + 13d$ parameters, which gives GPT-2 small its 124,439,808 ({ref}`sec-ch1-parameter-count`, worked in {ref}`sec-ch1-exercise-7`).
+- A transformer block adds an attention sublayer and a feed-forward sublayer to a residual stream, each with a normalization; in an encoder-decoder model the decoder adds cross-attention, whose queries come from the decoder and whose keys and values come from the encoder output ({ref}`sec-ch1-encoder-decoder`). Since 2017 the block changed in a few places that later chapters build on: pre-LN placement of the normalization, RMSNorm, SwiGLU feed-forward networks, RoPE and grouped-query attention ({ref}`sec-ch1-modern-block`). With biases and $d_{ff} = 4d$ a block holds $12d^2 + 13d$ parameters, which gives GPT-2 small its 124,439,808 ({ref}`sec-ch1-parameter-count`, worked in {ref}`sec-ch1-exercise-7`).
 - A decoder-only model is trained under a causal mask to minimize the mean negative log-likelihood of the next token. Perplexity, $\exp(\mathcal{L})$, compares models that share a tokenizer; bits per byte compares models that do not ({ref}`sec-ch1-perplexity`).
 - An encoder such as BERT is trained instead with the masked-language-model objective: some input tokens are hidden or replaced, and the loss is the mean negative log-likelihood of the original tokens at those positions only ({ref}`sec-ch1-masked-lm`).
 - Text is generated one token at a time: greedy decoding takes the most probable token, beam search keeps the $b_{beam}$ most probable prefixes, and temperature, top-k and top-p sampling trade fidelity for variety; a KV cache keeps the keys and values of earlier positions so that each step processes only the new token ({ref}`sec-ch1-decoding`).
@@ -2236,11 +2220,6 @@ of positions.
 
 ### Advanced Topics and Recent Research
 
-**Scaling Laws and Training:**
-
-- [Scaling Laws for Neural Language Models](https://arxiv.org/abs/2001.08361) {cite}`kaplan2020scaling` - Understanding model scaling behavior
-- [Training Compute-Optimal Large Language Models](https://arxiv.org/abs/2203.15556) {cite}`hoffmann2022training` - Chinchilla scaling laws
-
 **Technical Deep Dives:**
 
 - [A Primer in BERTology](https://arxiv.org/abs/2002.12327) {cite}`rogers2020primer` - What probing studies found about how BERT works
@@ -2260,28 +2239,6 @@ of positions.
 1. **[Natural Language Processing with Transformers](https://github.com/nlp-with-transformers/notebooks)** {cite}`tunstall2022natural` - Building and fine-tuning transformer models with the Hugging Face libraries
 1. **[Deep Learning](https://www.deeplearningbook.org/)** {cite}`goodfellow2016deep` - Mathematical foundations
 1. **[Speech and Language Processing](https://web.stanford.edu/~jurafsky/slp3/)** {cite}`jurafsky2026speech` - NLP fundamentals
-
-(sec-ch1-further-reading-practical-learning-projects)=
-
-### Practical Learning Projects
-
-1. **Build a Miniature GPT** - Implement transformer from scratch using the notebook examples
-1. **Tokenization Comparison** - Compare different tokenization strategies on multilingual text
-1. **Attention Visualization** - Create tools to visualize attention patterns in pre-trained models
-1. **Scaling Experiments** - Study how model performance changes with size using smaller versions
-
-(sec-ch1-further-reading-documentation-apis)=
-
-### Documentation and APIs
-
-- [PyTorch Transformer Tutorial](https://docs.pytorch.org/tutorials/beginner/transformer_tutorial.html)
-- [TensorFlow Transformer Tutorial](https://www.tensorflow.org/text/tutorials/transformer)
-
-(sec-ch1-further-reading-research-communities-updates)=
-
-### Research Communities and Updates
-
-- [Hugging Face Papers](https://huggingface.co/papers) - Curated ML research papers
 
 ______________________________________________________________________
 
