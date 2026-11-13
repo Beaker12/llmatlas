@@ -696,7 +696,7 @@ Both spellings of "café" become the same four code points under either form, so
 
 ### Real Tokenizers on Hard Inputs
 
-The subsections below discuss inputs that strain a tokenizer: compounds, words built from many suffixes, text without spaces, code, URLs, numbers and specialist vocabulary. The listing encodes one example of each with the three OpenAI encodings of {ref}`sec-tdd-linguistic-bias`, prints each vocabulary's size and the token counts, and shows the pieces of the examples discussed in most detail. A `�` marks a token that holds only part of a character's UTF-8 bytes.
+Compounds, words built from many suffixes, text without spaces, code, URLs, numbers and specialist vocabulary strain a tokenizer. The listing encodes one example of each with the three OpenAI encodings of {ref}`sec-tdd-linguistic-bias`, prints each vocabulary's size and the token counts, and shows the pieces of the examples discussed in most detail. A `�` marks a token that holds only part of a character's UTF-8 bytes.
 
 ```python
 # network
