@@ -302,9 +302,9 @@ For vocabulary construction, special tokens, cross-lingual issues and a full tok
 
 #### Embedding Spaces
 
-Once tokenized, each token is mapped to a high-dimensional vector through an **embedding matrix** $E \in \mathbb{R}^{V \times d}$, where $V$ is the vocabulary size and $d$ is the embedding dimension.
+Once tokenized, each token is mapped to a high-dimensional vector through an **embedding matrix** $W_E \in \mathbb{R}^{|\mathcal{V}| \times d}$, where $\mathcal{V}$ is the vocabulary, $|\mathcal{V}|$ its size and $d$ the embedding dimension. The vector for token $x_i$ is row $x_i$ of $W_E$:
 
-$$\mathbf{x}_i = E[\text{token}_i]$$
+$$W_E[x_i] \in \mathbb{R}^{d}$$
 
 These embeddings are learned during training to capture semantic relationships. Similar tokens develop similar vector representations, enabling the model to generalize across related concepts {cite}`mikolov2013efficient`.
 
@@ -323,8 +323,8 @@ The embedding dimension $d$ is a crucial hyperparameter that affects:
 
 **Computational Cost**: Embedding operations scale with dimension
 
-- Matrix multiplications: O(d × other_dim)
-- Memory usage: V × d parameters just for embeddings
+- Matrix multiplications: the cost of each projection grows linearly with $d$ when its other dimension is fixed
+- Memory usage: $|\mathcal{V}| \times d$ parameters just for embeddings
 - Attention computation: Affects all transformer operations
 
 (sec-ch1-embedding-initialization-strategies)=
@@ -499,13 +499,13 @@ Without positional information, a transformer would see these as identical sets 
 
 The original transformer uses sinusoidal positional encodings {cite}`vaswani2017attention`:
 
-$$PE_{(pos, 2i)} = \sin\left(\frac{pos}{10000^{2i/d}}\right)$$
-$$PE_{(pos, 2i+1)} = \cos\left(\frac{pos}{10000^{2i/d}}\right)$$
+$$PE_{(m, 2i)} = \sin\left(\frac{m}{10000^{2i/d}}\right)$$
+$$PE_{(m, 2i+1)} = \cos\left(\frac{m}{10000^{2i/d}}\right)$$
 
 where:
 
-- $pos$ is the position in the sequence
-- $i$ is the dimension index
+- $m$ is the position in the sequence
+- $i$ indexes the sine-cosine pairs, $0 \le i < d/2$
 - $d$ is the embedding dimension
 
 **Key properties**:
@@ -600,7 +600,7 @@ class LearnedPositionalEmbedding(nn.Module):
 
 ##### Advanced Positional Encodings
 
-**Relative Positional Encoding**: instead of adding absolute positions to the input, make attention depend on the offset $i-j$. Shaw et al. {cite}`shaw2018self` add learned relative-position *vectors* to the keys and values; T5 {cite}`raffel2019exploring` simplifies this to one learned scalar bias $b_{i-j}$ per head added to the scores, which is what the module below implements:
+**Relative Positional Encoding**: instead of adding absolute positions to the input, make attention depend on the offset $m - m'$ between the query position $m$ and the key position $m'$. Shaw et al. {cite}`shaw2018self` add learned relative-position *vectors* to the keys and values; T5 {cite}`raffel2019exploring` simplifies this to one learned scalar bias $\operatorname{rb}(\operatorname{bucket}(m - m'))$ per head and per bucket of offsets, added to the scores, which is what the module below implements:
 
 ```python
 import torch
@@ -874,7 +874,7 @@ Self-attention computes a weighted representation of the input sequence, where w
 
 2. **Attention scores**:
 
-   $$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V$$
+   $$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right)V$$
 
 The scaling factor $\sqrt{d_k}$, where $d_k$ is the per-head key dimension, keeps the dot products at unit variance so the softmax does not saturate {cite}`vaswani2017attention`.
 
@@ -884,11 +884,11 @@ The scaling factor $\sqrt{d_k}$, where $d_k$ is the per-head key dimension, keep
 
 Multi-head attention runs multiple attention mechanisms in parallel, allowing the model to attend to different types of relationships:
 
-$$\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, ..., \text{head}_h)W_O$$
+$$\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, \dots, \text{head}_{n_h})W_O$$
 
 where each head is:
 
-$$\text{head}_i = \text{Attention}(QW_i^Q, KW_i^K, VW_i^V)$$
+$$\text{head}_i = \text{Attention}(QW_Q^{(i)}, KW_K^{(i)}, VW_V^{(i)}), \quad 1 \le i \le n_h$$
 
 (sec-ch1-attention-patterns-interpretability)=
 
@@ -926,7 +926,7 @@ class MultiHeadAttention(nn.Module):
         scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self.d_k)
 
         if mask is not None:
-            scores.masked_fill_(mask == 0, -1e9)
+            scores.masked_fill_(mask == 0, torch.finfo(scores.dtype).min)
 
         attention_weights = torch.softmax(scores, dim=-1)
         output = torch.matmul(attention_weights, V)
@@ -991,9 +991,9 @@ $$\text{output} = \text{LayerNorm}(x + \text{Sublayer}(x))$$
 
 Each transformer layer includes a position-wise feed-forward network:
 
-$$\text{FFN}(x) = \max(0, xW_1 + b_1)W_2 + b_2$$
+$$\text{FFN}(x) = \max(0, xW_{\text{up}})W_{\text{down}}$$
 
-This provides non-linear transformations and typically uses a hidden dimension 4× larger than the model dimension.
+with $W_{\text{up}} \in \mathbb{R}^{d \times d_{\text{ff}}}$ and $W_{\text{down}} \in \mathbb{R}^{d_{\text{ff}} \times d}$. Bias terms are left out of the formulas in this chapter. The network provides non-linear transformations, and the original transformer sets the hidden width $d_{\text{ff}} = 4d$.
 
 (sec-ch1-architectural-variants)=
 
@@ -1045,8 +1045,8 @@ The notebook ({ref}`nb-attn-transformer`) assembles one post-LN transformer bloc
 The block above is the 2017 design. Every widely used LLM since GPT-2 differs from it in a handful of ways, all aimed at training stability or inference cost:
 
 - **Pre-LN instead of post-LN.** Normalization is applied *before* each sublayer, so the residual stream is never normalized: $x \leftarrow x + \mathrm{MHA}(\mathrm{Norm}(x))$. Post-LN transformers have large gradients at initialization and need learning-rate warm-up to train at all; pre-LN removes most of that sensitivity {cite}`xiong2020layer`.
-- **RMSNorm instead of LayerNorm.** Dropping the mean subtraction and the bias, $\mathrm{RMSNorm}(x) = \gamma \odot x / \sqrt{\tfrac{1}{d}\sum_i x_i^2 + \epsilon}$, is cheaper and trains just as well {cite}`zhang2019root`. LLaMA, Mistral, Qwen and Gemma all use it.
-- **Gated activations.** The feed-forward network becomes $\mathrm{FFN}(x) = (\mathrm{SiLU}(xW_1) \odot xW_3)W_2$ (SwiGLU), with the hidden width reduced to about $\tfrac{8}{3}d$ to keep the parameter count unchanged {cite}`shazeer2020glu`.
+- **RMSNorm instead of LayerNorm.** Dropping the mean subtraction and the bias, $\mathrm{RMSNorm}(x) = \gamma \odot x / \sqrt{\lVert x \rVert_2^2 / d + \epsilon}$, is cheaper and trains just as well {cite}`zhang2019root`. LLaMA, Mistral, Qwen and Gemma all use it.
+- **Gated activations.** The feed-forward network becomes $\mathrm{FFN}(x) = (\mathrm{SiLU}(xW_{\text{gate}}) \odot xW_{\text{up}})W_{\text{down}}$ (SwiGLU), with the hidden width reduced to about $\tfrac{8}{3}d$ to keep the parameter count unchanged {cite}`shazeer2020glu`.
 - **Rotary position embeddings.** Positions enter through RoPE on the queries and keys (Section 1.3), not through vectors added to the input {cite}`su2021roformer`.
 - **Grouped-query attention.** Several query heads share one key/value head, shrinking the KV cache that dominates inference memory at long context {cite}`ainslie2023gqa`.
 - **No biases, tied or untied embeddings, larger vocabularies.** Linear layers usually drop their bias terms; vocabularies grew from 32k to 128k-256k (see {doc}`tokenization-deep-dive`, T.4).
@@ -1109,7 +1109,7 @@ class PreLNBlock(nn.Module):
 
 Modern LLMs are trained on the **causal language modeling** objective, predicting the next token given previous tokens:
 
-$$P(x_{t+1} | x_1, x_2, ..., x_t)$$
+$$p_\theta(x_i \mid x_1, x_2, \dots, x_{i-1}) = p_\theta(x_i \mid x_{<i})$$
 
 This autoregressive formulation enables text generation and captures the statistical structure of language.
 
@@ -1131,15 +1131,15 @@ def create_causal_mask(seq_length):
 
 ### 4.2 Training Process
 
-The training objective maximizes the likelihood of the training data:
+Training maximizes the likelihood of the training data, which is the same as minimizing the mean negative log-likelihood per token over the $T$ tokens of the data, in nats:
 
-$$\mathcal{L} = -\sum_{i=1}^{N} \log P(x_i | x_{<i})$$
+$$\mathcal{L} = -\frac{1}{T}\sum_{i=1}^{T} \log p_\theta(x_i \mid x_{<i})$$
 
-Where the model outputs probability distributions over the vocabulary:
+The model outputs a probability distribution over the vocabulary:
 
-$$P(x_i | x_{<i}) = \text{softmax}(W_{\text{out}} h_{i-1} + b_{\text{out}})$$
+$$p_\theta(\cdot \mid x_{<i}) = \text{softmax}(h^{(L)}_{i-1} W_{\text{out}})$$
 
-where $h_{i-1}$ is the final-layer hidden state at position $i-1$, which under causal masking has seen exactly $x_{<i}$.
+where $h^{(L)}_{i-1}$ is the hidden state of the last layer $L$ at position $i-1$, which under causal masking has seen exactly $x_{<i}$. GPT-2 and later models have no bias in this projection.
 
 (sec-ch1-perplexity)=
 
@@ -1147,7 +1147,7 @@ where $h_{i-1}$ is the final-layer hidden state at position $i-1$, which under c
 
 **Perplexity** measures how well the model predicts the test data:
 
-$$\text{Perplexity} = \exp\left(-\frac{1}{N} \sum_{i=1}^{N} \log P(x_i | x_{<i})\right)$$
+$$\text{Perplexity} = \exp\left(-\frac{1}{T} \sum_{i=1}^{T} \log p_\theta(x_i \mid x_{<i})\right) = \exp(\mathcal{L})$$
 
 Perplexity was introduced as the effective branching factor of a language model {cite}`jelinek1977perplexity`; lower is better. It correlates only loosely with downstream task accuracy, so large-scale evaluations report both {cite}`liang2022holistic`.
 

@@ -139,7 +139,7 @@ print(f"Subword tokens ({len(subword_tokens)}): {subword_tokens}")
 
 **Computational implications**:
 
-- Sequence length affects attention computation: O(n²) for self-attention
+- Sequence length affects attention computation: $\mathcal{O}(n^2)$ for self-attention over $n$ tokens
 - Longer sequences require more memory
 - Processing time scales with sequence length
 
