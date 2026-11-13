@@ -17,7 +17,10 @@
 #                   chapters link to. Example: {"sec-ch2-flops": "Training Complexity"}
 # A NOT_A_RESULT or NOTATION_OK entry that matches nothing is a failure: remove it with the sentence it was for.
 # The chapter's checker reads every exemption with `python tools/list_exemptions.py chapters/<dir>`.
-SYNC_EXEMPT: dict[str, str] = {}  # name -> reason it may differ between the chapter and its notebook
+SYNC_EXEMPT: dict[str, str] = {  # name -> reason it may differ between the chapter and its notebook
+    "fetch": "the notebook version also retries once, can send HEAD, and records every fetch (URL, size, hash, "
+             "bytes) for the provenance manifest of its last section; the page shows only the GET it needs",
+}
 
 # (chapter regex, notebook-output regex, comparator); each regex has exactly one capture group.
 # Comparator: eq, gt, lt or approx:<rel>, applied as `chapter_value <op> notebook_value`.
