@@ -126,11 +126,21 @@ PAPER_CONFIGS = {
 }
 
 # Gemma 3 12B, text decoder only: shapes from the Gemma3_12B configuration of Google's reference code
-# (gemma/gm/nn/_gemma.py), vocabulary 262,144 ("256k entries" in the paper); the hub total includes vision.
+# (gemma/gm/nn/_gemma.py, which has 262,144 embedding rows); vocabulary 262,208, the released checkpoint's rows
+# (Transformers' convert_gemma3_weights.py appends 64); the hub total includes vision.
 GEMMA3 = {
     "model_type": "gemma3_text", "hidden_size": 3840, "num_hidden_layers": 48,
     "num_attention_heads": 16, "num_key_value_heads": 8, "head_dim": 256,
-    "intermediate_size": 15360, "vocab_size": 262144, "tie_word_embeddings": True}
+    "intermediate_size": 15360, "vocab_size": 262208, "tie_word_embeddings": True}
+
+# Gemma 3 12B's hub total in three parts: the text decoder with the checkpoint's 262,208 embedding rows, a SigLIP
+# encoder at 896 pixels without its pooling head, and the projection into the text width with its norm.
+SIGLIP_WIDTH, SIGLIP_FFN, SIGLIP_LAYERS, PATCH = 1152, 4304, 27, 14
+SIGLIP_LAYER = (4 * (SIGLIP_WIDTH ** 2 + SIGLIP_WIDTH) + 2 * SIGLIP_WIDTH * SIGLIP_FFN + SIGLIP_FFN + SIGLIP_WIDTH
+                + 2 * 2 * SIGLIP_WIDTH)  # q, k, v, o with biases; two-matrix MLP with biases; two LayerNorms
+SIGLIP = (SIGLIP_LAYERS * SIGLIP_LAYER + 3 * PATCH ** 2 * SIGLIP_WIDTH + SIGLIP_WIDTH  # patch embedding
+          + (896 // PATCH) ** 2 * SIGLIP_WIDTH + 2 * SIGLIP_WIDTH)  # 4,096 positions, final LayerNorm
+PROJECTION = SIGLIP_WIDTH * 3840 + SIGLIP_WIDTH
 
 
 @pytest.mark.parametrize("repo", sorted(PINS))
@@ -193,11 +203,15 @@ def test_gemma2_paper_vocabulary_and_parameter_split():
 def test_gemma3_text_decoder_matches_the_papers_table_1():
     """D23: the paper's Table 1 gives 10,759M non-embedding and a 417M vision encoder for the 12B model."""
     counts = COUNT(GEMMA3)
-    assert counts["total"] == 11_765_788_416
+    assert counts["total"] == 11_766_034_176
     non_embedding = counts["total"] - GEMMA3["vocab_size"] * GEMMA3["hidden_size"]
     assert non_embedding == 10_759_155_456 and round(non_embedding / 1e6) == 10_759
-    rest = HUB_TOTALS["google/gemma-3-12b-pt"]["elements_total"] - counts["total"]
-    assert rest == 421_536_624 and 417e6 <= rest < 430e6  # vision encoder (417M) and projection
+    assert SIGLIP == 416_866_032 and round(SIGLIP / 1e6) == 417 and PROJECTION == 4_424_832
+    hub = HUB_TOTALS["google/gemma-3-12b-pt"]["elements_total"]
+    assert counts["total"] + SIGLIP + PROJECTION == hub == 12_187_325_040  # exact, three parts
+    assert non_embedding + 262_144 * 3840 + SIGLIP + PROJECTION == hub - 245_760  # reference code's rows fall short
+    for rows in (262_144, 262_208):  # the paper's 1,012M embedding is reproduced by neither row count
+        assert round(rows * 3840 / 1e6) != 1012
 
 
 def test_qwen3_non_embedding_and_kv_cache():
