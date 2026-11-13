@@ -7,7 +7,7 @@ digraph warc_record {
     <TR><TD BGCOLOR="#e2e8f0">blank line: \r\n\r\n</TD><TD BORDER="0" ALIGN="LEFT">first split</TD></TR>
     <TR><TD BGCOLOR="#fde7cf" ALIGN="LEFT" BALIGN="LEFT"><B>HTTP response header</B> (http_head)<BR/>HTTP/1.1 200 OK<BR/>Content-Type: text/html …<BR/>…</TD><TD BORDER="0" ALIGN="LEFT" BALIGN="LEFT">what the server<BR/>answered</TD></TR>
     <TR><TD BGCOLOR="#e2e8f0">blank line: \r\n\r\n</TD><TD BORDER="0" ALIGN="LEFT">second split</TD></TR>
-    <TR><TD BGCOLOR="#dcfce7" ALIGN="LEFT" BALIGN="LEFT"><B>HTML payload</B> (html)<BR/>&lt;!DOCTYPE html&gt;&lt;html&gt; … &lt;/html&gt;<BR/>34,357 bytes when the lookup listing ran</TD><TD BORDER="0" ALIGN="LEFT" BALIGN="LEFT">input to text<BR/>extraction in<BR/>preprocessing</TD></TR>
+    <TR><TD BGCOLOR="#dcfce7" ALIGN="LEFT" BALIGN="LEFT"><B>HTML payload</B> (html)<BR/>&lt;!DOCTYPE html&gt;&lt;html&gt; … &lt;/html&gt;<BR/>34,353 bytes when the lookup listing ran</TD><TD BORDER="0" ALIGN="LEFT" BALIGN="LEFT">input to text<BR/>extraction in<BR/>preprocessing</TD></TR>
   </TABLE>>];
   member -> record [label=" record.split(b\"\\r\\n\\r\\n\", 2)"];
 }

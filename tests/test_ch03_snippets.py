@@ -328,3 +328,31 @@ def test_notebook_fallback_records_carry_the_collection_date(monkeypatch, capsys
     ns["fetch_or_fallback"]("https://example.com/x", ns["DATA"] / "cc_warc_slice.json")
     assert ns["FETCHED"][-1]["fetched_at"] == "2026-11-13"
 
+
+
+def test_robots_unreachable_statuses_disallow_everything(capsys):
+    ns = {}
+    exec(_page_block("def remove_dot_segments"), ns)  # noqa: S102 - the page's own listing
+    for status, expected in ((200, True), (404, True), (301, False), (503, False)):
+        def transport(url, headers, status=status):
+            if url.endswith("/robots.txt"):
+                return status, {}, "User-agent: *\nAllow: /\n" if status == 200 else ""
+            return 200, {}, "x"
+        bot = ns["PoliteCrawler"](transport)
+        assert bot.allowed("https://example.com/private/x") is expected, status
+
+
+def test_sitemap_listing_keeps_undated_entries_and_filters_old_ones(capsys):
+    ns = {}
+    exec(_page_block("def sitemap_entries"), ns)  # noqa: S102 - the page's own listing
+    kind, pages = ns["sitemap_entries"](ns["URLSET"], since="2026-06-01")
+    assert kind == "pages"
+    assert pages == ["https://example.com/blog/a", "https://example.com/blog/c"]
+    kind, kids = ns["sitemap_entries"](ns["INDEX"], since="2026-01-01")
+    assert (kind, kids) == ("sitemaps", ["https://example.com/sitemap-blog.xml"])
+
+
+def test_effective_data_law_listing_prints_what_the_page_shows():
+    ns = {}
+    exec(_page_block("def effective"), ns)  # noqa: S102 - the page's own listing
+    assert [round(ns["effective"](e), 2) for e in (1, 4, 10, 40)] == [1.0, 3.73, 7.81, 15.17]
