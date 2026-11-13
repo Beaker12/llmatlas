@@ -103,10 +103,10 @@ The Pile's shares are the paper's "Weight" column: each component's raw size tim
 
 :::{figure} figures/mixtures.*
 :name: fig-ch3-mixtures
-:alt: Five horizontal stacked bars, one per mixture, split into web crawl, curated web, books, papers, code and other, the last being 5 percent of The Pile. GPT-3 is 60, 25 and 16 percent; The Pile 18, 17, 15, 37 and 8; LLaMA 1 82, 6.5, 4.5, 2.5 and 4.5; Dolma 81, 3, 0.2, 2.3 and 13.4; FineWeb 100 percent web crawl.
+:alt: Five horizontal stacked bars, one per mixture, split into web crawl, curated web, books, papers, courts and patents, code and other, the last being 5 percent of The Pile. GPT-3 is 60, 25 and 16 percent; The Pile 18, 17, 15, 27 papers, 10 courts and patents, and 8; LLaMA 1 82, 6.5, 4.5, 2.5 and 4.5; Dolma 81, 3, 0.2, 2.3 and 13.4; FineWeb 100 percent web crawl.
 
 The published mixtures of the table above. Numbers are percentages as published and
-rounded, so GPT-3's row sums to 101%. "Other" is what the five columns leave of 100%:
+rounded, so GPT-3's row sums to 101%. The Pile's court opinions and patents (FreeLaw and USPTO, 10%) are drawn apart from its papers (27%). "Other" is what the segments leave of 100%:
 The Pile's 5% are the components the table does not place in a column (OpenSubtitles, DM
 Mathematics, Ubuntu IRC, EuroParl, YouTube subtitles and Enron emails); Dolma places
 every source, so its 0.1% is rounding. Segments under 3% are too narrow to label inside
@@ -1172,14 +1172,14 @@ Consent in Crisis {cite}`longpre2024consent` measured, across C4, RefinedWeb and
 
 :::{figure} figures/consent-restrictions.*
 :name: fig-ch3-consent-restrictions
-:alt: Line plot from January 2016 to April 2024 of the percentage of tokens fully restricted by robots.txt. Three dashed red lines for head domains stay between 2 and 5 percent until August 2023, then rise steeply to between 19 and 32 percent by April 2024. Three solid blue lines for the full corpora stay between about 1 and 4.5 percent until August 2023, highest in 2016 and 2017, and rise to between 5 and 7 percent.
+:alt: Line plot from January 2016 to April 2024 of the percentage of tokens fully restricted by robots.txt. Three dashed red lines for head domains stay between 2 and 5 percent until August 2023, then rise steeply to between 19 and 32 percent by April 2024 (the study states 20 to 33). Three solid blue lines for the full corpora stay between about 1 and 4.5 percent until August 2023, highest in 2016 and 2017, and rise to between 5 and 7 percent.
 
 Share of tokens fully restricted to AI crawlers by robots.txt, by domain tier, monthly
 from January 2016 to April 2024; data read from Fig. 2 of {cite:t}`longpre2024consent`.
 Each tier has three lines, one for each of the three corpora the paper studied (C4,
 RefinedWeb and Dolma); the source figure does not label which line is which corpus, so
 they are drawn alike. Head domains are the most-used, most actively maintained sources
-in each corpus.
+in each corpus. The label at the right end of the dashed lines is the plotted range; the study states 20 to 33%.
 :::
 
 Opt-out mechanisms beyond robots.txt:
@@ -1471,9 +1471,9 @@ Three ways the weights get set:
 - **By optimization.** DoReMi {cite}`xie2023doremi` trains a small proxy model with weights adjusted to minimize the worst-case excess loss across domains against a reference, then trains the large model with the proxy run's weights averaged over its steps; on The Pile it improved average downstream accuracy at the same token budget and reached the baseline's downstream accuracy 2.6 times faster. During the proxy run each domain has a weight, and every step multiplies it by the exponential of the domain's excess loss times a step size. The excess loss is the per-token loss of the proxy minus that of the reference, floored at zero, averaged over the domain's tokens in the batch. The weights are then renormalized and mixed with the uniform distribution with a small weight $c$ (the paper uses $c = 10^{-3}$), which keeps every domain's weight above zero. Domains that the proxy still learns slowly relative to the reference gain weight, which is the worst-case (minimax) objective carried out by exponentiated-gradient ascent on the weights. The update is written out below, with the averaging that the paper's Algorithm 1 returns: "DoReMi takes the averaged domain weights over DRO training steps" {cite}`xie2023doremi`.
 - **By ablation.** The FineWeb {cite}`penedo2024fineweb` and DataComp-LM {cite}`li2024datacomp` protocol, training small models on candidate mixtures and comparing benchmarks, is the most expensive of the three, since every candidate costs a training run, and it is the one most teams use for the final decision.
 
-With $\Delta_t[i]$ the excess loss of domain $i$ at step $t$, $\nu$ the step size, $c$ the smoothing weight and $u$ the uniform distribution over the $k$ domains, one step and the returned weights are
+With $\Delta_t[i]$ the excess loss of domain $i$ at step $t$, $\iota$ the step size, $c$ the smoothing weight and $u$ the uniform distribution over the $k$ domains, one step and the returned weights are
 
-$$q_t' = q_{t-1} \odot \exp(\nu \Delta_t), \qquad q_t = (1 - c)\,\frac{q_t'}{\sum_{i=1}^k q_t'[i]} + c\,u, \qquad \bar{q} = \frac{1}{T} \sum_{t=1}^{T} q_t,$$
+$$q_t' = q_{t-1} \odot \exp(\iota \Delta_t), \qquad q_t = (1 - c)\,\frac{q_t'}{\sum_{i=1}^k q_t'[i]} + c\,u, \qquad \bar{q} = \frac{1}{T} \sum_{t=1}^{T} q_t,$$
 
 where $\odot$ is the entrywise product and $\bar{q}$ is what the large run uses. The weights at the last step are one noisy sample of a process that keeps moving, because each batch's excess loss is noisy; the average smooths that out. The toy below has two domains, one the proxy lags on by 0.5 nats per token and one by 0.1, with a gap that shrinks as the domain's weight grows and is multiplied by noise in each batch. It is not the paper's setup, only the update rule applied to a made-up loss:
 
@@ -1704,7 +1704,9 @@ into Chapter 4.
 
 ## Exercises
 
-1. **Read a snapshot.** Using the manifest and range-request code of {ref}`sec-ch3-snapshots-segments-files`, estimate the size of a current Common Crawl snapshot from the number of WARC files and the sizes reported by a `HEAD` request on ten of them. Compare with Common Crawl's published figure.
+The exercises are graded: level 1 applies a definition or runs a given listing, level 2 combines two ideas or writes a short function, level 3 designs an experiment.
+
+1. **Read a snapshot (level 2).** Using the manifest and range-request code of {ref}`sec-ch3-snapshots-segments-files`, estimate the size of a current Common Crawl snapshot from the number of WARC files and the sizes reported by a `HEAD` request on ten of them. Compare with Common Crawl's published figure.
 
 ```{admonition} Solution 1
 :class: dropdown
@@ -1728,7 +1730,7 @@ table in {ref}`sec-ch3-snapshots-segments-files`. The notebook makes the same es
 rounds it to about 92 TB.
 ```
 
-2. **Who is blocked.** The notebook commits the two robots.txt files it reads, Wikipedia's and a news site's, under `examples/data/`. Parse both and tabulate which of `*`, `CCBot`, `GPTBot`, `ClaudeBot` and `Google-Extended` may fetch an article. Which site blocks Common Crawl, and did it likely intend to leave the open corpora? How would you extend the table to fifty news sites?
+2. **Who is blocked (level 2).** The notebook commits the two robots.txt files it reads, Wikipedia's and a news site's, under `examples/data/`. Parse both and tabulate which of `*`, `CCBot`, `GPTBot`, `ClaudeBot` and `Google-Extended` may fetch an article. Which site blocks Common Crawl, and did it likely intend to leave the open corpora? How would you extend the table to fifty news sites?
 
 ```{admonition} Solution 2
 :class: dropdown
@@ -1764,7 +1766,7 @@ restrictions the robots file does not express
 sites forbid.
 ```
 
-3. **Source comparison.** Before adding a sixth source to the notebook's comparison, find out how well its statistics separate the five it has. Using the committed samples under `examples/data/`, compute the median word count of each source and the ratio of medians for every pair. Which pair is closest and which farthest apart, and what kind of sixth source would median length separate clearly?
+3. **Source comparison (level 2).** Before adding a sixth source to the notebook's comparison, find out how well its statistics separate the five it has. Using the committed samples under `examples/data/`, compute the median word count of each source and the ratio of medians for every pair. Which pair is closest and which farthest apart, and what kind of sixth source would median length separate clearly?
 
 ```{admonition} Solution 3
 :class: dropdown
@@ -1784,7 +1786,7 @@ tied to how it was built (a quality or language score the dataset ships, or the 
 count if the rows carry URLs).
 ```
 
-4. **License tracing.** For three kinds of hosted dataset, a filtered web corpus (FineWeb), a copy of the Stack Exchange dump, and an instruction dataset generated by a model, trace the license on the hub card to the terms of the original sources, and record every discrepancy in the style of the Data Provenance Initiative audit.
+4. **License tracing (level 3).** For three kinds of hosted dataset, a filtered web corpus (FineWeb), a copy of the Stack Exchange dump, and an instruction dataset generated by a model, trace the license on the hub card to the terms of the original sources, and record every discrepancy in the style of the Data Provenance Initiative audit.
 
 ```{admonition} Solution 4
 :class: dropdown
@@ -1811,7 +1813,7 @@ to look for: no license on the card, a license more permissive than the sources 
 and a commercial-use restriction in a source that the card omits.
 ```
 
-5. **Budget sensitivity.** Using `plan_mixture`, hold the mixture preferences fixed and sweep the total budget from 0.5T to 20T tokens. At what budget does each source hit the epoch cap, and what does the mixture look like at 20T?
+5. **Budget sensitivity (level 1).** Using `plan_mixture`, hold the mixture preferences fixed and sweep the total budget from 0.5T to 20T tokens. At what budget does each source hit the epoch cap, and what does the mixture look like at 20T?
 
 ```{admonition} Solution 5
 :class: dropdown
@@ -1845,7 +1847,7 @@ budget makes the mixture more web-heavy, not more diverse, unless more unique da
 acquired.
 ```
 
-6. **Low-resource audit.** You plan to take fifty documents labeled as a language you read from mC4 or OSCAR and classify each by hand as genuine text, boilerplate, mislabeled or machine-translated. Write the classification rules you would fix before reading. If 12 of the 50 turn out not to be genuine, what is the 95% interval for the rate, and how many documents would you need to read for an interval of about plus or minus five percentage points? When does a comparison with the MADLAD-400 audit for that language mean something?
+6. **Low-resource audit (level 3).** You plan to take fifty documents labeled as a language you read from mC4 or OSCAR and classify each by hand as genuine text, boilerplate, mislabeled or machine-translated. Write the classification rules you would fix before reading. If 12 of the 50 turn out not to be genuine, what is the 95% interval for the rate, and how many documents would you need to read for an interval of about plus or minus five percentage points? When does a comparison with the MADLAD-400 audit for that language mean something?
 
 ```{admonition} Solution 6
 :class: dropdown
@@ -1869,7 +1871,7 @@ high-resource language to come out mostly genuine and a low-resource one to show
 more mislabeled text and boilerplate.
 ```
 
-7. **A datasheet.** Write the collection-process section of a datasheet for the samples the notebook fetched, answering every question in the Datasheets template that applies.
+7. **A datasheet (level 3).** Write the collection-process section of a datasheet for the samples the notebook fetched, answering every question in the Datasheets template that applies.
 
 ```{admonition} Solution 7
 :class: dropdown
@@ -1904,7 +1906,7 @@ content is whatever the first rows or the seeded offsets returned, including any
 personal data they hold.
 ```
 
-8. **Size a seen-set.** A crawl will see $n = 10^9$ distinct URLs. Using the Bloom-filter rule of {ref}`sec-ch3-crawler-architecture`, how many bits per URL and how many bytes in total does a filter with false-positive rate $p = 1\%$ need, and how many hash functions is optimal? Then give the `Range` header that fetches the record of 9,882 bytes at offset 48,374,322 of a WARC file.
+8. **Size a seen-set (level 1).** A crawl will see $n = 10^9$ distinct URLs. Using the Bloom-filter rule of {ref}`sec-ch3-crawler-architecture`, how many bits per URL and how many bytes in total does a filter with false-positive rate $p = 1\%$ need, and how many hash functions is optimal? Then give the `Range` header that fetches the record of 9,882 bytes at offset 48,374,322 of a WARC file.
 
 ```{admonition} Solution 8
 :class: dropdown

@@ -235,7 +235,7 @@ def test_mixture_shares_match_the_papers_tables():
         assert abs(raw[k] * epochs[k] / 1254.20 * 100 - weight[k]) < 0.02, k
     assert round(227.12 / 825.18 * 100) == 28         # Pile-CC as a share of the raw corpus, as the page says
     pile = {"web_crawl": [18.11], "curated_web": [10.01, 5.13, 1.53, 0.62], "books": [12.07, 2.17, 0.75],
-            "papers": [14.40, 8.96, 6.12, 3.65, 3.07, 0.38, 0.30], "code": [7.59]}
+            "papers": [14.40, 8.96, 3.07, 0.38, 0.30], "legal": [6.12, 3.65], "code": [7.59]}
     for col, parts in pile.items():
         assert round(sum(parts)) == round(float(rows["The Pile"][col])), col
     assert round(1.55 + 1.24 + 0.88 + 0.73 + 0.60 + 0.14) == 5   # components no column holds: "Other"

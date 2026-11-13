@@ -252,7 +252,7 @@ layer computes $xW$.
 | $n_{shard}$ | number of shards a corpus is stored in (`S` in the erasure fence of 5.5) | {ref}`sec-ch3-personal-data-sensitive-sources` |
 | $n_{match}$ | number of documents an erasure request matches (`k` in the same fence) | {ref}`sec-ch3-personal-data-sensitive-sources` |
 | $\bar{q}$ | the DoReMi domain weights $q_t$ averaged over the $T$ proxy steps, used for the large run | {ref}`sec-ch3-setting-weights` |
-| $\nu$ | DoReMi step size on the domain weights (`NU` in its listing) | {ref}`sec-ch3-setting-weights` |
+| $\iota$ | DoReMi step size on the domain weights (`NU` in its listing) | {ref}`sec-ch3-setting-weights` |
 | $\Delta$ | DoReMi excess loss of a domain ($\Delta_t[i]$ at proxy step $t$) | {ref}`sec-ch3-setting-weights` |
 | $\chi_p$ | average number of changes per day of page $p$ (a Poisson rate) | {ref}`sec-ch3-crawler-architecture` |
 | $f_p$ | number of times per day the crawler re-fetches page $p$ | {ref}`sec-ch3-crawler-architecture` |

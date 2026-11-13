@@ -45,7 +45,8 @@ def mixtures(out):
     """Section 1.1: the five published mixtures as stacked horizontal bars."""
     data = rows("mixtures.csv")
     parts = [("web_crawl", "Web crawl", "#4c72b0"), ("curated_web", "Curated web", "#8fb3de"),
-             ("books", "Books", "#dd8452"), ("papers", "Papers", "#55a868"), ("code", "Code", "#8172b3"),
+             ("books", "Books", "#dd8452"), ("papers", "Papers", "#55a868"),
+             ("legal", "Courts, patents", "#e0c050"), ("code", "Code", "#8172b3"),
              ("other", "Other", "#bbbbbb")]
     for r in data:     # "Other" is what the five columns leave of 100% (GPT-3's published shares sum to 101%)
         r["other"] = max(0.0, 100 - sum(float(r[k]) for k, _, _ in parts[:-1]))
@@ -70,7 +71,7 @@ def mixtures(out):
     ax.set_xticks(range(0, 101, 20))
     ax.tick_params(labelsize=10)
     ax.set_xlabel("share of the mixture (%); segment labels in percent", fontsize=10)
-    ax.legend(ncol=6, fontsize=9.5, loc="lower center", bbox_to_anchor=(0.45, 1.0), frameon=False,
+    ax.legend(ncol=4, fontsize=9.5, loc="lower center", bbox_to_anchor=(0.45, 1.0), frameon=False,
               handlelength=1.2, columnspacing=1.0)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
@@ -135,7 +136,8 @@ def consent(out):
     last = len(data) - 1
     head = sorted(float(data[last][f"head_{c}"]) for c in ("blue", "orange", "red"))
     full = sorted(float(data[last][f"full_{c}"]) for c in ("blue", "orange", "red"))
-    ax.text(last + 0.5, sum(head) / 3, f"{head[0]:.0f} to {head[-1]:.0f}%", va="center", fontsize=9.5, color="#c0392b")
+    label = f"{head[0]:.0f} to {head[-1]:.0f}%\n(study: 20 to 33%)"
+    ax.text(last + 0.5, sum(head) / 3, label, va="center", fontsize=9.5, color="#c0392b")
     ax.text(last + 0.5, sum(full) / 3, f"{full[0]:.0f} to {full[-1]:.0f}%", va="center", fontsize=9.5, color="#2b5d8a")
     ax.set_xlim(0, last + 14)
     ax.set_ylim(0, 35)
