@@ -115,9 +115,9 @@ from pathlib import Path
 def write_jsonl_shards(docs, out_dir: Path, docs_per_shard: int, prefix: str = "shard"):
     """Write documents to gzip-compressed JSON Lines shards; return a manifest.
 
-    Each manifest entry records the shard's path, record count, uncompressed
-    byte count and SHA-256 of the compressed file, which is what later stages
-    verify against.
+    Each manifest entry records the shard's path, record count, uncompressed and
+    compressed byte counts, and the SHA-256 of the uncompressed bytes: the
+    shard's content identity, which later stages verify against.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest = []
@@ -130,8 +130,8 @@ def write_jsonl_shards(docs, out_dir: Path, docs_per_shard: int, prefix: str = "
         path = out_dir / f"{prefix}_{shard_idx:05d}.jsonl.gz"
         tmp = path.with_suffix(".tmp")
         raw = b"".join(json.dumps(d, ensure_ascii=False).encode("utf-8") + b"\n" for d in batch)
-        # mtime=0: without it the gzip header records the time of writing
-        with open(tmp, "wb") as out, gzip.GzipFile(fileobj=out, mode="wb", compresslevel=6, mtime=0) as f:
+        # filename="" and mtime=0 keep the temporary file name and the time of writing out of the gzip header
+        with open(tmp, "wb") as out, gzip.GzipFile(filename="", fileobj=out, mode="wb", compresslevel=6, mtime=0) as f:
             f.write(raw)
         tmp.rename(path)  # a shard exists only once it is complete
         manifest.append(
@@ -139,7 +139,8 @@ def write_jsonl_shards(docs, out_dir: Path, docs_per_shard: int, prefix: str = "
                 "path": path.name,
                 "records": len(batch),
                 "bytes_uncompressed": len(raw),
-                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "bytes_compressed": path.stat().st_size,
+                "sha256": hashlib.sha256(raw).hexdigest(),  # content identity: the uncompressed bytes
             }
         )
         batch, shard_idx = [], shard_idx + 1
@@ -154,12 +155,11 @@ def write_jsonl_shards(docs, out_dir: Path, docs_per_shard: int, prefix: str = "
 
 def read_jsonl_shards(out_dir: Path, manifest):
     for entry in manifest:
-        path = out_dir / entry["path"]
-        if hashlib.sha256(path.read_bytes()).hexdigest() != entry["sha256"]:
-            raise IOError(f"{path} does not match its manifest hash")
-        with gzip.open(path, "rt", encoding="utf-8") as f:
-            for line in f:
-                yield json.loads(line)
+        raw = gzip.decompress((out_dir / entry["path"]).read_bytes())
+        if hashlib.sha256(raw).hexdigest() != entry["sha256"]:
+            raise IOError(f"{entry['path']} does not match its manifest hash")
+        for line in raw.split(b"\n")[:-1]:
+            yield json.loads(line)
 
 
 import tempfile
@@ -170,9 +170,13 @@ with tempfile.TemporaryDirectory() as tmp:
     assert [m["records"] for m in manifest] == [4, 4, 2]
     assert [d["id"] for d in read_jsonl_shards(Path(tmp), manifest)] == [d["id"] for d in docs]
     assert not list(Path(tmp).glob("*.tmp"))
+    # The same documents under another name: same content identity and, with the header fixed, the same bytes
+    renamed = write_jsonl_shards(docs, Path(tmp) / "renamed", docs_per_shard=4, prefix="part")
+    assert [m["sha256"] for m in renamed] == [m["sha256"] for m in manifest]
+    assert (Path(tmp) / "renamed" / "part_00000.jsonl.gz").read_bytes() == (Path(tmp) / "shard_00000.jsonl.gz").read_bytes()
 ```
 
-The `mtime=0` argument matters more than it looks. A gzip header records a modification time, and `gzip.open` fills it with the current time, so the same documents compressed a second apart produce different bytes and different hashes. A shard's hash has to be a function of its content alone, or every rebuild looks like a new version. Zstandard frames carry no timestamp; tar and zip archives do, and need the same treatment.
+The `filename=""` and `mtime=0` arguments matter more than they look. A gzip header records a modification time, which `gzip.open` fills with the current time, and a file name, which `GzipFile` takes from the file it writes to (here the temporary name), so the same documents compressed a second apart or under another shard name produce different bytes. Fixing both makes the bytes repeatable with one compressor, but not everywhere: the compressed bytes also depend on the compression level and on the build of the compression library, and a different build may compress the same input differently. A shard's identity has to be a function of its content alone, or every rebuild looks like a new version, so the manifest records the SHA-256 of the uncompressed bytes and the reader decompresses before it checks; the gzip settings stay fixed so that a rebuild with the same library also reproduces the files. Zstandard frames carry no timestamp; tar and zip archives do, and need the same treatment.
 
 (sec-ch5-tokenized-binaries-document-index)=
 
@@ -180,7 +184,7 @@ The `mtime=0` argument matters more than it looks. A gzip header records a modif
 
 Training reads tokens, not text. Tokenizing on the fly costs CPU time per step that is better spent once, and makes the stream depend on the tokenizer library's version at run time. The standard layout, shared in spirit by Megatron-LM's indexed dataset and the `.bin` files that nanoGPT-style codebases use, is:
 
-- A flat array of token ids, `uint16` for vocabularies under 65,536 and `uint32` above, for all documents in the shard concatenated with an end-of-document token after each.
+- A flat array of token ids, `uint16` for vocabularies of at most 65,536 tokens (ids 0 to 65,535) and `uint32` above, for all documents in the shard concatenated with an end-of-document token after each.
 - An offsets array giving the start of each document, so that document $i$ is `tokens[offsets[i]:offsets[i + 1]]`.
 - A header or sidecar naming the tokenizer by hash and the dtype, so the file cannot be read with the wrong vocabulary by accident.
 
@@ -199,9 +203,11 @@ EOD = 0  # end-of-document token id; real tokenizers reserve one
 class TokenShard:
     """Flat token array plus document offsets, memory-mapped on read."""
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, tokenizer_hash: str):
         self.path = path
         meta = json.loads(path.with_suffix(".json").read_text())
+        if meta["tokenizer_hash"] != tokenizer_hash:
+            raise ValueError(f"{path.name} was built with tokenizer {meta['tokenizer_hash']}, not {tokenizer_hash}")
         self.dtype = np.dtype(meta["dtype"])
         self.tokenizer_hash = meta["tokenizer_hash"]
         self.offsets = np.load(path.with_suffix(".idx.npy"))
@@ -209,7 +215,7 @@ class TokenShard:
 
     @classmethod
     def write(cls, path: Path, token_docs, tokenizer_hash: str, vocab_size: int):
-        dtype = np.uint16 if vocab_size < 2**16 else np.uint32
+        dtype = np.uint16 if vocab_size <= 2**16 else np.uint32
         offsets = [0]
         chunks = []
         for toks in token_docs:
@@ -219,10 +225,10 @@ class TokenShard:
         np.concatenate(chunks).tofile(path)
         np.save(path.with_suffix(".idx.npy"), np.asarray(offsets, dtype=np.int64))
         path.with_suffix(".json").write_text(
-            json.dumps({"dtype": dtype.__name__ if hasattr(dtype, "__name__") else np.dtype(dtype).name,
+            json.dumps({"dtype": np.dtype(dtype).name,
                         "tokenizer_hash": tokenizer_hash, "num_docs": len(chunks)})
         )
-        return cls(path)
+        return cls(path, tokenizer_hash)
 
     def __len__(self):
         return len(self.offsets) - 1
@@ -250,6 +256,11 @@ with tempfile.TemporaryDirectory() as tmp:
     assert shard.offsets.tolist() == [0, 4, 10, 12]
     assert shard.window(2, 4).tolist() == [toy_tokenize("the cat sat")[2], EOD] + toy_tokenize("on the mat and slept")[:2]
     assert shard.tokens.dtype == np.uint16
+    try:
+        TokenShard(Path(tmp) / "demo.bin", tokenizer_hash="toy-v2")
+        raise AssertionError("a binary was opened with the wrong tokenizer")
+    except ValueError:
+        pass
 ```
 
 The tokenizer hash is the part people skip and regret. Two tokenizers with the same name and vocabulary size but different normalisation or merge order produce different id streams, and a model evaluated with the wrong one is silently broken. Hash the tokenizer's serialised files and store the hash with every binary that depends on it.
@@ -369,14 +380,14 @@ def concat_and_chunk(token_docs, seq_len: int, eod: int = 0):
 
 
 def best_fit_pack(token_docs, seq_len: int, eod: int = 0, pad: int = -1):
-    """Best-fit-decreasing packing: documents longer than seq_len are split into
-    pieces first; each piece (plus EOD) then goes into the sequence with the least
-    remaining room that still fits it, longest pieces first."""
+    """Best-fit-decreasing packing: each document gets one EOD at its true end and
+    is split into pieces of at most seq_len tokens; each piece then goes into the
+    sequence with the least remaining room that still fits it, longest pieces first."""
     pieces = []
     for d in token_docs:
-        d = list(d)
-        for start in range(0, max(1, len(d)), seq_len - 1):
-            pieces.append(d[start : start + seq_len - 1] + [eod])
+        d = list(d) + [eod]  # one EOD, at the true end
+        for start in range(0, len(d), seq_len):
+            pieces.append(d[start : start + seq_len])
     docs = sorted(pieces, key=len, reverse=True)
     bins, free = [], []
     for doc in docs:
@@ -408,8 +419,10 @@ assert pad_frac < 0.05  # packing wastes little
 assert packed.shape[1] == 256 and chunked.shape[1] == 256
 # Packing needs more sequences than chunking, by about the padding fraction (nothing is dropped)
 assert chunked.shape[0] <= packed.shape[0] <= chunked.shape[0] * 1.1
-n_pieces = sum(max(1, -(-len(d) // 255)) for d in docs)  # pieces of at most 255 tokens plus EOD
-assert (packed != -1).sum() == sum(len(d) for d in docs) + n_pieces  # every token kept, one EOD per piece
+assert (packed != -1).sum() == sum(len(d) + 1 for d in docs)  # every token kept, one EOD per document
+assert (packed == 0).sum() == len(docs)
+long_doc, _ = best_fit_pack([list(range(1, 601))], seq_len=256)  # a 600-token document: three pieces, one EOD
+assert long_doc.shape[0] == 3 and (long_doc == 0).sum() == 1
 ```
 
 (sec-ch5-cross-document-attention)=
@@ -428,11 +441,12 @@ def segment_ids(sequence, eod: int = 0) -> np.ndarray:
     return np.concatenate([[0], np.cumsum(ends)[:-1]])
 
 
-def document_causal_mask(sequence, eod: int = 0) -> np.ndarray:
+def document_causal_mask(sequence, eod: int = 0, pad: int = -1) -> np.ndarray:
     seg = segment_ids(sequence, eod)
     causal = np.tril(np.ones((len(seg), len(seg)), dtype=bool))
     same_doc = seg[:, None] == seg[None, :]
-    return causal & same_doc
+    valid = np.asarray(sequence) != pad  # padding attends to nothing and is attended by nothing
+    return causal & same_doc & valid[:, None] & valid[None, :]
 
 
 seq = [5, 6, 0, 7, 8, 9, 0, 1]
@@ -442,6 +456,7 @@ assert mask[4, 3] and mask[4, 4]  # within document 1, causal
 assert not mask[4, 1]  # document 1 cannot see document 0
 assert not mask[3, 4]  # and not the future
 assert mask.sum() == 3 + 2 + 1 + 4 + 3 + 2 + 1 + 1
+assert document_causal_mask(seq + [-1, -1]).sum() == mask.sum()  # padding adds no allowed pairs
 ```
 
 Whether to mask is a choice. Many pretraining runs did not, on the grounds that the kernel was simpler and the effect small; recent ones increasingly do, since efficient variable-length attention makes it free. Fine-tuning with packed examples should always mask, because the examples are short and the leakage between them is large.
