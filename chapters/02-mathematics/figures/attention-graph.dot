@@ -1,0 +1,48 @@
+// Scaled dot-product attention as a computation graph. Rendered with rankdir TB.
+// Top row: the forward values with their shapes, left to right. Bottom row: the backward pass as its mirror; each
+// vector-Jacobian product sits directly below the forward quantity it is the gradient of, and its arrows run right
+// to left (written left to right with dir=back so that both rows keep one column order).
+// Labels are short and broken over three lines so that the graph stays narrow and its text legible at page width.
+// Attributes are set per node and per edge because the renderer's theme replaces the defaults.
+digraph attention_graph {
+  graph [fontname="DejaVu Sans", nodesep=0.08, ranksep=0.4, newrank=true];
+
+  Q  [label="Q\nn × dₖ", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
+  K  [label="K\nn × dₖ", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
+  S  [label="S\n= QKᵀ/√dₖ\nn × n", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
+  A  [label="A\n= softmax(S)\nn × n", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
+  V  [label="V\nn × dₖ", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
+  O  [label="O = AV\nn × dₖ", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#e8eef7"];
+
+  dQ [label="∂ℒ/∂Q\n= (∂ℒ/∂S) K\n÷ √dₖ", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#fdf1e6"];
+  dK [label="∂ℒ/∂K\n= (∂ℒ/∂S)ᵀ Q\n÷ √dₖ", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#fdf1e6"];
+  dS [label="∂ℒ/∂S\n= A ⊙ (G −\n(G ⊙ A)11ᵀ)", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#fdf1e6"];
+  G  [label="G = ∂ℒ/∂A\n= (∂ℒ/∂O)\n× Vᵀ", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#fdf1e6"];
+  dV [label="∂ℒ/∂V\n= Aᵀ\n× (∂ℒ/∂O)", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#fdf1e6"];
+  dO [label="∂ℒ/∂O\n(given)", fontsize=24, margin="0.05,0.04", shape=box, style="rounded,filled", color="#4a5568", fillcolor="#fdf1e6"];
+
+  { rank=same; Q; K; S; A; V; O; }
+  { rank=same; dQ; dK; dS; G; dV; dO; }
+
+  // forward
+  Q -> K [style=invis];
+  K -> S [color="#4a5568", penwidth=1.4];
+  Q -> S [color="#4a5568", penwidth=1.4];
+  S -> A [color="#4a5568", penwidth=1.4];
+  A -> V [style=invis];
+  V -> O [color="#4a5568", penwidth=1.4];
+  A -> O [color="#4a5568", penwidth=1.4];
+
+  // backward, right to left
+  dQ -> dK [style=invis];
+  dK -> dS [dir=back, style=dashed, color="#d62728", penwidth=1.6];
+  dQ -> dS [dir=back, style=dashed, color="#d62728", penwidth=1.6];
+  dS -> G  [dir=back, style=dashed, color="#d62728", penwidth=1.6];
+  G -> dV  [style=invis];
+  dV -> dO [dir=back, style=dashed, color="#d62728", penwidth=1.6];
+  G -> dO  [dir=back, style=dashed, color="#d62728", penwidth=1.6];
+
+  // columns
+  Q -> dQ [style=invis]; K -> dK [style=invis]; S -> dS [style=invis];
+  A -> G [style=invis]; V -> dV [style=invis]; O -> dO [style=invis];
+}

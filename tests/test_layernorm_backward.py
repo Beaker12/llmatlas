@@ -12,18 +12,18 @@ CH02 = Path(__file__).resolve().parents[1] / "chapters" / "02-mathematics" / "in
 
 # Exact LaTeX strings that must appear in chapters/02-mathematics/index.md.
 LATEX_STRINGS = [
-    r"S = QK^T/\sqrt{d_k}",
-    r"P = \mathrm{softmax}(S)",
-    r"O = PV",
-    r"G = \frac{\partial \mathcal{L}}{\partial O} V^T",
-    r"\frac{\partial \mathcal{L}}{\partial S} = P \odot \left(G - (G \odot P)\mathbf{1}\mathbf{1}^T\right)",
+    r"S = QK^\top/\sqrt{d_k}",
+    r"A = \mathrm{softmax}(S)",
+    r"O = AV",
+    r"G = \frac{\partial \mathcal{L}}{\partial O} V^\top",
+    r"\frac{\partial \mathcal{L}}{\partial S} = A \odot \left(G - (G \odot A)\mathbf{1}\mathbf{1}^\top\right)",
     r"\frac{\partial \mathcal{L}}{\partial Q} = \frac{1}{\sqrt{d_k}}\frac{\partial \mathcal{L}}{\partial S} K",
-    r"\frac{\partial \mathcal{L}}{\partial K} = \frac{1}{\sqrt{d_k}}\left(\frac{\partial \mathcal{L}}{\partial S}\right)^T Q",
-    r"\frac{\partial \mathcal{L}}{\partial V} = P^T \frac{\partial \mathcal{L}}{\partial O}",
+    r"\frac{\partial \mathcal{L}}{\partial K} = \frac{1}{\sqrt{d_k}}\left(\frac{\partial \mathcal{L}}{\partial S}\right)^\top Q",
+    r"\frac{\partial \mathcal{L}}{\partial V} = A^\top \frac{\partial \mathcal{L}}{\partial O}",
     r"y = \gamma \odot \frac{x - \mu}{\sigma} + \beta",
     r"\sigma = \sqrt{\frac{1}{d}\sum_i (x_i-\mu)^2 + \epsilon}",
-    r"\frac{\partial \mathcal{L}}{\partial x_i} = \frac{1}{\sigma}\left(g_i - \frac{1}{d}\sum_j g_j - \hat{x}_i \frac{1}{d}\sum_j g_j \hat{x}_j\right)",
-    r"g_j = \gamma_j \frac{\partial \mathcal{L}}{\partial y_j}",
+    r"\frac{\partial \mathcal{L}}{\partial x_i} = \frac{1}{\sigma}\left(\tilde{g}_i - \frac{1}{d}\sum_j \tilde{g}_j - \hat{x}_i \frac{1}{d}\sum_j \tilde{g}_j \hat{x}_j\right)",
+    r"\tilde{g}_j = \gamma_j \frac{\partial \mathcal{L}}{\partial y_j}",
 ]
 
 
@@ -79,3 +79,18 @@ def test_layernorm_backward_equation_matches_autograd_with_per_feature_gamma():
     (auto,) = torch.autograd.grad(ln(x), x, grad_outputs=dy)
     ours = _layernorm_backward_from_equation(x.detach(), ln.weight.detach(), dy, eps)
     assert torch.allclose(auto, ours, atol=1e-8)
+
+
+def test_rmsnorm_jacobian_has_no_mean_term_and_rows_do_not_sum_to_zero():
+    """Chapter 2, sec 3.2: the RMSNorm Jacobian is (delta_ij - x_hat_i x_hat_j / d) / sqrt(mean(x^2) + eps)."""
+    torch.manual_seed(0)
+    d, eps = 6, 1e-5
+    x = torch.randn(d, dtype=torch.float64)
+
+    def rmsnorm(t):
+        return t / torch.sqrt((t ** 2).mean() + eps)
+
+    x_hat = rmsnorm(x)
+    formula = (torch.eye(d, dtype=torch.float64) - torch.outer(x_hat, x_hat) / d) / torch.sqrt((x ** 2).mean() + eps)
+    assert torch.allclose(formula, torch.autograd.functional.jacobian(rmsnorm, x))
+    assert not torch.allclose(formula.sum(dim=1), torch.zeros(d, dtype=torch.float64))

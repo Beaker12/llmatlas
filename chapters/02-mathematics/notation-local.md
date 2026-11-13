@@ -16,6 +16,7 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\alpha_C$ | Kaplan's compute exponent (written $\alpha_C^{\min}$) | index.md:L416 |  |
 | $D_{KL}$ | Kullback-Leibler divergence | index.md:L110 |  |
 | $\delta$ | Kronecker delta | index.md:L56 | the one-hot target $y$ at L58 is written $\delta_{j x_i}$ |
+| $\delta_{jx_i}$ | the one-hot target: the Kronecker delta at the target token, 1 when $j = x_i$ and 0 otherwise (`tools/list_symbols.py` keeps the subscript because $x_i$ is not a running index) | index.md, sec-ch2-softmax-jacobian |  |
 | $\eta$ | learning rate ($\eta_t$ at step $t$) | index.md:L172 |  |
 | $\eta_{\max}$ | peak learning rate | index.md:L206 |  |
 | $\eta_{\min}$ | final learning rate | index.md:L217 |  |
@@ -25,11 +26,15 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\mathbb{E}$ | expectation | index.md:L82 |  |
 | $\mathcal{N}$ | normal distribution | index.md:L529 |  |
 | $g_{clipped}$ | clipped gradient | index.md:L223 |  |
-| $z_{\max}$ | largest logit, the shift in log-sum-exp | reserved: C2-12 |  |
-| $\hat{g}$ | mini-batch gradient estimate | reserved: C2-12 |  |
-| $\sigma_g$ | standard deviation of a per-example gradient (mini-batch noise) | reserved: C2-12 |  |
-| $n_{rank}$ | rank kept by a low-rank approximation | reserved: C2-12 |  |
-| $z_{ff}$ | pre-activation of the feed-forward hidden layer | reserved: C2-12 |  |
+| $n_{acc}$ | number of micro-batches accumulated per optimizer step | index.md, sec-ch2-gradient-accumulation |  |
+| $z_{\max}$ | largest logit, the shift in log-sum-exp | index.md, sec-ch2-log-sum-exp |  |
+| $\hat{g}$ | mini-batch gradient estimate | index.md, sec-ch2-minibatch-noise |  |
+| $\sigma_g$ | standard deviation of a per-example gradient (mini-batch noise) | index.md, sec-ch2-minibatch-noise |  |
+| $n_{rank}$ | rank kept by a low-rank approximation | index.md, sec-ch2-svd-low-rank |  |
+| $\theta_x$ | first of the two parameters of the Rosenbrock function (exercise 2) | index.md, sec-ch2-exercises |  |
+| $\theta_y$ | second of the two parameters of the Rosenbrock function (exercise 2) | index.md, sec-ch2-exercises |  |
+| $z_{ff}$ | pre-activation of the feed-forward hidden layer | index.md, sec-ch2-ffn-embedding-head-gradients |  |
+| $x_i$ | feature $i$ of a layer's input row vector $x$ (LayerNorm and RMSNorm, sec-ch2-layer-normalization-mathematics and sec-ch2-epsilon-placement; the book-wide $x_i$ is the token at position $i$, and the page says which is meant) | index.md, sec-ch2-layer-normalization-mathematics |  |
 | $\mathrm{X}$ | a random variable | index.md:L118 | $X$ at L118 (and at L96, where $H(X)$ becomes $H(p)$) |
 | $\mathrm{Y}$ | a second random variable | index.md:L118 | $Y$ at L118 |
 
