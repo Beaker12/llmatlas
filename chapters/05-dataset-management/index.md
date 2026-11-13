@@ -325,9 +325,98 @@ with tempfile.TemporaryDirectory() as tmp:
 
 The tokenizer hash is the part people skip and regret. Two tokenizers with the same name and vocabulary size but different normalization or merge order produce different id streams, and a model evaluated with the wrong one is silently broken. Hash the tokenizer's serialized files and store the hash with every binary that depends on it.
 
+The special-token policy is part of the same contract. The layout above puts an end-of-document token after each document, as GPT-3 did; many tokenizers also define a beginning-of-sequence token, and a build can put one before every document as well. Either way the rule is written into the binary's sidecar and applied identically at inference, because a model trained with a BOS token before every document and prompted without one sees a context it never saw in training. Two details follow from the policy. The BOS token is never a prediction target: it always follows an EOD, so there is nothing to learn, and the loss mask drops it. And the overhead is one or two tokens per document: for documents averaging 60 tokens, EOD alone is 1.62% of the stream and BOS plus EOD 3.19%, which the listing measures.
+
+```python
+import numpy as np
+
+BOS, EOD = 1, 0
+
+
+def with_special_tokens(token_docs, policy: str) -> np.ndarray:
+    """Concatenate documents under a special-token policy: "eod" puts EOD after each document,
+    "bos+eod" also puts BOS before each one."""
+    stream = []
+    for doc in token_docs:
+        if policy == "bos+eod":
+            stream.append(BOS)
+        stream.extend(doc)
+        stream.append(EOD)
+    return np.asarray(stream)
+
+
+def loss_mask(stream: np.ndarray) -> np.ndarray:
+    """One flag per next-token target stream[1:]: BOS is never a prediction target, since it
+    follows EOD by rule and carries nothing to learn."""
+    return stream[1:] != BOS
+
+
+rng = np.random.default_rng(0)
+docs = [list(rng.integers(2, 1000, size=n)) for n in rng.geometric(1 / 60, size=2000)]
+content = sum(len(d) for d in docs)
+for policy in ("eod", "bos+eod"):
+    stream = with_special_tokens(docs, policy)
+    special = 1 - content / stream.size
+    print(f"{policy:8s} {stream.size:,} tokens, {special:.2%} special, {int(loss_mask(stream).sum()):,} trained targets")
+stream = with_special_tokens(docs, "bos+eod")
+starts = np.flatnonzero(stream == BOS)
+assert starts.size == len(docs) and np.all(stream[starts[1:] - 1] == EOD)  # every BOS follows an EOD
+assert not loss_mask(stream)[starts[1:] - 1].any()  # and is never trained on as a target
+```
+
+% output
+
+```text
+eod      123,439 tokens, 1.62% special, 123,438 trained targets
+bos+eod  125,439 tokens, 3.19% special, 123,439 trained targets
+```
+
 ```{admonition} Formats on Disk
 :class: tip
 The notebook section {ref}`nb-dm-formats` writes a corpus as JSON Lines shards and as a tokenized binary with offsets, verifies both against their manifests, and compares the bytes per token of each layout.
+```
+
+(sec-ch5-codecs)=
+
+### 2.4 Choosing a codec
+
+Training data is written once and read many times, so a codec's decompression speed matters more than its compression speed, and its ratio matters through storage and network cost. gzip (DEFLATE) is readable by every tool; Zstandard {cite}`collet2021zstd`, LZ4 and Brotli are the usual alternatives, and Zstandard and Brotli offer a range of levels that trade compression time for size. The listing compresses 3.4 MB of synthetic text, Zipf-distributed words from a 20,000-word vocabulary, with each codec PyArrow ships. Ratios depend only on the codec and its version; throughputs depend on the machine, so the output below shows the shape of one run. On that run Zstandard at level 3 matched gzip's ratio within 3% while compressing 20 times as fast and decompressing twice as fast, and level 19 gave the best ratio at a decompression speed no worse than level 3. That is the case for `.jsonl.zst` in the shard names of {ref}`sec-ch5-sharding`: a build compresses once at a high level, and every later read pays only the fast decode.
+
+```python
+import time
+
+import numpy as np
+import pyarrow as pa
+
+# Sizes and timings depend on the machine and the library builds; the order of the codecs is the result
+rng = np.random.default_rng(0)
+vocab = [f"w{i}" for i in range(20_000)]
+zipf = rng.zipf(1.2, size=800_000)
+text = " ".join(vocab[(z - 1) % len(vocab)] for z in zipf).encode()
+results = {}
+for name, level in [("lz4", None), ("zstd", 1), ("zstd", 3), ("zstd", 19), ("gzip", 6), ("brotli", 9)]:
+    codec = pa.Codec(name, compression_level=level)
+    t0 = time.perf_counter()
+    packed = codec.compress(text, asbytes=True)
+    t1 = time.perf_counter()
+    assert codec.decompress(packed, decompressed_size=len(text), asbytes=True) == text
+    t2 = time.perf_counter()
+    label = name if level is None else f"{name}-{level}"
+    results[label] = len(text) / len(packed)
+    print(f"{label:9s} ratio {len(text) / len(packed):.3g}, compress {len(text) / (t1 - t0) / 1e6:.0f} MB/s, "
+          f"decompress {len(text) / (t2 - t1) / 1e6:.0f} MB/s")
+assert results["zstd-19"] > results["zstd-3"] > results["lz4"]
+```
+
+% output-shape
+
+```text
+lz4       ratio 1.73, compress 208 MB/s, decompress 678 MB/s
+zstd-1    ratio 2.76, compress 170 MB/s, decompress 532 MB/s
+zstd-3    ratio 2.77, compress 100 MB/s, decompress 270 MB/s
+zstd-19   ratio 3.25, compress 2 MB/s, decompress 387 MB/s
+gzip-6    ratio 2.85, compress 6 MB/s, decompress 202 MB/s
+brotli-9  ratio 3.02, compress 5 MB/s, decompress 246 MB/s
 ```
 
 (sec-ch5-versioning)=
