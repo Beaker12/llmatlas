@@ -2221,7 +2221,7 @@ mean 10,000: chunking splits 84.0% of documents; best-fit pads 0.48% and splits 
 At a mean of 100 tokens, chunking splits only 2.4% of documents, so packing buys little. At 1,000 it splits 23.2%, while best-fit splits only the 1.6% of documents longer than the sequence, for 0.03% padding: this is where packing pays. At 10,000 most documents are longer than the sequence and are split by either method, 84.0% against 66.5%, and the gain shrinks again. Packing stops being worth its complexity when documents are either much shorter than the sequence or mostly longer than it.
 ````
 
-1. **The mask's effect.** Count how much of the causal attention the document mask removes when documents averaging 1,000 tokens are concatenated and cut into 4,096-token sequences, and how many tokens have a different context with the mask than without it. Then train two small decoders, like the `TinyLM` of the [Chapter 6 notebook](../06-architectures/examples/architecture_demo.ipynb) but scaled down to train on a CPU in seconds, on such sequences with and without the mask, from the same initial weights and on the same batches, and compare their held-out loss by position within the document: the loss at position 0 is that of predicting the document's second token from its first, the loss at position 1 that of predicting its third token from the first two, and so on.
+1. **The mask's effect.** Count how much of the causal attention the document mask removes when documents averaging 1,000 tokens are concatenated and cut into 4,096-token sequences, and how many tokens have a different context with the mask than without it. Then train two small decoders, like the `TinyLM` of the [Chapter 6 notebook](../06-architectures/examples/architecture_demo.ipynb) but scaled down to train on a CPU in seconds, on such sequences with and without the mask, from the same initial weights and on the same batches, and compare their held-out loss by position within the document: the loss at position 0 is that of predicting the document's second token from its first, the loss at position 1 that of predicting its third token from the first two, and so on. Explain what you find at position 0.
 
 ````{admonition} Solution 4
 :class: dropdown
@@ -2237,139 +2237,179 @@ ends = np.cumsum(rng.geometric(1 / 1000, size=4000))
 causal_pairs = SEQ_LEN * (SEQ_LEN + 1) // 2
 kept, changed, n_seq = 0, 0, int(ends[-1] // SEQ_LEN)
 for k in range(n_seq):
-    inside = ends[(ends > k * SEQ_LEN) & (ends < (k + 1) * SEQ_LEN)] - k * SEQ_LEN
-    pieces = np.diff(np.concatenate([[0], inside, [SEQ_LEN]]))
+    in_seq = (ends > k * SEQ_LEN) & (ends < (k + 1) * SEQ_LEN)
+    pieces = np.diff(np.concatenate([[0], ends[in_seq] - k * SEQ_LEN, [SEQ_LEN]]))
     kept += int(np.sum(pieces * (pieces + 1) // 2))
-    changed += SEQ_LEN - int(pieces[0])  # every token after the first document boundary
-print(f"{n_seq} sequences: the mask removes {1 - kept / (n_seq * causal_pairs):.1%} of the causal attention pairs")
+    changed += SEQ_LEN - int(pieces[0])  # every token after the first boundary
+removed = 1 - kept / (n_seq * causal_pairs)
+print(f"{n_seq} sequences: the mask removes {removed:.1%} of the causal pairs")
 print(f"and changes the context of {changed / (n_seq * SEQ_LEN):.1%} of the tokens")
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-torch.set_num_threads(1)  # small matrices: one thread is fastest and the run is repeatable
+torch.set_num_threads(1)  # small matrices: one thread is fastest and repeatable
 
-# Training comparison, with the exercise's 4,096 and 1,000 scaled down by 64 so that it runs on a CPU in seconds
+# Training comparison, with the exercise's 4,096 and 1,000 scaled down by 64 so that
+# it runs on a CPU in seconds
 VOCAB, SEQ, MEAN_DOC, EOD = 64, 64, 16, 0
 
 
 def make_batch(rng, n):
-    """n sequences cut from a stream of documents; each document repeats its own random pattern."""
+    """n sequences cut from a stream of documents; each repeats its own pattern."""
     stream = []
     while len(stream) < n * (SEQ + 1):
         period, length = int(rng.integers(3, 9)), int(rng.geometric(1 / MEAN_DOC))
-        stream += np.resize(rng.integers(1, VOCAB, size=period), length).tolist() + [EOD]
+        pattern = rng.integers(1, VOCAB, size=period)
+        stream += np.resize(pattern, length).tolist() + [EOD]
     x = torch.tensor(stream[: n * (SEQ + 1)]).view(n, SEQ + 1)
     return x[:, :-1], x[:, 1:]
 
 
-def segments(x):
-    """Document index of each position within its sequence; the EOD belongs to the document it ends."""
+def segments(x, eod_opens=False):
+    """Document index of each position within its sequence. An EOD belongs to the
+    document it ends, or with eod_opens to the document it opens."""
     ends = (x == EOD).long()
-    return torch.cumsum(ends, 1) - ends
+    count = torch.cumsum(ends, 1)
+    return count if eod_opens else count - ends
 
 
 class TinyDecoder(nn.Module):
-    """Two pre-norm layers; attention is causal, and with doc_mask also limited to the token's own document."""
+    """Two pre-norm layers; attention is causal, and with a mask also kept to the
+    token's own document."""
 
     def __init__(self, d=32, layers=2, heads=4):
         super().__init__()
         self.heads = heads
         self.tok, self.pos = nn.Embedding(VOCAB, d), nn.Embedding(SEQ, d)
-        layer = nn.TransformerEncoderLayer(d, heads, 4 * d, dropout=0.0, batch_first=True, norm_first=True)
+        layer = nn.TransformerEncoderLayer(
+            d, heads, 4 * d, dropout=0.0, batch_first=True, norm_first=True
+        )
         self.body = nn.TransformerEncoder(layer, layers, enable_nested_tensor=False)
         self.out = nn.Linear(d, VOCAB)
 
-    def forward(self, x, doc_mask):
-        allowed = torch.ones(SEQ, SEQ, dtype=torch.bool).tril().expand(x.shape[0], SEQ, SEQ)
-        if doc_mask:
-            seg = segments(x)
+    def forward(self, x, mask):
+        """mask: None for causal only, "ends" or "opens" for where an EOD belongs."""
+        allowed = torch.ones(SEQ, SEQ, dtype=torch.bool).tril().expand(len(x), SEQ, SEQ)
+        if mask:
+            seg = segments(x, eod_opens=mask == "opens")
             allowed = allowed & (seg[:, :, None] == seg[:, None, :])
-        blocked = ~allowed.repeat_interleave(self.heads, 0)  # True where attention is not allowed
-        return self.out(self.body(self.tok(x) + self.pos(torch.arange(SEQ)), mask=blocked))
+        blocked = ~allowed.repeat_interleave(self.heads, 0)  # True: not allowed
+        h = self.tok(x) + self.pos(torch.arange(SEQ))
+        return self.out(self.body(h, mask=blocked))
 
 
-def train(doc_mask, seed, steps=200):
+def train(mask, seed, steps=200):
     torch.manual_seed(seed)  # the same initial weights ...
     model = TinyDecoder()
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-3)
-    rng = np.random.default_rng(100 + seed)  # ... and the same batches for both models
+    rng = np.random.default_rng(100 + seed)  # ... and the same batches for every model
     for _ in range(steps):
         x, y = make_batch(rng, 16)
-        loss = F.cross_entropy(model(x, doc_mask).reshape(-1, VOCAB), y.reshape(-1))
+        loss = F.cross_entropy(model(x, mask).reshape(-1, VOCAB), y.reshape(-1))
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
     return model
 
 
+MODELS = {"causal only": None, "document mask": "ends", "mask, EOD opens": "opens"}
 x, y = make_batch(np.random.default_rng(2), 128)  # held out
 seg = segments(x)
 index = torch.arange(SEQ).expand_as(seg)
 starts = torch.ones_like(seg, dtype=torch.bool)
 starts[:, 1:] = seg[:, 1:] != seg[:, :-1]
-position = index - torch.where(starts, index, 0).cummax(1).values  # position of the input token in its document
-changed = seg > 0  # tokens after the first document boundary: the only ones whose context the mask changes
+# position of the input token in its document
+position = index - torch.where(starts, index, 0).cummax(1).values
+changed = seg > 0  # after the first boundary: the only tokens the mask changes
 buckets = [(0, 0), (1, 3), (4, 7), (8, 15), (16, SEQ)]
 first = changed & (position == 0)
+other = first & (y != x)  # targets at a document's first token that do not repeat it
 loss_by, probe = {}, {}
 for seed in (0, 1):
-    for doc_mask in (False, True):
-        model = train(doc_mask, seed)
+    for name, mask in MODELS.items():
+        model = train(mask, seed)
         with torch.no_grad():
-            logits = model(x, doc_mask)
-        loss = F.cross_entropy(logits.reshape(-1, VOCAB), y.reshape(-1), reduction="none").view_as(seg)
-        loss_by[seed, doc_mask] = [loss[changed & (position >= lo) & (position <= hi)].mean().item() for lo, hi in buckets]
-        # Probe at a document's first token: how much probability goes to repeating it?
-        probs = logits.softmax(-1)
-        p_repeat, p_target = probs.gather(-1, x[..., None])[..., 0], probs.gather(-1, y[..., None])[..., 0]
-        other = first & (y != x)  # the targets that are not a repeat
-        probe[seed, doc_mask] = (p_repeat[first].mean().item(), probs[..., EOD][first].mean().item(),
-                                 -p_target[other].log().mean().item(),
-                                 -(p_target / (1 - p_repeat))[other].log().mean().item())
-print(f"{'held-out loss by position in document':40s}" + " ".join(f"{h:>6}" for h in ("0", "1-3", "4-7", "8-15", "16+")))
-for (seed, doc_mask), row in loss_by.items():
-    label = f"seed {seed}, {'document mask' if doc_mask else 'causal only'}"
-    print(f"{label:40s}" + " ".join(f"{v:6.2f}" for v in row))
+            logits = model(x, mask)
+        loss = F.cross_entropy(logits.transpose(1, 2), y, reduction="none")
+        loss_by[seed, name] = [
+            loss[changed & (position >= lo) & (position <= hi)].mean().item()
+            for lo, hi in buckets
+        ]
+        # Probe at a document's first token: the probability of repeating it, then the
+        # loss and the entropy of the prediction with that probability taken away
+        probs = logits[other].softmax(-1)
+        p_repeat = probs.gather(1, x[other][:, None])[:, 0]
+        is_repeat = torch.arange(VOCAB) == x[other][:, None]
+        rest = torch.where(is_repeat, 0.0, probs) / (1 - p_repeat[:, None])
+        entropy = -(rest * rest.clamp_min(1e-12).log()).sum(1)
+        probe[seed, name] = (
+            p_repeat.mean().item(),
+            loss[other].mean().item(),
+            -rest.gather(1, y[other][:, None]).log().mean().item(),
+            entropy.mean().item(),
+        )
+columns = ("0", "1-3", "4-7", "8-15", "16+")
+print(f"{'held-out loss by position':34s}" + " ".join(f"{c:>5}" for c in columns))
+for (seed, name), row in loss_by.items():
+    print(f"{f'seed {seed}, {name}':34s}" + " ".join(f"{v:5.2f}" for v in row))
+gaps = {}
 for seed in (0, 1):
-    gap = [a - b for a, b in zip(loss_by[seed, False], loss_by[seed, True])]
-    print(f"{f'seed {seed}, gap (causal - mask)':40s}" + " ".join(f"{g:+6.2f}" for g in gap))
-    assert gap[0] < 0  # at a document's first token the mask does not help
-    assert min(gap[2:]) > 0.2  # from position 4 on it lowers the loss by more than 0.2
+    for name in ("document mask", "mask, EOD opens"):
+        gap = [a - b for a, b in zip(loss_by[seed, "causal only"], loss_by[seed, name])]
+        gaps[seed, name] = gap
+        label = f"seed {seed}, gap to {name}"
+        print(f"{label:34s}" + " ".join(f"{g:+5.2f}" for g in gap))
 eod = (y[first] == EOD).float().mean().item()
 constant = -(eod * np.log(eod) + (1 - eod) * np.log((1 - eod) / (VOCAB - 1)))
-print(f"position 0: {int(first.sum())} targets, {eod:.1%} of them EOD; best constant loss {constant:.2f}")
-print(f"{'':24s}P(repeat)  P(EOD)  loss  loss without the repeat")
-for (seed, doc_mask), (repeat, p_eod, raw, rest) in probe.items():
-    label = f"seed {seed}, {'document mask' if doc_mask else 'causal only'}"
-    print(f"{label:24s}{repeat:9.3f} {p_eod:7.3f} {raw:5.2f} {rest:23.2f}")
+print(f"position 0: {int(first.sum())} targets, {eod:.1%} of them EOD;", end=" ")
+print(f"best constant loss {constant:.2f}")
+print(f"{'position 0, non-repeat targets':34s}P(repeat)  loss  without repeat  entropy")
+for (seed, name), (repeat, raw, rest_loss, rest_entropy) in probe.items():
+    print(f"{f'seed {seed}, {name}':34s}{repeat:9.3f} {raw:5.2f} {rest_loss:15.2f}"
+          f" {rest_entropy:8.2f}")
 for seed in (0, 1):
-    assert probe[seed, True][0] > 5 * probe[seed, False][0]  # the mask makes it predict a repeat
-    assert probe[seed, True][2] - probe[seed, True][3] > 0.1  # and that mass costs it over 0.1
+    mask_gap, opens_gap = gaps[seed, "document mask"], gaps[seed, "mask, EOD opens"]
+    assert mask_gap[0] < -0.3  # at a document's first token the mask costs over 0.3
+    assert min(mask_gap[2:] + opens_gap[2:]) > 0.2  # from position 4 on both gain 0.2+
+    causal, masked, opens = (probe[seed, name] for name in MODELS)
+    assert masked[0] > 5 * causal[0]  # the mask makes the first token predict a repeat
+    assert masked[3] < causal[3] - 0.2  # and the rest of its prediction sharper
+    assert opens[0] < masked[0] / 2  # the EOD in its context undoes both
+    assert opens[3] > masked[3] + 0.2
+    assert opens_gap[0] > mask_gap[0] + 0.3  # and most of the cost at position 0
 ```
 
 % output-shape
 
 ```text
-995 sequences: the mask removes 62.0% of the causal attention pairs
+995 sequences: the mask removes 62.0% of the causal pairs
 and changes the context of 75.6% of the tokens
-held-out loss by position in document        0    1-3    4-7   8-15    16+
-seed 0, causal only                       4.22   4.23   4.10   3.99   3.89
-seed 0, document mask                     4.70   4.34   3.64   3.49   3.48
-seed 1, causal only                       4.19   4.23   4.10   3.99   3.90
-seed 1, document mask                     4.84   4.33   3.66   3.45   3.47
-seed 0, gap (causal - mask)              -0.48  -0.11  +0.46  +0.51  +0.41
-seed 1, gap (causal - mask)              -0.64  -0.10  +0.45  +0.55  +0.43
+held-out loss by position             0   1-3   4-7  8-15   16+
+seed 0, causal only                4.22  4.23  4.10  3.99  3.89
+seed 0, document mask              4.70  4.34  3.64  3.49  3.48
+seed 0, mask, EOD opens            4.27  4.22  3.63  3.42  3.36
+seed 1, causal only                4.19  4.23  4.10  3.99  3.90
+seed 1, document mask              4.84  4.33  3.66  3.45  3.47
+seed 1, mask, EOD opens            4.35  4.23  3.64  3.37  3.36
+seed 0, gap to document mask      -0.48 -0.11 +0.46 +0.51 +0.41
+seed 0, gap to mask, EOD opens    -0.05 +0.00 +0.46 +0.57 +0.53
+seed 1, gap to document mask      -0.64 -0.10 +0.45 +0.55 +0.43
+seed 1, gap to mask, EOD opens    -0.16 +0.01 +0.46 +0.63 +0.54
 position 0: 487 targets, 8.2% of them EOD; best constant loss 4.09
-                        P(repeat)  P(EOD)  loss  loss without the repeat
-seed 0, causal only         0.015   0.053  4.22                    4.20
-seed 0, document mask       0.178   0.048  4.74                    4.53
-seed 1, causal only         0.013   0.059  4.19                    4.18
-seed 1, document mask       0.182   0.046  4.88                    4.67
+position 0, non-repeat targets    P(repeat)  loss  without repeat  entropy
+seed 0, causal only                   0.015  4.22            4.20     3.99
+seed 0, document mask                 0.178  4.74            4.53     3.60
+seed 0, mask, EOD opens               0.029  4.28            4.25     3.93
+seed 1, causal only                   0.013  4.19            4.18     3.98
+seed 1, document mask                 0.181  4.88            4.67     3.57
+seed 1, mask, EOD opens               0.035  4.36            4.32     3.91
 ```
 
-The mask removes 62.0% of the causal attention pairs and changes the context of 75.6% of the tokens: every token after the first document boundary of its sequence. The change is largest for a document's first tokens, which without the mask see up to several thousand tokens of an unrelated document and with it see only the document's own tokens. For the training comparison the listing scales the setting down by 64, to 64-token sequences and documents averaging 16 tokens, and trains a two-layer decoder for 200 steps with and without the document mask, from the same initial weights and on the same batches, for two seeds. Each document repeats a random pattern of three to eight tokens, so its first tokens cannot be predicted and its later tokens can be copied from earlier in the same document, while nothing in an earlier document helps. The held-out loss is averaged by the position of the token in its document, over the tokens whose context the mask changes. The losses depend in their last digits on the machine, so the output above is the shape of one run, and the result is what the listing asserts for every seed: the gap (loss without the mask minus loss with it) is negative at position 0, the prediction of a document's second token from its first, and from position 4 on the mask lowers the loss by more than 0.2. In the run shown, both models are above the best constant prediction at position 0, which is 4.09 nats rather than ln 63 ≈ 4.14 because 8.2% of these targets are the end-of-document token, and the masked model is the further above it (4.70 and 4.84 against 4.22 and 4.19 without the mask), a gap of −0.48 and −0.64. The probe at the end of the listing accounts for part of that gap. Under the mask a document's first token can attend only to itself, and the masked model gives 0.18 of its probability to the next token repeating it, against 0.013 to 0.015 without the mask, though a document's second token repeats its first only by chance. Taking that mass away and renormalizing lowers the masked model's loss on the targets that are not a repeat by 0.21 (4.74 to 4.53 and 4.88 to 4.67) and the causal model's by 0.01 to 0.02, and the listing asserts for both seeds that the repeat costs the masked model more than 0.1. The rest of the gap, 0.33 and 0.49 nats on those targets, is not the end-of-document token, to which both models give about 0.05; the probe rules that out and does not explain the remainder. From position 4 on, where the document has a pattern to copy, the gain is between +0.41 and +0.55 in every bucket and both seeds, and the output shows no clear peak: it is about the same at positions 4 to 7, 8 to 15 and beyond 16.
+The mask removes 62.0% of the causal attention pairs and changes the context of 75.6% of the tokens: every token after the first document boundary of its sequence. The change is largest for a document's first tokens, which without the mask see up to several thousand tokens of an unrelated document and with it see only the document's own tokens. For the training comparison the listing scales the setting down by 64, to 64-token sequences and documents averaging 16 tokens, and trains a two-layer decoder for 200 steps in three ways, from the same initial weights and on the same batches, for two seeds: with causal attention only; with the document mask; and with the document mask but each end-of-document (EOD) token counted as the first token of the document it opens instead of the last of the one it ends, so that a document's first token can attend to the EOD before it. Each document repeats a random pattern of three to eight tokens, so its first tokens cannot be predicted and its later tokens can be copied from earlier in the same document, while nothing in an earlier document helps. The held-out loss is averaged by the position of the token in its document, over the tokens whose context the mask changes; a gap row is the causal model's loss minus that of the named model. The losses depend in their last digits on the machine, so the output above is the shape of one run, and the result is what the listing asserts for every seed.
+
+From position 4 on, where the document has a pattern to copy, both masked models lower the loss by more than 0.2 (by 0.41 to 0.63 in the run shown, with no clear peak across positions 4 to 7, 8 to 15 and beyond 16). At position 0, the prediction of a document's second token from its first, the plain document mask raises the loss by more than 0.3 (by 0.48 and 0.64 in the run shown). The best constant prediction there costs 4.09 nats, not ln 63 ≈ 4.14, because 8.2% of these targets are the EOD token; the causal models are near it (4.22 and 4.19), the masked ones well above it (4.70 and 4.84). The probe at the end of the listing, on the targets that do not repeat the input token, finds the cause. Under the plain mask a document's first token can attend only to itself, so nothing in its context tells it apart from a later token of a document, where the model has learned to predict from what the document has already shown. It makes two errors there. It gives 0.18 of its probability to the next token repeating the input, against 0.013 and 0.015 for the causal model, though a document's second token repeats its first only by chance; taking that mass away and renormalizing lowers its loss on these targets by 0.21 (4.74 to 4.53 and 4.88 to 4.67). And what is left is sharper than the targets allow: its entropy is 3.60 and 3.57 nats, against 3.99 and 3.98 for the causal model, on targets that are close to uniform, where any concentration of probability raises the loss. Its loss without the repeat exceeds its entropy by 0.93 and 1.10 nats, the causal model's by 0.21 and 0.20: it is confident about tokens that are no more likely than the others, and that confidence is the remaining 0.33 and 0.49 nats (4.53 against 4.20, 4.67 against 4.18). The third model tests the cause. With the EOD in its context, a document's first token gives 0.03 of its probability to a repeat, the entropy of the rest is back to 3.93 and 3.91, and the cost at position 0 falls from 0.48 and 0.64 to 0.05 and 0.16, while the gain from position 4 on stays; the listing asserts each of these for both seeds, the recovery at position 0 as more than 0.3. So the mask's cost at a document's first token is not the context it removes, which cannot help predict an unrelated document, but the missing signal that a document has begun: in this experiment one visible token before each document, here the previous document's EOD, is enough to restore it.
 ````
 
 1. **Seeking across mixture phases.** The `StrideSampler` of {ref}`sec-ch5-determinism-resumption` seeks in constant work for one fixed mixture, but runs often change the mixture partway through. Extend its cursors $\operatorname{drawn}_s(t)$ to a schedule of two phases: weights 0.7, 0.15 and 0.15 for web, wiki and code until step 5,000, then 0.5, 0.25 and 0.25. Verify the closed form against iteration: seeking to step $t$ and iterating to it must agree at a thousand random steps.
