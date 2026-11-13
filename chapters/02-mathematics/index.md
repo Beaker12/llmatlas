@@ -41,7 +41,7 @@ For interactive implementations and visualizations of the mathematical concepts 
 The notebook provides executable, assertion-checked code for:
 
 - Entropy, cross-entropy and KL divergence in bits ({ref}`nb-math-information-theory`)
-- SGD, momentum and Adam from scratch, checked against `torch.optim`, on the Rosenbrock function ({ref}`nb-math-optimizers`)
+- SGD, momentum and Adam from scratch (Adam checked against `torch.optim.Adam`) on the Rosenbrock function ({ref}`nb-math-optimizers`)
 - Warm-up and decay schedules ({ref}`nb-math-schedules`)
 - Attention gradients, layer normalization, residual connections and initialisation scale ({ref}`nb-math-backprop`)
 - Kaplan and Chinchilla scaling laws, parameter counts and training memory ({ref}`nb-math-scaling`)
@@ -53,11 +53,17 @@ The notebook provides executable, assertion-checked code for:
 
 Everything a transformer does is a sequence of matrix products followed by simple element-wise functions. Three facts carry most of the weight.
 
-(sec-ch2-sqrt-dk)=
+(sec-ch2-matrix-map)=
 
 ### 0.1 A matrix is a map between spaces
 
-A weight matrix $W \in \mathbb{R}^{d_{\text{in}} \times d_{\text{out}}}$ turns a row vector $x \in \mathbb{R}^{d_{\text{in}}}$ into $xW \in \mathbb{R}^{d_{\text{out}}}$. Stacking $n$ inputs as the rows of $X \in \mathbb{R}^{n \times d_{\text{in}}}$ applies the same map to all of them at once, $XW$, which is why a batch of tokens costs one matrix product rather than $n$ separate ones. A query-key score matrix $QK^\top \in \mathbb{R}^{n \times n}$ is the table of all pairwise dot products $q_i \cdot k_j$; the $\sqrt{d_k}$ scaling keeps those dot products at unit variance when $q$ and $k$ have unit-variance entries, since a sum of $d_k$ such products has variance $d_k$.
+A weight matrix $W \in \mathbb{R}^{d_{\text{in}} \times d_{\text{out}}}$ turns a row vector $x \in \mathbb{R}^{d_{\text{in}}}$ into $xW \in \mathbb{R}^{d_{\text{out}}}$. Stacking $n$ inputs as the rows of $X \in \mathbb{R}^{n \times d_{\text{in}}}$ applies the same map to all of them at once, $XW$, which is why a batch of tokens costs one matrix product rather than $n$ separate ones. A query-key score matrix $QK^\top \in \mathbb{R}^{n \times n}$ is the table of all pairwise dot products $q_i \cdot k_j$.
+
+(sec-ch2-sqrt-dk)=
+
+#### Why attention scores are divided by the key dimension's square root
+
+Suppose the entries of a query $q$ and a key $k$ are independent, with mean zero and variance one. Each product $q_j k_j$ then has mean zero and variance one, and the dot product $q \cdot k$, a sum of $d_k$ independent such products, has variance $d_k$. Dividing the scores by $\sqrt{d_k}$ brings them back to unit variance. Without it, at $d_k = 64$ the scores would have standard deviation 8; the softmax would put almost all weight on one position, and by the softmax Jacobian below ({ref}`sec-ch2-softmax-jacobian`) almost no gradient would flow through it.
 
 (sec-ch2-softmax-jacobian)=
 
@@ -103,11 +109,11 @@ The standard training objective minimizes cross-entropy between the true data di
 
 $$\mathcal{L}(\theta) = -\mathbb{E}_{x \sim p_{\text{data}}}[\log p_{\theta}(x)]$$
 
-Over a training corpus of $T$ tokens, this becomes:
+Estimated on a training corpus of $T$ tokens, this becomes:
 
 $$\mathcal{L}(\theta) = -\frac{1}{T} \sum_{i=1}^{T} \log p_{\theta}(x_i \mid x_{<i})$$
 
-Cross-entropy loss has favorable properties: it's convex in the output probabilities and provides strong gradients for incorrect predictions {cite}`murphy2012machine`.
+Cross-entropy is convex in the predicted probabilities, because $-\log q$ is a convex function of $q$, and its gradient with respect to the logits, $p_j - \delta_{j x_i}$ ({ref}`sec-ch2-softmax-jacobian`), stays large for as long as the model puts little probability on the correct token.
 
 (sec-ch2-information-theory-fundamentals)=
 
@@ -248,9 +254,9 @@ Optimization lies at the heart of LLM training. Understanding the mathematical p
 
 The basic SGD update rule:
 
-$$\theta_{t+1} = \theta_t - \eta \nabla_\theta \mathcal{L}(\theta_t)$$
+$$\theta_{t+1} = \theta_t - \eta\, \nabla_\theta \mathcal{L}(\theta_t; \mathcal{B}_t)$$
 
-where $\eta$ is the learning rate and $\nabla_\theta \mathcal{L}$ is the gradient of the loss function.
+where $\eta$ is the learning rate and $\mathcal{B}_t$ is a mini-batch drawn at random at step $t$, over which the loss is averaged. Its gradient is an unbiased estimate of the gradient of the loss over the whole training set.
 
 (sec-ch2-momentum)=
 
@@ -261,7 +267,7 @@ Momentum accelerates optimization by accumulating gradients:
 $$u_{t+1} = \beta_{\text{mom}} u_t + \nabla_\theta \mathcal{L}(\theta_t)$$
 $$\theta_{t+1} = \theta_t - \eta u_{t+1}$$
 
-The momentum coefficient $\beta_{\text{mom}}$ (typically 0.9) controls how much previous gradients influence the current update {cite}`polyak1964some`.
+The momentum coefficient $\beta_{\text{mom}}$ (typically 0.9) controls how much previous gradients influence the current update {cite}`polyak1964some`. On a quadratic whose Hessian has largest eigenvalue $\lambda_{\max}$, plain gradient descent converges for $\eta < 2/\lambda_{\max}$ and momentum for $\eta < 2(1+\beta_{\text{mom}})/\lambda_{\max}$ {cite}`goh2017momentum`; at $\beta_{\text{mom}} = 0.9$ the second limit is 1.9 times the first.
 
 (sec-ch2-adam-optimizer)=
 
@@ -276,7 +282,9 @@ $$\hat{m}_t = \frac{m_t}{1 - \beta_1^t}, \quad \hat{v}_t = \frac{v_t}{1 - \beta_
 
 $$\theta_{t+1} = \theta_t - \frac{\eta}{\sqrt{\hat{v}_t} + \epsilon} \hat{m}_t$$
 
-Adam's adaptive learning rates work particularly well for sparse gradients common in NLP.
+AdamW {cite}`loshchilov2017decoupled`, the variant implemented below, decouples weight decay from this update: it shrinks the weights directly by $\eta \lambda \theta_t$ instead of adding $\lambda \theta_t$ to the gradient, where it would be divided by $\sqrt{\hat{v}_t}$ like everything else.
+
+{cite:t}`kingma2014adam` designed Adam for "problems with very noisy and/or sparse gradients". A language model's embedding table is one source of sparse gradients: the row of a token that does not occur in a batch receives a zero gradient from that batch, so a rare token's row is updated only now and then, and Adam's per-parameter scaling gives those infrequent updates a usable size.
 
 (sec-ch2-learning-rate-scheduling)=
 
@@ -295,13 +303,13 @@ $$\eta_t = \begin{cases}
 \eta_{\max} \cdot \text{decay}(t) & \text{otherwise}
 \end{cases}$$
 
-Warmup prevents large gradient updates early in training when parameters are randomly initialized.
+Warm-up keeps the first updates small while the weights are random and Adam's moment estimates rest on only a few gradients. For the original post-LN transformer, {cite:t}`xiong2020layer` show that at initialization the expected gradients of the parameters near the output layer are large, so a full learning rate from the first step makes training unstable. With $\eta_{\max} = 3 \times 10^{-4}$ and $t_{\text{warm}} = 2000$, the first step uses $1.5 \times 10^{-7}$ and the rate reaches $\eta_{\max}$ at step 1999.
 
 (sec-ch2-cosine-annealing)=
 
 #### Cosine Annealing
 
-Cosine schedules provide smooth learning rate decay:
+Cosine schedules {cite}`loshchilov2017sgdr` provide smooth learning rate decay:
 
 $$\eta_t = \eta_{\min} + \frac{1}{2}(\eta_{\max} - \eta_{\min})\left(1 + \cos\left(\frac{t - t_{\text{warm}}}{t_{\text{end}} - t_{\text{warm}}} \pi\right)\right)$$
 
@@ -338,6 +346,10 @@ class AdamWWithWarmup:
         self.step_count = 0
         self.m = [torch.zeros_like(p) for p in self.params]
         self.v = [torch.zeros_like(p) for p in self.params]
+
+    def zero_grad(self):
+        for p in self.params:
+            p.grad = None
 
     def get_lr(self, step=None):
         step = self.step_count if step is None else step
@@ -412,22 +424,13 @@ The identity term gives every layer a direct path for the gradient, so a deep st
 
 ### 3.2 Layer Normalization Mathematics
 
-Layer normalization {cite}`ba2016layer` normalizes activations across the feature dimension:
-
-$$y = \gamma \odot \frac{x - \mu}{\sigma} + \beta$$
-
-where:
-
-- $\mu = \frac{1}{d} \sum_{i=1}^{d} x_i$ (mean)
-- $\sigma = \sqrt{\frac{1}{d}\sum_i (x_i-\mu)^2 + \epsilon}$ (standard deviation, with a small $\epsilon$ added for numerical stability)
-
-The gradients with respect to inputs are:
+Layer normalization is defined in {ref}`sec-ch1-layernorm`: $y = \gamma \odot \frac{x - \mu}{\sigma} + \beta$, with $\mu$ the mean of the $d$ features and $\sigma = \sqrt{\frac{1}{d}\sum_i (x_i-\mu)^2 + \epsilon}$. What matters here is its gradient with respect to the inputs:
 
 $$\frac{\partial \mathcal{L}}{\partial x_i} = \frac{1}{\sigma}\left(\tilde{g}_i - \frac{1}{d}\sum_j \tilde{g}_j - \hat{x}_i \frac{1}{d}\sum_j \tilde{g}_j \hat{x}_j\right)$$
 
 where $\tilde{g}_j = \gamma_j \frac{\partial \mathcal{L}}{\partial y_j}$ carries the per-feature scale and $\hat{x}_j = (x_j-\mu)/\sigma$ is the normalized input.
 
-Layer normalization provides more stable gradients than batch normalization in sequence models.
+{cite:t}`ba2016layer` introduced layer normalization because batch normalization depends "on the mini-batch size and it is not obvious how to apply it to recurrent neural networks". Layer normalization computes its statistics within each token's feature vector, so it behaves the same at any batch size and at every position of a sequence.
 
 (sec-ch2-attention-gradient-analysis)=
 
@@ -447,10 +450,11 @@ where $(G \odot A)\mathbf{1}\mathbf{1}^\top$ broadcasts each row's sum of $G \od
 
 $$\frac{\partial \mathcal{L}}{\partial Q} = \frac{1}{\sqrt{d_k}}\frac{\partial \mathcal{L}}{\partial S} K, \qquad \frac{\partial \mathcal{L}}{\partial K} = \frac{1}{\sqrt{d_k}}\left(\frac{\partial \mathcal{L}}{\partial S}\right)^\top Q, \qquad \frac{\partial \mathcal{L}}{\partial V} = A^\top \frac{\partial \mathcal{L}}{\partial O}$$
 
-The $A \odot (\cdot)$ factor is why saturated attention (one weight near 1) passes almost no gradient to the other positions; it is also the reason for the $\sqrt{d_k}$ scaling.
+The $A \odot (\cdot)$ factor is why saturated attention (one weight near 1) passes almost no gradient to the other positions, and why the scores are divided by $\sqrt{d_k}$ ({ref}`sec-ch2-sqrt-dk`).
 
 ```python
-import numpy as np
+import math
+
 import torch
 import torch.nn.functional as F
 
@@ -466,7 +470,7 @@ def attention_gradients(Q, K, V, grad_output):
     d_k = Q.size(-1)
 
     # Forward pass
-    scores = torch.matmul(Q, K.transpose(-2, -1)) / np.sqrt(d_k)
+    scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(d_k)
     attn_weights = F.softmax(scores, dim=-1)
 
     # Backward pass
@@ -479,8 +483,8 @@ def attention_gradients(Q, K, V, grad_output):
         - torch.sum(grad_attn_weights * attn_weights, dim=-1, keepdim=True)
     )
 
-    grad_Q = torch.matmul(grad_scores, K) / np.sqrt(d_k)
-    grad_K = torch.matmul(grad_scores.transpose(-2, -1), Q) / np.sqrt(d_k)
+    grad_Q = torch.matmul(grad_scores, K) / math.sqrt(d_k)
+    grad_K = torch.matmul(grad_scores.transpose(-2, -1), Q) / math.sqrt(d_k)
 
     return grad_Q, grad_K, grad_V
 ```
@@ -504,7 +508,7 @@ Empirical observations reveal predictable relationships between model size, comp
 
 #### Parameter Scaling
 
-The relationship between model parameters $N$ and loss $\mathcal{L}$ follows a power law {cite}`kaplan2020scaling`:
+For models trained to convergence on a dataset large enough not to limit them, the relationship between model parameters $N$ and loss $\mathcal{L}$ follows a power law {cite}`kaplan2020scaling`:
 
 $$\mathcal{L}(N) = \left(\frac{N_c}{N}\right)^{\alpha_N}$$
 
@@ -514,11 +518,11 @@ where $N$ counts non-embedding parameters, $N_c \approx 8.8 \times 10^{13}$ is a
 
 #### Data Scaling
 
-Similarly, performance improves with dataset size $D$:
+For large models trained on a limited dataset with early stopping, the loss falls with dataset size $D$ in tokens:
 
 $$\mathcal{L}(D) = \left(\frac{D_c}{D}\right)^{\alpha_D}$$
 
-with $\alpha_D \approx 0.095$.
+with $\alpha_D \approx 0.095$ and $D_c \approx 5.4 \times 10^{13}$ tokens. Kaplan et al. fit these laws on models from 768 to 1.5 billion non-embedding parameters and datasets from 22 million to 23 billion tokens, so applying them to larger models is an extrapolation.
 
 (sec-ch2-compute-scaling)=
 
@@ -534,13 +538,15 @@ where compute is measured in petaflop/s-days (one PF-day is $8.64 \times 10^{19}
 
 ### 4.2 Chinchilla Scaling Laws
 
-Recent work {cite}`hoffmann2022training` refined scaling laws to find **compute-optimal** training:
-
-For a given compute budget $C$, the optimal model size $N^*$ and dataset size $D^*$ satisfy:
+For a given compute budget $C$, the optimal model size $N^*$ and dataset size $D^*$ grow as
 
 $$N^* \propto C^{a_N}, \quad D^* \propto C^{a_D}$$
 
-where $a_N \approx 0.50$ and $a_D \approx 0.50$, suggesting equal scaling of parameters and data.
+{cite:t}`kaplan2020scaling` found $N^* \propto C^{0.73}$ and $D^* \propto C^{0.27}$: most of a larger budget should go into a larger model. {cite:t}`hoffmann2022training` revisited the question with three independent methods and found $a_N = 0.50, a_D = 0.50$; $a_N = 0.49, a_D = 0.51$; and $a_N = 0.46, a_D = 0.54$, so parameters and data should grow in equal proportion. Their third method fits the loss as a function of both,
+
+$$\mathcal{L}(N, D) = 1.69 + \frac{406.4}{N^{0.34}} + \frac{410.7}{D^{0.28}}$$
+
+where 1.69 is the loss no model or dataset size removes. At $N = 70 \times 10^9$ and $D = 1.4 \times 10^{12}$ (Chinchilla's own size) the fit gives $1.69 + 0.0835 + 0.1632 = 1.937$.
 
 (sec-ch2-training-implications)=
 
@@ -572,7 +578,8 @@ Memory usage includes:
 
 - **Parameters**: $\approx 12 L d^2 + |\mathcal{V}| d$ where $L$ is the number of layers (each layer holds $4d^2$ attention and $8d^2$ feed-forward weights) and $|\mathcal{V}| d$ is the embedding table
 - **Activations**: $\mathcal{O}(B \cdot n \cdot d \cdot L)$ for the residual stream, plus the $\mathcal{O}(B \cdot n_h \cdot n^2 \cdot L)$ attention scores and the $4d$-wide feed-forward intermediates, where $B$ is batch size and $n_h$ the number of heads; without recomputation each layer stores about $B\,n\,d\,(34 + 5\,n_h\,n/d)$ bytes {cite}`korthikanti2022reducing`
-- **Optimizer and gradient state**: with mixed precision and Adam, each parameter costs about 16 bytes in total: a 2-byte weight, a 2-byte gradient, a 4-byte fp32 master copy and two 4-byte Adam moments
+- **Optimizer and gradient state**: with mixed precision and Adam, each parameter costs about 16 bytes in total: a 2-byte weight, a 2-byte gradient, a 4-byte fp32 master copy and two 4-byte Adam moments {cite}`rajbhandari2020zero`
+- **Compute**: about $6N$ FLOPs per training token (2 per parameter for the forward pass, 4 for the backward), so $C \approx 6ND$ for $D$ tokens {cite}`kaplan2020scaling`. Kaplan et al. count only non-embedding parameters; the function below uses the total, which for GPT-3 is 0.36% more
 
 ```python
 def estimate_memory_usage(num_layers, d_model, seq_length, batch_size, vocab_size, num_heads=None):
@@ -581,7 +588,8 @@ def estimate_memory_usage(num_layers, d_model, seq_length, batch_size, vocab_siz
     Parameters per layer: 4*d^2 (attention projections) + 8*d^2 (feed-forward, 4d wide).
     Memory per parameter: 2 (fp16 weight) + 2 (fp16 grad) + 4 (fp32 master) + 8 (Adam m, v).
     Activations per layer without recomputation (Korthikanti et al., 2022):
-        s*b*h*(34 + 5*a*s/h) bytes for sequence s, batch b, hidden h, heads a.
+        s*b*h*(34 + 5*a*s/h) bytes, in the paper's symbols: sequence s (n in this chapter),
+        batch b (B), hidden size h (d) and heads a (n_h).
     """
     num_heads = num_heads or max(1, d_model // 128)
     layer_params = num_layers * 12 * d_model**2
@@ -614,7 +622,7 @@ Weights and optimizer state alone are close to three terabytes, which is why a 1
 
 ```{admonition} Scaling Laws Visualization
 :class: note
-The notebook section {ref}`nb-math-scaling` plots the Kaplan parameter, data and compute laws (with the sizes of GPT-2, GPT-3 and Llama 2 70B marked on the parameter curve as extrapolations of the fit, not measured losses) and the Chinchilla allocation derived from C = 6ND and D = 20N, and {ref}`nb-math-memory` computes parameter counts, training memory and FLOPs per step for the GPT-2 and GPT-3 model sizes, asserting that the 175B configuration comes out at 175B.
+The notebook section {ref}`nb-math-scaling` plots the Kaplan parameter, data and compute laws (with the sizes of GPT-2, GPT-3 and Llama 2 70B marked on the parameter curve as extrapolations of the fit, not measured losses) and the Chinchilla allocation derived from $C \approx 6ND$ {cite}`kaplan2020scaling` and $D = 20N$, and {ref}`nb-math-memory` computes parameter counts, training memory and FLOPs per step for the GPT-2 and GPT-3 model sizes, asserting that the 175B configuration comes out at 175B.
 ```
 
 (sec-ch2-numerical-stability-considerations)=
@@ -649,7 +657,7 @@ Dynamic loss scaling adjusts the scale factor to maximize gradient precision wit
 
 #### bfloat16
 
-**bf16** keeps fp32's 8 exponent bits and gives up mantissa bits instead, so it covers the same range as fp32 and needs no loss scaling at all. Nearly every large model trained since 2022 (PaLM, the LLaMA family and their successors) uses bf16 for activations and gradients with an fp32 master copy of the weights; fp16 with loss scaling remains the choice on hardware without bf16 support.
+**bf16** keeps fp32's 8 exponent bits and gives up mantissa bits instead, so it covers the same range as fp32 and needs no loss scaling at all. bf16 is widely used for training on accelerators that support it, usually with an fp32 master copy of the weights; fp16 with loss scaling remains the choice on hardware without bf16 support.
 
 (sec-ch2-initialization-strategies)=
 
@@ -661,7 +669,7 @@ Proper initialization is crucial for stable training:
 
 #### Xavier/Glorot Initialization
 
-For layers with $d_{\text{in}}$ inputs and $d_{\text{out}}$ outputs:
+For layers with $d_{\text{in}}$ inputs and $d_{\text{out}}$ outputs, {cite:t}`glorot2010understanding` choose the variance that keeps activations and gradients at the same scale in both directions:
 
 $$W \sim \mathcal{N}\left(0, \frac{2}{d_{\text{in}} + d_{\text{out}}}\right)$$
 
@@ -669,7 +677,7 @@ $$W \sim \mathcal{N}\left(0, \frac{2}{d_{\text{in}} + d_{\text{out}}}\right)$$
 
 #### He Initialization
 
-For ReLU activations:
+For ReLU activations, which set about half of their inputs to zero, {cite:t}`he2015delving` use variance $2/d_{\text{in}}$, twice the $1/d_{\text{in}}$ that would keep a linear layer's output scale:
 
 $$W \sim \mathcal{N}\left(0, \frac{2}{d_{\text{in}}}\right)$$
 
@@ -677,7 +685,7 @@ $$W \sim \mathcal{N}\left(0, \frac{2}{d_{\text{in}}}\right)$$
 
 #### Transformer-Specific Initialization
 
-Deep residual networks also scale their initialization with depth: Fixup {cite}`zhang2019fixup` shows that with the right depth-dependent scaling of the residual branches a transformer can be trained with no normalization layers at all, and GPT-2 scales the residual-branch weights by $1/\sqrt{2L}$ for the same reason.
+Deep residual networks also scale their initialization with depth: Fixup {cite}`zhang2019fixup` shows that with the right depth-dependent scaling of the residual branches a transformer can be trained with no normalization layers at all, and GPT-2 scales the weights of its residual layers at initialization by one over the square root of the number of residual layers {cite}`radford2019language`. A block has two residual layers, attention and feed-forward, so $L$ blocks give $2L$ of them and the factor is $1/\sqrt{2L}$, or 0.1021 for GPT-2's 48 blocks.
 
 (sec-ch2-gradient-accumulation)=
 
@@ -696,7 +704,8 @@ def train_with_gradient_accumulation(model, data_loader, optimizer, accumulation
 
     running_loss, num_batches = 0.0, 0
     for i, batch in enumerate(data_loader, start=1):
-        outputs = model(batch["input_ids"])
+        # a Hugging Face causal LM returns .loss only when it is given labels
+        outputs = model(batch["input_ids"], labels=batch["input_ids"])
         loss = outputs.loss / accumulation_steps  # scale so the accumulated gradient is a mean
         loss.backward()
         running_loss += outputs.loss.item()
@@ -747,7 +756,7 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 **Mathematical Foundations:**
 
 4. [Mathematics for Machine Learning](https://mml-book.github.io/) - Free textbook covering linear algebra, calculus, and probability
-1. [MIT 18.065: Matrix Methods in Data Analysis](https://ocw.mit.edu/courses/18-065-matrix-methods-in-data-analysis-signal-processing-and-machine-learning-spring-2018/) - Gilbert Strang's course on mathematical foundations
+1. [MIT 18.065: Matrix Methods in Data Analysis](https://ocw.mit.edu/courses/18-065-matrix-methods-in-data-analysis-signal-processing-and-machine-learning-spring-2018/) - Gilbert Strang's course "Matrix Methods in Data Analysis, Signal Processing, and Machine Learning\"
 
 (sec-ch2-further-reading-foundational-papers)=
 
@@ -756,6 +765,7 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 - [Attention Is All You Need](https://arxiv.org/abs/1706.03762) {cite}`vaswani2017attention`: The original transformer paper with mathematical details ([arXiv:1706.03762](https://arxiv.org/abs/1706.03762))
 - [Scaling Laws for Neural Language Models](https://arxiv.org/abs/2001.08361) {cite}`kaplan2020scaling`: Mathematical analysis of scaling behavior ([arXiv:2001.08361](https://arxiv.org/abs/2001.08361))
 - [Training Compute-Optimal Large Language Models](https://arxiv.org/abs/2203.15556) {cite}`hoffmann2022training`: Chinchilla scaling laws ([arXiv:2203.15556](https://arxiv.org/abs/2203.15556))
+- {cite}`shazeer2020glu`: GLU variants of the transformer feed-forward layer ([arXiv:2002.05202](https://arxiv.org/abs/2002.05202))
 
 (sec-ch2-further-reading-optimization-theory)=
 
@@ -779,7 +789,6 @@ The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surv
 
 - {cite}`micikevicius2017mixed`: Mixed precision training techniques ([arXiv:1710.03740](https://arxiv.org/abs/1710.03740))
 - {cite}`you2019large`: Large batch training and scaling ([arXiv:1904.00962](https://arxiv.org/abs/1904.00962))
-- {cite}`shazeer2020glu`: Activation function analysis and GLU variants ([arXiv:2002.05202](https://arxiv.org/abs/2002.05202))
 
 (sec-ch2-further-reading-mathematical-textbooks-references)=
 
