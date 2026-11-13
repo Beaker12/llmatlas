@@ -133,6 +133,14 @@ def test_display_math_is_read_and_code_is_not():
     assert "o" not in places and "not" not in places
 
 
+def test_directive_bodies_are_read_and_the_code_in_or_beside_them_is_not():
+    """tests/fixtures/symbols/directives.md: a solution admonition, a figure caption and a colon-fenced note are
+    prose; a code fence nested in the admonition, a {code-block} and a plain language fence are code."""
+    places = {sym for sym, where in symbols(FIXTURE).items() if any(page == "directives.md" for page, _ in where)}
+    assert {"\\kappa_{sol}", "\\rho_{sol}", "\\psi_{cap}", "\\omega_{note}"} <= places
+    assert not places & {"\\nu_{code}", "\\chi_{block}", "\\phi_{text}"}
+
+
 def test_the_local_list_is_not_a_page():
     assert "\\zeta_{never}" not in symbols(FIXTURE)
 
