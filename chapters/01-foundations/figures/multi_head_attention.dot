@@ -9,7 +9,7 @@ digraph MultiHeadAttention {
     hn [label=<<b>Head n<sub>h</sub></b><br/>n × d<sub>k</sub>> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     { rank=same; h1; h2; hd; hn; }
     cat [label=<<b>Concatenate</b>   n × n<sub>h</sub>d<sub>v</sub> = n × d> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
-    o [label=<<b>Output projection W<sub>O</sub></b>   (n × d)> shape=box style="rounded,filled" fillcolor="#f0fff4" color="#276749" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    o [label=<<b>Output projection:</b> multiply by W<sub>O</sub>, result n × d> shape=box style="rounded,filled" fillcolor="#f0fff4" color="#276749" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     qkv -> h1 [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
     h1 -> cat [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
     qkv -> h2 [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
