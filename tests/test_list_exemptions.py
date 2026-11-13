@@ -5,7 +5,7 @@ import subprocess
 import sys
 
 from tests._files import CHAPTER_DIRS, ROOT
-from tools.list_exemptions import exemptions, report_lines
+from tools.list_exemptions import constants_file, exemptions, literal_assignments, report_lines
 
 FIXTURE = ROOT / "tests" / "fixtures" / "sample-chapter"
 KINDS = ["SYNC_EXEMPT", "NOT_A_RESULT", "NOTATION_OK", "INTERFACE_LABELS", "Also means", "lifted no-meaning ban",
@@ -63,11 +63,15 @@ def test_the_untouched_fixture_has_no_exemptions():
 
 
 def test_a_real_chapter_lists_its_interface_labels_and_runs_as_a_script():
+    """Chapter 4's own INTERFACE_LABELS constant is the expectation, so the test follows the chapter's edits."""
+    labels = literal_assignments(constants_file(CHAPTER_DIRS[3]), {"INTERFACE_LABELS"})["INTERFACE_LABELS"]
+    assert labels
     found = exemptions(CHAPTER_DIRS[3])
-    assert ("INTERFACE_LABELS", "sec-ch4-dedup-scope", "5.3 Near-duplicate detection with MinHash and LSH") in found
+    assert [(entry, reason) for kind, entry, reason in found if kind == "INTERFACE_LABELS"] == list(labels.items())
     proc = subprocess.run([sys.executable, str(ROOT / "tools" / "list_exemptions.py"), str(CHAPTER_DIRS[3])],
                           capture_output=True, text=True, check=True)
-    assert "== INTERFACE_LABELS (1) ==" in proc.stdout and proc.stderr.strip() == f"# {len(found)} exemptions"
+    assert f"== INTERFACE_LABELS ({len(labels)}) ==" in proc.stdout
+    assert proc.stderr.strip() == f"# {len(found)} exemptions"
 
 
 def test_the_tool_imports_nothing_from_tests():

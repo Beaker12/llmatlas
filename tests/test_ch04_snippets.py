@@ -34,7 +34,7 @@ NOTATION_OK: dict[str, str] = {}
 # sec-ch4-dedup-scope is fixed by the book plan as an interface label: chapter 3 links it from its own branch
 # (and tests/test_xrefs.py pins its owner), so it stays on this heading until the integration step renames it.
 INTERFACE_LABELS: dict[str, str] = {
-    "sec-ch4-dedup-scope": "5.3 Near-duplicate detection with MinHash and LSH",
+    "sec-ch4-dedup-scope": "5.4 Per-snapshot versus global deduplication",
 }
 
 

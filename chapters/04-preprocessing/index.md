@@ -1168,7 +1168,7 @@ Harbor reopens after the storm.
 
 The normalization catches the cookie notice even where one site prints it in capitals. Unlike the paragraph rule above, which keeps the first copy of every repeated paragraph, the line rule removes boilerplate from every document, including the first, and keeps short repeats that a keep-the-first rule would delete from the second story.
 
-(sec-ch4-dedup-scope)=
+(sec-ch4-near-duplicate-detection-minhash-lsh)=
 
 ### 5.3 Near-duplicate detection with MinHash and LSH
 
@@ -1436,16 +1436,6 @@ With $b = 32$ bands of $r = 4$ rows the curve's threshold is $(1/32)^{1/4} \appr
 The probability $1 - (1 - J^r)^b$ that a pair becomes a candidate, for the three bandings of the listing and FineWeb's 14 bands of 8 rows, with each curve's $(1/b)^{1/r}$ marked. The curves are the formula; the open circles are measured by the notebook cell tagged `figure:lsh-curves`, for $b = 16$, $r = 8$ on synthetic shingle sets, 300 signature draws per point; they follow the formula to within 0.041. The same signature length gives very different thresholds depending on how it is split.
 ```
 
-Which document to keep from a cluster is not a detail. Keeping the shortest copy drops the version with the comment thread; keeping the longest keeps the version with the navigation menu. FineWeb's authors found that deduplicating each Common Crawl snapshot independently produced *better* models than deduplicating globally across all snapshots, because global deduplication preferentially removed the oldest copy of good content while leaving the long tail of low-quality pages that were never duplicated. The content that survives many crawls is, on average, the content worth keeping. FineWeb-2 {cite}`penedo2025fineweb2` takes the other route: it deduplicates globally, as the first step before any filter, and records the size of each duplicate cluster in the kept document's metadata. It then "rehydrates" the corpus: each kept document is repeated with a weight between 1 and 10 that depends on its cluster size, chosen from how often the quality filters removed documents of that cluster size. Moderately duplicated pages get the highest weights; unique pages and the most-copied pages, which the filters remove more often than average, get the lowest. The authors reject weights that grow with the number of copies because, in their words, highly duplicated documents "are generally of lower quality, and therefore should be repeated less rather than more". {numref}`fig-ch4-snapshot-scope` shows the per-snapshot mechanism on six pages.
-
-```{figure} figures/dedup-scope.*
-:name: fig-ch4-snapshot-scope
-:alt: Two grids of six pages by four snapshots. Per-snapshot deduplication keeps all ten copies; global deduplication hatches out four copies of the two good pages and keeps six, two of them good.
-:width: 100%
-
-Six pages over four crawl snapshots, an illustration rather than data. Pages A and B are good content that is crawled again and again; pages C to F are spam, each crawled once. Deduplicating within each snapshot keeps every copy, and 60% of what remains is good. Deduplicating across snapshots keeps only the newest copy of A and B, while the spam, never duplicated, all survives: the good share falls to 33%.
-```
-
 SimHash {cite}`charikar2002similarity` is the other common near-duplicate fingerprint. Each feature of a document (here a word pair, weighted by its count) hashes to $n_{fp}$ bits and votes $+1$ or $-1$ times its weight on every bit; the fingerprint keeps the sign of each bit's total. Similar documents get fingerprints at a small Hamming distance $d_{Ham}$, the number of bit positions in which they differ. {cite:t}`manku2007detecting` used it at Google for web crawling and found that "for a repository of 8B web-pages, 64-bit simhash fingerprints and k = 3 are reasonable"; in their setting, two pages whose fingerprints are at $d_{Ham} \le 3$ count as near-duplicates.
 
 ```python
@@ -1497,9 +1487,23 @@ d_Ham(base, other)  = 30
 
 Changing a day and a vote count moves the fingerprint by 6 bits; an unrelated text is 30 bits away, near the 32 expected of two random 64-bit strings. A whole document fits in 8 bytes, against 512 bytes for a 128-value MinHash signature of 32-bit integers, but a short text with few features, as here, moves more bits per edit than a long page does, so the threshold depends on document length.
 
+(sec-ch4-dedup-scope)=
+
+### 5.4 Per-snapshot versus global deduplication
+
+Which document to keep from a cluster is not a detail. Keeping the shortest copy drops the version with the comment thread; keeping the longest keeps the version with the navigation menu. FineWeb's authors found that deduplicating each Common Crawl snapshot independently produced *better* models than deduplicating globally across all snapshots, because global deduplication preferentially removed the oldest copy of good content while leaving the long tail of low-quality pages that were never duplicated. The content that survives many crawls is, on average, the content worth keeping. FineWeb-2 {cite}`penedo2025fineweb2` takes the other route: it deduplicates globally, as the first step before any filter, and records the size of each duplicate cluster in the kept document's metadata. It then "rehydrates" the corpus: each kept document is repeated with a weight between 1 and 10 that depends on its cluster size, chosen from how often the quality filters removed documents of that cluster size. Moderately duplicated pages get the highest weights; unique pages and the most-copied pages, which the filters remove more often than average, get the lowest. The authors reject weights that grow with the number of copies because, in their words, highly duplicated documents "are generally of lower quality, and therefore should be repeated less rather than more". {numref}`fig-ch4-snapshot-scope` shows the per-snapshot mechanism on six pages.
+
+```{figure} figures/dedup-scope.*
+:name: fig-ch4-snapshot-scope
+:alt: Two grids of six pages by four snapshots. Per-snapshot deduplication keeps all ten copies; global deduplication hatches out four copies of the two good pages and keeps six, two of them good.
+:width: 100%
+
+Six pages over four crawl snapshots, an illustration rather than data. Pages A and B are good content that is crawled again and again; pages C to F are spam, each crawled once. Deduplicating within each snapshot keeps every copy, and 60% of what remains is good. Deduplicating across snapshots keeps only the newest copy of A and B, while the spam, never duplicated, all survives: the good share falls to 33%.
+```
+
 (sec-ch4-substring-deduplication-suffix-arrays)=
 
-### 5.4 Substring deduplication with suffix arrays
+### 5.5 Substring deduplication with suffix arrays
 
 Document-level methods miss the case where a long passage (a license header, a quotation, a boilerplate disclaimer) is embedded in otherwise distinct documents. {cite:t}`lee2022deduplicating` address this with a suffix array {cite}`manber1993suffix` over the concatenated, tokenized corpus: sort all suffixes, and every occurrence of a run of at least 50 tokens that appears more than once sits in one group of adjacent suffixes that share a prefix of that length. All occurrences in the group except the earliest are marked for removal, and the marks are merged into maximal spans. Comparing only neighboring pairs and removing the later of each pair is not enough: with three copies, the earliest copy can be the later member of some adjacent pair, and two copies survive.
 
@@ -1583,7 +1587,7 @@ The example of the suffix-array listing above. Top: the 35 tokens; the 13-token 
 
 (sec-ch4-semantic-deduplication)=
 
-### 5.5 Semantic deduplication
+### 5.6 Semantic deduplication
 
 MinHash finds documents that share words. SemDeDup {cite}`abbas2023semdedup` finds documents that share meaning: embed every document with a pretrained encoder, cluster the embeddings with k-means, and within each cluster remove all but one of any group of documents whose cosine similarity is at least $1 - \epsilon_{dup}$. The paper sets $\epsilon_{dup}$ by how much data is to go: the 37% LAION result below used $\epsilon_{dup} = 0.07$, a cosine similarity of at least 0.93. On LAION-440M it removed 37% of the data with no loss in zero-shot ImageNet accuracy and 50% with a loss below half a point; on C4, models trained for several epochs on SemDeDup-pruned subsets matched the single-epoch full-data baseline with 10 to 15% less compute.
 
@@ -2138,7 +2142,7 @@ news: 99 words, 541 characters; skip-ahead 0.087, every window 0.338
 In the loop, the skip-ahead scan meets the passage "abcde" three more times and counts its 5 characters each time: 15 of 40 characters, 0.375. The overlapping scan counts all 11 windows from the sixth word on, each 5 characters long, so 55 characters are counted against a 40-character text: every character after the first passage is counted up to five times, and the fraction exceeds 1. In the news paragraph, the repeated 12-word sentence holds 8 overlapping 5-grams; the skip-ahead scan counts two of them (words 1 to 5 and 6 to 10 of the repeat) and the overlapping scan all eight, so the overlapping value is about four times larger. The skip-ahead version keeps the paragraph (0.087) and the overlapping version drops it (0.338), although one repeated sentence in a short news item is ordinary. The Gopher thresholds were set for the skip-ahead count; the overlapping count would need thresholds several times higher to make the same decisions.
 ````
 
-3. **LSH curve.** With $n_{hash} = 128$, the probability that two documents of Jaccard similarity $J$ share at least one LSH bucket is $1 - (1 - J^r)^b$ ({ref}`sec-ch4-dedup-scope`). For $(b, r) \in \{(8, 16), (16, 8), (32, 4)\}$, find the similarity at which this probability is 0.5, and confirm it by simulation: build two sets with a controlled overlap whose Jaccard similarity is that value and count how often their MinHash signatures share a band.
+3. **LSH curve.** With $n_{hash} = 128$, the probability that two documents of Jaccard similarity $J$ share at least one LSH bucket is $1 - (1 - J^r)^b$ ({ref}`sec-ch4-near-duplicate-detection-minhash-lsh`). For $(b, r) \in \{(8, 16), (16, 8), (32, 4)\}$, find the similarity at which this probability is 0.5, and confirm it by simulation: build two sets with a controlled overlap whose Jaccard similarity is that value and count how often their MinHash signatures share a band.
 
 ````{admonition} Solution 3
 :class: dropdown
