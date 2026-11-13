@@ -538,17 +538,17 @@ def visualize_positional_encoding(max_seq_len=100, d_model=64):
     plt.imshow(pe.T.numpy(), cmap="RdBu", aspect="auto", vmin=-1, vmax=1)
     plt.colorbar(label="Encoding value")
     plt.title("Sinusoidal positional encodings")
-    plt.xlabel("Position m")
+    plt.xlabel("Position $m$")
     plt.ylabel("Dimension")
     plt.show()
 
     # Show how encoding changes with position: the frequency falls as the dimension grows
     plt.figure(figsize=(7, 3.2))
     for dim, style in ((0, "-"), (8, "--"), (16, "-."), (32, ":")):
-        plt.plot(pe[:50, dim].numpy(), linestyle=style, label=f"dimension {dim}")
+        plt.plot(pe[:50, dim].numpy(), linestyle=style, label=f"Dimension {dim}")
     plt.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0), frameon=False)
     plt.title("Encoding value by position")
-    plt.xlabel("Position m")
+    plt.xlabel("Position $m$")
     plt.ylabel("Encoding value")
     plt.show()
 
