@@ -107,13 +107,13 @@ Most published pipelines are a variation of the following sequence. The order ma
 | Normalization           | Low: one pass over the text                    | Not a separate stage   | Extracted text                   |
 | Language identification | Low: one small classifier call                 | 50.7% of documents     | Normalized text                  |
 | Repetition and quality rules | Low: counts over words and lines          | 24.3%, 16.2% and 22.6% of tokens (repetition, document rules, line corrections) | Language (thresholds per language) |
-| Exact deduplication     | Low per document, plus a global lookup         | 18.5% of tokens        | Normalized text                  |
-| Near deduplication      | Moderate per document, plus a global join      | 37.9% of tokens        | Everything above                 |
+| Near deduplication (MinHash) | Moderate per document, plus a global join | 37.9% of tokens        | Normalized, filtered text        |
+| Exact deduplication (substring removal, of what MinHash left) | Moderate: a suffix array over the corpus | 18.5% of tokens | Near-deduplicated text |
 | Classifier scoring      | Highest: a model run per document              | Not used               | Everything above                 |
 | PII and toxicity        | Low to moderate: patterns or a classifier      | Not a separate stage   | Final text                       |
 | Decontamination         | Low per document, plus a benchmark index       | Not a separate stage   | Benchmark set                    |
 
-The removal shares are RefinedWeb's, read from Figure 2 of {cite:t}`penedo2023refinedweb` (the data behind {numref}`fig-ch4-retention-funnel`): each is the share of the stage's own input that the stage removed, in documents for the first three stages and in tokens after them, and other pipelines remove different shares because their inputs and thresholds differ. Text extraction removes documents as well as bytes, the 1.5% of pages with no text left to extract. The cost column is not a measurement but this chapter's ranking of what each stage must read and compute.
+The removal shares are RefinedWeb's, read from Figure 2 of {cite:t}`penedo2023refinedweb` (the data behind {numref}`fig-ch4-retention-funnel`): each is the share of the stage's own input that the stage removed, in documents for the first three stages and in tokens after them, and other pipelines remove different shares because their inputs and thresholds differ. Text extraction removes documents as well as bytes, the 1.5% of pages with no text left to extract. RefinedWeb runs its two deduplication stages in the order shown, fuzzy before exact, and its exact stage removes repeated substrings of 50 or more tokens with a suffix array ({numref}`fig-ch4-suffix-array` is its mechanism) rather than hashing whole documents; the paper states that it applies "subsequently fuzzy and exact substring methods" and chose "to apply MinHash before exact deduplication, as it is easier to scale" (its description of exact deduplication and its deduplication ablation). A whole-document hash ({ref}`sec-ch4-exact-deduplication`) is a cheaper stage that other pipelines run, and RefinedWeb does not list one. The cost column is not a measurement but this chapter's ranking of what each stage must read and compute.
 
 The percentages compound. In RefinedWeb a document that has reached language identification survives it with probability 0.49, the three rule stages together with 0.49 and the two deduplication stages together with 0.50 (each a ratio of the kept shares in Figure 2), so it has about a one in eight chance of being trained on. That factor of eight is not what turns petabytes of crawl into terabytes of corpus. Measured in bytes, most of that reduction happens before any filter runs, at text extraction: a WARC record stores the whole HTTP response (headers, markup, scripts and styles), and a Common Crawl snapshot of about 90 TB of compressed WARC files yields about 7 TB of compressed extracted text, under a tenth of the bytes ({ref}`sec-ch3-snapshots-segments-files`). The funnel below does not show that drop, because it counts documents for its first three stages, extraction included, and tokens after that, never bytes. {numref}`fig-ch4-retention-funnel` shows the same compounding in a published pipeline.
 
@@ -277,6 +277,60 @@ density (0.31).
 
 Web text arrives in dozens of declared encodings, some of them wrong. The first job is to produce valid UTF-8; the second is to make equivalent strings byte-identical, because deduplication and tokenization both compare bytes.
 
+Producing valid UTF-8 means deciding which encoding the bytes are in, and the evidence has an order of trust. The HTML Standard's encoding sniffing algorithm, which browsers follow, takes a byte-order mark first, then the encoding that "the transport layer specifies" (the `charset` of the HTTP `Content-Type` header), then a prescan of the first 1024 bytes for a `<meta>` declaration, and only then a guess from the content. A crawler applies the same order. The two failure modes differ in their cost. Bytes decoded under an encoding they do not fit, as UTF-8, can raise an error or, with `errors="replace"`, become U+FFFD, the replacement character: the original letter is gone and every such character left in the corpus is lost text. Bytes decoded under a wrong single-byte encoding such as Latin-1 never fail, because every byte value is a character, so the result is valid but garbled (mojibake), and it is repaired only if the wrong decoding is undone. The listing decodes one text under each case and repairs the second.
+
+```python
+import codecs
+
+
+def decode_page(raw: bytes, http_charset=None, meta_charset=None):
+    """Decode by the order of evidence: byte-order mark, HTTP header, <meta> tag."""
+    if raw.startswith(codecs.BOM_UTF8):
+        return raw[len(codecs.BOM_UTF8) :].decode("utf-8"), "byte-order mark"
+    for source, label in (("HTTP header", http_charset), ("meta tag", meta_charset)):
+        if label:
+            try:
+                return raw.decode(label), source
+            except (UnicodeDecodeError, LookupError):
+                pass  # the declaration is wrong or names an unknown encoding
+    return raw.decode("utf-8", errors="replace"), "fallback"
+
+
+text = "Zoë's café, résumé"
+latin1_page = text.encode("latin-1")
+utf8_page = text.encode("utf-8")
+
+# Wrong guess: Latin-1 bytes read as UTF-8 become U+FFFD, and the letters are lost.
+lossy = latin1_page.decode("utf-8", errors="replace")
+print(f"as UTF-8 with replacement: {lossy!r}, {lossy.count(chr(0xFFFD))} lost")
+# Right declaration: nothing is lost.
+decoded, source = decode_page(latin1_page, http_charset="iso-8859-1")
+print(f"declared in the {source}: {decoded!r}")
+assert decoded == text
+# A declaration that does not fit the bytes is skipped, here in favor of the meta tag.
+decoded, source = decode_page(utf8_page, http_charset="ascii", meta_charset="utf-8")
+assert (decoded, source) == (text, "meta tag")
+# A wrong Latin-1 declaration never fails, so the damage is silent: mojibake.
+mojibake, _ = decode_page(utf8_page, http_charset="iso-8859-1")
+print(f"UTF-8 declared as Latin-1: {mojibake!r}")
+assert mojibake != text and "Ã" in mojibake
+# The damage is reversible when every byte survived the wrong decoding.
+repaired = mojibake.encode("latin-1").decode("utf-8")
+assert repaired == text
+print(f"repaired by the round trip: {repaired!r}")
+```
+
+% output
+
+```text
+as UTF-8 with replacement: "Zo�'s caf�, r�sum�", 4 lost
+declared in the HTTP header: "Zoë's café, résumé"
+UTF-8 declared as Latin-1: "ZoÃ«'s cafÃ©, rÃ©sumÃ©"
+repaired by the round trip: "Zoë's café, résumé"
+```
+
+Four letters are lost in the first case, and the round trip recovers all of them in the last. Pages whose declaration is missing or wrong need a detector over the bytes, which is statistical; where it is unsure, the safe choice is to drop the page rather than keep text with replacement characters. Text that reached the corpus as mojibake is a valid string that normalization leaves alone ({ref}`nb-prep-normalize`); the `ftfy` library repairs the common cases.
+
 Unicode defines four normalization forms. The two that matter here:
 
 - **NFC** composes characters with their combining marks: the two-code-point sequence `e` + U+0301 becomes the single code point `é`. This preserves canonical equivalence (the text displays and means the same) and is almost always wanted.
@@ -294,7 +348,7 @@ The four Unicode normalization forms applied to four inputs, computed with Pytho
 the input. The two spellings of é end up identical under NFC (one code point) and under
 NFD (two), which is what deduplication needs. The ligature ﬁ and the superscript ²
 change only under the compatibility forms, which is why NFKC is applied selectively: it
-would turn x² into x2.
+would turn x² into x2. In the ligature row the input and the canonical forms hold the single code point FB01, drawn as a ligature; the compatibility forms hold the two letters, drawn apart.
 ```
 
 Beyond normalization, pipelines commonly remove or replace the following:
@@ -614,7 +668,7 @@ listing: (False, 'mean_word_length')
 catalog: (False, 'stop_words')
 ```
 
-Every threshold above was set for English. The word rules exclude most Chinese and Japanese text: with no spaces a paragraph is one "word", and split into characters its mean word length is 1 ({ref}`sec-ch4-multilingual-text` runs both) and much German (compounds), and the stop-word list is meaningless outside English. Multilingual pipelines replace the word splitter with a language-appropriate tokenizer and the stop-word list with a per-language one.
+Every threshold above was set for English. The word rules exclude most Chinese and Japanese text: with no spaces a paragraph is one "word", and split into characters its mean word length is 1 ({ref}`sec-ch4-multilingual-text` runs both), so either the word count or the word-length bound fails. German passes the word rules, since its mean word length stays inside the bound, and fails the English stop-word rule, which is meaningless outside English. Multilingual pipelines replace the word splitter with a language-appropriate tokenizer and the stop-word list with a per-language one.
 
 (sec-ch4-repetition-filters)=
 
@@ -849,6 +903,8 @@ where $\hat{p}$ is the classifier's score of the page and the left side is a fre
 **FineWeb-Edu** {cite}`penedo2024fineweb` annotated 460,000 FineWeb documents with a 0 to 5 "educational value" score produced by Llama 3 70B with a rubric prompt, trained a small regression head on embeddings from a 110M-parameter encoder to predict the score, and kept documents scoring 3 or higher. The result was a 1.3T-token subset that outperformed the 15T-token parent on knowledge and reasoning benchmarks at every training budget tested.
 
 **DataComp-LM** {cite}`li2024datacomp` compared many filters in a controlled setting and found that a fastText classifier trained to distinguish instruction-formatted and high-quality question-answer text (OpenHermes and ELI5) from the crawl, keeping the top 10%, was the strongest single intervention, beating both the GPT-3-style classifier and every heuristic set.
+
+Two other routes select by a score without a trained binary classifier. **Scoring with a language model** asks an instruction-tuned model for a judgment of each document. {cite:t}`sachdeva2024train` propose Ask-LLM, which prompts a model with the document and a question about its usefulness for pretraining and takes the probability of "yes" as the score, and {cite:t}`wettig2024qurating` ask models for pairwise judgments of four qualities (writing style, required expertise, facts and trivia, educational value) and fit a rating model to them. {cite:t}`li2024datacomp` implemented Ask-LLM with Mistral-7B-Instruct on documents clipped to 1,024 tokens, and in their quality-filter comparison it scored 28.6 on their core evaluation against 30.2 for the fastText classifier above. The cost makes the gap in adoption unsurprising: a 7-billion-parameter forward pass over up to 1,024 tokens per document, against a linear classifier over hashed n-grams that runs at the speed of tokenization. **Importance resampling** {cite}`xie2023dsir` does not score quality at all: it models the target text (say, Wikipedia and books) and the raw crawl with hashed n-gram distributions, weights each crawl document by the ratio of the two likelihoods, and samples documents according to the weights, so the selected set matches the target's n-gram statistics.
 
 What these have in common is that the positive set defines the target distribution. A classifier trained on Wikipedia keeps encyclopedic text; one trained on explanatory question-answer pairs keeps text that reads like a helpful answer. The choice of positive set is the single most important design decision in a modern pipeline, and it is where a team's view of what the model should be good at enters the data.
 
@@ -1086,7 +1142,7 @@ Repeating a deduplicated corpus for a few epochs costs little {cite}`muennighoff
 
 ### 5.2 Exact deduplication
 
-Exact deduplication hashes each document after normalization and keeps one document per hash. It catches syndicated content and mirrored sites, costs one hash per document and one global set, and is the first thing every pipeline does. The choice of hash is about speed and collision rate rather than security; a 64-bit non-cryptographic hash such as xxHash has a real chance of one or two collisions among a few billion documents (the birthday bound), each of which costs one wrongly dropped document; a 128-bit hash removes even that, and SHA-1 is common because it is in every standard library.
+Exact deduplication hashes each document after normalization and keeps one document per hash. It catches syndicated content and mirrored sites, costs one hash per document and one global set, and is the cheapest deduplication stage, so many pipelines run it early (RefinedWeb does not; its exact stage removes substrings, {ref}`sec-ch4-substring-deduplication-suffix-arrays`). The choice of hash is about speed and collision rate rather than security; a 64-bit non-cryptographic hash such as xxHash has a real chance of one or two collisions among a few billion documents (the birthday bound), each of which costs one wrongly dropped document; a 128-bit hash removes even that, and SHA-1 is common because it is in every standard library.
 
 ```python
 import hashlib
@@ -1327,6 +1383,8 @@ Two documents are near-duplicates if the sets of their $n$-gram "shingles" have 
 
 $$J(\mathcal{X}, \mathcal{Y}) = \frac{|\mathcal{X} \cap \mathcal{Y}|}{|\mathcal{X} \cup \mathcal{Y}|}$$
 
+Jaccard similarity is symmetric and penalizes a size difference: a 300-word teaser copied from the opening of an 800-word article shares every one of its shingles with the article, yet $J$ is only about $300/800 = 0.38$. {cite:t}`broder1997resemblance` therefore also define the *containment* of $\mathcal{X}$ in $\mathcal{Y}$, $|\mathcal{X} \cap \mathcal{Y}| / |\mathcal{X}|$, the share of $\mathcal{X}$'s shingles that $\mathcal{Y}$ also has. The teaser's containment in the article is 1, while the article's containment in the teaser is about 0.38. The thresholds in this section apply to resemblance; finding a document that is largely contained in another needs a containment or substring match ({ref}`sec-ch4-substring-deduplication-suffix-arrays`).
+
 Computing Jaccard similarity for every pair of a billion documents is impossible, and MinHash {cite}`broder1997resemblance` is the standard way around it. The key fact: if $h$ is a random hash function over shingles and $\min h(\mathcal{X})$ denotes the smallest hash value among $\mathcal{X}$'s shingles, then
 
 $$\Pr\left[\min h(\mathcal{X}) = \min h(\mathcal{Y})\right] = J(\mathcal{X}, \mathcal{Y})$$
@@ -1496,7 +1554,7 @@ true J 0.769, MinHash estimate 0.828
 candidate pairs: [('orig', 'retitled')]
 ```
 
-Production systems differ from this toy in three ways. They compute signatures in a distributed map over shards and do the bucket join as a global shuffle; they then build the connected components of the candidate graph (union-find) and keep one document per component, usually the longest or the earliest; and they skip the exact Jaccard check on candidates because at the chosen threshold the false-positive rate is low enough to ignore.
+Production systems differ from this toy in three ways. They compute signatures in a distributed map over shards and do the bucket join as a global shuffle; they then build the connected components of the candidate graph (union-find) and keep one document per component, usually the longest or the earliest; and a pipeline may skip the exact check on candidates. {cite:t}`lee2022deduplicating` do not: they compute the actual Jaccard index of each candidate pair and then its edit similarity (Appendix A). A pipeline that skips the check accepts the false positives below its target similarity; the listing above puts the candidate rate at $J = 0.7$ at 30% for the 450-band banding and 56.5% for FineWeb's 14 bands of 8 rows.
 
 Union-find turns candidate pairs into clusters in nearly linear time: every document starts as its own root, each candidate pair joins the two roots, and a document's cluster is the root it reaches. The listing measures what a banding setting costs. It builds 40 random 200-word documents with three edited copies each (6 of the 200 words replaced), so the true clusters are known, and reports the pair precision (the fraction of pairs put in one cluster that are true copies) and the pair recall (the fraction of true pairs put in one cluster) for three ways of banding the same 128-value signature.
 
@@ -1627,8 +1685,15 @@ SimHash {cite}`charikar2002similarity` is the other common near-duplicate finger
 
 ```python
 import hashlib
+import math
 import re
 from collections import Counter
+
+
+def features(text: str) -> Counter:
+    """Word pairs of the text, each weighted by its count."""
+    words = re.findall(r"\w+", text.lower())
+    return Counter(" ".join(words[i : i + 2]) for i in range(len(words) - 1))
 
 
 def simhash(text: str, n_fp: int = 64) -> int:
@@ -1636,11 +1701,8 @@ def simhash(text: str, n_fp: int = 64) -> int:
 
     Each feature votes +w or -w on every bit, as that bit of its own hash says.
     """
-    words = re.findall(r"\w+", text.lower())
-    # weight = count
-    features = Counter(" ".join(words[i : i + 2]) for i in range(len(words) - 1))
     votes = [0] * n_fp
-    for feature, weight in features.items():
+    for feature, weight in features(text).items():
         digest = hashlib.sha1(feature.encode("utf-8")).digest()
         h = int.from_bytes(digest[: n_fp // 8], "little")
         for bit in range(n_fp):
@@ -1670,6 +1732,23 @@ fp = {k: simhash(v) for k, v in (("base", base), ("edited", edited), ("other", o
 print(f"d_Ham(base, edited) = {d_ham(fp['base'], fp['edited'])}")
 print(f"d_Ham(base, other)  = {d_ham(fp['base'], fp['other'])}")
 assert d_ham(fp["base"], fp["edited"]) < 12 < d_ham(fp["base"], fp["other"])
+
+
+def cosine(a: str, b: str) -> float:
+    fa, fb = features(a), features(b)
+    dot = sum(w * fb[f] for f, w in fa.items())
+    return dot / (math.hypot(*fa.values()) * math.hypot(*fb.values()))
+
+
+for name, text in (("edited", edited), ("other", other)):
+    theta = math.acos(cosine(base, text))
+    p = theta / math.pi  # chance that one fingerprint bit differs
+    measured = d_ham(fp["base"], fp[name])
+    print(
+        f"{name}: cosine {math.cos(theta):.3f}, expected {64 * p:.1f} bits, "
+        f"measured {measured}"
+    )
+    assert abs(measured - 64 * p) < 2 * math.sqrt(64 * p * (1 - p))  # within 2 sd
 ```
 
 % output
@@ -1677,9 +1756,13 @@ assert d_ham(fp["base"], fp["edited"]) < 12 < d_ham(fp["base"], fp["other"])
 ```text
 d_Ham(base, edited) = 6
 d_Ham(base, other)  = 30
+edited: cosine 0.919, expected 8.2 bits, measured 6
+other: cosine 0.020, expected 31.6 bits, measured 30
 ```
 
-Changing a day and a vote count moves the fingerprint by 6 bits; an unrelated text is 30 bits away, near the 32 expected of two random 64-bit strings. A whole document fits in 8 bytes, against 512 bytes for a 128-value MinHash signature of 32-bit integers, but a short text with few features, as here, moves more bits per edit than a long page does, so the threshold depends on document length.
+Changing a day and a vote count moves the fingerprint by 6 bits; an unrelated text is 30 bits away, near the 32 expected of two random 64-bit strings.
+
+The property that turns a Hamming threshold into a similarity threshold is {cite:t}`charikar2002similarity`'s: the vote on one bit is the sign of a random projection of the document's weighted feature vector, so for two documents whose vectors make an angle $\theta$ the two bits differ with probability $\theta / \pi$. The expected distance is therefore $n_{fp}\,\theta / \pi$, and the cosine of the angle is the similarity SimHash estimates (a count-weighted cosine, not the set-based Jaccard index of MinHash). The listing checks it: the edited text has cosine 0.919, an angle of 23 degrees, and an expected distance of 8.2 bits against the 6 measured, within two standard deviations of a sum of 64 independent bits; the unrelated text has cosine 0.020 and 31.6 expected bits against 30. A threshold of $k = 3$ bits of 64 is the angle $\theta = 3\pi / 64$, about 8.4 degrees or cosine 0.989, so pages must be nearly identical in their weighted word pairs. A whole document fits in 8 bytes, against 512 bytes for a 128-value MinHash signature of 32-bit integers. With 64 bits the estimate is coarse (a standard deviation of about 2.7 bits at 8 expected), and the projection is only approximately random when a text has few features, as here, so a threshold is checked on a sample of known near-duplicates.
 
 Whichever detector finds a cluster, which document to keep from it is not a detail. Keeping the shortest copy drops the version with the comment thread; keeping the longest keeps the version with the navigation menu.
 
@@ -1705,7 +1788,7 @@ never duplicated, all survives: the good share falls to 33%.
 
 ### 5.5 Substring deduplication with suffix arrays
 
-Document-level methods miss the case where a long passage (a license header, a quotation, a boilerplate disclaimer) is embedded in otherwise distinct documents. {cite:t}`lee2022deduplicating` address this with a suffix array {cite}`manber1993suffix` over the concatenated, tokenized corpus: sort all suffixes, and every occurrence of a run of at least 50 tokens that appears more than once sits in one group of adjacent suffixes that share a prefix of that length. All occurrences in the group except the earliest are marked for removal, and the marks are merged into maximal spans. Comparing only neighboring pairs and removing the later of each pair is not enough: with three copies, the earliest copy can be the later member of some adjacent pair, and two copies survive.
+Document-level methods miss the case where a long passage (a license header, a quotation, a boilerplate disclaimer) is embedded in otherwise distinct documents. {cite:t}`lee2022deduplicating` address this with a suffix array {cite}`manber1993suffix` over the concatenated, tokenized corpus: sort all suffixes, and every occurrence of a run of at least 50 tokens that appears more than once sits in one group of adjacent suffixes that share a prefix of that length. All occurrences in the group except the earliest are marked for removal, and the marks are merged into maximal spans. Comparing only neighboring pairs is not enough: the rule must pick the survivor from the whole group. Two naive rules fail in different ways. Marking the later-positioned member of each adjacent pair never touches the earliest copy, but with three copies the sort can put the earliest, the latest and the middle copy in that order, and then the latest is the later member of both pairs, the middle copy is never marked and two copies survive. Marking the second member of each pair in array order always leaves exactly one copy, but it is whichever copy sorts first, not the earliest. The notebook ({ref}`nb-prep-dedup`) runs both rules on such a case. When occurrences overlap, as in periodic text, the earliest run is kept whole and the remainder of the later occurrences is deleted.
 
 A suffix array over $T_{idx}$ tokens needs about $8T_{idx}$ bytes for the index alone, so the method is run over a few hundred gigabytes at a time on a large-memory machine rather than in a distributed map. The implementation below is the naive $\mathcal{O}(T_{idx} \log T_{idx})$-comparison version, enough to see the idea on a few thousand tokens.
 
@@ -1741,7 +1824,9 @@ def repeated_spans(tokens, min_len: int = 50):
         keep = min(group)  # the earliest occurrence survives
         for start in group:
             if start != keep:
-                remove[start : start + min_len] = [True] * min_len
+                # Overlapping copies (periodic text) leave the earliest run whole.
+                first = max(start, keep + min_len)
+                remove[first : start + min_len] = [True] * (start + min_len - first)
 
     # Merge the marked positions into maximal spans.
     spans, i = [], 0
@@ -2364,11 +2449,11 @@ prints the per-stage drop report.
 ## Summary
 
 - **Most of a crawl is discarded, and the discarding is a modeling decision.** Each filter encodes a view of what good text is, and the model inherits it; every technique in this chapter is therefore paired with a way to measure its effect ({ref}`sec-ch4-preprocessing-decides-model-learns`).
-- **Extraction and normalization come first** because every later stage compares strings: boilerplate is separated from main text by block-level statistics such as word count and link density, and Unicode normalization (NFC by default, NFKC where compatibility characters should fold) makes equal text compare equal ({ref}`sec-ch4-text-extraction-normalization`).
+- **Extraction and normalization come first** because every later stage compares strings: boilerplate is separated from main text by block-level statistics such as word count and link density, and decoding under the right encoding (and not leaving U+FFFD or mojibake behind) and Unicode normalization (NFC by default, NFKC where compatibility characters should fold) make equal text compare equal ({ref}`sec-ch4-text-extraction-normalization`).
 - **Language identification** assigns each document a language and a confidence, and the threshold on that confidence decides how much low-resource and mixed-language text survives ({ref}`sec-ch4-language-identification`).
-- **Quality filters run from cheap to expensive:** heuristic rules and repetition measures remove pages that are not prose, a reference language model's perplexity scores fluency, and a classifier trained against a curated positive set selects for resemblance to it; each is judged by training small models with and without it at the same token budget and reporting the retained fraction ({ref}`sec-ch4-quality-filtering`).
+- **Quality filters run from cheap to expensive:** heuristic rules and repetition measures remove pages that are not prose, a reference language model's perplexity scores fluency, and a classifier trained against a curated positive set selects for resemblance to it, while scoring with a language model and importance resampling are the costlier and the distribution-matching alternatives; each is judged by training small models with and without it at the same token budget and reporting the retained fraction ({ref}`sec-ch4-quality-filtering`).
 - **Machine-generated text is hard to filter** because it is a small share of a crawl: at a 1% base rate even an accurate detector removes mostly human-written documents ({ref}`sec-ch4-spam-machine-generated-text`).
-- **Deduplication works on several units and by several methods:** exact hashing removes identical documents, and a Bloom filter does so in fixed memory at a false-positive rate that rises as the filter fills; hashing three-sentence spans, lines and paragraphs removes repeated boilerplate inside otherwise distinct documents; MinHash with LSH banding finds near-duplicates, with the band count $b$ and rows per band $r$ setting the similarity threshold of the S-curve $1 - (1 - J^r)^b$, and SimHash does the same with one 64-bit fingerprint per document; suffix arrays find repeated substrings. Semantic deduplication (SemDeDup) removes documents that are close in embedding space even when they share few words. Whether deduplication runs per snapshot or across the whole corpus changes what is kept ({ref}`sec-ch4-deduplication`).
+- **Deduplication works on several units and by several methods:** exact hashing removes identical documents, and a Bloom filter does so in fixed memory at a false-positive rate that rises as the filter fills; hashing three-sentence spans, lines and paragraphs removes repeated boilerplate inside otherwise distinct documents; MinHash with LSH banding finds near-duplicates, with the band count $b$ and rows per band $r$ setting the similarity threshold of the S-curve $1 - (1 - J^r)^b$, and SimHash does the same with one 64-bit fingerprint per document whose Hamming distance estimates the angle between weighted feature vectors; containment, not resemblance, finds a short passage inside a long document; suffix arrays find repeated substrings. Semantic deduplication (SemDeDup) removes documents that are close in embedding space even when they share few words. Whether deduplication runs per snapshot or across the whole corpus changes what is kept ({ref}`sec-ch4-deduplication`).
 - **Privacy and safety filtering** replaces personal data with placeholders, drops documents dense with it, and removes toxic or unlicensed content; pattern matching is cheap but its precision has to be measured on text full of look-alike numbers ({ref}`sec-ch4-privacy-toxicity-safety-filtering`).
 - **Decontamination** removes training text that shares long $n$-grams with evaluation sets; it misses paraphrases and translations, so it is reported as a procedure with its parameters and combined with fresh test sets ({ref}`sec-ch4-benchmark-decontamination`).
 - **Code, mathematics and multilingual text need their own rules:** code is filtered by license, file properties and secrets rather than by prose statistics; mathematical text needs extraction that keeps formulas; and thresholds tuned for English remove good text in other languages and scripts ({ref}`sec-ch4-domain-specific-preprocessing`).
@@ -2570,7 +2655,7 @@ b=32, r= 4: crosses 0.5 at J=0.383; simulated at J=0.383: formula 0.502, observe
 The three settings spend the same 128 hash values on very different thresholds: few long bands (8 by 16) only pair documents that are near-identical, and many short bands (32 by 4) pair documents that share about a third of their shingles. Each observed rate is within the sampling error of the formula, which with 300 trials is about 0.03. The crossing point is a little below the often-quoted approximation $(1/b)^{1/r}$ (0.878, 0.707 and 0.420 for the three settings), which lies close to where the curve is steepest rather than where it reaches 0.5.
 ````
 
-4. **Which copy to keep.** A cluster of near-duplicates holds four versions of one news
+4. **Which copy to keep.** A cluster of near-duplicates, formed by containment and substring matches rather than by resemblance alone, holds four versions of one news
    article: (A) the 800-word article followed by a 1,200-word comment thread, crawled on
    2 March; (B) the clean 800-word article, crawled on 3 March; (C) the article with a
    150-word navigation menu, 950 words, crawled on 5 March; and (D) a 300-word
@@ -2581,6 +2666,11 @@ The three settings spend the same 128 hash values on very different thresholds: 
 
 ```{admonition} Solution 4
 :class: dropdown
+
+Resemblance alone would not form this cluster, as counting words as a rough stand-in
+for shingles shows: B has $800/2000 = 0.4$ of A's words in common and D has
+$300/800 = 0.375$ of B's, both far below the 0.7 to 0.85 thresholds of this chapter. The
+cluster comes from containment: B is contained in A and D in B with containment 1.
 
 "Keep the longest" keeps A: the model sees the article, but 1,200 of the 2,000 words
 (60%) are unedited comments. "Keep the shortest" and "keep the earliest" both keep D:
