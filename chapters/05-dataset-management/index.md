@@ -828,6 +828,24 @@ chunking: 107 sequences, 25.8% of documents split
 best-fit packing: 108 sequences, 0.86% padding
 ```
 
+{numref}`fig-ch5-packing-schematic` lays the three methods side by side on six small documents. Chunking cuts one of them across a sequence boundary, padding wastes 48 of its 96 token slots, and best-fit packing fills three sequences without cutting anything.
+
+```{figure} figures/packing-schematic.*
+:name: fig-ch5-packing-schematic
+:alt: Three stacks of token grids, each sixteen cells wide. Concatenate and chunk fills three rows with documents D1 to D6 in order and cuts D2 across the first and second rows. Pad gives each of the six documents its own row, with 48 gray padding cells in total. Best-fit pack fills three rows exactly, D6 with D5, D1 with D3, and D4 with D2.
+
+The same six documents (11, 7, 5, 9, 3 and 13 tokens, each counting its end-of-document token) at sequence length $n = 16$. Each colored cell is one token and gray cells are padding. Hatching marks the document that chunking splits. Padding needs twice as many sequences as the other two methods. Best-fit packing places the longest document first and each later one in the fullest sequence that still has room for it.
+```
+
+On a real corpus, packing leaves most sequences holding only a few documents, while short documents collect in a few crowded sequences. {numref}`fig-ch5-packing-histogram` shows this for the notebook's corpus.
+
+```{figure} figures/packing-histogram.*
+:name: fig-ch5-packing-histogram
+:alt: A histogram of documents ending in each packed sequence. Most of the 177 sequences hold two to six documents, a handful hold none, and a long tail runs out to one sequence holding 68 documents.
+
+The number of documents that end in each of the notebook's 177 best-fit packed sequences, at sequence length 512. This is a different corpus from the fence above. A sequence with zero documents holds a full 512-token piece of a longer document, a piece that does not contain the document's end. The tail comes from many short documents filling the gaps left by long ones.
+```
+
 (sec-ch5-cross-document-attention)=
 
 ### 4.2 Cross-document attention
@@ -869,6 +887,15 @@ print("allowed pairs:", int(mask.sum()), "of", len(seq) * (len(seq) + 1) // 2, "
 ```text
 segment ids: [0, 0, 0, 1, 1, 1, 1, 2]
 allowed pairs: 17 of 36 causal pairs
+```
+
+On a full packed sequence the mask becomes a staircase of small triangles along the diagonal, one triangle per document, as {numref}`fig-ch5-document-mask` shows.
+
+```{figure} figures/document-mask.*
+:name: fig-ch5-document-mask
+:alt: Two black-and-white mask images. On the left is the full 512 by 512 mask, a thin staircase of black triangles along the diagonal with a red box around the first 64 positions. On the right is a zoom of that box, showing six triangles, one per document, with white everywhere between them.
+
+The document-causal mask for the notebook's fullest packed sequence: 68 documents in 512 positions. Black means the query position may attend to the key position. Plain causal attention would fill the whole lower triangle. The document mask keeps only the triangle of each document, and the padding at the end of the sequence takes no part.
 ```
 
 Whether to mask is a choice. Many pretraining runs did not, on the grounds that the kernel was simpler and the effect small; recent ones increasingly do. Llama 3 masks attention between documents in the same sequence and reports that this had limited impact in standard pretraining but was important in continued pretraining on very long sequences {cite}`grattafiori2024llama`. Fine-tuning with packed examples should always mask, because the examples are short and the leakage between them is large.
@@ -931,6 +958,22 @@ Given weights $w_s$ that sum to one, the sampler draws each document's source wi
 
 - **Temperature** flattens or sharpens the weights: $p_s \propto w_s^{1/\tau}$. With $\tau = 1$ the weights are used as given; $\tau > 1$ upsamples small sources, which is how multilingual models give low-resource languages more than their share: mT5 samples each language in proportion to its number of examples raised to the power 0.3, that is $\tau = 1/0.3 \approx 3.3$ {cite}`xue2021mt5`. The same scheme is used on domain weights.
 - **Epoch caps** bound how many times a source is repeated. If source $s$ has $U_s$ tokens and the run needs $D$ tokens, source $s$ is seen $p_s D / U_s$ times; for a fixed compute budget, up to about four epochs of repeated data change the loss negligibly compared with unique data, and beyond that the value of further repetition decays toward zero {cite}`muennighoff2023scaling`. A cap renormalizes the weights of the uncapped sources once a capped one has used its budget.
+
+{numref}`fig-ch5-temperature` shows temperature on the notebook's three sources, and {numref}`fig-ch5-epoch-cap` shows a cap taking effect.
+
+```{figure} figures/temperature.*
+:name: fig-ch5-temperature
+:alt: A grouped bar chart with one group each for code, web and wiki and four bars per group for temperatures 0.5, 1, 2 and 4. As temperature rises, web falls from about 0.82 to 0.40 while code and wiki rise. A black tick over each bar marks its target, and every bar lies close to its tick.
+
+The fraction of 600 draws from each source (bars) against the tempered target $p_s$ (black ticks). The weights are web 0.6, wiki 0.25 and code 0.15, and the legend's T is the temperature $\tau$. At $\tau = 0.5$ the largest weight is sharpened to about 0.8. At $\tau = 4$ the three sources move toward equal shares.
+```
+
+```{figure} figures/epoch-cap.*
+:name: fig-ch5-epoch-cap
+:alt: Cumulative documents drawn from web, wiki and code over 3,000 draws. The wiki line rises until it reaches its cap of 480 at step 1,901 and then stays flat, while web and code keep rising. Dotted lines mark the wiki cap at 480 and the code cap at 800.
+
+Cumulative draws per source in the notebook's capped sampler: web has 600 documents, wiki 120 and code 200, with a cap of four epochs. Wiki uses up its 4 × 120 = 480 draws at step 1,901 (dashed line). From then on its line is flat, and the remaining draws are split between web and code in proportion to their weights. Web's cap of 2,400 is off the top of the plot.
+```
 
 Learned weights (DoReMi {cite}`xie2023doremi`, which sets static $w_s$ by training a small proxy model with group distributionally robust optimization over the domains) and curricula that change the mixture over training are both consumed by the same sampler, the latter with $w_s$ a function of the step. The cap is stated in tokens; the sampler below counts documents, which production samplers replace with token counts from the index.
 
