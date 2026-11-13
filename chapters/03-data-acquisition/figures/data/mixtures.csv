@@ -1,10 +1,17 @@
 # The published mixtures of section 1.1, in percent, copied from the table on the chapter page (which cites each
-# paper). GPT-3 and LLaMA 1 are shares of training tokens, The Pile of corpus bytes, Dolma and FineWeb of corpus
-# tokens. Rows are as published and rounded, so they need not sum to exactly 100; make_figures.py draws the
-# remainder to 100 as "Other" (5% of The Pile, 1.5% of Dolma: sources the table does not place in a column).
+# paper). GPT-3 and LLaMA 1 are shares of training tokens. The Pile is the "Weight" column of Gao et al. (2020),
+# Table 1: shares of the 1,254.20 GiB of training bytes after upsampling (raw corpus 825.18 GiB), grouped as
+# web = Pile-CC 18.11; curated web = OpenWebText2 10.01 + Stack Exchange 5.13 + Wikipedia 1.53 + HackerNews 0.62;
+# books = Books3 12.07 + PG-19 2.17 + BookCorpus2 0.75; papers = PubMed Central 14.40 + ArXiv 8.96 + FreeLaw 6.12 +
+# USPTO 3.65 + PubMed Abstracts 3.07 + PhilPapers 0.38 + NIH ExPorter 0.30; code = Github 7.59. Dolma is
+# Soldaini et al. (2024, arXiv 2402.00159v2), Table 1, Llama tokens out of 3,059B: Common Crawl 2,479; Reddit 89 +
+# Wikipedia/Wikibooks 4.3; Gutenberg 6.0; Semantic Scholar (peS2o) 70; GitHub (The Stack) 411. FineWeb is web only.
+# Rows are rounded, so they need not sum to exactly 100; make_figures.py draws the remainder to 100 as "Other":
+# 5% of The Pile (OpenSubtitles, DM Mathematics, Ubuntu IRC, EuroParl, YouTube subtitles, Enron emails) and 0.1% of
+# Dolma (rounding only; every Dolma source is placed in a column).
 name,web_crawl,curated_web,books,papers,code
 GPT-3,60,25,16,0,0
 The Pile,18,17,15,37,8
 LLaMA 1,82,6.5,4.5,2.5,4.5
-Dolma,80,3,0.2,2.3,13
+Dolma,81,3,0.2,2.3,13.4
 FineWeb,100,0,0,0,0

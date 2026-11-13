@@ -49,20 +49,29 @@ def mixtures(out):
              ("other", "Other", "#bbbbbb")]
     for r in data:     # "Other" is what the five columns leave of 100% (GPT-3's published shares sum to 101%)
         r["other"] = max(0.0, 100 - sum(float(r[k]) for k, _, _ in parts[:-1]))
-    fig, ax = plt.subplots(figsize=(7.6, 3.4))
+    fig, ax = plt.subplots(figsize=(7.6, 3.6))
     names = [r["name"] for r in data][::-1]
     left = [0.0] * len(names)
+    small = [[] for _ in names]     # segments under 3% are too narrow to label inside the bar
     for key, label, color in parts:
         values = [float(r[key]) for r in data][::-1]
         ax.barh(names, values, left=left, color=color, edgecolor="white", linewidth=0.8, label=label)
         for i, (x0, v) in enumerate(zip(left, values)):
             if v >= 3:
-                ax.text(x0 + v / 2, i, f"{v:g}", ha="center", va="center", fontsize=8 if v >= 6 else 7,
+                ax.text(x0 + v / 2, i, f"{v:g}", ha="center", va="center", fontsize=10 if v >= 6 else 9,
                         color="white" if key in ("web_crawl", "papers", "code") else "black")
+            elif v > 0:
+                small[i].append(f"{label.lower()} {round(v, 1):g}")
         left = [a + b for a, b in zip(left, values)]
-    ax.set_xlim(0, 101)
-    ax.set_xlabel("share of the mixture (%); segment labels in percent")
-    ax.legend(ncol=5, fontsize=8, loc="lower center", bbox_to_anchor=(0.5, 1.0), frameon=False)
+    for i, items in enumerate(small):
+        if items:
+            ax.text(101.5, i, ", ".join(items), ha="left", va="center", fontsize=9.5)
+    ax.set_xlim(0, 140)
+    ax.set_xticks(range(0, 101, 20))
+    ax.tick_params(labelsize=10)
+    ax.set_xlabel("share of the mixture (%); segment labels in percent", fontsize=10)
+    ax.legend(ncol=6, fontsize=9.5, loc="lower center", bbox_to_anchor=(0.45, 1.0), frameon=False,
+              handlelength=1.2, columnspacing=1.0)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
     fig.tight_layout()
@@ -74,11 +83,11 @@ def corpus_sizes(out):
     data = rows("corpus_sizes.csv")
     fig, ax = plt.subplots(figsize=(7.0, 3.8))
     ax.axvspan(2026, 2032, ymin=0, ymax=1, color="#eeeeee", zorder=0)
-    ax.text(2029, 2e12, "projected\nexhaustion\n2026 to 2032", ha="center", va="center", fontsize=8, color="#444444")
+    ax.text(2029, 2e12, "projected\nexhaustion\n2026 to 2032", ha="center", va="center", fontsize=9.5, color="#444444")
     ax.axhspan(100e12, 1000e12, xmin=0, xmax=1, color="#f9c99a", alpha=0.6, linewidth=0, zorder=1)
     ax.axhline(300e12, color="#d9822b", linestyle="--", linewidth=1, zorder=2)
     ax.text(2019.6, 1.15e15, "stock of public text: about 300T tokens (dashed), 90% interval 100T to 1,000T (band)",
-            va="bottom", fontsize=8, color="#8a4b0f")
+            va="bottom", fontsize=9.5, color="#8a4b0f")
     SHIFT = {"FineWeb": -0.15, "Llama 3": 0.15}
     offsets = {"GPT-3": (6, -4), "LLaMA 1": (6, -4), "Dolma": (6, -4), "FineWeb": (-8, -3), "Llama 3": (8, -3)}
     for r in data:
@@ -87,7 +96,7 @@ def corpus_sizes(out):
         ax.scatter([x], [y], marker=marker, color="#2b5d8a", s=36, zorder=3)
         label = f"{r['name']}  {y / 1e12:g}T" if y >= 1e12 else f"{r['name']}  {y / 1e9:g}B"
         dx, dy = offsets[r["name"]]
-        ax.annotate(label, (x, y), xytext=(dx, dy), textcoords="offset points", fontsize=8,
+        ax.annotate(label, (x, y), xytext=(dx, dy), textcoords="offset points", fontsize=9.5,
                     ha="right" if dx < 0 else "left")
     ax.scatter([], [], marker="o", color="#2b5d8a", label="tokens a model was trained on")
     ax.scatter([], [], marker="s", color="#2b5d8a", label="tokens in a released corpus")
@@ -97,7 +106,7 @@ def corpus_sizes(out):
     ax.set_xticks(range(2020, 2033, 2))
     ax.set_xlabel("year")
     ax.set_ylabel("tokens (log scale)")
-    ax.legend(fontsize=8, loc="lower right", frameon=True, facecolor="white", edgecolor="#cccccc")
+    ax.legend(fontsize=9.5, loc="lower right", frameon=True, facecolor="white", edgecolor="#cccccc")
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
     fig.tight_layout()
@@ -107,8 +116,7 @@ def corpus_sizes(out):
 def consent(out):
     """Section 5.3: share of tokens fully restricted by robots.txt, full corpora against their head domains."""
     data = rows("consent_robots_restricted.csv")
-    data = [r for r in data if r["month"] >= "2022-07"]
-    months = list(range(len(data)))
+    months = list(range(len(data)))      # the whole series, January 2016 to April 2024, as the prose describes
     fig, ax = plt.subplots(figsize=(7.0, 3.6))
     tiers = [("head", "#c0392b", "--", "head domains (most-used, best-maintained)"),
              ("full", "#2b5d8a", "-", "full corpus")]
@@ -117,18 +125,18 @@ def consent(out):
             values = [float(r[f"{tier}_{line}"]) for r in data]
             ax.plot(months, values, color=color, linestyle=style, linewidth=1.6,
                     label=label if k == 0 else None)
-    ticks = [i for i, r in enumerate(data) if r["month"][5:] in ("01", "07")]
+    ticks = [i for i, r in enumerate(data) if r["month"][5:] == "01"]
     ax.set_xticks(ticks)
-    ax.set_xticklabels([("Jan " if data[i]["month"][5:] == "01" else "Jul ") + data[i]["month"][:4] for i in ticks])
+    ax.set_xticklabels([data[i]["month"][:4] for i in ticks])
     last = len(data) - 1
     head = sorted(float(data[last][f"head_{c}"]) for c in ("blue", "orange", "red"))
     full = sorted(float(data[last][f"full_{c}"]) for c in ("blue", "orange", "red"))
-    ax.text(last + 0.5, sum(head) / 3, f"{head[0]:.0f} to {head[-1]:.0f}%", va="center", fontsize=8, color="#c0392b")
-    ax.text(last + 0.5, sum(full) / 3, f"{full[0]:.0f} to {full[-1]:.0f}%", va="center", fontsize=8, color="#2b5d8a")
-    ax.set_xlim(0, last + 4)
+    ax.text(last + 0.5, sum(head) / 3, f"{head[0]:.0f} to {head[-1]:.0f}%", va="center", fontsize=9.5, color="#c0392b")
+    ax.text(last + 0.5, sum(full) / 3, f"{full[0]:.0f} to {full[-1]:.0f}%", va="center", fontsize=9.5, color="#2b5d8a")
+    ax.set_xlim(0, last + 14)
     ax.set_ylim(0, 35)
     ax.set_ylabel("tokens fully restricted (%)")
-    ax.legend(fontsize=8, loc="upper left", frameon=False)
+    ax.legend(fontsize=9.5, loc="upper left", frameon=False)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
     fig.tight_layout()
@@ -146,14 +154,14 @@ def rehydration(out):
     fig, ax = plt.subplots(figsize=(7.4, 3.6))
     ax.bar(sizes, rates, width=1.0, color=cmap(norm(weights)), linewidth=0)
     ax.axhline(62.4, color="#c0392b", linestyle="--", linewidth=1)
-    ax.text(120, 63.6, "global removal rate 62.4%", ha="center", va="bottom", fontsize=8, color="#c0392b")
+    ax.text(120, 63.6, "global removal rate 62.4%", ha="center", va="bottom", fontsize=9.5, color="#c0392b")
     low = min(range(len(rates)), key=rates.__getitem__)
     ax.annotate(f"lowest removal, weight 10\n(size {sizes[low]}: {rates[low]:.1f}%)", (sizes[low], rates[low]),
-                xytext=(40, 22), textcoords="data", fontsize=8, arrowprops={"arrowstyle": "->", "lw": 0.8})
+                xytext=(40, 22), textcoords="data", fontsize=9.5, arrowprops={"arrowstyle": "->", "lw": 0.8})
     ax.annotate(f"unique pages\n(size 1: {rates[0]:.1f}%)", (1, rates[0]), xytext=(14, 69), textcoords="data",
-                fontsize=8, va="center", arrowprops={"arrowstyle": "->", "lw": 0.8})
+                fontsize=9.5, va="center", arrowprops={"arrowstyle": "->", "lw": 0.8})
     ax.annotate("last bar: the most-copied\n0.1% grouped", (sizes[-1], rates[-1]), xytext=(178, 71),
-                textcoords="data", fontsize=8, ha="center", arrowprops={"arrowstyle": "->", "lw": 0.8})
+                textcoords="data", fontsize=9.5, ha="center", arrowprops={"arrowstyle": "->", "lw": 0.8})
     ax.set_xlim(0, sizes[-1] + 1)
     ax.set_ylim(0, 75)
     ax.set_xlabel("MinHash duplicate-cluster size (copies of the document)")

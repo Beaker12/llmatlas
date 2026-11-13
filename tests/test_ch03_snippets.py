@@ -48,6 +48,8 @@ MIN_FIGURES: int = 10
 NOTATION_OK: dict[str, str] = {}
 # Section labels other chapters link to: label -> the text of the heading it sits directly above.
 INTERFACE_LABELS: dict[str, str] = {
+    # fixed by the plan's list of eleven interface labels: chapter 4 links it (from its own branch) for the
+    # four-epoch result this heading states; the chapter-internal label of 8.2 is sec-ch3-epoch-cap-per-source
     "sec-ch3-epochs": "1.3 How much is enough",
 }
 
@@ -216,3 +218,30 @@ def test_notebook_commits_its_plots():
     assert len(plotting) == 2 and images == plotting
     tagged = [c for c in cells if any(t.startswith("figure:") for t in c["metadata"].get("tags", []))]
     assert tagged and all(c in images for c in tagged)
+
+
+def test_mixture_shares_match_the_papers_tables():
+    """Section 1.1: The Pile's shares are its Table 1 "Weight" column (training bytes after upsampling, out of
+    1,254.20 GiB; raw corpus 825.18 GiB); Dolma's are its Table 1 Llama-token counts out of 3,059B."""
+    import csv
+
+    with open(FIGURE_SCRIPT.parent / "data" / "mixtures.csv", encoding="utf-8") as f:
+        rows = {r["name"]: r for r in csv.DictReader(ln for ln in f if not ln.startswith("#"))}
+    raw = {"Pile-CC": 227.12, "PubMed Central": 90.27, "Books3": 100.96, "OpenWebText2": 62.77}
+    epochs = {"Pile-CC": 1.0, "PubMed Central": 2.0, "Books3": 1.5, "OpenWebText2": 2.0}
+    weight = {"Pile-CC": 18.11, "PubMed Central": 14.40, "Books3": 12.07, "OpenWebText2": 10.01}
+    for k in raw:                                     # Weight = raw size x epochs / effective total
+        assert abs(raw[k] * epochs[k] / 1254.20 * 100 - weight[k]) < 0.02, k
+    assert round(227.12 / 825.18 * 100) == 28         # Pile-CC as a share of the raw corpus, as the page says
+    pile = {"web_crawl": [18.11], "curated_web": [10.01, 5.13, 1.53, 0.62], "books": [12.07, 2.17, 0.75],
+            "papers": [14.40, 8.96, 6.12, 3.65, 3.07, 0.38, 0.30], "code": [7.59]}
+    for col, parts in pile.items():
+        assert round(sum(parts)) == round(float(rows["The Pile"][col])), col
+    assert round(1.55 + 1.24 + 0.88 + 0.73 + 0.60 + 0.14) == 5   # components no column holds: "Other"
+    dolma = {"web_crawl": (2479, 0), "curated_web": (89 + 4.3, 0), "books": (6.0, 1), "papers": (70, 1),
+             "code": (411, 1)}
+    for col, (tokens, digits) in dolma.items():
+        assert round(tokens / 3059 * 100, digits) == float(rows["Dolma"][col]), col
+    assert round(100 - sum(float(rows["Dolma"][c]) for c in dolma), 1) == 0.1   # rounding only
+    page = PAGE.read_text()
+    assert "out of 1,254 GiB, not of the 825 GiB raw corpus" in page and "Llama tokens out of 3,059B" in page

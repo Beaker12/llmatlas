@@ -13,6 +13,7 @@ digraph robots_decision {
   status -> unavailable [label=" 4xx"];
   status -> parse [label=" 2xx"];
   status -> unreachable [label=" 5xx, error"];
+  status -> fetch [label=" 3xx: follow the redirect,\l even to another host, and apply\l the file to the original host;\l after more than five in a row,\l may treat as 4xx\l", constraint=false, style=dashed];
   parse -> match;
   match -> allow [label=" Allow, or\n no rule matches"];
   match -> deny [label=" Disallow"];
