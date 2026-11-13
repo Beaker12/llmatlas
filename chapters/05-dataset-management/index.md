@@ -411,12 +411,12 @@ assert results["zstd-19"] > results["zstd-3"] > results["lz4"]
 % output-shape
 
 ```text
-lz4       ratio 1.73, compress 213 MB/s, decompress 693 MB/s
-zstd-1    ratio 2.76, compress 160 MB/s, decompress 387 MB/s
-zstd-3    ratio 2.77, compress 99 MB/s, decompress 413 MB/s
-zstd-19   ratio 3.25, compress 1 MB/s, decompress 608 MB/s
-gzip-6    ratio 2.85, compress 6 MB/s, decompress 197 MB/s
-brotli-9  ratio 3.02, compress 4 MB/s, decompress 222 MB/s
+lz4       ratio 1.73, compress 208 MB/s, decompress 636 MB/s
+zstd-1    ratio 2.76, compress 162 MB/s, decompress 499 MB/s
+zstd-3    ratio 2.77, compress 105 MB/s, decompress 379 MB/s
+zstd-19   ratio 3.25, compress 1 MB/s, decompress 598 MB/s
+gzip-6    ratio 2.85, compress 6 MB/s, decompress 200 MB/s
+brotli-9  ratio 3.02, compress 4 MB/s, decompress 224 MB/s
 ```
 
 (sec-ch5-versioning)=
@@ -1414,6 +1414,37 @@ assert index.locate("not present") == []
 ```
 
 The index is cheap: one hash per document, which the build computes anyway for deduplication, and a key-value store that fits on one machine even at tens of billions of entries.
+
+The requests have legal drivers, and they differ in what they require. A license or terms of use that turn out not to permit training are a contract matter, settled by excluding the source (the record of {ref}`sec-ch5-licenses-provenance-record` says which shards). A website's opt-out is recorded with the date it was observed, so the record shows which crawls preceded it. Personal data is the strictest case: in the European Union, Article 17 of the General Data Protection Regulation gives a person "the right to obtain from the controller the erasure of personal data concerning him or her without undue delay" on grounds that include withdrawn consent, a successful objection and unlawful processing {cite}`eu2016gdpr`. Removing the document from the next version handles the data; whether a model trained on the old version must also forget it is the open question the lineage graph exposes.
+
+Machine unlearning is the research answer to that question. {cite:t}`bourtoule2021machine` propose SISA training, which "reduces the computational overhead associated with unlearning": the training data is split into disjoint shards, a separate constituent model is trained on each, so a removal retrains only the model whose shard held the document. The same hash assignment used for splits decides the shard, and the cost of a batch of removals is the fraction of constituent models it touches. In the listing, five requests retrain all of one model, four of eight, and five of 64, 7.8% of the training compute. For a single large language model the analogue is retraining from the last checkpoint before the document was seen, which the data stream of {ref}`sec-ch5-determinism-resumption` makes possible to locate exactly.
+
+```python
+import hashlib
+
+import numpy as np
+
+
+def constituent(doc_id: str, n_shards: int) -> int:
+    """SISA-style assignment: each document trains exactly one of n_shards constituent models."""
+    return int(hashlib.sha256(doc_id.encode()).hexdigest(), 16) % n_shards
+
+
+rng = np.random.default_rng(0)
+requests = [f"doc{i}" for i in rng.choice(10_000_000, size=5, replace=False)]  # five removal requests
+for n_shards in (1, 8, 64):
+    hit = {constituent(d, n_shards) for d in requests}
+    print(f"{n_shards:2d} constituent models: {len(hit)} retrained, {len(hit) / n_shards:.1%} of the training compute")
+assert len({constituent(d, 64) for d in requests}) <= 5  # at most one model per request
+```
+
+% output
+
+```text
+ 1 constituent models: 1 retrained, 100.0% of the training compute
+ 8 constituent models: 4 retrained, 50.0% of the training compute
+64 constituent models: 5 retrained, 7.8% of the training compute
+```
 
 (sec-ch5-putting-it-together)=
 
