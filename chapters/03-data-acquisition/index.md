@@ -106,7 +106,7 @@ The retention figures in Chapter 4 apply on top of this: of a snapshot's two bil
 
 ### 1.3 How much is enough
 
-Chapter 2 derived the compute-optimal token count: for a budget of $C$ FLOPs and a model of $N$ parameters, $C \approx 6ND$ and the Chinchilla optimum is about $D \approx 20N$ tokens {cite}`hoffmann2022training`. Production models train well past that point, because inference cost scales with $N$ and not with $D$, so a smaller model trained longer is cheaper to serve. Llama 3's 8B model saw about 15T tokens {cite}`grattafiori2024llama`, almost two thousand per parameter.
+Chapter 2 derived the compute-optimal token count ({ref}`sec-ch2-flops`): for a budget of $C$ FLOPs and a model of $N$ parameters, $C \approx 6ND$ and the Chinchilla optimum is about $D \approx 20N$ tokens {cite}`hoffmann2022training`. Production models train well past that point, because inference cost scales with $N$ and not with $D$, so a smaller model trained longer is cheaper to serve. Llama 3's 8B model saw about 15T tokens {cite}`grattafiori2024llama`, almost two thousand per parameter.
 
 Two results set the limits of stretching a fixed corpus:
 
@@ -122,7 +122,7 @@ Two results set the limits of stretching a fixed corpus:
 Training-set and corpus sizes against the stock of public text. Circles are tokens a model was trained on, squares tokens in a released corpus (The Pile is left out because it reports bytes). The band is the 90% interval of 100T to 1,000T tokens estimated by {cite:t}`villalobos2024run`, the dashed line their central 300T, and the gray span the years in which they project the stock to be used up.
 ```
 
-Both results bear directly on acquisition. If repeated tokens are nearly free, then a small, high-quality source is worth collecting even though it will be seen many times. If the stock is finite, then every source lost to opt-outs or licensing is a permanent reduction, and synthetic data (Section 7) stops being optional.
+Both results bear directly on acquisition. If repeated tokens are nearly free, then a small, high-quality source is worth collecting even though it will be seen many times. If the stock is finite, then every source lost to opt-outs or licensing is a permanent reduction, and synthetic data ({ref}`sec-ch3-synthetic-data`) stops being optional.
 
 Age matters as well as amount. {cite:t}`longpre2023pretrainers` pretrained models on data collected at different times and found that "a temporal shift between evaluation data and pretraining data leads to performance degradation, which is not overcome by finetuning". The newest documents in a corpus set the model's knowledge cutoff, so recording each document's crawl date ({ref}`sec-ch3-record-contents`) is what lets a team state the cutoff and choose snapshots to move it.
 
@@ -343,7 +343,7 @@ Common Crawl covers the open, static, mostly English web as of a few weeks ago. 
 
 ### 3.2 robots.txt and the politeness conventions
 
-The Robots Exclusion Protocol (RFC 9309) {cite}`koster2022robots` lets a site state, in `/robots.txt`, which user agents may fetch which paths. It was a convention for thirty years and became a standard in 2022; it is not enforced by anything but the crawler's own code, which is why it has become the center of the consent question in Section 5. A crawler is expected to:
+The Robots Exclusion Protocol (RFC 9309) {cite}`koster2022robots` lets a site state, in `/robots.txt`, which user agents may fetch which paths. It was a convention for thirty years and became a standard in 2022; it is not enforced by anything but the crawler's own code, which is why it has become the center of the consent question in {ref}`sec-ch3-rights-licenses-consent`. A crawler is expected to:
 
 - Fetch `/robots.txt` before anything else on a host and obey the `Disallow` and `Allow` rules for its own user agent, falling back to the `*` group. When several rules match a path, the most specific one (the longest match) wins.
 - Treat the answer to that fetch as RFC 9309 says: a 4xx status (the file is "unavailable") means no restrictions, while a 5xx status or a network failure ("unreachable") means the whole site is disallowed. Use a cached copy for no more than 24 hours, and parse at least the first 500 KiB of the file.
@@ -681,7 +681,7 @@ Almost every document on the web is under copyright from the moment it is writte
 
 Copyright is not the only legal route. A site's terms of service raise a contract question, and in the United States anti-hacking law adds another: the Computer Fraud and Abuse Act forbids accessing a protected computer "without authorization". In *hiQ Labs v. LinkedIn* the Ninth Circuit, reconsidering the case after the Supreme Court's *Van Buren* decision, held that hiQ had raised serious questions whether that concept applies "where, as here, prior authorization is not generally required but a particular person—or bot—is refused access", that is, to pages anyone can view, while noting that trespass to chattels and breach of contract claims may still be available {cite}`hiq2022linkedin`. Scraping public pages is therefore not thereby lawful: the risk moves from copyright to contract and tort, which is why the terms-of-service restrictions measured in {ref}`sec-ch3-robots-txt-opt-outs-commons` matter even where robots.txt admits a crawler.
 
-The practical consequences for acquisition: keep the record of where each document came from and under what terms (Section 9); prefer sources that are public domain, openly licensed, or licensed to you; treat shadow libraries and scraped paywalled content as liabilities, whatever the fair-use argument; and build the machinery to honor opt-outs, because a document that was lawful to collect may not be lawful to keep.
+The practical consequences for acquisition: keep the record of where each document came from and under what terms ({ref}`sec-ch3-provenance-documentation`); prefer sources that are public domain, openly licensed, or licensed to you; treat shadow libraries and scraped paywalled content as liabilities, whatever the fair-use argument; and build the machinery to honor opt-outs, because a document that was lawful to collect may not be lawful to keep.
 
 (sec-ch3-dataset-licenses-not-content-licenses)=
 
@@ -777,9 +777,9 @@ Three developments in 2025 are turning the informal conventions above into machi
 
 - **Default blocking and paid crawling.** Cloudflare, which fronts a large share of the web, changed its default to block AI crawlers on 1 July 2025 and introduced a pay-per-crawl mechanism the same day; the IETF's AI Preferences working group is standardizing a vocabulary for expressing training and inference permissions in robots.txt and HTTP headers.
 - **Regulatory codes.** The EU's General-Purpose AI Code of Practice (published 10 July 2025) is a voluntary code whose copyright chapter shows providers how to meet the AI Act's copyright obligations, which include honoring machine-readable opt-outs. The training-content summary is not a Code commitment but a legal obligation under Article 53(1)(d), with a template the Commission adopted in July 2025. Together they make the opt-out handling of {ref}`sec-ch3-robots-txt-opt-outs-commons` a compliance requirement rather than a courtesy.
-- **Openly licensed corpora.** The Common Pile {cite}`kandpal2025common` (8 TB of public-domain and openly licensed text, with a model trained on it to show the approach is viable), Common Corpus and institutional collections of digitized public-domain books show what a corpus looks like when Section 5's advice is followed to the letter: smaller, older on average, and free of the exposure that the web corpora carry.
+- **Openly licensed corpora.** The Common Pile {cite}`kandpal2025common` (8 TB of public-domain and openly licensed text, with a model trained on it to show the approach is viable), Common Corpus and institutional collections of digitized public-domain books show what a corpus looks like when the advice of {ref}`sec-ch3-rights-licenses-consent` is followed to the letter: smaller, older on average, and free of the exposure that the web corpora carry.
 
-One acquisition-time risk is specific to how corpora are distributed. Many image-text datasets are published as URL lists rather than content, and {cite:t}`carlini2024poisoning` showed that buying expired domains on those lists is enough to insert chosen content into the copy of anyone who later re-downloads the dataset; the same work showed that timing edits to land just before a Wikipedia snapshot is taken poisons the snapshot; content hashes recorded at collection time (Section 9) are the defense.
+One acquisition-time risk is specific to how corpora are distributed. Many image-text datasets are published as URL lists rather than content, and {cite:t}`carlini2024poisoning` showed that buying expired domains on those lists is enough to insert chosen content into the copy of anyone who later re-downloads the dataset; the same work showed that timing edits to land just before a Wikipedia snapshot is taken poisons the snapshot; content hashes recorded at collection time ({ref}`sec-ch3-record-contents`) are the defense.
 
 (sec-ch3-multilingual-low-resource-sources)=
 
@@ -1005,7 +1005,7 @@ wikipedia  weight  0.013  tokens  0.03T  epochs 4.00
 books      weight  0.031  tokens  0.06T  epochs 2.04
 ```
 
-The procedure says nothing about whether the preferred weights are good; it only keeps them feasible. Choosing them is the ablation work of Section 8.3, and documenting the choice is Section 9.
+The procedure says nothing about whether the preferred weights are good; it only keeps them feasible. Choosing them is the work of {ref}`sec-ch3-setting-weights`, and documenting the choice is the subject of {ref}`sec-ch3-provenance-documentation`.
 
 ```{admonition} Planning a Mixture
 :class: note
@@ -1226,7 +1226,7 @@ The answer that most datasheets leave blank is the one that matters here: what w
 
 ### Corpora and their papers
 
-- [The FineWeb Datasets](https://arxiv.org/abs/2406.17557) {cite}`penedo2024fineweb` - the most carefully ablated open web corpus; Section 2 covers acquisition from Common Crawl
+- [The FineWeb Datasets](https://arxiv.org/abs/2406.17557) {cite}`penedo2024fineweb` - the most carefully ablated open web corpus, with a full account of how it was taken from Common Crawl
 - [FineWeb2](https://arxiv.org/abs/2506.20920) {cite}`penedo2025fineweb2` - the same pipeline for a thousand languages, with the rehydration result
 - [Dolma](https://arxiv.org/abs/2402.00159) {cite}`soldaini2024dolma` - a multi-source corpus whose datasheet is a model of documentation
 - [The Pile](https://arxiv.org/abs/2101.00027) {cite}`gao2020pile` - the case for source diversity, and the Books3 cautionary tale
