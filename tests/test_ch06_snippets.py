@@ -235,6 +235,23 @@ def test_norm_sweep_check_recomputes_every_arm():
     assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-3000:]
 
 
+def test_notebook_plots_are_embedded():
+    """Every plotting cell of the committed notebook, and every cell tagged figure:<slug>, carries an image/png
+    output: the notebook must be executed for commit with MPLBACKEND unset, or the published page shows no plots."""
+    cells = json.loads((ROOT / "chapters" / "06-architectures" / "examples" / "architecture_demo.ipynb")
+                       .read_text(encoding="utf-8"))["cells"]
+    code = [c for c in cells if c["cell_type"] == "code"]
+
+    def has_image(cell):
+        return any("image/png" in out.get("data", {}) for out in cell.get("outputs", []))
+
+    plotting = [c for c in code if "plt.show()" in "".join(c["source"])]
+    tagged = [c for c in code if any(t.startswith("figure:") for t in c["metadata"].get("tags", []))]
+    assert len(plotting) >= 5 and tagged
+    assert all(has_image(c) for c in plotting + tagged)
+    assert sum(has_image(c) for c in code) >= len(plotting)
+
+
 @pytest.mark.slow
 def test_make_figures_is_deterministic(tmp_path):
     """Two runs of figures/make_figures.py write byte-identical files (fixed salt, no dates, glyphs as paths)."""
