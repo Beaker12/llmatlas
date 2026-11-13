@@ -1215,6 +1215,41 @@ $$W \sim \mathcal{N}\left(0, \frac{2}{d_{\text{in}}}\right)$$
 
 Deep residual networks also scale their initialization with depth: Fixup {cite}`zhang2019fixup` shows that with the right depth-dependent scaling of the residual branches a transformer can be trained with no normalization layers at all, and GPT-2 scales the weights of its residual layers at initialization by one over the square root of the number of residual layers {cite}`radford2019language`. A block has two residual layers, attention and feed-forward, so $L$ blocks give $2L$ of them and the factor is $1/\sqrt{2L}$, or 0.1021 for GPT-2's 48 blocks.
 
+The factor comes from how variances add along the residual stream. After all $2L$ residual layers the stream is the input plus every branch output, $h^{(0)} + \sum_{l=1}^{2L} F_l$. If the branch outputs at initialization have mean zero and are uncorrelated with each other and with the input, their variances add:
+
+$$\operatorname{Var}\left(h^{(0)} + \sum_{l=1}^{2L} F_l\right) = \operatorname{Var}(h^{(0)}) + 2L \operatorname{Var}(F).$$
+
+With an ordinary initialization each branch contributes about the same variance, so the stream's variance grows linearly with depth: 96 branch variances for GPT-2's 48 blocks. Multiplying the weights of the matrix that produces each branch's output by $1/\sqrt{2L}$ multiplies the branch output by the same factor and its variance by $1/(2L)$, and the sum of all $2L$ of them is again one branch variance, whatever the depth. The listing builds pre-LN-style stacks of random linear branches and measures the variance of the final stream with and without the factor.
+
+```python
+import torch
+
+torch.manual_seed(0)
+d = 256
+x0 = torch.randn(64, d)
+
+
+def final_variance(blocks, scaled):
+    h = x0.clone()
+    factor = (2 * blocks) ** -0.5 if scaled else 1.0
+    for _ in range(2 * blocks):   # two residual layers per block
+        W = torch.randn(d, d) / d ** 0.5 * factor
+        h = h + torch.nn.functional.layer_norm(h, (d,)) @ W
+    return h.var().item()
+
+
+for blocks in (12, 48):
+    print(f"{blocks} blocks: variance {final_variance(blocks, False):.3g} unscaled, "
+          f"{final_variance(blocks, True):.3g} with 1/sqrt(2L)")
+```
+
+% output
+
+```text
+12 blocks: variance 24.8 unscaled, 2 with 1/sqrt(2L)
+48 blocks: variance 94.9 unscaled, 2.02 with 1/sqrt(2L)
+```
+
 ```{admonition} Numerical Stability Demonstrations
 :class: tip
 The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surviving it), clips a global gradient norm and plots before/after, compares Xavier and He initialization statistics, and {ref}`nb-math-loss-scaling` simulates dynamic loss scaling.
