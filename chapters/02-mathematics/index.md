@@ -1,24 +1,12 @@
 # Mathematical Foundations
 
-The remarkable capabilities of Large Language Models emerge from sophisticated mathematical foundations spanning linear algebra, probability theory, information theory, and optimization. This chapter establishes the mathematical framework necessary to understand transformer architectures, training dynamics, and the scaling laws that govern LLM performance.
-
-(sec-ch2-learning-objectives)=
-
-## Learning Objectives
-
-By the end of this chapter, you will understand:
-
-- Probability and information theory concepts underlying language modeling
-- Optimization fundamentals and the mathematics of gradient descent
-- How backpropagation flows through transformer architectures
-- Scaling laws that predict LLM performance and compute requirements
-- Numerical stability considerations in large-scale training
+A language model is a probability distribution over text, trained by gradient descent on a loss from information theory, and the way its loss falls with size and data is described by empirical power laws. This chapter derives the mathematics behind each of these steps: the linear algebra and calculus of the transformer's gradients, the information theory of the loss, the optimizers and schedules that minimize it, the scaling laws and compute counts that plan a training run, and the floating-point arithmetic that limits it.
 
 (sec-ch2-chapter-overview)=
 
 ## Chapter Overview
 
-The mathematics underlying Large Language Models can be understood through several interconnected concepts that build upon each other. A short linear-algebra primer (Section 0) fixes notation first.
+The mathematics underlying Large Language Models can be understood through several interconnected concepts that build upon each other. A short linear-algebra primer ({ref}`sec-ch2-linear-algebra-you-need`) fixes notation first.
 
 **Probability and Information Theory** form the foundation of how LLMs understand and generate text. Think of it like predicting the next word in a sentence - the model assigns probabilities to different possibilities based on what it has learned. Information theory measures how "surprising" or "informative" each word choice is, helping the model learn which predictions are better.
 
@@ -31,6 +19,19 @@ The mathematics underlying Large Language Models can be understood through sever
 **Numerical Stability** addresses practical challenges in training massive models with billions of parameters. Just as engineers must account for physical limitations when building bridges, ML practitioners must handle the computer's finite precision when performing trillions of calculations. Techniques like mixed precision training and gradient clipping prevent the mathematical equivalent of structural failure.
 
 These mathematical principles work together to enable LLMs to learn patterns from vast amounts of text and generate coherent, contextually appropriate responses.
+
+(sec-ch2-learning-objectives)=
+
+## Learning Objectives
+
+By the end of this chapter, you will be able to:
+
+- Treat a weight matrix as a map, derive the softmax Jacobian and the $\sqrt{d_k}$ scaling of attention scores, and compute gradients as vector-Jacobian products
+- Compute entropy, cross-entropy, KL divergence, perplexity and bits per byte, and explain how temperature and label smoothing change a distribution
+- Derive the updates of SGD, momentum and Adam, the stability bound $\eta < 2/\lambda_{\max}$, warm-up and cosine schedules, global-norm clipping and gradient accumulation
+- Backpropagate by hand through attention, layer normalization, the feed-forward layer, the embedding and the output head, and explain how residual connections and pre-LN keep gradients alive with depth
+- Derive the $6N$ FLOPs-per-token rule, apply the Kaplan and Chinchilla scaling laws to a compute budget, and estimate the compute and memory of a training run
+- Choose a floating-point format, keep a softmax and fp16 gradients finite with log-sum-exp and loss scaling, and scale initialization to width and depth
 
 (sec-ch2-hands-on-learning)=
 
@@ -73,7 +74,7 @@ For $p = \mathrm{softmax}(z)$, $p_i = e^{z_i}/\sum_j e^{z_j}$,
 
 $$\frac{\partial p_i}{\partial z_j} = p_i(\delta_{ij} - p_j), \qquad \text{so for an upstream gradient } g: \quad \frac{\partial \mathcal{L}}{\partial z} = p \odot \left(g - \langle g, p\rangle \mathbf{1}\right)$$
 
-This is the identity behind the attention gradient in Section 3.3 and behind cross-entropy's gradient $p_j - \delta_{j x_i}$ (take $g_j = -\delta_{j x_i}/p_j$ for the target token $x_i$). It also explains saturation: if one $p_i \approx 1$ then every factor $p_i(\delta_{ij} - p_j)$ is near zero, and no gradient flows through that softmax.
+This is the identity behind the attention gradient in {ref}`sec-ch2-attention-gradient-analysis` and behind cross-entropy's gradient $p_j - \delta_{j x_i}$ (take $g_j = -\delta_{j x_i}/p_j$ for the target token $x_i$). It also explains saturation: if one $p_i \approx 1$ then every factor $p_i(\delta_{ij} - p_j)$ is near zero, and no gradient flows through that softmax.
 
 {numref}`fig-ch2-softmax-saturation` shows how fast the gradient through one softmax output vanishes as its logit pulls ahead.
 
@@ -88,7 +89,7 @@ The diagonal softmax derivative $\partial p_1/\partial z_1 = p_1(1 - p_1)$ when 
 
 ### 0.3 Norms, conditioning and why scale matters
 
-The operator norm $\|W\|_2$ is the largest factor by which $W$ can stretch a vector. A stack of $L$ layers multiplies these factors, which is why gradients vanish or explode geometrically with depth unless each layer is kept near norm 1, by initialization scale (Section 5.2), by normalization (Section 3.2) or by residual connections (Section 3.1). The Chapter 2 notebook measures all three on a twelve-layer stack.
+The operator norm $\|W\|_2$ is the largest factor by which $W$ can stretch a vector. A stack of $L$ layers multiplies these factors, which is why gradients vanish or explode geometrically with depth unless each layer is kept near norm 1, by initialization scale ({ref}`sec-ch2-initialization-strategies`), by normalization ({ref}`sec-ch2-layer-normalization-mathematics`) or by residual connections ({ref}`sec-ch2-residual-connections`). The notebook section {ref}`nb-math-layernorm` measures the effect of each on a stack of linear layers.
 
 (sec-ch2-svd-low-rank)=
 
@@ -1019,7 +1020,7 @@ rows of W_E with a nonzero gradient: [3, 7]
 
 ```{admonition} Gradient Flow Analysis
 :class: tip
-The notebook section {ref}`nb-math-backprop` implements scaled dot-product attention and reports its input gradients, and {ref}`nb-math-layernorm` compares gradient norms through twelve linear layers with and without layer normalization, with residual connections, and with a Xavier-scaled initialization, so you can see which of these actually prevents vanishing.
+The notebook section {ref}`nb-math-backprop` implements scaled dot-product attention and reports its input gradients, and {ref}`nb-math-layernorm` compares gradient norms through a stack of linear layers with and without layer normalization, with residual connections, and with a Xavier-scaled initialization, so you can see which of these actually prevents vanishing. With weights of standard deviation 0.02 and nothing else, the gradient at the input is a fraction 1.912e-08 of the gradient at the last layer; Xavier scaling alone keeps it near 1.
 ```
 
 (sec-ch2-scaling-laws-compute)=
@@ -1250,7 +1251,7 @@ Training memory of the GPT-3 175B configuration with mixed precision and Adam, b
 
 ```{admonition} Scaling Laws Visualization
 :class: note
-The notebook section {ref}`nb-math-scaling` plots the Kaplan parameter, data and compute laws (with the sizes of GPT-2, GPT-3 and Llama 2 70B marked on the parameter curve as extrapolations of the fit, not measured losses) and the Chinchilla allocation derived from $C \approx 6ND$ {cite}`kaplan2020scaling` and $D = 20N$, and {ref}`nb-math-memory` computes parameter counts, training memory and FLOPs per step for the GPT-2 and GPT-3 model sizes, asserting that the 175B configuration comes out at 175B.
+The notebook section {ref}`nb-math-scaling` plots the Kaplan parameter, data and compute laws (with the sizes of GPT-2, GPT-3 and Llama 2 70B marked on the parameter curve as extrapolations of the fit, not measured losses) and the Chinchilla allocation derived from $C \approx 6ND$ {cite}`kaplan2020scaling` and $D = 20N$, and {ref}`nb-math-memory` computes parameter counts, training memory and FLOPs per step for the GPT-2 and GPT-3 model sizes, asserting that the GPT-3 configuration comes out within 2% of 175 billion parameters (it gives 174.56 billion).
 ```
 
 (sec-ch2-numerical-stability-considerations)=
@@ -1442,19 +1443,77 @@ for blocks in (12, 48):
 The notebook section {ref}`nb-math-numerics` shows fp16 underflow (and bf16 surviving it), clips a global gradient norm and plots before/after, compares Xavier and He initialization statistics, and {ref}`nb-math-loss-scaling` simulates dynamic loss scaling.
 ```
 
+(sec-ch2-summary)=
+
+## Summary
+
+- **Linear algebra** ({ref}`sec-ch2-linear-algebra-you-need`). A weight matrix maps one space to another; dividing attention scores by $\sqrt{d_k}$ keeps their variance at 1 when query and key entries have unit variance. The softmax Jacobian is $\operatorname{diag}(p) - p p^\top$, which vanishes as one probability approaches 1. Reverse-mode differentiation never forms a Jacobian: it passes a vector-Jacobian product back through each operation.
+- **Probability and information theory** ({ref}`sec-ch2-probability-information-theory`). The training loss is the cross-entropy $H(p, q) = H(p) + D_{KL}(p\,\|\,q)$; perplexity is its exponential, and bits per byte divides the loss in bits by the bytes of text, so it compares models with different tokenizers. KL divergence is asymmetric and infinite where the model gives zero probability to an outcome that occurs.
+- **Optimization** ({ref}`sec-ch2-optimization-fundamentals`). On a quadratic, gradient descent is stable for $\eta < 2/\lambda_{\max}$ and heavy-ball momentum for $\eta < 2(1 + \beta_{\text{mom}})/\lambda_{\max}$. Adam divides the bias-corrected first moment by the root of the bias-corrected second moment, so its first step has size about $\eta$ whatever the scale of the gradient. Warm-up, cosine decay, global-norm clipping and gradient accumulation (which reproduces a large batch's gradient from micro-batches) control the step.
+- **Backpropagation through transformers** ({ref}`sec-ch2-backpropagation-through-transformers`). A residual connection adds the identity to every layer's Jacobian, so a gradient path that skips every layer always exists; pre-LN keeps that path free of normalization. The attention gradient is the softmax Jacobian applied row by row, and the layer-norm gradient removes the components along the mean and along the normalized input.
+- **Scaling laws and compute** ({ref}`sec-ch2-scaling-laws-compute`). Training costs about $6N$ FLOPs per token, so $C \approx 6ND$: Chinchilla's 70 billion parameters and 1.4 trillion tokens cost $5.88 \times 10^{23}$ FLOPs. Kaplan's power laws have exponents 0.076 in parameters and 0.095 in data; Chinchilla's three methods put the compute-optimal ratio near 20 tokens per parameter, and its loss fit gives 1.937 at Chinchilla's own size. Per layer, attention scores cost $2n^2 d$ multiply-adds against $12 n d^2$ for the weight matrices, so they dominate only beyond $n = 6d$. Mixed-precision Adam holds 16 bytes per parameter before activations.
+- **Numerical stability** ({ref}`sec-ch2-numerical-stability-considerations`). fp16 overflows above 65,504 and underflows below its smallest subnormal, so its gradients need loss scaling; bf16 has fp32's exponent range and fewer than three significant decimal digits. Subtracting the largest logit makes softmax and log-sum-exp safe in any format. Xavier and He initialization keep activation variance constant across width, and scaling each residual branch's output weights by $1/\sqrt{2L}$ keeps the residual stream's variance from growing with depth.
+
 (sec-ch2-exercises)=
 
 ## Exercises
 
-1. **Information Theory**: Calculate the entropy of character distributions in different languages. How does this relate to compression ratios?
+Every exercise is worked with paper, pencil and a calculator; the numbers in the solutions are checked in the book's test suite.
 
-1. **Optimization Comparison**: Implement SGD, Adam, and AdamW optimizers from scratch. Compare their convergence on a small language modeling task.
+1. **Entropy, cross-entropy and coding.** A four-symbol source emits its symbols with probabilities $p = (1/2, 1/4, 1/8, 1/8)$. Compute $H(p)$ in bits and the perplexity $2^{H(p)}$. A model predicts the uniform distribution $q = (1/4, 1/4, 1/4, 1/4)$; compute $H(p, q)$ and $D_{KL}(p\,\|\,q)$. Relate the three numbers to the average length of a binary code for the source.
 
-1. **Scaling Law Verification**: Train models of different sizes and verify parameter scaling laws on a simplified dataset.
+```{admonition} Solution 1
+:class: dropdown
+$H(p) = \tfrac12 \cdot 1 + \tfrac14 \cdot 2 + \tfrac18 \cdot 3 + \tfrac18 \cdot 3 = 1.75$ bits, so the perplexity is $2^{1.75} = 3.364$: the source is as uncertain as a fair choice among about 3.36 symbols. Every $q$ entry is $1/4$, so $H(p, q) = -\sum_x p(x) \log_2 \tfrac14 = 2$ bits whatever $p$ is, and $D_{KL}(p\,\|\,q) = H(p, q) - H(p) = 0.25$ bits.
 
-1. **Gradient Analysis**: Implement gradient flow visualization through a small transformer to understand how residual connections affect learning.
+A code with lengths $-\log_2 p(x)$, here 1, 2, 3 and 3 bits (for example 0, 10, 110, 111), averages exactly $H(p) = 1.75$ bits per symbol, the least any code can achieve. A code built for $q$ spends 2 bits on every symbol, and the extra 0.25 bits per symbol is the KL divergence: the price of coding with the wrong distribution. Training a language model to lower cross-entropy is the same thing as making it a better compressor of its training text.
+```
 
-1. **Numerical Stability**: Experiment with different initialization schemes and observe their effects on training stability.
+2. **Adam's first step and the stability bound.** (a) Adam starts with both moments at zero and uses $\beta_1 = 0.9$, $\beta_2 = 0.999$, $\eta = 10^{-3}$, $\epsilon = 10^{-8}$. For a single parameter whose first gradient is $g = 0.003$, and again for $g = 300$, compute the first update with bias correction and without it. (b) The notebook's test problem is the Rosenbrock function of two parameters, $\mathcal{L}(\theta) = (1 - \theta_x)^2 + 100\,(\theta_y - \theta_x^2)^2$. Compute its Hessian at the starting point $\theta = (-1, -1)$, its largest eigenvalue $\lambda_{\max}$, and the largest stable learning rates for gradient descent and for heavy-ball momentum with $\beta_{\text{mom}} = 0.9$ on a quadratic with that curvature.
+
+```{admonition} Solution 2
+:class: dropdown
+(a) After one step the moments are $(1 - \beta_1) g = 0.1\,g$ and $(1 - \beta_2) g^2 = 0.001\,g^2$. Bias correction divides them by $1 - \beta_1 = 0.1$ and $1 - \beta_2 = 0.001$, giving $\hat{m} = g$ and $\hat{v} = g^2$, so the update is $\eta\, g / (|g| + \epsilon)$. For $g = 0.003$ that is $10^{-3} \times 0.003 / 0.00300001 = 9.99997 \times 10^{-4}$, and for $g = 300$ it is $10^{-3}$ to nine digits: the first step has size $\eta$ whatever the gradient's scale, a gradient a hundred thousand times larger moves the parameter by the same amount. Without the correction the update is $\eta \cdot 0.1\,g / (\sqrt{0.001}\,|g| + \epsilon) = 0.1/\sqrt{0.001}\;\eta = 3.162 \times 10^{-3}$ for both gradients, more than three times too large, and it shrinks back towards $\eta$ only as $\beta_2^t$ decays over thousands of steps.
+
+(b) The second derivatives are $\partial^2\mathcal{L}/\partial\theta_x^2 = 2 - 400\,(\theta_y - \theta_x^2) + 800\,\theta_x^2$, $\partial^2\mathcal{L}/\partial\theta_x\partial\theta_y = -400\,\theta_x$ and $\partial^2\mathcal{L}/\partial\theta_y^2 = 200$. At $(-1, -1)$ they are $2 + 800 + 800 = 1602$, $400$ and $200$, so the Hessian is $\begin{pmatrix} 1602 & 400 \\ 400 & 200 \end{pmatrix}$. The eigenvalues of a symmetric $2 \times 2$ matrix are the mean of its diagonal entries plus or minus $\sqrt{(\text{half their difference})^2 + (\text{off-diagonal entry})^2}$: $901 \pm \sqrt{701^2 + 400^2} = 901 \pm 807.1$, so $\lambda_{\max} = 1708$. Gradient descent is stable for $\eta < 2/1708 = 1.171 \times 10^{-3}$ and momentum for $\eta < 2 \times 1.9/1708 = 2.225 \times 10^{-3}$. Both bounds lie above $10^{-3}$, yet the notebook's momentum run at $10^{-3}$ diverges: the bound holds only for the curvature at the start, and momentum's overshoot carries the iterate into parts of the valley where $\lambda_{\max}$ is larger ({ref}`sec-ch2-stability-condition`).
+```
+
+3. **Planning a training run with the scaling laws.** Use Kaplan's parameter law $\mathcal{L}(N) = (N_c/N)^{\alpha_N}$ with $N_c = 8.8 \times 10^{13}$ and $\alpha_N = 0.076$, and the Chinchilla fit $\mathcal{L}(N, D) = 1.69 + 406.4/N^{0.34} + 410.7/D^{0.28}$. (a) By what factor must $N$ grow to lower Kaplan's loss by 10%? (b) Evaluate Kaplan's law at $N = 10^9$ and $N = 10^{10}$. (c) A budget of $C = 5.88 \times 10^{23}$ FLOPs, Chinchilla's own, can train 70 billion parameters on 1.4 trillion tokens, 280 billion on 350 billion, or 17.5 billion on 5.6 trillion; check that each costs $C$ under $C \approx 6ND$ and compare their Chinchilla losses. (d) Minimize the Chinchilla fit subject to $6ND = C$ and find the model size the fit itself prefers at this budget.
+
+```{admonition} Solution 3
+:class: dropdown
+(a) $\mathcal{L}(N_2)/\mathcal{L}(N_1) = (N_1/N_2)^{0.076} = 0.9$ gives $N_2/N_1 = 0.9^{-1/0.076} = e^{0.10536/0.076} = e^{1.3863} = 4.000$. Each 10% off the loss costs four times the parameters; a power law with a small exponent is a law of steeply diminishing returns.
+
+(b) $\mathcal{L}(10^9) = (8.8 \times 10^4)^{0.076} = e^{0.076 \times 11.385} = 2.376$ nats per token and $\mathcal{L}(10^{10}) = (8.8 \times 10^3)^{0.076} = 1.994$. Tenfold more parameters cut the loss by $1 - 10^{-0.076} = 16\%$. Here $N$ counts non-embedding parameters and the loss is on Kaplan's WebText2 data; Chinchilla's fit counts all parameters on a different dataset and tokenizer, so the two fits' losses are not comparable with each other, only within each fit.
+
+(c) $6 \times 70 \times 10^9 \times 1.4 \times 10^{12} = 6 \times 280 \times 10^9 \times 350 \times 10^9 = 6 \times 17.5 \times 10^9 \times 5.6 \times 10^{12} = 5.88 \times 10^{23}$. The two terms of the fit are $0.0835 + 0.1632$ for 70 billion, $0.0521 + 0.2405$ for 280 billion and $0.1338 + 0.1107$ for 17.5 billion, giving losses of 1.937, 1.983 and 1.934. The large model on few tokens is clearly worse: its data term dominates. Moving from 70 to 17.5 billion parameters changes the loss by only 0.002, so the minimum is flat, and it lies below 70 billion.
+
+(d) Substitute $D = C/(6N)$: $\mathcal{L} = 1.69 + 406.4\,N^{-0.34} + 410.7\,(C/6)^{-0.28} N^{0.28}$. Setting the derivative in $N$ to zero gives $0.34 \times 406.4\,N^{-1.34} = 0.28 \times 410.7\,(C/6)^{-0.28} N^{-0.72}$, so
+
+$$N^* = \left(\frac{0.34 \times 406.4}{0.28 \times 410.7}\right)^{1/0.62} \left(\frac{C}{6}\right)^{0.28/0.62} = 1.345 \left(\frac{C}{6}\right)^{0.4516}.$$
+
+At $C = 5.88 \times 10^{23}$, $C/6 = 9.8 \times 10^{22}$ and $N^* = 3.25 \times 10^{10}$ parameters with $D^* = C/(6N^*) = 3.02 \times 10^{12}$ tokens, about 93 tokens per parameter, at a loss of 1.930. The exponent 0.4516 is the $a_N = 0.46$ of Hoffmann et al.'s third method ({ref}`sec-ch2-chinchilla-scaling-laws`); their first two methods give $a_N \approx 0.5$ and the 20-tokens-per-parameter rule. The fitted loss differs between 32.5 and 70 billion parameters by only 0.007, which is why the methods can disagree on the ratio and still agree on the conclusion of part (c).
+```
+
+4. **Saturation and depth.** (a) A softmax over two logits $z_i \ge z_j$ gives the larger one the probability $p_i = 1/(1 + e^{-(z_i - z_j)})$, and $\partial p_i / \partial z_i = p_i(1 - p_i)$. Evaluate the probability and the derivative for gaps $z_i - z_j$ of 0, 1 and 8. Query and key entries are independent with mean 0 and variance 1, and $d_k = 64$: what is the standard deviation of a raw score $q \cdot k$, and of the scaled score $q \cdot k / \sqrt{d_k}$? (b) The residual stream starts as $h^{(0)}$ with variance 1 and has $2L$ branches added to it, each with variance 1 and uncorrelated with the rest. Compute its variance after $L = 12$ and $L = 48$ blocks, and again when each branch is multiplied by $1/\sqrt{2L}$.
+
+```{admonition} Solution 4
+:class: dropdown
+(a) At gap 0, $p_i = 0.5$ and the derivative is $0.25$, its largest value. At gap 1, $p_i = 0.7311$ and the derivative is $0.1966$. At gap 8, $p_i = 0.99966$ and the derivative is $3.352 \times 10^{-4}$, 746 times smaller than at gap 0: a saturated softmax passes almost no gradient back to its logits ({numref}`fig-ch2-softmax-saturation`). A raw score is a sum of 64 independent products, each with variance $1 \times 1 = 1$, so its variance is 64 and its standard deviation 8. The difference of two independent scores then has standard deviation $8\sqrt{2} = 11.3$, so typical gaps sit deep in saturation. Dividing by $\sqrt{d_k} = 8$ brings the standard deviation of a score to 1 and of a gap to $\sqrt{2} = 1.41$; at that gap the derivative is 0.157, about 470 times its value at gap 8 ({ref}`sec-ch2-sqrt-dk`).
+
+(b) Variances of uncorrelated terms add, so the stream's variance is $1 + 2L$: 25 after 12 blocks and 97 after 48. Multiplying each branch by $1/\sqrt{2L}$ multiplies its variance by $1/(2L)$, so the branches add $2L \times 1/(2L) = 1$ in total and the variance is 2 at any depth. The simulation in {ref}`sec-ch2-residual-init` measures 24.8 and 94.9 unscaled and 2 with the scaling, close to these values; it falls slightly short of $1 + 2L$ unscaled because each branch reads a layer-normalized copy of the stream, which is not exactly uncorrelated with the stream itself.
+```
+
+5. **Formats, underflow and loss scaling.** Use the table in {ref}`sec-ch2-floating-point-precision`; fp16's smallest positive subnormal is $2^{-24}$. (a) What does a gradient of $10^{-8}$ become when stored in fp16? What does it become if the loss is first multiplied by $\zeta = 2^{16}$? (b) The largest gradient in a step is 3.0 before scaling. What is the largest power of two that $\zeta$ can be without overflowing fp16? (c) An optimizer adds an update of $10^{-4}$ to a weight equal to 1.0. What is the result in fp16, bf16 and fp32, and what does that imply for where the weights are kept in mixed-precision training?
+
+```{admonition} Solution 5
+:class: dropdown
+(a) $2^{-24} = 5.96 \times 10^{-8}$, and a value below half of it, $2.98 \times 10^{-8}$, rounds to zero, so $10^{-8}$ is stored as 0 and the gradient is lost. Scaled by $2^{16} = 65{,}536$ it becomes $6.554 \times 10^{-4}$, above fp16's smallest normal number $6.104 \times 10^{-5}$, and is stored as $6.552 \times 10^{-4}$ with fp16's ten mantissa bits; dividing by $\zeta$ in fp32 afterwards recovers $10^{-8}$ to three digits.
+
+(b) The scaled gradient $3\zeta$ must stay at or below 65,504, so $\zeta \le 21{,}835$, and the largest power of two is $2^{14} = 16{,}384$. Dynamic loss scaling finds this by halving $\zeta$ whenever a step overflows ({ref}`sec-ch2-loss-scaling`).
+
+(c) Next to 1.0 the representable numbers are $2^{-10} = 9.766 \times 10^{-4}$ apart in fp16 and $2^{-7} = 7.812 \times 10^{-3}$ apart in bf16. An update smaller than half the gap rounds away, so in both formats $1.0 + 10^{-4} = 1.0$ and the weight never changes. In fp32 the gap is $1.192 \times 10^{-7}$ and the result is $1.0001$. This is why mixed-precision training keeps a master copy of the weights in fp32 and applies the update there, and why that copy is part of the 16 bytes per parameter in {ref}`sec-ch2-memory-requirements`.
+```
 
 (sec-ch2-further-reading)=
 

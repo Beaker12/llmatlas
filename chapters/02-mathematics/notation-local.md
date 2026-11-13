@@ -31,6 +31,8 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\hat{g}$ | mini-batch gradient estimate | index.md, sec-ch2-minibatch-noise |  |
 | $\sigma_g$ | standard deviation of a per-example gradient (mini-batch noise) | index.md, sec-ch2-minibatch-noise |  |
 | $n_{rank}$ | rank kept by a low-rank approximation | index.md, sec-ch2-svd-low-rank |  |
+| $\theta_x$ | first of the two parameters of the Rosenbrock function (exercise 2) | index.md, sec-ch2-exercises |  |
+| $\theta_y$ | second of the two parameters of the Rosenbrock function (exercise 2) | index.md, sec-ch2-exercises |  |
 | $z_{ff}$ | pre-activation of the feed-forward hidden layer | index.md, sec-ch2-ffn-embedding-head-gradients |  |
 | $\mathrm{X}$ | a random variable | index.md:L118 | $X$ at L118 (and at L96, where $H(X)$ becomes $H(p)$) |
 | $\mathrm{Y}$ | a second random variable | index.md:L118 | $Y$ at L118 |
