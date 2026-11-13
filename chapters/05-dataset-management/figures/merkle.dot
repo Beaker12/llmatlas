@@ -1,16 +1,16 @@
 digraph merkle {
-  graph [fontname="DejaVu Sans", fontsize=13, nodesep=0.3, ranksep=0.45, pad=0.2];
-  node [fontname="DejaVu Sans", fontsize=12, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=11, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
-  L0 [label="shard 0\nleaf", fillcolor="#ffffff"];
-  L1 [label="shard 1\nleaf", fillcolor="#ffffff"];
-  L2 [label="shard 2\nleaf", fillcolor="#ffffff"];
-  L3 [label="shard 3\nleaf", fillcolor="#ffffff"];
-  L4 [label="shard 4\nleaf", fillcolor="#ffffff"];
-  L5 [label="shard 5\nleaf", fillcolor="#ffffff"];
-  L6 [label="shard 6\nleaf", fillcolor="#fde7cf"];
-  L7 [label="shard 7\nleaf", fillcolor="#dbeafe"];
-  L8 [label="shard 8\nleaf", fillcolor="#ffffff"];
-  L9 [label="shard 9\nleaf", fillcolor="#ffffff"];
+  graph [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" COLOR="#4a5568"><TR><TD BGCOLOR="#fde7cf">changed when shard 6 is refiltered (v1 → v2)</TD></TR><TR><TD BGCOLOR="#dbeafe">inclusion proof for shard 6: 4 sibling hashes</TD></TR></TABLE>>, fontname="DejaVu Sans", fontsize=14, rankdir=LR, nodesep=0.12, ranksep=0.4, pad=0.2, labelloc=b];
+  node [fontname="DejaVu Sans", fontsize=14, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=13, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
+  L0 [label="shard 0", fillcolor="#ffffff"];
+  L1 [label="shard 1", fillcolor="#ffffff"];
+  L2 [label="shard 2", fillcolor="#ffffff"];
+  L3 [label="shard 3", fillcolor="#ffffff"];
+  L4 [label="shard 4", fillcolor="#ffffff"];
+  L5 [label="shard 5", fillcolor="#ffffff"];
+  L6 [label="shard 6", fillcolor="#fde7cf"];
+  L7 [label="shard 7", fillcolor="#dbeafe"];
+  L8 [label="shard 8", fillcolor="#ffffff"];
+  L9 [label="shard 9", fillcolor="#ffffff"];
   L0 -> N0_1;
   L1 -> N0_1;
   L2 -> N2_3;
@@ -38,7 +38,5 @@ digraph merkle {
   N4_7 [label="hash of\nshards 4–7", fillcolor="#fde7cf"];
   N0_7 [label="hash of\nshards 0–7", fillcolor="#fde7cf"];
   N0_9 [label="root\nv1: 56270bb6…\nv2: 667b16bc…", fillcolor="#fde7cf"];
-  key [shape=plain, style="", label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" COLOR="#4a5568"><TR><TD BGCOLOR="#fde7cf">changed when shard 6 is refiltered (v1 → v2)</TD></TR><TR><TD BGCOLOR="#dbeafe">inclusion proof for shard 6: 4 sibling hashes</TD></TR></TABLE>>];
-  {rank=same; key; N0_9}
   {rank=same; L0 -> L1 -> L2 -> L3 -> L4 -> L5 -> L6 -> L7 -> L8 -> L9 [style=invis];}
 }

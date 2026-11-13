@@ -107,7 +107,7 @@ The two streaming formats differ in how a reader finds a sample, as {numref}`fig
 
 ```{figure} figures/wds-mds.*
 :name: fig-ch5-wds-mds
-:alt: Left: a WebDataset tar shard whose members are 000000.txt, 000000.json, 000001.txt, 000001.json in order, grouped into samples by their shared key. Right: an MDS directory in which index.json lists the shards, and each shard.00000.mds file begins with a sample count, an offsets array and a JSON config, followed by the samples.
+:alt: Top: a WebDataset tar shard whose members are 000000.txt, 000000.json, 000001.txt, 000001.json in order, grouped into samples by their shared key. Bottom: an MDS directory in which index.json lists the shards, and each shard.00000.mds file begins with a sample count, an offsets array and a JSON config, followed by the samples.
 
 Shard layouts of the two streaming formats. A WebDataset shard is an ordinary tar file. A sample is the run of consecutive members that share a key, so the shard is read from front to back. An MDS shard starts with a header: the sample count $n$, $n + 1$ byte offsets and the column config. The reader can therefore seek to any sample. `index.json` lists every shard with its sample count, columns and hashes, following the writer in the `mosaicml/streaming` repository.
 ```
@@ -1271,7 +1271,7 @@ import numpy as np
 
 
 def rank_shards(num_shards: int, rank: int, world_size: int):
-    """Shard assignment: rank r takes shards r, r + W, r + 2W, ..."""
+    """Shard assignment: rank r takes shards r, r + world_size, r + 2 * world_size, ..."""
     return list(range(rank, num_shards, world_size))
 
 
@@ -1303,8 +1303,8 @@ assert shard_assignment_batch(3, 8, 2, 10, 16) != shard_assignment_batch(3, 8, 4
 
 # Global indexing: the union over ranks at step t is the same set for any world size
 step, B = 7, 64
-for W in (1, 2, 4, 8, 16):
-    ids = np.concatenate([global_batch_slice(step, B, r, W) for r in range(W)])
+for n_ranks in (1, 2, 4, 8, 16):
+    ids = np.concatenate([global_batch_slice(step, B, r, n_ranks) for r in range(n_ranks)])
     assert sorted(ids.tolist()) == list(range(step * B, (step + 1) * B))
 print("rank 1 of 4 at step 7:", global_batch_slice(7, 64, 1, 4).tolist())
 print("shard assignment, step 3, 2 vs 4 ranks:", shard_assignment_batch(3, 8, 2, 10, 16)[:4], shard_assignment_batch(3, 8, 4, 10, 16)[:4])
@@ -1530,7 +1530,7 @@ mean length 656.2 -> 617.9 tokens
 
 ```{admonition} Statistics and Contracts
 :class: note
-The notebook section {ref}`nb-dm-governance` computes per-source statistics for the demo corpus, runs a contract against a plan, injects a canary and finds it, and renders a data card from the manifest and statistics.
+The notebook section {ref}`nb-dm-governance` computes per-source statistics for the demo corpus, runs a contract against a plan, injects a canary and finds it, runs a drift check on the length distribution, and renders a data card from the manifest and statistics.
 ```
 
 (sec-ch5-documentation-governance)=
@@ -1929,7 +1929,7 @@ print(f"and changes the context of {changed / (n_seq * SEQ_LEN):.1%} of the toke
 and changes the context of 75.6% of the tokens
 ```
 
-The mask removes 62.0% of the causal attention pairs and changes the context of 75.6% of the tokens: every token after the first document boundary of its sequence. The change is largest for a document's first tokens, which without the mask see up to several thousand tokens of an unrelated document and with it see only the document's own tokens. For the training comparison, replace the causal mask in `TinyLM`'s attention by the document mask built from the end-of-document positions, train both models with the same seed and number of steps, and average the held-out loss at each position within a document: position 0, 1, 2 and so on. The two curves can differ only where the contexts differ, so any difference is concentrated in the first positions and shrinks with the position, because a token far into a document has most of its useful context inside the document either way.
+The mask removes 62.0% of the causal attention pairs and changes the context of 75.6% of the tokens: every token after the first document boundary of its sequence. The change is largest for a document's first tokens, which without the mask see up to several thousand tokens of an unrelated document and with it see only the document's own tokens. For the training comparison, replace the causal mask in `TinyLM`'s attention by the document mask built from the end-of-document positions, train both models with the same seed and number of steps, and average the held-out loss at each position within a document: position 0, 1, 2 and so on. The listing asserts only the mask counts; the loss comparison is yours to run, and its result is not given here. What to expect: the gap between the two curves should be largest at the first positions, where the unmasked model conditions on an unrelated document, and should shrink with the position, because a token far into a document has most of its useful context inside the document either way. A gap that does not shrink with the position points to a difference between the two runs other than the mask, such as the seed or the data order.
 ````
 
 1. **Seeking across mixture phases.** The `StrideSampler` of {ref}`sec-ch5-determinism-resumption` seeks in constant work for one fixed mixture, but runs often change the mixture partway through. Extend its cursors $\operatorname{drawn}_s(t)$ to a schedule of two phases: weights 0.7, 0.15 and 0.15 for web, wiki and code until step 5,000, then 0.5, 0.25 and 0.25. Verify the closed form against iteration: seeking to step $t$ and iterating to it must agree at a thousand random steps.
