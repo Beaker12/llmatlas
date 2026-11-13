@@ -8,6 +8,7 @@
 \usepackage{polyglossia}
 \setmainlanguage{english}
 \usepackage{fancyvrb}
+\usepackage[letterpaper,hmargin=1in]{geometry}  % Sphinx's page and text block (6.5 in)
 \usepackage{hyperref}  % Sphinx loads hyperref before the preamble below; keep that order here
 \providecommand{\cjkfontname}{Noto Sans CJK SC}
 \providecommand{\arabicfontname}{Noto Naskh Arabic}
@@ -24,6 +25,8 @@
 \usepackage{bidi}
 \newfontfamily\arabicfont[Script=Arabic]{\arabicfontname}
 \setTransitionsFor{Arabic}{\begingroup\arabicfont\beginR}{\endR\endgroup}
+% Code size: the fvset key of latex_elements in _config.yml; keep the two identical.
+\fvset{fontsize=\fontsize{8.5pt}{10.2pt}\selectfont}
 % ----------------------------------------------------------------------------------------
 % sphinx-jupyterbook-latex loads these after the preamble above
 \usepackage[Latin,Greek]{ucharclasses}
@@ -35,4 +38,14 @@
 \endgroup
 \section*{Verbatim}
 \VerbatimInput{tools/latex_smoke/samples.txt}
+\section*{Code width}
+% A code line of 88 characters (tests/test_line_width.py) at the code size must fit inside Sphinx's code frame,
+% the text width less 3 pt padding and a 0.4 pt rule on each side; check_pdf.sh fails on an overfull box here.
+\typeout{WIDTH-CHECK-BEGIN}
+\newdimen\codeframe \codeframe=\dimexpr\textwidth-6.8pt\relax
+\noindent\hbox to\codeframe{\ttfamily\fontsize{8.5pt}{10.2pt}\selectfont
+  \detokenize{logits = model.forward(input_ids, attention_mask=mask, position_ids=positions).logits[0]}\hfil}
+\setbox0\hbox{\ttfamily\fontsize{8.5pt}{10.2pt}\selectfont \detokenize{logits = model.forward(input_ids, attention_mask=mask, position_ids=positions).logits[0]}}
+\typeout{WIDTH-CHECK: 88 characters are \the\wd0 \space of \the\codeframe}
+\typeout{WIDTH-CHECK-END}
 \end{document}

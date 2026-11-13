@@ -5,6 +5,8 @@
 #   * the CJK and Arabic fonts are embedded (pdffonts; spaces and case are ignored);
 #   * the LaTeX log, if given, has no "Missing character" line (xelatex -halt-on-error does not
 #     stop on one, and the glyph is silently dropped from the PDF);
+#   * the log of fonts.tex, if given, has no overfull box in its code-width probe (a code line of
+#     88 characters at the code size of _config.yml fits the code frame);
 #   * unless CHECK_SAMPLES=0, every sample line of samples.txt is present in the text pdftotext
 #     returns. Text extraction depends on the font's mapping and returns Arabic in visual order
 #     and presentation forms, so lines are compared as sets of characters after NFKC
@@ -54,6 +56,15 @@ if [ -n "$log" ]; then
     status=1
   else
     echo "ok: no missing characters in $log"
+  fi
+  if ! grep -q 'WIDTH-CHECK-BEGIN' "$log"; then
+    :  # the full book's log: the code-width probe is only in fonts.tex
+  elif sed -n '/WIDTH-CHECK-BEGIN/,/WIDTH-CHECK-END/p' "$log" | grep -q 'Overfull \\hbox'; then
+    echo "FAIL: an 88-character code line does not fit the code frame:"
+    grep -m1 'WIDTH-CHECK:' "$log"
+    status=1
+  else
+    echo "ok: $(grep -m1 -o 'WIDTH-CHECK: .*' "$log" | sed 's/WIDTH-CHECK: //'), no overfull box"
   fi
 fi
 
