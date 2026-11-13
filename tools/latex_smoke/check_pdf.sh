@@ -10,7 +10,9 @@
 #     and presentation forms, so lines are compared as sets of characters after NFKC
 #     normalisation: every distinct non-space character of a sample must appear in the extracted
 #     text. For Arabic samples only the Arabic letters are required. Whether letters are joined
-#     and read right to left is judged by looking at the page.
+#     and read right to left is judged by looking at the page. A "words:" sample must also appear
+#     as written, with its spacing, in every typeset copy (runs of white space count as one space): a character set in
+#     the CJK font gains a stray space ("paper’ s") that the character-set test cannot see.
 #
 # CHECK_PDF_ALLOW_PUA=1 reports a failing sample line as a warning when the extracted text holds
 # private-use or unassigned code points (a font whose ToUnicode map is wrong). For local runs with substitute
@@ -65,6 +67,7 @@ import sys
 import unicodedata
 
 raw = open(sys.argv[1], encoding="utf-8").read()
+flat = " ".join(unicodedata.normalize("NFKC", raw).split())
 text = set(unicodedata.normalize("NFKC", raw)) - set(" \t\n\r\f\x0c")
 # private-use or unassigned code points: a font whose ToUnicode map is wrong
 has_pua = any(unicodedata.category(c) in ("Co", "Cn") for c in raw)
@@ -85,6 +88,12 @@ for line in open(sys.argv[2], encoding="utf-8"):
     if kind == "ar":
         chars = {c for c in chars if arabic_letter(c)}
     missing = sorted(chars - text)
+    if kind == "words" and not missing:
+        # every typeset copy (body text and verbatim) of the line, found by its "words:" prefix
+        want = " ".join(unicodedata.normalize("NFKC", line).split())
+        copies = [flat[i:i + len(want)] for i in range(len(flat)) if flat.startswith("words:", i)]
+        if not copies or any(copy != want for copy in copies):
+            missing = ["the sample as written, with its spacing: " + " | ".join(copies)]
     if kind == "ar" and "ٮ" in text:
         # Noto Naskh Arabic draws beh, teh and theh as the dotless base (U+066E) plus separate
         # dot marks, and its ToUnicode map reports the base, so pdftotext gives U+066E for them.
