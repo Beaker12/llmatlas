@@ -31,6 +31,8 @@ Acquisition is where a model's knowledge, its languages, its biases and its lega
 From sources to training data. Rights are decided at acquisition ({ref}`sec-ch3-rights-licenses-consent`), each kept document gets a manifest record ({ref}`sec-ch3-provenance-documentation`), and the mixture plan ({ref}`sec-ch3-mixture-design-token-budgeting`) fixes each source's weight $w_s$ (its share of training tokens) and the number of times $e_s$ it is repeated, at most $e_{\max}$ epochs, before Chapter 5 samples the cleaned shards.
 ```
 
+Every symbol the book uses is listed on the {ref}`notation page <sec-notation>`, with a link to the section that introduces each symbol used only in this chapter.
+
 (sec-ch3-learning-objectives)=
 
 ## Learning Objectives

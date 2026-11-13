@@ -24,6 +24,8 @@ Think of a raw web crawl as the contents of every recycling bin in a city. Somew
 
 The theme throughout is that none of these decisions is neutral. Every filter encodes a view of what "good text" is, and that view is inherited by the model. The chapter therefore pairs each technique with the way its effect is measured.
 
+Every symbol the book uses is listed on the {ref}`notation page <sec-notation>`, with a link to the section that introduces each symbol used only in this chapter.
+
 (sec-ch4-learning-objectives)=
 
 ## Learning Objectives

@@ -22,6 +22,8 @@ Read a modern model's `config.json` as a list of decisions. Each key is the answ
 
 The theme throughout is that architecture choices are constraints from somewhere else in the system. The head count is chosen for the cache, the expert count for the interconnect, the norm placement for the learning rate. A model table is therefore worth reading column by column.
 
+Every symbol the book uses is listed on the {ref}`notation page <sec-notation>`, with a link to the section that introduces each symbol used only in this chapter.
+
 (sec-ch6-learning-objectives)=
 
 ## Learning Objectives

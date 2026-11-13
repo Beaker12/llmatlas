@@ -8,7 +8,7 @@ chapter writes today and must change to the symbol in the first column. This fil
 | Symbol | Meaning | First used | Rename | Also means |
 |---|---|---|---|---|
 | $M$ | document mask ($M_{ij} = 1$ when position $i$ may attend to position $j$) | index.md:L385 |  |
-| $n_{ranks}$ | world size (number of data-parallel ranks) | index.md:L532 | $W$ at L532, L534, L535 |
+| $n_{ranks}$ | world size (number of data-parallel ranks) | index.md:L532 |  |
 | $\Pi$ | keyed bijection on example indices that fixes the within-epoch order | reserved: C5-08 |  |
 | $n_{ex}$ | number of examples in an epoch | reserved: C5-08 |  |
 | $n_{loader}$ | DataLoader worker processes per rank | reserved: C5-11 |  |
