@@ -234,6 +234,17 @@ with tempfile.TemporaryDirectory() as tmp:
     renamed = write_jsonl_shards(docs, Path(tmp) / "renamed", docs_per_shard=4, prefix="part")
     assert [m["sha256"] for m in renamed] == [m["sha256"] for m in manifest]
     assert (Path(tmp) / "renamed" / "part_00000.jsonl.gz").read_bytes() == (Path(tmp) / "shard_00000.jsonl.gz").read_bytes()
+    print("records per shard:", [m["records"] for m in manifest])
+    print("uncompressed bytes per shard:", [m["bytes_uncompressed"] for m in manifest])
+    print("content hash of shard 0:", manifest[0]["sha256"][:16], "(same under the other name)")
+```
+
+% output
+
+```text
+records per shard: [4, 4, 2]
+uncompressed bytes per shard: [370, 674, 451]
+content hash of shard 0: 20a7e85485298530 (same under the other name)
 ```
 
 The `filename=""` and `mtime=0` arguments matter more than they look. A gzip header records a modification time, which `gzip.open` fills with the current time, and a file name, which `GzipFile` takes from the file it writes to (here the temporary name), so the same documents compressed a second apart or under another shard name produce different bytes. Fixing both makes the bytes repeatable with one compressor, but not everywhere: the compressed bytes also depend on the compression level and on the compression library. The DEFLATE specification defines the compressed format, not the algorithm that produces it, and says a compressor need not follow its suggested method to be compliant {cite}`deutsch1996deflate`; zlib-ng, a faster drop-in replacement for zlib, ships its own deflate algorithms {cite}`zlibng2026`. The same input can therefore compress to different bytes under a different library build. A shard's identity has to be a function of its content alone, or every rebuild looks like a new version, so the manifest records the SHA-256 of the uncompressed bytes and the reader decompresses before it checks; the gzip settings stay fixed so that a rebuild with the same library also reproduces the files. Zstandard frames carry no timestamp; tar and zip archives do, and need the same treatment.
@@ -321,6 +332,15 @@ with tempfile.TemporaryDirectory() as tmp:
         raise AssertionError("a binary was opened with the wrong tokenizer")
     except ValueError:
         pass
+    print(f"{len(shard)} documents, offsets {shard.offsets.tolist()}, dtype {shard.tokens.dtype}")
+    print("document 1:", shard.document(1).tolist())
+```
+
+% output
+
+```text
+3 documents, offsets [0, 4, 10, 12], dtype uint16
+document 1: [7552, 5001, 8441, 9177, 8494, 0]
 ```
 
 The tokenizer hash is the part people skip and regret. Two tokenizers with the same name and vocabulary size but different normalization or merge order produce different id streams, and a model evaluated with the wrong one is silently broken. Hash the tokenizer's serialized files and store the hash with every binary that depends on it.
@@ -411,12 +431,12 @@ assert results["zstd-19"] > results["zstd-3"] > results["lz4"]
 % output-shape
 
 ```text
-lz4       ratio 1.73, compress 209 MB/s, decompress 675 MB/s
-zstd-1    ratio 2.76, compress 166 MB/s, decompress 515 MB/s
-zstd-3    ratio 2.77, compress 106 MB/s, decompress 406 MB/s
-zstd-19   ratio 3.25, compress 1 MB/s, decompress 600 MB/s
-gzip-6    ratio 2.85, compress 6 MB/s, decompress 198 MB/s
-brotli-9  ratio 3.02, compress 4 MB/s, decompress 192 MB/s
+lz4       ratio 1.73, compress 195 MB/s, decompress 656 MB/s
+zstd-1    ratio 2.76, compress 166 MB/s, decompress 476 MB/s
+zstd-3    ratio 2.77, compress 98 MB/s, decompress 416 MB/s
+zstd-19   ratio 3.25, compress 1 MB/s, decompress 528 MB/s
+gzip-6    ratio 2.85, compress 5 MB/s, decompress 193 MB/s
+brotli-9  ratio 3.02, compress 4 MB/s, decompress 214 MB/s
 ```
 
 (sec-ch5-versioning)=
@@ -542,6 +562,15 @@ assert diff_manifests(v1, v2) == {
     "changed": ["shard_002"],
     "unchanged": 3,
 }
+print("v1 root:", manifest_root(v1)[:16], "v2 root:", manifest_root(v2)[:16])
+print(diff_manifests(v1, v2))
+```
+
+% output
+
+```text
+v1 root: c2ebdcb4a3b52f44 v2 root: 0f241186fa4f3428
+{'added': ['shard_005'], 'removed': ['shard_000'], 'changed': ['shard_002'], 'unchanged': 3}
 ```
 
 (sec-ch5-immutability-naming)=
@@ -788,6 +817,15 @@ assert (packed != -1).sum() == sum(len(d) + 1 for d in docs)  # every token kept
 assert (packed == 0).sum() == len(docs)
 long_doc, _ = best_fit_pack([list(range(1, 601))], seq_len=256)  # a 600-token document: three pieces, one EOD
 assert long_doc.shape[0] == 3 and (long_doc == 0).sum() == 1
+print(f"chunking: {chunked.shape[0]} sequences, {split_frac:.1%} of documents split")
+print(f"best-fit packing: {packed.shape[0]} sequences, {pad_frac:.2%} padding")
+```
+
+% output
+
+```text
+chunking: 107 sequences, 25.8% of documents split
+best-fit packing: 108 sequences, 0.86% padding
 ```
 
 (sec-ch5-cross-document-attention)=
@@ -822,6 +860,15 @@ assert not mask[4, 1]  # document 1 cannot see document 0
 assert not mask[3, 4]  # and not the future
 assert mask.sum() == 3 + 2 + 1 + 4 + 3 + 2 + 1 + 1
 assert document_causal_mask(seq + [-1, -1]).sum() == mask.sum()  # padding adds no allowed pairs
+print("segment ids:", segment_ids(seq).tolist())
+print("allowed pairs:", int(mask.sum()), "of", len(seq) * (len(seq) + 1) // 2, "causal pairs")
+```
+
+% output
+
+```text
+segment ids: [0, 0, 0, 1, 1, 1, 1, 2]
+allowed pairs: 17 of 36 causal pairs
 ```
 
 Whether to mask is a choice. Many pretraining runs did not, on the grounds that the kernel was simpler and the effect small; recent ones increasingly do. Llama 3 masks attention between documents in the same sequence and reports that this had limited impact in standard pretraining but was important in continued pretraining on very long sequences {cite}`grattafiori2024llama`. Fine-tuning with packed examples should always mask, because the examples are short and the leakage between them is large.
@@ -967,6 +1014,17 @@ assert sorted(wiki_docs[:50]) == list(range(50))
 # Temperature > 1 flattens the mixture toward the small sources
 flat = MixtureSampler(sizes, weights, seed=1, temperature=3.0)
 assert flat.probs[flat.names.index("wiki")] > a.probs[a.names.index("wiki")]
+print("wiki draws in 500 steps:", len(wiki_docs))
+print("probabilities at temperature 1:", dict(zip(a.names, a.probs.round(4).tolist())))
+print("probabilities at temperature 3:", dict(zip(flat.names, flat.probs.round(4).tolist())))
+```
+
+% output
+
+```text
+wiki draws in 500 steps: 66
+probabilities at temperature 1: {'code': 0.15, 'web': 0.7, 'wiki': 0.15}
+probabilities at temperature 3: {'code': 0.2724, 'web': 0.4552, 'wiki': 0.2724}
 ```
 
 The `seek` method replays draws, which is fine for millions of steps and a few sources. Constant work per step needs two further constructions, and it is worth seeing why seeding alone does not give it. Seeding each permutation by `(seed, source, epoch)`, as `_permutation` does, makes an epoch's order reproducible without replay, but `permutation` still builds the whole array, $\mathcal{O}(n_{\text{ex}})$ work and memory for a source of $n_{\text{ex}}$ documents, to read one element of it. And the cursor, $\operatorname{drawn}_s(t)$, the number of documents of source $s$ drawn before step $t$, is a sum over $t$ independent source draws: hashing each slot fixes every term, but it does not give the sum without adding up the terms.
@@ -1151,6 +1209,15 @@ step, B = 7, 64
 for W in (1, 2, 4, 8, 16):
     ids = np.concatenate([global_batch_slice(step, B, r, W) for r in range(W)])
     assert sorted(ids.tolist()) == list(range(step * B, (step + 1) * B))
+print("rank 1 of 4 at step 7:", global_batch_slice(7, 64, 1, 4).tolist())
+print("shard assignment, step 3, 2 vs 4 ranks:", shard_assignment_batch(3, 8, 2, 10, 16)[:4], shard_assignment_batch(3, 8, 4, 10, 16)[:4])
+```
+
+% output
+
+```text
+rank 1 of 4 at step 7: [464, 465, 466, 467, 468, 469, 470, 471, 472, 473, 474, 475, 476, 477, 478, 479]
+shard assignment, step 3, 2 vs 4 ranks: [12, 13, 14, 15] [6, 7, 22, 23]
 ```
 
 (sec-ch5-throughput)=
@@ -1287,6 +1354,15 @@ plan = {"web": 0.70, "code": 0.22, "wiki": 0.08}
 assert check_contract(stats, plan, tolerance=0.08) == []
 assert any("books" in f for f in check_contract(stats, {**plan, "books": 0.1}, tolerance=0.08))
 assert any("exceeds" in f for f in check_contract(stats, plan, tolerance=0.08, max_len=1000))
+print("token shares:", {s: round(v["share"], 4) for s, v in stats.items()})
+print("against a plan with books:", check_contract(stats, {**plan, "books": 0.1}, tolerance=0.08)[-1])
+```
+
+% output
+
+```text
+token shares: {'web': 0.6857, 'code': 0.2358, 'wiki': 0.0785}
+against a plan with books: books: missing from dataset
 ```
 
 (sec-ch5-canaries-drift)=
@@ -1415,6 +1491,15 @@ index.add_version("v1.1", {"s0": ["alpha", "beta"], "s1": ["gamma-revised"], "s2
 assert index.locate("gamma") == [("v1.0", "s1")]
 assert index.locate("alpha") == [("v1.0", "s0"), ("v1.1", "s0")]
 assert index.locate("not present") == []
+print("alpha:", index.locate("alpha"))
+print("gamma:", index.locate("gamma"))
+```
+
+% output
+
+```text
+alpha: [('v1.0', 's0'), ('v1.1', 's0')]
+gamma: [('v1.0', 's1')]
 ```
 
 The index is cheap: one hash per document, which the build computes anyway for deduplication, and a key-value store that fits on one machine even at tens of billions of entries.
