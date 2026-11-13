@@ -44,7 +44,7 @@ The notebook provides executable, assertion-checked code for:
 - Token embeddings with sinusoidal, learned, relative-bias and rotary positions ({ref}`nb-attn-positional`)
 - Scaled dot-product and multi-head attention with attention maps ({ref}`nb-attn-attention`)
 - A post-LN transformer block ({ref}`nb-attn-transformer`)
-- The causal mask, the next-token objective with perplexity, and a short character-level training run ({ref}`nb-attn-lm`)
+- The causal mask, the next-token objective with perplexity, and a short character-level training run ({ref}`nb-attn-lm`), repeated with a pre-LN block that uses RMSNorm and SwiGLU
 
 (sec-ch1-tokenization)=
 
