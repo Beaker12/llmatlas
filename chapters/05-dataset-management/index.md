@@ -28,7 +28,7 @@ The accompanying notebook, [Dataset Management Demo](examples/dataset_management
 - Sharding across ranks and showing that the global batch is independent of the world size ({ref}`nb-dm-distributed`)
 - Dataset statistics, a data contract, and a data card generated from the manifest ({ref}`nb-dm-governance`)
 
-Everything runs on a CPU in seconds and uses only the standard library and NumPy.
+Everything runs on a CPU in seconds and uses only the standard library, NumPy and, for the plots, Matplotlib.
 
 (sec-ch5-chapter-overview)=
 
@@ -85,10 +85,10 @@ Those numbers drive the design choices in the rest of the chapter: shards rather
 | Format                       | Unit            | Used for                                | Strengths                                           | Weaknesses                                        |
 | ---------------------------- | --------------- | --------------------------------------- | --------------------------------------------------- | ------------------------------------------------- |
 | JSON Lines (gzip or zstd)    | One document per line | Pipeline input and output, inspection | Human-readable, streamable, any tool reads it        | No random access, slow to parse, no schema        |
-| Parquet                      | Column chunks   | Processed corpora, metadata queries     | Columnar compression, schema, predicate push-down    | Needs a library, row access is by row group       |
-| Tar shards (WebDataset)      | Files in a tar  | Streaming from object stores            | Sequential reads, any payload type, simple           | No random access, no schema                       |
+| Parquet {cite}`apache2026parquet` | Column chunks   | Processed corpora, metadata queries     | Columnar compression, schema, predicate push-down    | Needs a library, row access is by row group       |
+| Tar shards (WebDataset {cite}`aizman2020high`) | Files in a tar  | Streaming from object stores            | Sequential reads, any payload type, simple           | No random access, no schema                       |
 | Tokenized binary plus index  | Token arrays    | Training input                          | Zero parsing, memory-mapped random access            | Tied to one tokenizer, opaque to inspection       |
-| Arrow (memory-mapped)        | Record batches  | Local caches (Hugging Face `datasets`)  | Zero-copy access, typed columns                      | Large on disk, not a transport format             |
+| Arrow (memory-mapped) {cite}`apache2026arrow` | Record batches  | Local caches (Hugging Face `datasets`)  | Zero-copy access, typed columns                      | Uncompressed by default; not an archival format             |
 
 Most pipelines use two of these: a text format for everything up to and including the released corpus, and a tokenized binary for training. The text format is what gets versioned and documented; the binary is derived from it and the tokenizer, and is rebuilt rather than versioned.
 
@@ -176,7 +176,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert (Path(tmp) / "renamed" / "part_00000.jsonl.gz").read_bytes() == (Path(tmp) / "shard_00000.jsonl.gz").read_bytes()
 ```
 
-The `filename=""` and `mtime=0` arguments matter more than they look. A gzip header records a modification time, which `gzip.open` fills with the current time, and a file name, which `GzipFile` takes from the file it writes to (here the temporary name), so the same documents compressed a second apart or under another shard name produce different bytes. Fixing both makes the bytes repeatable with one compressor, but not everywhere: the compressed bytes also depend on the compression level and on the build of the compression library, and a different build may compress the same input differently. A shard's identity has to be a function of its content alone, or every rebuild looks like a new version, so the manifest records the SHA-256 of the uncompressed bytes and the reader decompresses before it checks; the gzip settings stay fixed so that a rebuild with the same library also reproduces the files. Zstandard frames carry no timestamp; tar and zip archives do, and need the same treatment.
+The `filename=""` and `mtime=0` arguments matter more than they look. A gzip header records a modification time, which `gzip.open` fills with the current time, and a file name, which `GzipFile` takes from the file it writes to (here the temporary name), so the same documents compressed a second apart or under another shard name produce different bytes. Fixing both makes the bytes repeatable with one compressor, but not everywhere: the compressed bytes also depend on the compression level and on the compression library. The DEFLATE specification defines the compressed format, not the algorithm that produces it, and says a compressor need not follow its suggested method to be compliant {cite}`deutsch1996deflate`; zlib-ng, a faster drop-in replacement for zlib, ships its own deflate algorithms {cite}`zlibng2026`. The same input can therefore compress to different bytes under a different library build. A shard's identity has to be a function of its content alone, or every rebuild looks like a new version, so the manifest records the SHA-256 of the uncompressed bytes and the reader decompresses before it checks; the gzip settings stay fixed so that a rebuild with the same library also reproduces the files. Zstandard frames carry no timestamp; tar and zip archives do, and need the same treatment.
 
 (sec-ch5-tokenized-binaries-document-index)=
 
@@ -263,7 +263,7 @@ with tempfile.TemporaryDirectory() as tmp:
         pass
 ```
 
-The tokenizer hash is the part people skip and regret. Two tokenizers with the same name and vocabulary size but different normalisation or merge order produce different id streams, and a model evaluated with the wrong one is silently broken. Hash the tokenizer's serialised files and store the hash with every binary that depends on it.
+The tokenizer hash is the part people skip and regret. Two tokenizers with the same name and vocabulary size but different normalization or merge order produce different id streams, and a model evaluated with the wrong one is silently broken. Hash the tokenizer's serialized files and store the hash with every binary that depends on it.
 
 ```{admonition} Formats on Disk
 :class: tip
@@ -278,9 +278,9 @@ The notebook section {ref}`nb-dm-formats` writes a corpus as JSON Lines shards a
 
 ### 3.1 A version is a set of hashes
 
-Git works for source code because a commit is a hash of a tree of hashes of file contents. The same structure works for datasets at any scale, and the tools that do it well expose the same model, whether they store the objects themselves by content hash (DVC, Git LFS, the Hugging Face hub's storage layer) or keep content-addressed commit metadata over ordinary object storage (lakeFS):
+Git works for source code because a commit is a hash of a tree of hashes of file contents. The same structure works for datasets at any scale, and the tools that do it well expose the same model, whether they store the objects themselves by content hash (DVC {cite}`iterative2026dvc`, Git LFS, the Hugging Face hub's storage layer) or keep Git-like commits and branches as metadata over ordinary object storage (lakeFS {cite}`treeverse2026lakefs`):
 
-- Each shard is content-addressed: its identity is the hash of its bytes, and it is stored under that hash.
+- Each shard is content-addressed: its identity is the hash of its bytes, and it is stored under that hash. Publishing the hashes is also the defense {cite:t}`carlini2024poisoning` propose against split-view poisoning, in which the content behind a dataset's URLs changes after the dataset was indexed: a client that checks the hashes sees the data the maintainers saw.
 - A **manifest** lists the shards of a version by path, hash and size. The manifest is small enough to keep in Git.
 - The **version root** is the hash of the manifest, or a Merkle root over the shard hashes, so that one short string identifies the whole dataset.
 
@@ -356,9 +356,9 @@ The notebook section {ref}`nb-dm-versioning` builds a manifest for the corpus wr
 
 A transformer trains on sequences of a fixed length $n$ (2,048 to 128,000 tokens in current models), and documents are whatever length they are. Three ways to reconcile them:
 
-- **Concatenate and chunk.** Join all documents with an end-of-document token between them into one stream, and cut it into consecutive windows of length $n$. No padding, no waste, and the method the GPT-3 paper describes and most pretraining codebases default to. The cost: a document is split across windows wherever the cut falls, and a window usually contains the tail of one document and the head of the next.
+- **Concatenate and chunk.** Join all documents with an end-of-document token between them into one stream, and cut it into consecutive windows of length $n$. No padding, no waste apart from the final partial window, which is dropped, and the method the GPT-3 paper describes {cite}`brown2020language`: full 2,048-token sequences of packed documents separated by an end-of-text token, with no special masking. Most pretraining codebases default to it. The cost: a document is split across windows wherever the cut falls, and a window usually contains the tail of one document and the head of the next.
 - **Pad.** One document per sequence, padded to $n$. No cross-document contamination, but with a long-tailed length distribution most of each sequence is padding, which is compute spent on nothing. Used for fine-tuning on short examples, rarely for pretraining.
-- **Pack.** Fit whole documents into sequences like boxes into a container (a bin-packing problem) so that most sequences are nearly full and documents are rarely cut. Best-fit packing {cite}`ding2024fewer` first splits any document longer than $n$ into pieces of at most $n$, then places each piece into the sequence with the least remaining room that still fits it, processing pieces longest first. It reduced truncation substantially relative to chunking, with measurable gains in reading comprehension and faithfulness and less hallucination, at the cost of a sort and an index.
+- **Pack.** Fit whole documents into sequences like boxes into a container (a bin-packing problem) so that most sequences are nearly full and documents are rarely cut. Best-fit packing {cite}`ding2024fewer` first splits any document longer than $n$ into pieces of at most $n$, then places each piece into the sequence with the least remaining room that still fits it, processing pieces longest first. It reduced truncation substantially relative to chunking, with measurable gains in reading comprehension and faithfulness and less hallucination, at the cost of a sort and an index. Which documents share a sequence can itself be chosen: {cite:t}`shi2024incontext` order the corpus so that each context holds related documents, found by nearest-neighbor search, and report better language modeling than with randomly concatenated documents.
 
 ```python
 import numpy as np
@@ -459,7 +459,7 @@ assert mask.sum() == 3 + 2 + 1 + 4 + 3 + 2 + 1 + 1
 assert document_causal_mask(seq + [-1, -1]).sum() == mask.sum()  # padding adds no allowed pairs
 ```
 
-Whether to mask is a choice. Many pretraining runs did not, on the grounds that the kernel was simpler and the effect small; recent ones increasingly do, since efficient variable-length attention makes it free. Fine-tuning with packed examples should always mask, because the examples are short and the leakage between them is large.
+Whether to mask is a choice. Many pretraining runs did not, on the grounds that the kernel was simpler and the effect small; recent ones increasingly do. Llama 3 masks attention between documents in the same sequence and reports that this had limited impact in standard pretraining but was important in continued pretraining on very long sequences {cite}`grattafiori2024llama`. Fine-tuning with packed examples should always mask, because the examples are short and the leakage between them is large.
 
 ```{admonition} Packing and Masking
 :class: tip
@@ -474,20 +474,22 @@ The notebook section {ref}`nb-dm-packing` packs the same corpus by chunking and 
 
 ### 5.1 Weights, temperature and epochs
 
-A corpus has several sources with very different sizes, and the fraction of training tokens drawn from each is a decision, not a consequence of size. Chapter 3 covered how the weights are chosen; here the question is how a sampler realises them.
+A corpus has several sources with very different sizes, and the fraction of training tokens drawn from each is a decision, not a consequence of size. Chapter 3 covered how the weights are chosen; here the question is how a sampler realizes them.
 
 Given weights $w_s$ that sum to one, the sampler draws each document's source with probability $w_s$ and then the next unseen document from that source. Two refinements:
 
-- **Temperature** flattens or sharpens the weights: $p_s \propto w_s^{1/\tau}$. With $\tau = 1$ the weights are used as given; $\tau > 1$ upsamples small sources, which is how multilingual models give low-resource languages more than their share {cite}`xue2021mt5`. The same scheme is used on domain weights.
-- **Epoch caps** bound how many times a source is repeated. If source $s$ has $U_s$ tokens and the run needs $D$ tokens, source $s$ is seen $p_s D / U_s$ times; beyond about four repetitions the marginal token is worth much less {cite}`muennighoff2023scaling`. A cap re-normalises the weights of the uncapped sources once a capped one has used its budget.
+- **Temperature** flattens or sharpens the weights: $p_s \propto w_s^{1/\tau}$. With $\tau = 1$ the weights are used as given; $\tau > 1$ upsamples small sources, which is how multilingual models give low-resource languages more than their share: mT5 samples each language in proportion to its number of examples raised to the power 0.3, that is $\tau = 1/0.3 \approx 3.3$ {cite}`xue2021mt5`. The same scheme is used on domain weights.
+- **Epoch caps** bound how many times a source is repeated. If source $s$ has $U_s$ tokens and the run needs $D$ tokens, source $s$ is seen $p_s D / U_s$ times; for a fixed compute budget, up to about four epochs of repeated data change the loss negligibly compared with unique data, and beyond that the value of further repetition decays toward zero {cite}`muennighoff2023scaling`. A cap renormalizes the weights of the uncapped sources once a capped one has used its budget.
 
-Learned weights (DoReMi {cite}`xie2023doremi`, which fits static $w_s$ with a small proxy model) and curricula that change the mixture over training are both consumed by the same sampler, the latter with $w_s$ a function of the step. The cap is stated in tokens; the sampler below counts documents, which production samplers replace with token counts from the index.
+Learned weights (DoReMi {cite}`xie2023doremi`, which sets static $w_s$ by training a small proxy model with group distributionally robust optimization over the domains) and curricula that change the mixture over training are both consumed by the same sampler, the latter with $w_s$ a function of the step. The cap is stated in tokens; the sampler below counts documents, which production samplers replace with token counts from the index.
 
 (sec-ch5-determinism-resumption)=
 
 ### 5.2 Determinism and resumption
 
 The sampler must be a pure function of `(seed, step)`. The reason is resumption: a run that fails at step $t$ and restarts must continue from step $t + 1$ with the data it would have seen, not restart its epoch, and not replay the batch it just trained on. A sampler that keeps a queue or an iterator in memory cannot do this; one that computes the batch at step $t$ arithmetically can.
+
+A pure function is reproducible only while its code is fixed. NumPy's random number policy, NEP 19, keeps the legacy `RandomState` streams fixed but allows changes that alter the streams of the newer `Generator` in feature releases, and names pinning the versions of the whole software stack as the standard practice for bit-for-bit reproducibility {cite}`kern2018nep19`. The NumPy version therefore belongs to a training stream's identity, alongside the corpus version, the tokenizer and the compressor, and the run's configuration records it.
 
 The construction that achieves it: for each source, a seeded permutation of its document indices defines the order within an epoch; a seeded sequence of source draws decides which source supplies each slot; the document for slot $t$ is the next unused index of the chosen source. All of this can be recomputed from the seed in $\mathcal{O}(t)$ time for the draws, or in $\mathcal{O}(1)$ with per-epoch permutations generated by a counter-based random number generator.
 
@@ -579,7 +581,7 @@ Streaming loaders compromise with a shuffle buffer: read shards in a seeded orde
 
 ```{admonition} The Sampler
 :class: note
-The notebook section {ref}`nb-dm-sampler` runs the mixture sampler, plots the realised source fractions at several temperatures with the tempered target weights marked, shows the epoch cap re-normalising the mixture once the smallest source is exhausted, and checks resumption at a hundred random steps.
+The notebook section {ref}`nb-dm-sampler` runs the mixture sampler, plots the realized source fractions at several temperatures with the tempered target weights marked, shows the epoch cap re-normalizing the mixture once the smallest source is exhausted, and checks resumption at a hundred random steps.
 ```
 
 (sec-ch5-distributed-loading)=
@@ -595,7 +597,7 @@ A training job with $n_{\text{ranks}}$ processes (data-parallel ranks) needs eac
 - **Shard assignment.** Shards are partitioned among ranks, each rank gets every $n_{\text{ranks}}$-th shard, and each rank samples within its own shards. Simple, and what a WebDataset-style loader does. The drawback is that the global batch at step $t$ depends on $n_{\text{ranks}}$: change the number of GPUs and the data order changes, so a run resumed on a different cluster size is not the same run.
 - **Global indexing.** The sampler produces a single global sequence of samples; the sample at global position $t B + i$ goes to rank $i \bmod n_{\text{ranks}}$ (or rank $\lfloor i\, n_{\text{ranks}} / B \rfloor$). Every rank runs the same sampler and takes its slice. The global batch is then independent of $n_{\text{ranks}}$, and a run can be resumed with a different number of ranks and see the same data in the same order.
 
-The second property, that the stream is a function of `(seed, step)` and nothing else, is what makes a large run reproducible across hardware changes, and it costs nothing beyond requiring that every rank can read any shard. Mosaic Streaming is built around it: its sample order is fixed by the seed and does not change with the number of GPUs.
+The second property, that the stream is a function of `(seed, step)` and nothing else, is what makes a large run reproducible across hardware changes, and it costs nothing beyond requiring that every rank can read any shard. Mosaic Streaming {cite}`mosaicml2022streaming` is built around it: its sample order is fixed by the seed and the number of canonical nodes, so with `num_canonical_nodes` pinned it does not change with the number of GPUs. The default is not pinned: it is derived from the number of physical nodes of the initial run (64 times that number for the `py1s` and `py2s` shuffles) {cite}`mosaicml2026streamingdocs`.
 
 ```python
 import numpy as np
@@ -662,14 +664,14 @@ The notebook section {ref}`nb-dm-distributed` simulates eight ranks under both d
 
 A dataset version ships with its statistics, computed by the build and stored next to the manifest, because the questions they answer come up in every training post-mortem:
 
-- Tokens and documents per source, and the realised mixture (which differs from the planned one once epoch caps and filtering have acted)
+- Tokens and documents per source, and the realized mixture (which differs from the planned one once epoch caps and filtering have acted)
 - Document length distribution per source (mean, median, percentiles, maximum); a change in the tail between versions usually means an extraction change
 - Per-stage drop counts from the Chapter 4 pipeline, so that a version's keep rate can be compared with its predecessor's
 - Deduplication rate within the version and overlap with the previous version
-- Language distribution, and for code the distribution over languages and licences
+- Language distribution, and for code the distribution over languages and licenses
 - Overlap with the evaluation suite after decontamination, per benchmark, reported as a number even when it is zero
 
-Elazar et al. {cite}`elazar2024whats` built exactly this kind of inspection tooling for the public corpora and found, among other things, that benchmark contamination and duplicated content were common across them. Statistics that are computed rather than asserted are the defence.
+{cite:t}`elazar2024whats` built exactly this kind of inspection tooling for the public corpora and found, among other things, that benchmark contamination and duplicated content were common across them. Statistics that are computed rather than asserted are the defense.
 
 (sec-ch5-data-contracts)=
 
@@ -744,8 +746,8 @@ assert any("exceeds" in f for f in check_contract(stats, plan, tolerance=0.08, m
 
 Two monitoring practices borrowed from other fields:
 
-- **Canaries.** Insert a handful of unique, random strings into the corpus at known positions and with known repetition counts. After training, test whether the model can complete them. Canaries measure memorisation directly {cite}`carlini2019secret`, and a canary that appears in a version where it should not have is proof that an upstream shard leaked.
-- **Drift.** Compare every statistic in Section 7.1 between consecutive versions and flag changes beyond a threshold. Most data bugs (an extractor update that drops tables, a language model update that rejects more of one language, a source that silently went offline) show up as a drift in a per-source statistic before they show up in a loss curve.
+- **Canaries.** Insert a handful of unique, random strings into the corpus at known positions and with known repetition counts. After training, test whether the model can complete them. Canaries measure memorization directly {cite}`carlini2019secret`, and a canary that appears in a version where it should not have is proof that an upstream shard leaked.
+- **Drift.** Compare every statistic in Section 7.1 between consecutive versions and flag changes beyond a threshold. Most data bugs (an extractor update that drops tables, a language-identification model update that rejects more of one language, a source that silently went offline) show up as a drift in a per-source statistic before they show up in a loss curve.
 
 ```{admonition} Statistics and Contracts
 :class: note
@@ -765,23 +767,23 @@ A dataset version is accompanied by a document that says what it is for someone 
 - **Datasheets for Datasets** {cite}`gebru2021datasheets`: a questionnaire covering motivation, composition, collection process, preprocessing, uses, distribution and maintenance. It was written to make the people assembling a dataset answer the questions a user will have, and it remains the reference.
 - **Data cards** {cite}`pushkarna2022data`: a structured summary intended to be published with the dataset, with an emphasis on what a downstream team needs to decide whether to use it.
 
-The pretraining corpora that are well documented (The Pile {cite}`gao2020pile`, Dolma {cite}`soldaini2024dolma`, FineWeb {cite}`penedo2024fineweb`) publish a datasheet or card, the per-source statistics, the pipeline code and the ablation results together, and that combination is what allows anyone else to build on them. C4's post-hoc documentation {cite}`dodge2021documenting`, written by a different team about eighteen months after release, found that the corpus contained machine-generated text, benchmark test sets and a skew in whose text had been filtered out, none of which its original description mentioned.
+The pretraining corpora that are well documented (The Pile {cite}`gao2020pile`, Dolma {cite}`soldaini2024dolma`, FineWeb {cite}`penedo2024fineweb`) publish a datasheet or card, the per-source statistics, the pipeline code and the ablation results together, and that combination is what allows anyone else to build on them. C4's post-hoc documentation {cite}`dodge2021documenting`, written by a different team about eighteen months after release, found text from unexpected sources such as patents, machine-generated text, evaluation examples from benchmark datasets, and a blocklist filter that disproportionately removed text from and about minority individuals.
 
-Croissant, a machine-readable metadata vocabulary built on schema.org, is becoming the common format for the card's structured part (sources, licences, fields, splits) so that hubs and loaders can read it; the prose part still needs a person.
+Croissant, a machine-readable metadata vocabulary built on schema.org, {cite}`akhtar2024croissant` is becoming the common format for the card's structured part (sources, licenses, fields, splits) so that hubs and loaders can read it; the prose part still needs a person.
 
 (sec-ch5-licenses-provenance-record)=
 
-### 8.2 Licences and the provenance record
+### 8.2 Licenses and the provenance record
 
-A corpus mixes sources under different terms, and the terms travel with the data. The version's metadata records, per source, the licence or terms under which it was obtained, the opt-out policy applied and the date, and any restrictions that propagate to models trained on it. Longpre et al. {cite}`longpre2023data` audited the licences attached to popular fine-tuning datasets and found that a majority were mislabelled or had their restrictions dropped as they were repackaged; the only remedy is to carry the record forward from acquisition (Chapter 3) through every version rather than reconstructing it later.
+A corpus mixes sources under different terms, and the terms travel with the data. The version's metadata records, per source, the license or terms under which it was obtained, the opt-out policy applied and the date, and any restrictions that propagate to models trained on it. {cite:t}`longpre2023data` traced the lineage and licenses of more than 1,800 text datasets and found that widely used hosting sites omitted the license in more than 70% of cases and gave a wrong one in more than 50%; the only remedy is to carry the record forward from acquisition (Chapter 3) through every version rather than reconstructing it later.
 
-Access control follows from the record. A corpus with a non-commercial source cannot be released under a commercial licence as a whole, so either the source is separated into its own shards with their own terms, or the released version excludes it. Keeping sources in separate shards, which the naming convention in Section 2.2 already does, is what makes this a manifest operation rather than a rebuild.
+Access control follows from the record. A corpus with a non-commercial source cannot be released under a commercial license as a whole, so either the source is separated into its own shards with their own terms, or the released version excludes it. Keeping sources in separate shards, which the naming convention in Section 2.2 already does, is what makes this a manifest operation rather than a rebuild.
 
 (sec-ch5-removal)=
 
 ### 8.3 Removal
 
-Requests to remove content arrive after release: an opt-out, a takedown, a discovered privacy problem, a licence that turned out not to permit the use. Handling them is where the earlier design pays off:
+Requests to remove content arrive after release: an opt-out, a takedown, a discovered privacy problem, a license that turned out not to permit the use. Handling them is where the earlier design pays off:
 
 1. Locate the document. A content-addressed index from document hash (or URL, or source identifier) to the shards and versions containing it answers this in one lookup. Without it, removal means scanning every version.
 1. Cut a new version without the document, with the manifest diff naming the shards that changed, and record the reason.
@@ -846,11 +848,11 @@ Everything a training run needs is then a tag. A run's configuration names the t
 The pieces exist as libraries, and most teams assemble rather than write them:
 
 - **Hugging Face `datasets`** {cite}`lhoest2021datasets` for Parquet and Arrow handling, streaming from the hub, and memory-mapped local caches; the hub itself for hosting versioned datasets with per-commit manifests.
-- **Mosaic Streaming (MDS)** for a shard format that streams from object storage with a deterministic, resumable sample order that does not depend on the number of ranks; **WebDataset** for tar shards streamed sequentially with a seeded shard order and a shuffle buffer.
+- **Mosaic Streaming (MDS)** for a shard format that streams from object storage {cite}`mosaicml2022streaming` with a deterministic, resumable sample order that does not depend on the number of ranks once `num_canonical_nodes` is pinned; **WebDataset** {cite}`aizman2020high` for tar shards streamed sequentially with a seeded shard order and a shuffle buffer.
 - **Megatron-LM, GPT-NeoX and their derivatives** for the indexed tokenized binary and the blended-dataset sampler that implements weighted mixing; epoch caps are set when the blend is planned.
-- **DVC** and **lakeFS** for content-addressed versioning with lineage, in a Git-like workflow; **Git LFS** when the data is small enough.
+- **DVC** {cite}`iterative2026dvc` and **lakeFS** {cite}`treeverse2026lakefs` for content-addressed versioning with lineage, in a Git-like workflow; **Git LFS** when the data is small enough.
 - **Great Expectations** and similar for data contracts, though a few hundred lines of assertions in the build script are usually enough.
-- **Croissant** for machine-readable dataset metadata.
+- **Croissant** {cite}`akhtar2024croissant` for machine-readable dataset metadata.
 
 What no tool supplies is the discipline: that every version is produced by the build, that no shard is edited in place, that every run names a tag, and that the statistics and the card are updated with the data rather than after it.
 
@@ -889,8 +891,8 @@ What no tool supplies is the discipline: that every version is produced by the b
 - [Datasheets for Datasets](https://arxiv.org/abs/1803.09010) {cite}`gebru2021datasheets` and [Data Cards](https://arxiv.org/abs/2204.01075) {cite}`pushkarna2022data` - the documentation templates
 - [What's In My Big Data?](https://arxiv.org/abs/2310.20707) {cite}`elazar2024whats` - inspection tooling and what it found in the public corpora
 - [Documenting Large Webtext Corpora](https://arxiv.org/abs/2104.08758) {cite}`dodge2021documenting` - C4 audited after the fact
-- [The Data Provenance Initiative](https://arxiv.org/abs/2310.16787) {cite}`longpre2023data` - licence tracking across repackaged datasets
-- [The Secret Sharer](https://arxiv.org/abs/1802.08232) {cite}`carlini2019secret` - canaries for measuring memorisation
+- [The Data Provenance Initiative](https://arxiv.org/abs/2310.16787) {cite}`longpre2023data` - license tracking across repackaged datasets
+- [The Secret Sharer](https://arxiv.org/abs/1802.08232) {cite}`carlini2019secret` - canaries for measuring memorization
 - [Poisoning Web-Scale Training Datasets is Practical](https://arxiv.org/abs/2302.10149) {cite}`carlini2024poisoning` - why distributed datasets need content hashes
 - [The Pile](https://arxiv.org/abs/2101.00027) {cite}`gao2020pile`, [Dolma](https://arxiv.org/abs/2402.00159) {cite}`soldaini2024dolma` and [FineWeb](https://arxiv.org/abs/2406.17557) {cite}`penedo2024fineweb` - corpora released with their documentation, statistics and code
 
