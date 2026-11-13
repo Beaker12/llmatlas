@@ -60,8 +60,8 @@ Large Language Models cannot directly process raw text—they require numerical 
 
 ```{figure} figures/tokenization_pipeline.*
 :name: fig-ch1-tokenization-pipeline
+:width: 80%
 :alt: Five stages from top to bottom: normalization, pre-tokenization, subword model, vocabulary lookup and embedding lookup, each beside its result for the text The cat sat: three chunks, the tokens The, cat and sat, the ids 464, 3797 and 3332, and a 3 by 768 matrix.
-:width: 78%
 
 From text to the model's input. Left, the stages; right, what each gives for "The cat sat" with GPT-2's tokenizer (ids from tiktoken's `gpt2` encoding; Ġ is how GPT-2's vocabulary writes a leading space; $d = 768$ is the smallest GPT-2).
 ```
@@ -262,6 +262,7 @@ Tokens: ['hel', 'p', 'e', 'r', '</w>']
 
 ```{figure} figures/bpe-merges.*
 :name: fig-ch1-bpe-merges
+:width: 82%
 :alt: Five rows of boxed symbols for the words hello, world, help and held, each ending in an end-of-word marker. Row by row the highlighted symbol grows from he to hel to hell to hello, while world never changes.
 
 The four merges of the listing on its corpus (hello twice, world, help, held), drawn by `figures/make_figures.py` from the listing's own `SimpleBPE`. Each row is the corpus after one more merge; the symbol just created is highlighted. Merge 1 picks h + e over e + l, which also occurs 4 times, because `max` returns the first pair counted.
@@ -475,8 +476,8 @@ The sinusoidal and learned schemes below both add a position vector to each toke
 
 ```{figure} figures/embedding_composition.*
 :name: fig-ch1-embedding-composition
+:width: 72%
 :alt: Token ids go through a token embedding lookup in W_E and positions go through a positional encoding; the two n by d results are added to give the input X.
-:width: 68%
 
 Absolute positions are added to the token embeddings before the first block. RoPE instead acts inside attention ({ref}`sec-ch1-rope`), and the relative bias adds to the attention scores.
 ```
@@ -565,6 +566,7 @@ position 0: [0.0, 1.0, 0.0, 1.0]
 
 ```{figure} figures/sinusoidal-heatmap.*
 :name: fig-ch1-sinusoidal-heatmap
+:width: 83%
 :alt: Heatmap of 64 dimensions by 100 positions: the lowest dimensions alternate red and blue every few positions, higher dimensions change ever more slowly, and the top rows are almost constant.
 
 The encoding table the listing prints, $m < 100$ and $d = 64$, drawn by its first plot. Each pair of dimensions is a sine and cosine whose wavelength grows with the dimension index.
@@ -572,6 +574,7 @@ The encoding table the listing prints, $m < 100$ and $d = 64$, drawn by its firs
 
 ```{figure} figures/sinusoidal-lines.*
 :name: fig-ch1-sinusoidal-lines
+:width: 100%
 :alt: Four curves over positions 0 to 49: dimension 0 oscillates fast, dimension 8 more slowly, dimension 16 completes less than one cycle and dimension 32 rises almost linearly.
 
 The listing's second plot: dimensions 0, 8, 16 and 32 over the first 50 positions. Their angular frequencies are 1, 0.32, 0.1 and 0.01 radians per position.
@@ -776,6 +779,7 @@ norm before and after rotation: 8.370 8.370
 
 ```{figure} figures/rope-rotation.*
 :name: fig-ch1-rope-rotation
+:width: 80%
 :alt: Two unit circles. In each, a query arrow and a key arrow are separated by an arc labeled 2: on the left at angles 3 and 5, on the right at angles 10 and 12.
 
 The worked number above with $d_k = 2$ and $\omega_0 = 1$: the rotated query and key at $m = 3, m' = 5$ (left) and $m = 10, m' = 12$ (right) point in different directions, but the angle between them is the same, so the score is the same.
@@ -802,9 +806,10 @@ The pieces of the previous two sections, and the attention of the next, were not
 
 ```{figure} figures/history-timeline.*
 :name: fig-ch1-history-timeline
-:alt: A timeline on a year axis broken between 2008 and 2012: LSTM in 1997 and the neural language model in 2003, then word2vec, seq2seq and attention in 2013 to 2014, the transformer in 2017, ELMo, GPT and BERT in 2018, GPT-2, T5 and BART in 2019, GPT-3 in 2020, InstructGPT and ChatGPT in 2022, LLaMA and Mistral 7B in 2023 and Llama 3 in 2024.
+:width: 69%
+:alt: A vertical year axis from 1995 to 2025 with a dot per milestone, each joined by a leader line to a row of text: LSTM in 1997 and the neural language model in 2003, then word2vec, seq2seq and attention in 2013 to 2014, the transformer in 2017, ELMo, GPT and BERT in 2018, GPT-2, T5 and BART in 2019, GPT-3 in 2020, InstructGPT and ChatGPT in 2022, LLaMA and Mistral 7B in 2023 and Llama 3 in 2024.
 
-The milestones this section discusses, placed by year of publication or release (sources in the text). Most of them fall in the last decade.
+The milestones this section discusses (sources in the text). Left, each milestone's year on a time axis to scale; right, one row per milestone. Fifteen of the seventeen fall after 2012.
 ```
 
 (sec-ch1-ngram-neural-lm)=
@@ -920,8 +925,8 @@ The scaling factor $\sqrt{d_k}$, where $d_k$ is the per-head key dimension, keep
 
 ```{figure} figures/scaled_dot_product_attention.*
 :name: fig-ch1-scaled-dot-product-attention
+:width: 71%
 :alt: X feeds three projections Q, K and V; Q and K give the n by n scores divided by the square root of d_k, an optional mask adds minus infinity, the softmax gives weights A, and A times V gives the n by d_v output O.
-:width: 68%
 
 Scaled dot-product attention with the shape of every intermediate. The $n \times n$ score and weight matrices are what makes attention quadratic in $n$ ({ref}`sec-ch1-attention-complexity`).
 ```
@@ -969,6 +974,7 @@ output:
 
 ```{figure} figures/attention-worked-example.*
 :name: fig-ch1-attention-worked-example
+:width: 86%
 :alt: Two 3 by 3 heatmaps. Scores: 0.7071 where two tokens share a coordinate, 0 between tokens 1 and 2, 1.4142 for token 3 with itself. Weights: rows 0.4011, 0.1978, 0.4011; 0.1978, 0.4011, 0.4011; 0.2483, 0.2483, 0.5035.
 
 The listing's scores and weights. The softmax keeps the order of each row's scores but makes them positive and sum to 1; the zero score still gets weight 0.1978.
@@ -1014,8 +1020,8 @@ with $d_k = d_v = d/n_h$, so the heads together cost as much as one head of widt
 
 ```{figure} figures/multi_head_attention.*
 :name: fig-ch1-multi-head-attention
+:width: 72%
 :alt: X is projected to Q, K and V of width d, the columns are split into n_h heads of width d_k, each head runs attention, the heads are concatenated back to width d and multiplied by W_O.
-:width: 70%
 
 Multi-head attention: one projection of width $d$, split into $n_h$ heads of $d_k = d/n_h$ columns, attention in each head, concatenation and the output projection $W_O$.
 ```
@@ -1362,8 +1368,8 @@ The decoder's output then goes through the same final normalization and unembedd
 
 ```{figure} figures/encoder_decoder.*
 :name: fig-ch1-encoder-decoder
+:width: 75%
 :alt: Left, the encoder: source tokens through self-attention and a feed-forward network, repeated L_enc times, giving H_enc. Right, the decoder: target tokens through masked self-attention, cross-attention that takes keys and values from H_enc, and a feed-forward network, repeated L_dec times, then the next-token distribution.
-:width: 72%
 
 The encoder-decoder transformer of {cite:t}`vaswani2017attention`. $H_{enc}$ is computed once and feeds the cross-attention of every decoder block.
 ```
@@ -1382,6 +1388,7 @@ The three differ in which positions may attend to which, as {numref}`fig-ch1-mas
 
 ```{figure} figures/mask-patterns.*
 :name: fig-ch1-mask-patterns
+:width: 96%
 :alt: Three grids of allowed query-key pairs: encoder-only is fully dark; decoder-only is dark on and below the diagonal; the decoder of an encoder-decoder sees all four source columns and the target columns on and below the diagonal.
 
 Allowed (dark) and masked (light) query-key pairs for four source tokens s1 to s4 and three target tokens t1 to t3. The red line separates the cross-attention keys (source) from the decoder's own keys.
@@ -1449,8 +1456,8 @@ The block above is the 2017 design. Later models change it in some of the follow
 
 ```{figure} figures/transformer_block_norms.*
 :name: fig-ch1-transformer-block-norms
+:width: 89%
 :alt: Left, post-LN: x goes through multi-head attention, is added to the residual x, then normalized. Right, pre-LN: x is normalized, goes through attention and is added to the unnormalized x.
-:width: 86%
 
 Post-LN normalizes the sum, so the residual stream passes through a normalization in every block; pre-LN normalizes only the sublayer's input, so the residual path from input to output is the identity.
 ```
@@ -1536,6 +1543,7 @@ For the four inputs of the next listing the mask is {numref}`fig-ch1-causal-mask
 
 ```{figure} figures/causal-mask.*
 :name: fig-ch1-causal-mask
+:width: 47%
 :alt: A 4 by 4 grid over the tokens bos, the, cat, sat: zeros on and below the diagonal, minus infinity above it.
 
 The causal mask as it is added to the scores: 0 where a query may attend, $-\infty$ where the key is later, so the softmax gives those keys weight 0. `create_causal_mask(4)` is `True` exactly where this grid shows 0.
@@ -1621,8 +1629,8 @@ Halving the temperature raises the top token from 0.445 to 0.643. Top-k with $k_
 
 ```{figure} figures/autoregressive_loop.*
 :name: fig-ch1-autoregressive-loop
+:width: 63%
 :alt: The prompt goes into the model, which gives a next-token distribution; a token is chosen; if it is EOS or the length limit is reached generation stops, otherwise the token is appended and the model runs again.
-:width: 61%
 
 Generation: one forward pass per new token. Training does not loop, because teacher forcing supplies the true tokens ({ref}`sec-ch1-teacher-forcing`).
 ```

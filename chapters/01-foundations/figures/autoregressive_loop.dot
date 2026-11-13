@@ -1,7 +1,7 @@
 digraph AutoregressiveLoop {
     graph [fontname="Arial" fontsize=13 bgcolor=white];
 
-    p [label=<<b>Prompt</b><br/>BOS, x<sub>1</sub> … x<sub>t</sub>> shape=box style="rounded,filled" fillcolor="#fffaf0" color="#975a16" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    p [label=<<b>Prompt</b><br/>BOS, then the prompt tokens> shape=box style="rounded,filled" fillcolor="#fffaf0" color="#975a16" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     m [label=<<b>Model</b><br/>one forward pass> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     d [label=<<b>Next-token distribution</b><br/>softmax(z / τ) at the last position> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     c [label=<<b>Choose a token</b><br/>greedy, top-k or top-p> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];

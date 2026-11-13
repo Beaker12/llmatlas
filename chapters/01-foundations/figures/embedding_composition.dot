@@ -3,8 +3,8 @@ digraph EmbeddingComposition {
 
     ids [label=<<b>Token ids</b><br/>n integers below |𝒱|> shape=box style="rounded,filled" fillcolor="#fffaf0" color="#975a16" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     pos [label=<<b>Positions</b><br/>m = 0, 1, …, n − 1> shape=box style="rounded,filled" fillcolor="#fffaf0" color="#975a16" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
-    tok [label=<<b>Token embedding</b><br/>row id of W<sub>E</sub> (|𝒱| × d)> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
-    pe [label=<<b>Positional encoding</b><br/>sinusoidal, or row m of W<sub>P</sub>> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    tok [label=<<b>Token embedding</b><br/>row id of W_E (|𝒱| × d)> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    pe [label=<<b>Positional encoding</b><br/>sinusoidal, or row m of W_P> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     add [label=<<b>+</b>> shape=circle style="filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c" width=0.45 fixedsize=true fontsize=16];
     x [label=<<b>Input X</b><br/>n × d, to the first block> shape=box style="rounded,filled" fillcolor="#f0fff4" color="#276749" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
     { rank=same; ids; pos; }

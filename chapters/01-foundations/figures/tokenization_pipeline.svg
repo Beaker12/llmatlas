@@ -108,9 +108,7 @@
 <title>s4</title>
 <path fill="#f0fff4" stroke="#276749" stroke-width="1.4" d="M187.2,-54.8C187.2,-54.8 38.4,-54.8 38.4,-54.8 32.4,-54.8 26.4,-48.8 26.4,-42.8 26.4,-42.8 26.4,-12 26.4,-12 26.4,-6 32.4,0 38.4,0 38.4,0 187.2,0 187.2,0 193.2,0 199.2,-6 199.2,-12 199.2,-12 199.2,-42.8 199.2,-42.8 199.2,-48.8 193.2,-54.8 187.2,-54.8"/>
 <text xml:space="preserve" text-anchor="start" x="54.31" y="-29.7" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Embedding lookup</text>
-<text xml:space="preserve" text-anchor="start" x="52.11" y="-16.7" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c">one row of W</text>
-<text xml:space="preserve" text-anchor="start" x="128.69" y="-16.7" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="13.00" fill="#1a202c">E</text>
-<text xml:space="preserve" text-anchor="start" x="137.36" y="-16.7" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"> per id</text>
+<text xml:space="preserve" text-anchor="start" x="48.49" y="-16.7" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c">one row of W_E per id</text>
 </g>
 <!-- s3&#45;&gt;s4 -->
 <g id="edge12" class="edge">

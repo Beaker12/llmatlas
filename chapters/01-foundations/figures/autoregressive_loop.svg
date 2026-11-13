@@ -12,12 +12,9 @@
 <!-- p -->
 <g id="node1" class="node">
 <title>p</title>
-<path fill="#fffaf0" stroke="#975a16" stroke-width="1.4" d="M163.05,-579.8C163.05,-579.8 67.28,-579.8 67.28,-579.8 61.28,-579.8 55.28,-573.8 55.28,-567.8 55.28,-567.8 55.28,-537 55.28,-537 55.28,-531 61.28,-525 67.28,-525 67.28,-525 163.05,-525 163.05,-525 169.05,-525 175.05,-531 175.05,-537 175.05,-537 175.05,-567.8 175.05,-567.8 175.05,-573.8 169.05,-579.8 163.05,-579.8"/>
+<path fill="#fffaf0" stroke="#975a16" stroke-width="1.4" d="M208.59,-579.8C208.59,-579.8 21.74,-579.8 21.74,-579.8 15.74,-579.8 9.74,-573.8 9.74,-567.8 9.74,-567.8 9.74,-537 9.74,-537 9.74,-531 15.74,-525 21.74,-525 21.74,-525 208.59,-525 208.59,-525 214.59,-525 220.59,-531 220.59,-537 220.59,-537 220.59,-567.8 220.59,-567.8 220.59,-573.8 214.59,-579.8 208.59,-579.8"/>
 <text xml:space="preserve" text-anchor="start" x="92.41" y="-554.7" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#1a202c">Prompt</text>
-<text xml:space="preserve" text-anchor="start" x="76.88" y="-541.7" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c">BOS, x</text>
-<text xml:space="preserve" text-anchor="start" x="118.05" y="-541.7" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="13.00" fill="#1a202c">1</text>
-<text xml:space="preserve" text-anchor="start" x="125.28" y="-541.7" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c"> … x</text>
-<text xml:space="preserve" text-anchor="start" x="149.84" y="-541.7" font-family="Helvetica,sans-Serif" baseline-shift="sub" font-size="13.00" fill="#1a202c">t</text>
+<text xml:space="preserve" text-anchor="start" x="31.34" y="-541.7" font-family="Helvetica,sans-Serif" font-size="13.00" fill="#1a202c">BOS, then the prompt tokens</text>
 </g>
 <!-- m -->
 <g id="node2" class="node">

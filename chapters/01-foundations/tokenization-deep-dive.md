@@ -434,6 +434,7 @@ Arabic               12           10            4
 
 ```{figure} figures/tokens-per-language.*
 :name: fig-ch1-tokens-per-language
+:width: 83%
 :alt: Grouped bars for English, French, Spanish, Japanese and Arabic. English is 18 tokens per 100 characters in all three encodings; Japanese falls from 143 in gpt2 to 57 in cl100k_base and 29 in o200k_base; Arabic from 92 to 77 to 31.
 
 Tokens per 100 characters for the five greetings above, from the counts the listing prints (saved in `figures/data/tokens_per_language.json`). The greetings are 7 to 16 characters long, so each bar rests on a handful of tokens.
@@ -975,7 +976,11 @@ def analyze_token_frequency(corpus, tokenizer):
     # Plot frequency distribution
     frequencies = sorted(token_counts.values(), reverse=True)
     plt.figure(figsize=(7, 3.6))
-    plt.loglog(range(1, len(frequencies) + 1), frequencies, marker=".", linestyle="none")
+    ranks = range(1, len(frequencies) + 1)
+    plt.loglog(ranks, frequencies, marker=".", linestyle="none", label="Observed")
+    # Zipf's law: frequency proportional to 1 / rank, a line of slope -1 on log-log axes
+    plt.loglog(ranks, [frequencies[0] / r for r in ranks], linestyle="--", color="gray", label="Slope -1 (Zipf)")
+    plt.legend(loc="upper right")
     plt.xlabel("Token rank")
     plt.ylabel("Frequency")
     plt.title("Token frequency distribution (Zipf's law)")
@@ -987,9 +992,10 @@ def analyze_token_frequency(corpus, tokenizer):
 
 ```{figure} figures/word-frequency.*
 :name: fig-ch1-word-frequency
+:width: 83%
 :alt: Log-log scatter of word frequency against rank: about 440 occurrences for the most frequent word, falling roughly along a straight line to a long tail of words that occur once.
 
-`analyze_token_frequency` applied to the paragraphs of this chapter's main page, split into lowercase words (run by `figures/make_figures.py`). On log-log axes frequency falls roughly linearly with rank, which is Zipf's law.
+`analyze_token_frequency` applied to the prose of this chapter's main page (its paragraphs, without code and display math), split into lowercase words of letters only; `figures/make_figures.py` runs it. The dashed line has slope −1, Zipf's law anchored at the most frequent word. The counts fall more slowly than the line over the first few hundred ranks and then end in a long tail of words seen once or twice.
 ```
 
 {numref}`fig-ch1-word-frequency` shows the plot for this chapter's own text.
@@ -1314,9 +1320,9 @@ def compare_position_encodings():
               "RoPE": ("x", "--")}  # sinusoidal and RoPE overlap at zero, so they differ in marker and dash
     for method, params in results.items():
         marker, dash = styles[method]
-        plt.plot(seq_lens, params, marker=marker, linestyle=dash, label=method)
+        plt.plot(seq_lens, [p / 1e6 for p in params], marker=marker, linestyle=dash, label=method)
     plt.xlabel("Maximum sequence length")
-    plt.ylabel("Additional parameters")
+    plt.ylabel("Additional parameters (millions)")
     plt.title("Positional encoding parameter cost (sinusoidal and RoPE add none)")
     plt.legend()
     plt.grid(True)
@@ -1337,9 +1343,10 @@ RoPE                        0         0         0         0         0
 
 ```{figure} figures/position-parameter-cost.*
 :name: fig-ch1-position-parameter-cost
+:width: 83%
 :alt: Four lines over maximum lengths 128 to 4096: learned absolute rises to about 2.1 million parameters; relative bias stays at 256; sinusoidal and RoPE stay at 0 and overlap.
 
-The listing's plot, $d = 512$. Sinusoidal and RoPE coincide at zero (circles and crosses).
+The listing's plot, $d = 512$, in millions of parameters. Only learned absolute positions grow with the length. Three lines lie on the axis: T5's relative bias is a constant 256 parameters (32 buckets times 8 heads), too few to leave the axis at this scale, and sinusoidal and RoPE add none.
 ```
 
 {numref}`fig-ch1-position-parameter-cost` plots these numbers. 

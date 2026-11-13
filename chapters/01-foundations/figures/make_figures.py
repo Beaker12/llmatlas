@@ -99,7 +99,7 @@ def bpe_merges(out):
     fig, ax = plt.subplots(figsize=(7.2, 3.3))
     ax.set_axis_off()
     right = 0.0
-    labels = ["start"] + [f"merge {i}: {a} + {b}" for i, (a, b) in enumerate(bpe.merges, start=1)]
+    labels = ["Start"] + [f"Merge {i}: {a} + {b}" for i, (a, b) in enumerate(bpe.merges, start=1)]
     for row, state in enumerate(states):
         y = -row
         ax.text(-0.3, y, labels[row], ha="right", va="center", fontsize=10)
@@ -156,7 +156,7 @@ def rope_rotation(out):
         ax.grid(False)
         for side in ("left", "bottom"):
             ax.spines[side].set_visible(False)
-    fig.text(0.5, 0.02, r"angle between them $(m' - m)\,\omega_0 = 2$ in both, so the score is "
+    fig.text(0.5, 0.02, r"Angle between them $(m' - m)\,\omega_0 = 2$ in both, so the score is "
              f"$\\cos 2 = {math.cos(2):.3f}$ in both", ha="center", color=GREEN, fontsize=10)
     save(fig, out, "rope-rotation")
 
@@ -189,8 +189,8 @@ def attention_worked_example(out):
     matrix(axes[1], weights, lambda v: f"{v:.4f}", "Oranges", tokens, tokens, "Weights (each row sums to 1)",
            vmin=0, vmax=1.0)
     for ax in axes:
-        ax.set_xlabel("key")
-    axes[0].set_ylabel("query")
+        ax.set_xlabel("Key")
+    axes[0].set_ylabel("Query")
     fig.tight_layout()
     save(fig, out, "attention-worked-example")
 
@@ -219,8 +219,8 @@ def mask_patterns(out):
     mask_panel(axes[2], cross, tgt, src + tgt, "Decoder of encoder-decoder:\nall source, earlier target")
     axes[2].axvline(3.5, color=RED, lw=1.5)
     for ax in axes:
-        ax.set_xlabel("key")
-    axes[0].set_ylabel("query")
+        ax.set_xlabel("Key")
+    axes[0].set_ylabel("Query")
     fig.tight_layout()
     save(fig, out, "mask-patterns")
 
@@ -236,44 +236,38 @@ def causal_mask(out):
         for j in range(n):
             ax.text(j, i, "0" if allowed[i, j] else "−∞", ha="center", va="center", fontsize=11,
                     color="white" if allowed[i, j] else "black")
-    ax.set_xlabel("key position")
-    ax.set_ylabel("query position")
+    ax.set_xlabel("Key position")
+    ax.set_ylabel("Query position")
     save(fig, out, "causal-mask")
 
 
-# History (sec-ch1-historical-context): the milestones the section names, on a year axis.
-MILESTONES = [(1997, "LSTM"), (2003, "Neural LM (Bengio)"), (2013, "word2vec"), (2014, "seq2seq"),
-              (2014.6, "Attention (Bahdanau)"), (2017, "Transformer"), (2018, "ELMo"), (2018.4, "GPT"),
-              (2018.8, "BERT"), (2019, "GPT-2, 1.5B"), (2019.5, "T5, BART"), (2020, "GPT-3, 175B"),
-              (2022, "InstructGPT, ChatGPT"), (2023, "LLaMA, Mistral 7B"), (2024, "Llama 3, 405B")]
+# History (sec-ch1-historical-context): the milestones the section names. Left, a year axis to scale; right, one
+# evenly spaced row per milestone, joined to its year by a leader line (rows keep the order, so no lines cross).
+# Fractions of a year only separate milestones of the same year; the labels give the year.
+MILESTONES = [(1997, "LSTM"), (2003, "Neural language model (Bengio et al.)"), (2013, "word2vec"),
+              (2014.3, "Sequence to sequence"), (2014.7, "Attention in translation (Bahdanau et al.)"),
+              (2017.5, "Transformer"), (2018.1, "ELMo"), (2018.45, "GPT"), (2018.8, "BERT"),
+              (2019.15, "GPT-2, 1.5B parameters"), (2019.5, "T5 and BART"), (2020.4, "GPT-3, 175B parameters"),
+              (2022.2, "InstructGPT"), (2022.9, "ChatGPT"), (2023.15, "LLaMA"), (2023.8, "Mistral 7B"),
+              (2024.5, "Llama 3, up to 405B parameters")]
 
 
 def history_timeline(out):
-    # Two panels on one year scale with a break at 2012, so the crowded 2013-2024 span gets the width.
-    # (level, alignment) per milestone keeps every label clear of the others.
-    place = [(1, "center"), (-1, "center"), (1, "left"), (-1, "left"), (2, "left"), (-2, "left"), (1, "left"),
-             (-1, "left"), (3, "left"), (-3, "left"), (2, "left"), (-1, "left"), (4, "right"), (-4, "right"),
-             (1, "right")]
-    fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.4), sharey=True, gridspec_kw={"width_ratios": [1, 2.4]})
-    for ax, (lo, hi) in zip(axes, ((1995, 2008), (2012.5, 2025.5))):
-        for (year, label), (level, align) in zip(MILESTONES, place):
-            if not lo <= year <= hi:
-                continue
-            ax.plot([year, year], [0, level * 0.7], color=GREY, lw=0.8)
-            ax.plot(year, 0, "o", color=BLUE, ms=4)
-            ax.text(year, level * 0.7 + (0.08 if level > 0 else -0.08), label, ha=align,
-                    va="bottom" if level > 0 else "top", fontsize=9)
-        ax.axhline(0, color=GREY, lw=1)
-        ax.set_xlim(lo, hi)
-        ax.set_yticks([])
-        ax.spines["left"].set_visible(False)
-        ax.grid(False)
-    axes[0].set_xticks([1995, 2000, 2005])
-    axes[1].set_xticks(range(2013, 2026, 2))
-    axes[1].tick_params(axis="y", length=0)
-    axes[0].set_ylim(-3.4, 3.4)
-    fig.supxlabel("year (axis broken between 2008 and 2012)", fontsize=10.5)
-    fig.tight_layout()
+    fig, ax = plt.subplots(figsize=(6.4, 4.6))
+    lo, hi = 1995, 2025
+    rows = np.linspace(lo + 0.5, hi - 0.5, len(MILESTONES))
+    ax.plot([0, 0], [lo, hi], color=GREY, lw=1.2)
+    for year in range(lo, hi + 1, 5):
+        ax.plot([-0.08, 0], [year, year], color=GREY, lw=1)
+        ax.text(-0.15, year, str(year), ha="right", va="center", fontsize=9.5)
+    for (year, label), row in zip(MILESTONES, rows):
+        ax.plot(0, year, "o", color=BLUE, ms=4, zorder=3)
+        ax.plot([0, 0.9, 1.1], [year, row, row], color=GREY, lw=0.7)
+        ax.text(1.18, row, f"{int(year)}  {label}", ha="left", va="center", fontsize=9.5)
+    ax.set_xlim(-0.9, 6.2)
+    ax.set_ylim(hi + 0.6, lo - 0.6)
+    ax.set_axis_off()
+    ax.text(-0.15, lo - 1.4, "Year", ha="right", va="center", fontsize=10.5)
     save(fig, out, "history-timeline")
 
 
@@ -288,7 +282,7 @@ def tokens_per_language(out):
         ax.bar(np.arange(len(languages)) + (k - 1) * width, values, width, label=name, hatch=hatch,
                edgecolor="white")
     ax.set_xticks(range(len(languages)), languages)
-    ax.set_ylabel("tokens per 100 characters")
+    ax.set_ylabel("Tokens per 100 characters")
     ax.legend(loc="upper left", frameon=False)
     ax.grid(axis="x", visible=False)
     save(fig, out, "tokens-per-language")
