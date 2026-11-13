@@ -18,6 +18,8 @@ The chapter has six parts, each needed to read the rest of the book. A short lin
 
 **Numerical stability.** Training runs in 16-bit formats with a limited range and few significant digits. This part shows where values overflow or underflow, and how log-sum-exp, loss scaling, bf16 and initialization scaled to width and depth keep them finite.
 
+Every symbol the book uses is listed on the {ref}`notation page <sec-notation>`, with a link to the section that introduces each symbol used only in this chapter.
+
 (sec-ch2-learning-objectives)=
 
 ## Learning Objectives

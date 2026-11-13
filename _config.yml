@@ -32,11 +32,6 @@ parse:
 bibtex_bibfiles:
   - references.bib
   - bib/ch01.bib
-  - bib/ch02.bib
-  - bib/ch03.bib
-  - bib/ch04.bib
-  - bib/ch05.bib
-  - bib/ch06.bib
 
 repository:
   url: https://github.com/Beaker12/llmatlas

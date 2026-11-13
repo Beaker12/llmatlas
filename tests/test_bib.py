@@ -247,3 +247,24 @@ def test_checks_catch_problems(tmp_path, second, expect):
     other.write_text(second, encoding="utf-8")
     failures = check_bibliography([first, other])
     assert any(expect in f for f in failures), failures
+
+
+def test_fold_appends_a_chapter_file_and_refuses_a_duplicate(tmp_path):
+    from tools.fold_bib import fold
+
+    entry = "@misc{{{key},\n  title={{{title}}},\n  url={{https://example.org/{key}}},\n  year={{2020}}\n}}\n"
+    (tmp_path / "references.bib").write_text(entry.format(key="a2020", title="First"), encoding="utf-8")
+    (tmp_path / "bib").mkdir()
+    (tmp_path / "bib" / "ch07.bib").write_text("% header\n\n" + entry.format(key="b2020", title="Second"))
+    (tmp_path / "bib" / "ch08.bib").write_text(entry.format(key="c2020", title="{F}irst"))
+    (tmp_path / "_config.yml").write_text(
+        "bibtex_bibfiles:\n  - references.bib\n  - bib/ch07.bib\n  - bib/ch08.bib\n", encoding="utf-8"
+    )
+    with pytest.raises(SystemExit, match="same title as a2020"):
+        fold(["bib/ch08.bib"], root=tmp_path)
+    assert (tmp_path / "bib" / "ch08.bib").exists()
+    fold(["bib/ch07.bib"], root=tmp_path)
+    text = (tmp_path / "references.bib").read_text(encoding="utf-8")
+    assert "@misc{b2020," in text and "% header" not in text
+    assert "bib/ch07.bib" not in (tmp_path / "_config.yml").read_text(encoding="utf-8")
+    assert not (tmp_path / "bib" / "ch07.bib").exists()

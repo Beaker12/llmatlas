@@ -1,6 +1,6 @@
 # Dataset Management and Versioning
 
-A pretraining corpus is not a file. It is tens of thousands of shards, produced by a pipeline from sources that change, consumed by training runs that must be reproducible, audited after the fact for what they contained, and edited when something has to come out. This chapter covers the engineering that makes that manageable: how the data is laid out on disk, how a version is named and verified, how documents are tokenized, packed and mixed into training batches, how a run resumes without repeating or skipping data, and how a dataset is documented and governed over its life. Chapter 3 acquired the text and Chapter 4 cleaned it; this chapter turns the result into an artifact that a training job can depend on.
+A pretraining corpus is not a file. It is tens of thousands of shards, produced by a pipeline from sources that change, consumed by training runs that must be reproducible, audited after the fact for what they contained, and edited when something has to come out. This chapter covers the engineering that makes that manageable: how the data is laid out on disk, how a version is named and verified, how documents are tokenized, packed and mixed into training batches, how a run resumes without repeating or skipping data, and how a dataset is documented and governed over its life. {ref}`Chapter 3 <sec-ch3-chapter-overview>` acquired the text and {ref}`Chapter 4 <sec-ch4-chapter-overview>` cleaned it; this chapter turns the result into an artifact that a training job can depend on.
 
 (sec-ch5-chapter-overview)=
 
@@ -21,6 +21,8 @@ Think of a training dataset the way a software team thinks of a release. Source 
 **Monitoring and governance** keep the record: how many tokens from each source, what the tests checked, who may use the dataset, and how a document is found and removed when someone asks.
 
 The theme is that reproducibility is cheap when it is designed in and impossible to retrofit. A dataset built by hand in a notebook, shuffled with an unseeded call and written over an older copy, cannot be reproduced, diffed, or audited, and every experiment trained on it is uninterpretable.
+
+Every symbol the book uses is listed on the {ref}`notation page <sec-notation>`, with a link to the section that introduces each symbol used only in this chapter.
 
 (sec-ch5-learning-objectives)=
 
@@ -60,8 +62,8 @@ Everything runs on a CPU in seconds and uses only the standard library, NumPy, P
 
 Three distinct things are called "the dataset" and each needs its own handling:
 
-- **The sources**: crawl snapshots, dumps and repositories, as acquired in Chapter 3. They are large, mostly immutable once fetched, and recorded by provenance manifest.
-- **The processed corpus**: the output of the Chapter 4 pipeline, a set of cleaned document shards with metadata. This is what is versioned, documented and released.
+- **The sources**: crawl snapshots, dumps and repositories, as acquired in {ref}`Chapter 3 <sec-ch3-chapter-overview>`. They are large, mostly immutable once fetched, and recorded by provenance manifest.
+- **The processed corpus**: the output of the {ref}`Chapter 4 <sec-ch4-chapter-overview>` pipeline, a set of cleaned document shards with metadata. This is what is versioned, documented and released.
 - **The training stream**: the sequence of token batches a particular run consumed, which depends on the corpus version, the tokenizer, the packing method, the mixture weights, the seed and the number of steps. It is not stored; it is recomputed from those inputs.
 
 Reproducing a model means reproducing the third from the second, which means the second has to be fixed and the transformation has to be deterministic. The practical rule used by every serious training codebase: a run's configuration names a corpus version by hash, a tokenizer by hash, and a data seed, and the loader is a pure function of those.
@@ -1004,7 +1006,7 @@ padding: random batches 75.7%, length-bucketed 13.0%
 
 ### 5.1 Weights, temperature and epochs
 
-A corpus has several sources with very different sizes, and the fraction of training tokens drawn from each is a decision, not a consequence of size. Chapter 3 covered how the weights are chosen; here the question is how a sampler realizes them.
+A corpus has several sources with very different sizes, and the fraction of training tokens drawn from each is a decision, not a consequence of size. {ref}`Chapter 3 <sec-ch3-chapter-overview>` covered how the weights are chosen; here the question is how a sampler realizes them.
 
 Given weights $w_s$ that sum to one, the sampler draws each document's source with probability $w_s$ and then the next unseen document from that source. Two refinements:
 
@@ -1502,7 +1504,7 @@ A dataset version ships with its statistics, computed by the build and stored ne
 
 - Tokens and documents per source, and the realized mixture (which differs from the planned one once epoch caps and filtering have acted)
 - Document length distribution per source (mean, median, percentiles, maximum); a change in the tail between versions usually means an extraction change
-- Per-stage drop counts from the Chapter 4 pipeline, so that a version's keep rate can be compared with its predecessor's
+- Per-stage drop counts from the {ref}`Chapter 4 <sec-ch4-chapter-overview>` pipeline, so that a version's keep rate can be compared with its predecessor's
 - Deduplication rate within the version and overlap with the previous version
 - Language distribution, and for code the distribution over languages and licenses
 - Overlap with the evaluation suite after decontamination, per benchmark, reported as a number even when it is zero
@@ -1668,7 +1670,7 @@ Croissant, a machine-readable metadata vocabulary built on schema.org, {cite}`ak
 
 ### 8.2 Licenses and the provenance record
 
-A corpus mixes sources under different terms, and the terms travel with the data. The version's metadata records, per source, the license or terms under which it was obtained, the opt-out policy applied and the date, and any restrictions that propagate to models trained on it. {cite:t}`longpre2023data` traced the lineage and licenses of more than 1,800 text datasets and found that widely used hosting sites omitted the license in more than 70% of cases and gave a wrong one in more than 50%; the only remedy is to carry the record forward from acquisition (Chapter 3) through every version rather than reconstructing it later.
+A corpus mixes sources under different terms, and the terms travel with the data. The version's metadata records, per source, the license or terms under which it was obtained, the opt-out policy applied and the date, and any restrictions that propagate to models trained on it. {cite:t}`longpre2023data` traced the lineage and licenses of more than 1,800 text datasets and found that widely used hosting sites omitted the license in more than 70% of cases and gave a wrong one in more than 50%; the only remedy is to carry the record forward from acquisition ({ref}`Chapter 3 <sec-ch3-chapter-overview>`) through every version rather than reconstructing it later.
 
 Access control follows from the record. A corpus with a non-commercial source cannot be released under a commercial license as a whole, so either the source is separated into its own shards with their own terms, or the released version excludes it. Keeping sources in separate shards, which the naming convention of {ref}`sec-ch5-sharding` already does, is what makes this a manifest operation rather than a rebuild.
 
@@ -1886,7 +1888,7 @@ uint32 binary    4.00 bytes per token, every document read back in 2 ms
 The binaries cost exactly 2 and 4 bytes per token, plus 8 bytes of offset per document. Compressed text lands close to the `uint16` binary, because gzip removes most of the redundancy of words and JSON. The sizes are therefore close, and the difference is the read: on the run shown the binary is read back about a hundred times faster, and the text pays its cost again on every epoch, because it is parsed and tokenized again on every pass. Inspectability stops being worth its cost as soon as the data is read more than once by a training loop. Keep the text as the versioned record and derive the binary from it, as {ref}`sec-ch5-formats-used` recommends. The `uint32` binary doubles the size for no gain unless the vocabulary exceeds 65,536 entries.
 ````
 
-1. **Manifest diff.** Build 1,000 documents of ten lines each in which the last lines repeat the first, from none to five of them and exactly three in 1% of documents, so that the duplicate-line fraction computed by Chapter 4's `repetition_stats` is the number of repeated lines divided by ten. Keep the documents that pass that filter's threshold of 0.30, then tighten the threshold by 10% to 0.27. Write both versions in two layouts, 50 documents per shard in order and 64 buckets chosen by a hash of the document id, and diff the manifests. How many shards changed in each layout, and could you have predicted which ones?
+1. **Manifest diff.** Build 1,000 documents of ten lines each in which the last lines repeat the first, from none to five of them and exactly three in 1% of documents, so that the duplicate-line fraction computed by {ref}`Chapter 4 <sec-ch4-chapter-overview>`'s `repetition_stats` is the number of repeated lines divided by ten. Keep the documents that pass that filter's threshold of 0.30, then tighten the threshold by 10% to 0.27. Write both versions in two layouts, 50 documents per shard in order and 64 buckets chosen by a hash of the document id, and diff the manifests. How many shards changed in each layout, and could you have predicted which ones?
 
 ````{admonition} Solution 2
 :class: dropdown

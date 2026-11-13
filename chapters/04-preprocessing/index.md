@@ -24,6 +24,8 @@ Think of a raw web crawl as the contents of every recycling bin in a city. Somew
 
 The theme throughout is that none of these decisions is neutral. Every filter encodes a view of what "good text" is, and that view is inherited by the model. The chapter therefore pairs each technique with the way its effect is measured.
 
+Every symbol the book uses is listed on the {ref}`notation page <sec-notation>`, with a link to the section that introduces each symbol used only in this chapter.
+
 (sec-ch4-learning-objectives)=
 
 ## Learning Objectives
@@ -68,7 +70,7 @@ Common Crawl, the source of most open pretraining corpora, publishes a new snaps
 
 | Corpus                                      | Starting material                     | Retained after cleaning           | Main discards                                                        |
 | ------------------------------------------- | ------------------------------------- | --------------------------------- | -------------------------------------------------------------------- |
-| C4 {cite}`raffel2019exploring`              | One Common Crawl snapshot (~20 TB)    | ~750 GB (~156B tokens)            | Non-English, lines without terminal punctuation, bad-word pages      |
+| C4 {cite}`raffel2019exploring`              | One Common Crawl snapshot (April 2019; ~20 TB of extracted text) | ~750 GB (~156B tokens)            | Non-English, lines without terminal punctuation, bad-word pages      |
 | MassiveText (Gopher) {cite}`rae2021scaling` | Web, books, news, code, Wikipedia     | ~10.5 TB after filtering and dedup | Repetitive pages, non-English, quality heuristics, near-duplicates  |
 | RefinedWeb {cite}`penedo2023refinedweb`     | All Common Crawl dumps to 2023-06 (about 90; WARC) | ~5T tokens (about a tenth of input documents) | Boilerplate, language, repetition, exact and fuzzy duplicates |
 | FineWeb {cite}`penedo2024fineweb`           | 96 Common Crawl snapshots             | ~15T tokens                       | URL blocklist, language, Gopher and C4 rules, per-snapshot MinHash   |
