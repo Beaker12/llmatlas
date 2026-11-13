@@ -168,6 +168,15 @@ assert 3.7 < effective(4) < 3.8 and 15.1 < effective(40) < 15.3
 
 Four epochs lose 7% of the value of a fresh pass, which is why the cap is "nearly free"; forty epochs lose 62%, so a run that repeats a corpus forty times gets about 15 passes of value from it, and the extra 25 are close to wasted.
 
+{numref}`fig-ch3-decay-law` plots the quantity behind the listing's four numbers: the value of the $e$-th pass, which is the derivative of the listing's `effective` with respect to $e$, $\exp(-(e - 1)/15.4)$. The step at four epochs keeps every pass up to the fourth at full value and discards the rest; the curve falls smoothly, to 82% at the fourth pass and 8% at the fortieth.
+
+:::{figure} figures/decay-law.*
+:name: fig-ch3-decay-law
+:alt: Line plot of the value of the e-th pass over the same tokens, as a fraction of a fresh pass, against epoch e from 1 to 40. A solid curve falls from 1.0 at e = 1 to 82% at e = 4, 56% at e = 10 and 8% at e = 40. A dashed line holds 1.0 up to e = 4 and drops to 0 there, the hard cap.
+
+The decay law's value per pass against the hard cap $e_{\max} = 4$ of {ref}`sec-ch3-epoch-cap-per-source`. The solid curve is $\exp(-(e - 1)/15.4)$, the marginal value of the $e$-th epoch, with the fitted constant of the listing above; the dashed step is the cap, which treats a pass as worth everything or nothing.
+:::
+
 The effective stock is therefore a count of training tokens, not of distinct tokens, and the four-epoch result is already inside it: it should not be applied a second time. {numref}`fig-ch3-corpus-size` sets the training sets of the table in {ref}`sec-ch3-published-mixtures` against it in the same unit: on a log axis they climb about one order of magnitude every two years, and the largest, at 15T training tokens, is already within a factor of seven of the lower end of the interval.
 
 :::{figure} figures/corpus-size.*
@@ -227,6 +236,8 @@ about a gigabyte and made of one gzip member per record. An index line gives a r
 file, offset and length; the range request `bytes=48374322-48384203` fetches that member
 alone, and it decompresses without the rest of the file.
 :::
+
+The listings that touch the network send a `User-Agent` that names the tool (`llmatlas-notebook/0.1`) and that the environment variable `LLMATLAS_USER_AGENT` replaces. It names no person and no repository, which suits a reader's few requests and does not suit a crawler: the rule of {ref}`sec-ch3-robots-txt-politeness-conventions`, a string that names the crawler and links to a page explaining it, applies to anything you run beyond a handful of requests, and the variable is where to set that string. The listings also wait two seconds between requests to one host.
 
 ```python
 # network
@@ -708,14 +719,15 @@ The user agents in that list are the ones that matter for training data: `CCBot`
 
 ### 3.3 Crawler architecture
 
-A crawler at corpus scale is a distributed system with four parts:
+A crawler at corpus scale is a distributed system with five parts:
 
 - **Frontier**: the queue of URLs to fetch, prioritized by some estimate of value (links in, freshness, site quality) and partitioned by host so that per-host politeness can be enforced locally. The frontier is the crawl's main state and its main engineering problem; Common Crawl's is that of Apache Nutch {cite}`commoncrawl2026faq`.
+- **Scheduler**: picks the next URL to hand out, from the host whose delay has expired, consulting a cache of that host's robots.txt. Politeness is enforced here and nowhere else.
 - **Fetchers**: many workers, each holding a pool of connections, resolving DNS, fetching with timeouts, and respecting the per-host schedule. Throughput is bounded by politeness rather than bandwidth: at one request per two seconds per host, a hundred thousand hosts in flight give at most $10^5 / 2 =$ fifty thousand pages per second. That is a ceiling, not a rate: most hosts have only a few URLs queued, and slow servers hold connections open.
 - **Deduplication of URLs** before fetching (canonicalization, a seen-set of URL hashes) and of content after fetching (so that mirrors and soft-404 pages do not fill the frontier with links).
 - **Storage** as WARC, with the request, response and metadata records written together, because the raw response is what later re-extraction needs. Writing only extracted text saves space and throws away the option of re-extracting with a better tool next year.
 
-{numref}`fig-ch3-crawler-architecture` arranges the four parts in the order a URL passes through them.
+{numref}`fig-ch3-crawler-architecture` arranges the five parts, and the stages between them, in the order a URL passes through them.
 
 The frontier has to answer two questions for every URL: has it been seen, and when should it be fetched. The seen-set at web scale holds billions of URLs, too many to keep as strings in memory, so crawlers keep fixed-size fingerprints and test new URLs against them in batches {cite}`heydon1999mercator,lee2009irlbot`. A Bloom filter {cite}`bloom1970space`, the structure {ref}`Chapter 4 <sec-ch4-exact-deduplication>` uses for paragraph hashes, trades a small false-positive rate for less memory still: with the optimal number of hash functions it needs $-\ln p / (\ln 2)^2$ bits per URL for a false-positive rate $p$. A false positive here means a new URL is wrongly taken as seen and never fetched, which a crawl can afford at 1%:
 
@@ -738,7 +750,7 @@ print(f"Bloom filter: {bits * urls / 8 / 1e9:.1f} GB;",
 Bloom filter: 12.0 GB; 64-bit fingerprints: 80 GB, 2.7 colliding pairs
 ```
 
-Ten billion URLs fit in 12 GB, a fraction of a single machine's memory, against 80 GB for 64-bit fingerprints. Those are not exact either: among $10^{10}$ URLs about 2.7 pairs collide, so a few URLs are wrongly taken as seen, a rate near $5 \times 10^{-10}$ per lookup against the Bloom filter's $10^{-2}$. When to fetch is a priority order within each host's queue, set by an estimate of a page's value (links pointing to it, its host's quality) and, for pages already fetched, of how likely it is to have changed since. Two limits protect the frontier from pages that generate links without end, such as calendars with a "next month" link or URLs carrying a fresh session id: a page budget per host, and a cap on URL length and link depth. Choosing how often to re-fetch pages that change at different rates is its own problem, treated by {cite:t}`cho2003effective`; {cite:t}`olston2010web` survey all of these questions.
+Ten billion URLs fit in 12 GB, a fraction of a single machine's memory, against 80 GB for 64-bit fingerprints. Those are not exact either: among $10^{10}$ URLs about 2.7 pairs collide, so a few URLs are wrongly taken as seen, a rate near $5 \times 10^{-10}$ per lookup against the Bloom filter's $10^{-2}$. When to fetch is a priority order within each host's queue, set by an estimate of a page's value (links pointing to it, its host's quality) and, for pages already fetched, of how likely it is to have changed since. Two limits protect the frontier from pages that generate links without end, such as calendars with a "next month" link or URLs carrying a fresh session id: a page budget per host, and a cap on URL length and link depth. How often to re-fetch pages that change at different rates is its own problem, worked through below; {cite:t}`cho2003effective` study such refresh policies analytically and experimentally, and {cite:t}`olston2010web` survey all of these questions.
 
 :::{figure} figures/crawler-architecture.*
 :name: fig-ch3-crawler-architecture
@@ -750,7 +762,53 @@ loop: links found in fetched pages, once canonicalized and checked against the s
 go back into the frontier.
 :::
 
-Rendering is the expensive option. A page that builds its content with JavaScript yields a near-empty HTML response to a plain fetcher; running a headless browser recovers the content at many times the cost per page. Most training-data crawls do not render, which is one reason single-page applications are under-represented in corpora.
+Rendering is the expensive option. A page that builds its content with JavaScript yields a near-empty HTML response to a plain fetcher; running a headless browser recovers the content at many times the cost per page. Common Crawl's crawler does not render: its FAQ says "Currently, JavaScript is not executed" {cite}`commoncrawl2026faq`, which is one reason single-page applications are under-represented in corpora built on it.
+
+**Re-fetch scheduling.** Suppose a page changes at random times at an average rate of $\chi_p$ changes per day (a Poisson process, the model {cite:t}`cho2003effective` propose and find a good description of real pages), and the crawler re-fetches it $f_p$ times per day at even intervals. A local copy is *fresh* while the page has not changed since the last fetch, and the expected fraction of time it is fresh is
+
+$$F(\chi_p, f_p) = \frac{1 - e^{-\chi_p / f_p}}{\chi_p / f_p}.$$
+
+With a fixed budget of fetches per day, the question is how to divide it. The obvious policy, refreshing in proportion to the change rate, gives every page the same ratio $\chi_p / f_p$ and so the same freshness; the uniform policy gives every page the same $f_p$. The listing compares them for two pages, one that changes daily and one nine times a day, with a budget of two fetches a day, and also searches for the best split:
+
+```python
+import math
+
+RATES = [1.0, 9.0]  # changes per day of a slow page and a fast page
+BUDGET = 2.0        # refreshes per day the crawler can afford, in total
+
+
+def freshness(rate, refreshes_per_day):
+    """Expected fraction of time a local copy is current when the page changes as a
+    Poisson process of `rate` per day and is re-fetched every 1/f days."""
+    x = rate / refreshes_per_day
+    return (1 - math.exp(-x)) / x
+
+
+def average(split):
+    return sum(freshness(r, f) for r, f in zip(RATES, split)) / len(RATES)
+
+
+uniform = [BUDGET / len(RATES)] * len(RATES)
+proportional = [BUDGET * r / sum(RATES) for r in RATES]
+best = max(([BUDGET * i / 1000, BUDGET * (1 - i / 1000)] for i in range(1, 1000)),
+           key=average)
+for name, split in [("uniform", uniform), ("proportional", proportional),
+                    ("best split", best)]:
+    print(f"{name:>12}: {split[0]:.2f} and {split[1]:.2f} fetches/day,",
+          f"average freshness {average(split):.3f}")
+assert average(uniform) > average(proportional)
+assert average(best) > average(uniform) and best[1] < best[0]
+```
+
+% output
+
+```text
+     uniform: 1.00 and 1.00 fetches/day, average freshness 0.372
+proportional: 0.20 and 1.80 fetches/day, average freshness 0.199
+  best split: 1.76 and 0.24 fetches/day, average freshness 0.395
+```
+
+Proportional refreshing is the worse of the two, and the best split goes the other way from it: it spends most of the budget on the slow page. A page that changes nine times a day is stale again soon after any fetch, so an extra fetch buys little, while an extra fetch of a page that changes once a day buys a long stretch of freshness. The conditional requests of the next listing supply the data such a policy needs: a `304` answer says the page has not changed since the last fetch, and the fraction of `304` answers over time estimates $\chi_p$.
 
 Two of these parts are worth seeing in code. URL canonicalization decides when two strings name the same page. RFC 3986 {cite}`berners2005rfc3986` defines the normalizations that never change what a URL refers to: lowercase the scheme and host, write the hexadecimal digits of percent-encodings in uppercase and decode those that stand for unreserved characters, remove `.` and `..` path segments (but not empty ones: `/a//b` and `/a/b` may name different resources), and drop a port that is the scheme's default. Crawlers add rules the RFC does not sanction: dropping the fragment, which never reaches the server, sorting the query parameters, and stripping session and tracking parameters. These merge many duplicates and occasionally two different pages, so each is a per-site decision. Conditional requests make re-crawling cheap: a server that sent an `ETag` with a page answers a later request that carries the tag in `If-None-Match` with `304 (Not Modified)` and no content when the page has not changed {cite}`fielding2022rfc9110`.
 
@@ -986,7 +1044,7 @@ The web supplies volume; the sources in this section supply things the web is sh
 
 ### 4.1 Wikipedia and the Wikimedia projects
 
-Wikipedia is in every corpus. The Wikimedia Foundation publishes complete database dumps of every language edition twice a month (`dumps.wikimedia.org`), under CC BY-SA and the GFDL, as XML with the wikitext markup; converting wikitext to clean text (templates, infoboxes, references, tables) is the main work, and the `wikimedia/wikipedia` dataset on Hugging Face is a widely used pre-converted version. English Wikipedia is about 5.3 billion words in 7.3 million articles (November 2026), roughly 6 to 7 billion tokens or about 0.04% of a 15T-token corpus, and models typically see it two to four times. Wiktionary, Wikibooks, Wikisource and Wikidata are published the same way; Dolma includes Wikibooks alongside Wikipedia.
+Wikipedia is in every corpus. The Wikimedia Foundation publishes complete database dumps of every language edition twice a month (`dumps.wikimedia.org`), under CC BY-SA and the GFDL, as XML with the wikitext markup; converting wikitext to clean text (templates, infoboxes, references, tables) is the main work, and the `wikimedia/wikipedia` dataset on Hugging Face is a widely used pre-converted version. English Wikipedia is about 5.3 billion words in 7.3 million articles (the site's statistics, read on 13 November 2026 {cite}`wikipedia2026statistics`), roughly 6 to 7 billion tokens or about 0.04% of a 15T-token corpus, and models have seen it about two to three and a half times: 2.45 epochs in LLaMA and 3.4 in GPT-3 {cite}`touvron2023llama,brown2020language`. Wiktionary, Wikibooks, Wikisource and Wikidata are published the same way; Dolma includes Wikibooks alongside Wikipedia.
 
 (sec-ch3-books)=
 
@@ -1297,7 +1355,7 @@ If the stock of human-written text is the binding constraint, text generated by 
 
 ### 7.2 What can go wrong
 
-Synthetic data inherits the generating model's errors, style and gaps, and feeding it back repeatedly compounds them. {cite:t}`shumailov2024curse` showed that models trained on the outputs of earlier models lose the tails of the distribution first, so that after a few generations rare content disappears and the model's outputs converge on a narrow, repetitive mode. The practical mitigations are to cap the synthetic share (a share that production mixtures set differently; see {ref}`sec-ch3-epoch-cap-per-source`), to keep human-written data in every generation, to anchor generation in real documents (rephrasing, grounded question writing) rather than free generation, and to mark synthetic data as such in provenance records. The last matters beyond your own pipeline: model-generated text is now a growing fraction of the open web, so future crawls contain it whether or not it was labeled.
+Synthetic data inherits the generating model's errors, style and gaps, and feeding it back repeatedly compounds them. {cite:t}`shumailov2024curse` showed that models trained on the outputs of earlier models lose the tails of the distribution first, so that after a few generations rare content disappears and the model's outputs converge on a narrow, repetitive mode. The practical mitigations are to cap the synthetic share (a share that production mixtures set differently; see {ref}`sec-ch3-epoch-cap-per-source`), to keep human-written data in every generation, to anchor generation in real documents (rephrasing, grounded question writing) rather than free generation, and to mark synthetic data as such in provenance records. The last matters beyond your own pipeline: model-generated text is published on the open web too, so future crawls contain it whether or not it was labeled.
 
 A toy version of the experiment shows the mechanism. Let training be the estimation of word frequencies from a sample and generation be sampling from the estimate. A word type that a finite sample happens to miss gets probability zero and can never return, so with each generation of purely synthetic data the rare types disappear; replacing half of each generation's data with fresh human text keeps most of them:
 
@@ -1539,7 +1597,7 @@ consent study measured.
 
 :::{figure} figures/epochs-per-source.*
 :name: fig-ch3-epochs-per-source
-:alt: Grouped bar chart of epochs per source for a 21T-token run, planned and after opt-outs. Web rises slightly, from about 1.17 to 1.23 epochs, web_quality from 1.5 to 2.1, code stays at 1.8, and papers, wikipedia, books and dialogue all sit at the 4-epoch cap in both plans. A dashed line marks the cap at 4.
+:alt: Grouped bar chart of epochs per source for a 21T-token run, planned and after opt-outs. Web rises slightly, from about 1.17 to 1.23 epochs, quality web from 1.5 to 2.1, code stays at 1.8, and papers, wikipedia, books and dialogue all sit at the 4-epoch cap in both plans. A dashed line marks the cap at 4.
 
 Epochs $e_s$ per source from the notebook's `plan_mixture` run ($D \approx 20.8$T
 tokens, cap $e_{\max} = 4$), before and after removing 5% of the web and 28% of the
@@ -1666,10 +1724,8 @@ Common Crawl's announcement of the crawl gives the WARC files as 82.79 TiB
 {cite}`commoncrawl2026september`. The estimate is 1.4% high, about two standard errors,
 which a sample of ten can produce; a hundred files would cut the standard error to about
 0.2%. Note the units: the announcement's 82.79 TiB is 91.0 TB, the "about 90 TB" of the
-table in {ref}`sec-ch3-snapshots-segments-files`. The notebook's estimate, from the
-first three files of the manifest, is about 95 TB: three files are a smaller sample, and
-the first files of a manifest are not a random draw, which is why this solution samples
-with a seed.
+table in {ref}`sec-ch3-snapshots-segments-files`. The notebook makes the same estimate from the same ten seeded files, and
+rounds it to about 92 TB.
 ```
 
 2. **Who is blocked.** The notebook commits the two robots.txt files it reads, Wikipedia's and a news site's, under `examples/data/`. Parse both and tabulate which of `*`, `CCBot`, `GPTBot`, `ClaudeBot` and `Google-Extended` may fetch an article. Which site blocks Common Crawl, and did it likely intend to leave the open corpora? How would you extend the table to fifty news sites?
@@ -1846,6 +1902,18 @@ The answer that most datasheets leave blank is the one that matters here: what w
 deliberately excluded. For these samples, nothing was filtered at collection; the
 content is whatever the first rows or the seeded offsets returned, including any
 personal data they hold.
+```
+
+8. **Size a seen-set.** A crawl will see $n = 10^9$ distinct URLs. Using the Bloom-filter rule of {ref}`sec-ch3-crawler-architecture`, how many bits per URL and how many bytes in total does a filter with false-positive rate $p = 1\%$ need, and how many hash functions is optimal? Then give the `Range` header that fetches the record of 9,882 bytes at offset 48,374,322 of a WARC file.
+
+```{admonition} Solution 8
+:class: dropdown
+The filter needs $-\ln p / (\ln 2)^2 = -\ln 0.01 / 0.4805 = 9.585$ bits per URL, so
+$9.585 \times 10^9$ bits, which is $1.198 \times 10^9$ bytes, about 1.2 GB. The optimal
+number of hash functions is the bits per URL times $\ln 2$, $9.585 \times 0.6931 = 6.64$,
+so 7 in practice. The range of a record ends at its offset plus its length minus 1,
+because both ends of a `Range` are inclusive:
+`Range: bytes=48374322-48384203`.
 ```
 
 (sec-ch3-further-reading)=

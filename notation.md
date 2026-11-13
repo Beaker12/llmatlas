@@ -253,6 +253,8 @@ layer computes $xW$.
 | $\bar{q}$ | the DoReMi domain weights $q_t$ averaged over the $T$ proxy steps, used for the large run | {ref}`sec-ch3-setting-weights` |
 | $\nu$ | DoReMi step size on the domain weights (`NU` in its listing) | {ref}`sec-ch3-setting-weights` |
 | $\Delta$ | DoReMi excess loss of a domain ($\Delta_t[i]$ at proxy step $t$) | {ref}`sec-ch3-setting-weights` |
+| $\chi_p$ | average number of changes per day of page $p$ (a Poisson rate) | {ref}`sec-ch3-crawler-architecture` |
+| $f_p$ | number of times per day the crawler re-fetches page $p$ | {ref}`sec-ch3-crawler-architecture` |
 
 ### Chapter 4: Data Preprocessing and Cleaning
 

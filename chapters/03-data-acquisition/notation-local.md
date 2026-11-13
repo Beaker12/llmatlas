@@ -13,3 +13,5 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\bar{q}$ | the DoReMi domain weights $q_t$ averaged over the $T$ proxy steps, used for the large run | index.md, 8.3 display equation | | |
 | $\nu$ | DoReMi step size on the domain weights (`NU` in its listing) | index.md, 8.3 display equation | | |
 | $\Delta$ | DoReMi excess loss of a domain ($\Delta_t[i]$ at proxy step $t$) | index.md, 8.3 display equation | | |
+| $\chi_p$ | average number of changes per day of page $p$ (a Poisson rate) | index.md, 3.3 re-fetch scheduling | | |
+| $f_p$ | number of times per day the crawler re-fetches page $p$ | index.md, 3.3 re-fetch scheduling | | |
