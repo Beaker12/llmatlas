@@ -65,7 +65,7 @@ All twelve have the same outer structure: a token embedding, a stack of identica
 
 ```{figure} figures/block-2017-2025.*
 :name: fig-ch6-block-2017-2025
-:alt: Two block diagrams side by side. Left, the 2017 block: multi-head attention, add, LayerNorm, ReLU feed-forward network, add, LayerNorm, with the residual skips entering each add. Right, the Llama 3.1 8B block: RMSNorm, grouped-query attention with RoPE, add, RMSNorm, SwiGLU network, add, with the residual skips bypassing the norms.
+:alt: Two block diagrams side by side. Left, the original transformer's block (2017): multi-head attention, add, LayerNorm, ReLU feed-forward network, add, LayerNorm, with the residual skips entering each add. Right, the Llama 3.1 8B block (2024): RMSNorm, grouped-query attention with RoPE, add, RMSNorm, SwiGLU network, add, with the residual skips bypassing the norms.
 :width: 100%
 
 The original transformer's block (2017) and Llama 3.1 8B's block (2024), whose layout the 2025 models of this chapter keep. The outer structure is the same; what changed is the contents of each box (shaded blue) and where the normalization sits (orange). On the right, the residual path (orange arrows) runs from block to block without passing through a norm.
@@ -530,7 +530,7 @@ Mistral 7B v0.1 is an example: its configuration says 32,768 positions, its pape
 :alt: Dot chart on a log scale from 4K to 160K tokens. Mistral 7B v0.1: window 4K, pretraining 8K, configuration 32K. Qwen2.5 7B: pretraining 4K, long-context stage at 32K, configuration 128K. Llama 3 405B: pretraining 8K, long-context stage at 128K, configuration 128K. DeepSeek-V3: pretraining 4K, stages at 32K and 128K, configuration 160K.
 :width: 100%
 
-Context numbers from the sources cited in this chapter. The red bar is what the configuration accepts (claim 1); the markers are the lengths the reports say training used (claim 2). Where a long-context stage reaches the red bar, as for Llama 3, the two claims meet; for Mistral 7B v0.1 and Qwen2.5 7B the configuration accepts four times the trained length.
+Context numbers from the sources cited in this chapter. The red bar is what the configuration accepts (claim 1); the markers are the lengths the reports say training used (claim 2). Where a long-context stage reaches the red bar, as for Llama 3, the two claims meet; for Mistral 7B v0.1 and Qwen2.5 7B the configuration accepts four times the longest trained length.
 ```
 
 ```{admonition} Frequencies and Scaling
@@ -619,10 +619,10 @@ DeepSeekMoE makes two changes to the conventional layout of GShard-style top-$n_
 
 ```{figure} figures/moe-layer.*
 :name: fig-ch6-moe-layer
-:alt: Diagram of a mixture-of-experts layer. The token's hidden state x goes to a router and to a shared expert. The router computes logits and probabilities and selects the top-scoring experts; two selected experts, FFN 1 and FFN 3, are drawn bold with their gate weights, the others faint. The output y is the shared expert's output plus the weighted sum of the selected experts.
+:alt: Diagram of a mixture-of-experts layer. The token's hidden state x goes to a router and to the shared experts. The router computes logits and probabilities and selects the top-scoring experts; two selected experts, FFN 1 and FFN 3, are drawn bold with their gate weights, the others faint. The output y is the shared experts' output plus the weighted sum of the selected experts.
 :width: 100%
 
-One token through a mixture-of-experts layer with a shared expert. The router scores all $E$ routed experts but only the $n_{act}$ selected (bold) run, each weighted by its renormalized probability $\tilde{\rho}_i$; the shared expert runs for every token. Compute per token follows the bold boxes, memory follows all of them.
+One token through a mixture-of-experts layer with shared experts, annotated with the sizes of DeepSeek-V2-Lite, whose router uses the softmax of {ref}`sec-ch6-moe-idea` and which has two shared experts. The router scores all $E$ routed experts but only the $n_{act}$ selected (bold) run, each weighted by its renormalized probability $\tilde{\rho}_i$; the shared experts run for every token. Compute per token follows the bold boxes, memory follows all of them.
 ```
 
 DeepSeek-V3 adds three more refinements {cite}`deepseek2024v3`. Its router uses sigmoid scores rather than softmax, normalizes them over the selected experts and multiplies them by 2.5 (Eqs. 12 to 15 of the paper, with the factor from the configuration):

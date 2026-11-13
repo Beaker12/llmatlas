@@ -265,10 +265,19 @@ def attention_family(cfg):
 
 
 family_colors = {"MHA": "#c44e52", "GQA": "#4c72b0", "MLA": "#55a868"}
+DISPLAY = {  # the names the chapter's tables use
+    "meta-llama/Llama-3.1-8B": "Llama 3.1 8B", "meta-llama/Llama-3.1-70B": "Llama 3.1 70B",
+    "mistralai/Mistral-7B-v0.1": "Mistral 7B v0.1", "Qwen/Qwen2.5-7B": "Qwen2.5 7B",
+    "google/gemma-2-9b": "Gemma 2 9B", "allenai/OLMo-2-1124-7B": "OLMo 2 7B", "Qwen/Qwen3-8B-Base": "Qwen3 8B",
+    "google/gemma-3-12b-pt": "Gemma 3 12B", "mistralai/Mixtral-8x7B-v0.1": "Mixtral 8x7B v0.1",
+    "allenai/OLMoE-1B-7B-0924": "OLMoE 1B-7B", "deepseek-ai/DeepSeek-V2-Lite": "DeepSeek-V2-Lite",
+    "deepseek-ai/DeepSeek-V3": "DeepSeek-V3",
+}
+assert set(DISPLAY) == set(kv_bytes)
 order = sorted(kv_bytes, key=kv_bytes.get)
 kib = [kv_bytes[name] / 1024 for name in order]
 fig, ax = plt.subplots(figsize=(7, 4.2))
-ax.barh([name.split("/")[1] for name in order], kib,
+ax.barh([DISPLAY[name] for name in order], kib,
         color=[family_colors[attention_family(ALL_CONFIGS[name])] for name in order])
 for row, value in enumerate(kib):
     ax.text(value * 1.06, row, f"{value:.4g}", va="center", fontsize=9)

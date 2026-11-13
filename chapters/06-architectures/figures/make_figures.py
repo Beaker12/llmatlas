@@ -152,7 +152,7 @@ def context_claims(out):
     # (model, [(length, marker meaning)], accepted by the configuration); every number is on the page.
     rows = [
         ("Mistral 7B v0.1", [(4096, "window"), (8192, "trained")], 32768),
-        ("Qwen2.5 7B", [(32768, "trained")], 131072),
+        ("Qwen2.5 7B", [(4096, "pretrained"), (32768, "extended")], 131072),
         ("Llama 3 405B", [(8192, "pretrained"), (131072, "extended")], 131072),
         ("DeepSeek-V3", [(4096, "pretrained"), (32768, "extended"), (131072, "extended")], 163840),
     ]
