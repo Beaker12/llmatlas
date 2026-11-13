@@ -60,7 +60,10 @@ ANY_MARKER = re.compile(r"\s*%\s*output", re.I)  # a marker, possibly mistyped (
 
 
 def run_fence(code, timeout):
-    env = {**os.environ, "MPLBACKEND": "Agg", "PYTHONIOENCODING": "utf-8"}
+    # One math-library thread: the listings are small, and a busy host oversubscribed by many threads can make
+    # a fraction of a second of work take minutes.
+    env = {**os.environ, "MPLBACKEND": "Agg", "PYTHONIOENCODING": "utf-8", "OMP_NUM_THREADS": "1",
+           "MKL_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1"}
     with tempfile.TemporaryDirectory() as cwd:
         return subprocess.run(
             [sys.executable, "-W", "error", "-W", "ignore:FigureCanvasAgg is non-interactive", "-"],
@@ -286,6 +289,14 @@ def test_an_output_marker_not_after_a_python_fence_is_reported(tmp_path, before)
     page = page_of(tmp_path, f"{before}\n% output\n\n```text\n1\n```\n")
     failures = check_page(page)
     assert len(failures) == 1 and "not directly after a python fence" in failures[0]
+
+
+def test_a_fence_runs_with_one_math_library_thread(monkeypatch):
+    """Listings are small: one BLAS/OpenMP thread keeps their run time independent of how busy the host is (a
+    many-threaded torch matmul on a loaded host can take minutes and hit the timeout)."""
+    monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
+    proc = run_fence("import os\nprint(os.environ['OMP_NUM_THREADS'], os.environ['MKL_NUM_THREADS'])\n", 60)
+    assert proc.stdout.split() == ["1", "1"]
 
 
 def test_a_fence_that_prints_nothing_is_reported(tmp_path):
