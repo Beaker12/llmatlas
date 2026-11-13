@@ -200,3 +200,13 @@ def test_classifier_score_weights_windows_by_word_count():
     probs = [1.0 / (1.0 + np.exp(-(ns["hashed_features"](p) @ w + b))) for p in parts]
     assert abs(ns["classifier_score"](doc, w, b) - (20 * probs[0] + probs[1]) / 21) < 1e-12
     assert abs(probs[0] - probs[1]) > 1e-3  # the two windows score differently, so the weighting matters
+
+
+def test_html_sample_keeps_its_exact_value_after_rewrapping_as_joined_lines():
+    import hashlib
+
+    page = run("Library approved")["PAGE"]
+    # sha256 of the PAGE string as it stood with backslash continuations (commit de9ea2d)
+    digest = hashlib.sha256(page.encode("utf-8")).hexdigest()
+    assert digest == "e9870513d2e30e6291352f5bd3e7beb5d05f5508a7ab9d1abd9163d475b22549"
+    assert len(page) == 1049 and page.count("\n") == 11
