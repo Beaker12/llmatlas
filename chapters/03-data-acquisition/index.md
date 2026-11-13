@@ -25,10 +25,21 @@ Acquisition is where a model's knowledge, its languages, its biases and its lega
 {numref}`fig-ch3-acquisition-flow` shows how the parts connect: every source passes the rights checks and is written to the provenance manifest, from which Chapter 4 cleans the text and Chapter 5 samples it by the mixture plan.
 
 ```{figure} figures/acquisition-flow.*
-:name: fig-ch3-acquisition-flow
-:alt: Flow chart from top to bottom. Four sources (Common Crawl snapshots, your own crawl, curated sources, synthetic text) feed a rights check, which feeds the provenance manifest. The manifest feeds the mixture plan and Chapter 4's cleaning, and both feed Chapter 5.
+---
+name: fig-ch3-acquisition-flow
+alt: >-
+  Flow chart from top to bottom. Four sources (Common Crawl snapshots, your own crawl,
+  curated sources, synthetic text) feed a rights check, which feeds the provenance
+  manifest. The manifest feeds the mixture plan and Chapter 4's cleaning, and both feed
+  Chapter 5.
+---
 
-From sources to training data. Rights are decided at acquisition ({ref}`sec-ch3-rights-licenses-consent`), each kept document gets a manifest record ({ref}`sec-ch3-provenance-documentation`), and the mixture plan ({ref}`sec-ch3-mixture-design-token-budgeting`) fixes each source's weight $w_s$ (its share of training tokens) and the number of times $e_s$ it is repeated, at most $e_{\max}$ epochs, before Chapter 5 samples the cleaned shards.
+From sources to training data. Rights are decided at acquisition
+({ref}`sec-ch3-rights-licenses-consent`), each kept document gets a manifest record
+({ref}`sec-ch3-provenance-documentation`), and the mixture plan
+({ref}`sec-ch3-mixture-design-token-budgeting`) fixes each source's weight $w_s$ (its
+share of training tokens) and the number of times $e_s$ it is repeated, at most
+$e_{\max}$ epochs, before Chapter 5 samples the cleaned shards.
 ```
 
 Every symbol the book uses is listed on the {ref}`notation page <sec-notation>`, with a link to the section that introduces each symbol used only in this chapter.
@@ -94,10 +105,23 @@ The Pile's shares are the paper's "Weight" column: each component's raw size tim
 {numref}`fig-ch3-mixtures` draws the same shares as bars, which makes the contrast visible at a glance: The Pile is the only mixture in which the web crawl is not the largest part.
 
 ```{figure} figures/mixtures.*
-:name: fig-ch3-mixtures
-:alt: Five horizontal stacked bars, one per mixture, split into web crawl, curated web, books, papers, code and other, the last being 5 percent of The Pile. GPT-3 is 60, 25 and 16 percent; The Pile 18, 17, 15, 37 and 8; LLaMA 1 82, 6.5, 4.5, 2.5 and 4.5; Dolma 81, 3, 0.2, 2.3 and 13.4; FineWeb 100 percent web crawl.
+---
+name: fig-ch3-mixtures
+alt: >-
+  Five horizontal stacked bars, one per mixture, split into web crawl, curated web,
+  books, papers, code and other, the last being 5 percent of The Pile. GPT-3 is 60, 25
+  and 16 percent; The Pile 18, 17, 15, 37 and 8; LLaMA 1 82, 6.5, 4.5, 2.5 and 4.5;
+  Dolma 81, 3, 0.2, 2.3 and 13.4; FineWeb 100 percent web crawl.
+---
 
-The published mixtures of the table above. Numbers are percentages as published and rounded, so GPT-3's row sums to 101%. "Other" is what the five columns leave of 100%: The Pile's 5% are the components the table does not place in a column (OpenSubtitles, DM Mathematics, Ubuntu IRC, EuroParl, YouTube subtitles and Enron emails); Dolma places every source, so its 0.1% is rounding. Segments under 3% are too narrow to label inside the bar; their values are written to the right of the bar. GPT-3 and LLaMA 1 are shares of training tokens, The Pile of training bytes after upsampling, Dolma and FineWeb of corpus tokens.
+The published mixtures of the table above. Numbers are percentages as published and
+rounded, so GPT-3's row sums to 101%. "Other" is what the five columns leave of 100%:
+The Pile's 5% are the components the table does not place in a column (OpenSubtitles, DM
+Mathematics, Ubuntu IRC, EuroParl, YouTube subtitles and Enron emails); Dolma places
+every source, so its 0.1% is rounding. Segments under 3% are too narrow to label inside
+the bar; their values are written to the right of the bar. GPT-3 and LLaMA 1 are shares
+of training tokens, The Pile of training bytes after upsampling, Dolma and FineWeb of
+corpus tokens.
 ```
 
 Three things stand out. The web is the bulk of every corpus but The Pile, because nothing else is large enough; The Pile, built to be diverse, takes most of its bytes from papers and curated sources instead. Curated sources are small in tokens but upweighted: Wikipedia is 3% of GPT-3's training tokens while being a tiny fraction of the raw data, and LLaMA samples it for more than two epochs. And the totals have grown fifty-fold in four years, from GPT-3's 300B tokens to the 15T of FineWeb and the roughly 15T used by Llama 3 {cite}`grattafiori2024llama`, which is why the question of whether the supply of human-written text is finite {cite}`villalobos2024run` is now taken seriously.
@@ -128,10 +152,25 @@ Two results bound how far a fixed corpus can be stretched:
 The effective stock is therefore a count of training tokens, not of distinct tokens, and the four-epoch result is already inside it: it should not be applied a second time. {numref}`fig-ch3-corpus-size` sets the training sets of the table in {ref}`sec-ch3-published-mixtures` against it in the same unit: on a log axis they climb about one order of magnitude every two years, and the largest, at 15T training tokens, is already within a factor of seven of the lower end of the interval.
 
 ```{figure} figures/corpus-size.*
-:name: fig-ch3-corpus-size
-:alt: Log-scale plot of tokens against year. GPT-3 300 billion in 2020, LLaMA 1 1.4 trillion in 2023, Dolma 3 trillion, FineWeb 15 trillion and Llama 3 15 trillion in 2024. A shaded band from 100 to 1,000 trillion with a dashed line at 300 trillion marks the effective stock of public text, adjusted for quality and repetition; a gray span marks the projected exhaustion years 2026 to 2032.
+---
+name: fig-ch3-corpus-size
+alt: >-
+  Log-scale plot of tokens against year. GPT-3 300 billion in 2020, LLaMA 1 1.4 trillion
+  in 2023, Dolma 3 trillion, FineWeb 15 trillion and Llama 3 15 trillion in 2024. A
+  shaded band from 100 to 1,000 trillion with a dashed line at 300 trillion marks the
+  effective stock of public text, adjusted for quality and repetition; a gray span marks
+  the projected exhaustion years 2026 to 2032.
+---
 
-Training-set and corpus sizes against the effective stock of public text. Circles are tokens a model was trained on, squares tokens in a released corpus (The Pile is left out because it reports bytes); each point sits at the month of its paper's arXiv identifier, except that FineWeb (June 2024) and Llama 3 (July 2024), both at 15T, are drawn 0.1 year to either side of their months so that both markers show. The band is the 90% interval of 100T to 1,000T tokens and the dashed line the central 300T of the effective stock, quality- and repetition-adjusted, as Epoch AI's summary {cite}`epoch2024runout` states them; the gray span is the years in which {cite:t}`villalobos2024run` project it to be used up.
+Training-set and corpus sizes against the effective stock of public text. Circles are
+tokens a model was trained on, squares tokens in a released corpus (The Pile is left out
+because it reports bytes); each point sits at the month of its paper's arXiv identifier,
+except that FineWeb (June 2024) and Llama 3 (July 2024), both at 15T, are drawn 0.1 year
+to either side of their months so that both markers show. The band is the 90% interval
+of 100T to 1,000T tokens and the dashed line the central 300T of the effective stock,
+quality- and repetition-adjusted, as Epoch AI's summary {cite}`epoch2024runout` states
+them; the gray span is the years in which {cite:t}`villalobos2024run` project it to be
+used up.
 ```
 
 Both results bear directly on acquisition. If repeated tokens are nearly free, then a small, high-quality source is worth collecting even though it will be seen many times. If the stock is finite, then every source lost to opt-outs or licensing is a permanent reduction, and synthetic data ({ref}`sec-ch3-synthetic-data`) stops being optional.
@@ -165,10 +204,20 @@ A WARC file is a sequence of gzip members, one per record, so that any record ca
 {numref}`fig-ch3-snapshot-layout` follows one path down this hierarchy to a single record, using the index entry that {ref}`sec-ch3-index-targeted-retrieval` looks up.
 
 ```{figure} figures/snapshot-layout.*
-:name: fig-ch3-snapshot-layout
-:alt: Tree from crawl-data/CC-MAIN-2026-39 to 100 segments, each with warc, wet and wat directories of about 90, 7 and 16 TB per snapshot. One WARC file is drawn as a row of gzip members (request, response, metadata), with the response member at offset 48,374,322 and 9,882 bytes long highlighted. A URL index line with that filename, offset and length leads to a range request that fetches exactly that member.
+---
+name: fig-ch3-snapshot-layout
+alt: >-
+  Tree from crawl-data/CC-MAIN-2026-39 to 100 segments, each with warc, wet and wat
+  directories of about 90, 7 and 16 TB per snapshot. One WARC file is drawn as a row of
+  gzip members (request, response, metadata), with the response member at offset
+  48,374,322 and 9,882 bytes long highlighted. A URL index line with that filename,
+  offset and length leads to a range request that fetches exactly that member.
+---
 
-The layout of a snapshot. The manifest lists 100,000 WARC files, 1,000 per segment, each about a gigabyte and made of one gzip member per record. An index line gives a record's file, offset and length; the range request `bytes=48374322-48384203` fetches that member alone, and it decompresses without the rest of the file.
+The layout of a snapshot. The manifest lists 100,000 WARC files, 1,000 per segment, each
+about a gigabyte and made of one gzip member per record. An index line gives a record's
+file, offset and length; the range request `bytes=48374322-48384203` fetches that member
+alone, and it decompresses without the rest of the file.
 ```
 
 ```python
@@ -245,38 +294,79 @@ Large responses are not stored whole. Common Crawl's crawler stops reading a res
 
 Common Crawl also publishes a URL index for each snapshot, queryable through the CDX API (`index.commoncrawl.org/<crawl-id>-index?url=…&output=json`), which returns the WARC filename, byte offset and length of every capture of a URL or URL prefix. Combined with a range request this retrieves a single page from a 90 TB snapshot in one round trip. It is how researchers study a particular site's history across snapshots, and how a corpus builder can pull every capture of a chosen list of domains without scanning the whole snapshot. The index server is shared and rate limited, so bulk use goes through the columnar index files (`cc-index-table`, in Parquet on S3) and a query engine rather than the HTTP API.
 
-A worked lookup in two steps. An index entry gives, for one capture, the WARC file, the byte offset and the compressed length of its record. The three entries below are real lines of the CC-MAIN-2026-39 index, taken from the start of its first index file (the files under `cc-index/collections/<crawl-id>/indexes/` are themselves blocks of gzip members, located through `cluster.idx`, so they too can be read by range request). Turning an entry into the request that retrieves the record is arithmetic:
+A worked lookup in two steps. An index entry gives, for one capture, the WARC file, the byte offset and the compressed length of its record. The three entries below are real lines of the CC-MAIN-2026-39 index, taken from the start of its first index file (the files under `cc-index/collections/<crawl-id>/indexes/` are themselves blocks of gzip members, located through `cluster.idx`, so they too can be read by range request). Each entry is over 400 characters on one line; the listing adds line breaks for display only, writing it as adjacent string literals split after each JSON field, which Python joins back into the exact line. Turning an entry into the request that retrieves the record is arithmetic:
 
 ```python
 import json
 
-# Three lines of the CC-MAIN-2026-39 URL index (cdx-00000.gz), copied verbatim.
+# Three lines of the CC-MAIN-2026-39 URL index (cdx-00000.gz), copied verbatim
+# and split after each field for display (adjacent strings are joined into one).
 # Each is a SURT key (the host reversed, so that one site's pages sort
 # together), a 14-digit capture time and a JSON record.
-INDEX_LINES = """\
-0,11,214,3)/galleries/garys-gallery/yazyk 20260908100030 {"url": "https://3.214.11.0/galleries/garys-gallery/yazyk/", "mime": "text/html", "mime-detected": "text/html", "status": "200", "digest": "4FPPZ452ITDX4GHJQJ354OVFUQJCBZVS", "length": "9882", "offset": "48374322", "filename": "crawl-data/CC-MAIN-2026-39/segments/1788492699801.50/warc/CC-MAIN-20260908083825-20260908113825-00403.warc.gz", "charset": "UTF-8", "languages": "eng", "recordid": "01a08076-484a-783b-8b87-4cc051e242c1"}
-0,131,250,3)/ 20260917030102 {"url": "http://3.250.131.0/", "mime": "text/html", "mime-detected": "text/html", "status": "200", "digest": "Q2UDGWTKF2JOTDPWVJ7K45VJFAEWOL5C", "length": "8698", "offset": "272424", "filename": "crawl-data/CC-MAIN-2026-39/segments/1788493000724.71/warc/CC-MAIN-20260917025921-20260917055921-00427.warc.gz", "charset": "UTF-8", "languages": "por,eng", "recordid": "01a0ad4f-7be6-719d-a7fd-693aa3f9997c"}
-0,135,199,18)/stocks/johnson-johnson 20260910132650 {"url": "http://18.199.135.0/stocks/johnson-johnson", "mime": "text/html", "mime-detected": "text/html", "status": "200", "digest": "DKTNPR2H7QQVQGQ2XB2MKEBDXBJKLXDL", "length": "13816", "offset": "111752", "filename": "crawl-data/CC-MAIN-2026-39/segments/1788492699937.26/warc/CC-MAIN-20260910122853-20260910152853-00300.warc.gz", "charset": "UTF-8", "languages": "eng", "recordid": "01a08b7f-e621-764c-9a9a-02e3eabace87"}
-"""
+INDEX_LINES = [
+    "0,11,214,3)/galleries/garys-gallery/yazyk 20260908100030 "
+    '{"url": "https://3.214.11.0/galleries/garys-gallery/yazyk/", '
+    '"mime": "text/html", '
+    '"mime-detected": "text/html", '
+    '"status": "200", '
+    '"digest": "4FPPZ452ITDX4GHJQJ354OVFUQJCBZVS", '
+    '"length": "9882", '
+    '"offset": "48374322", '
+    '"filename": "crawl-data/CC-MAIN-2026-39/segments/1788492699801.50/warc/'
+    'CC-MAIN-20260908083825-20260908113825-00403.warc.gz", '
+    '"charset": "UTF-8", '
+    '"languages": "eng", '
+    '"recordid": "01a08076-484a-783b-8b87-4cc051e242c1"}',
+    "0,131,250,3)/ 20260917030102 "
+    '{"url": "http://3.250.131.0/", '
+    '"mime": "text/html", '
+    '"mime-detected": "text/html", '
+    '"status": "200", '
+    '"digest": "Q2UDGWTKF2JOTDPWVJ7K45VJFAEWOL5C", '
+    '"length": "8698", '
+    '"offset": "272424", '
+    '"filename": "crawl-data/CC-MAIN-2026-39/segments/1788493000724.71/warc/'
+    'CC-MAIN-20260917025921-20260917055921-00427.warc.gz", '
+    '"charset": "UTF-8", '
+    '"languages": "por,eng", '
+    '"recordid": "01a0ad4f-7be6-719d-a7fd-693aa3f9997c"}',
+    "0,135,199,18)/stocks/johnson-johnson 20260910132650 "
+    '{"url": "http://18.199.135.0/stocks/johnson-johnson", '
+    '"mime": "text/html", '
+    '"mime-detected": "text/html", '
+    '"status": "200", '
+    '"digest": "DKTNPR2H7QQVQGQ2XB2MKEBDXBJKLXDL", '
+    '"length": "13816", '
+    '"offset": "111752", '
+    '"filename": "crawl-data/CC-MAIN-2026-39/segments/1788492699937.26/warc/'
+    'CC-MAIN-20260910122853-20260910152853-00300.warc.gz", '
+    '"charset": "UTF-8", '
+    '"languages": "eng", '
+    '"recordid": "01a08b7f-e621-764c-9a9a-02e3eabace87"}',
+]
 
-for line in INDEX_LINES.splitlines():
+for line in INDEX_LINES:
     surt, timestamp, fields = line.split(" ", 2)
     hit = json.loads(fields)
     start, length = int(hit["offset"]), int(hit["length"])
     print(hit["url"], timestamp[:8], hit["status"])
     name = hit["filename"].rsplit("/", 1)[1]
-    print(f"  GET {name}  Range: bytes={start}-{start + length - 1}")
+    print(f"  GET {name}")
+    print(f"      Range: bytes={start}-{start + length - 1}")
 ```
 
 % output
 
 ```text
 https://3.214.11.0/galleries/garys-gallery/yazyk/ 20260908 200
-  GET CC-MAIN-20260908083825-20260908113825-00403.warc.gz  Range: bytes=48374322-48384203
+  GET CC-MAIN-20260908083825-20260908113825-00403.warc.gz
+      Range: bytes=48374322-48384203
 http://3.250.131.0/ 20260917 200
-  GET CC-MAIN-20260917025921-20260917055921-00427.warc.gz  Range: bytes=272424-281121
+  GET CC-MAIN-20260917025921-20260917055921-00427.warc.gz
+      Range: bytes=272424-281121
 http://18.199.135.0/stocks/johnson-johnson 20260910 200
-  GET CC-MAIN-20260910122853-20260910152853-00300.warc.gz  Range: bytes=111752-125567
+  GET CC-MAIN-20260910122853-20260910152853-00300.warc.gz
+      Range: bytes=111752-125567
 ```
 
 The same entry can be asked for by URL through the CDX API instead of being read out of an index file. The query returns one JSON object per capture, with the SURT key and capture time as `urlkey` and `timestamp` beside the fields of the index line, and the last three of those fields are all the range fetch below needs:
@@ -291,8 +381,8 @@ import urllib.request
 UA = os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")
 url = "https://3.214.11.0/galleries/garys-gallery/yazyk/"
 query = urllib.parse.urlencode({"url": url, "output": "json"})
-req = urllib.request.Request(f"https://index.commoncrawl.org/CC-MAIN-2026-39-index?{query}",
-                             headers={"User-Agent": UA})
+endpoint = "https://index.commoncrawl.org/CC-MAIN-2026-39-index"
+req = urllib.request.Request(f"{endpoint}?{query}", headers={"User-Agent": UA})
 reply = urllib.request.urlopen(req, timeout=120).read().decode()
 hits = [json.loads(line) for line in reply.splitlines()]
 hit = hits[0]
@@ -351,10 +441,21 @@ HTTP/1.1 200 OK
 {numref}`fig-ch3-warc-record` shows what the three parts of that split are: the WARC header that Common Crawl wrote, the HTTP header the server sent, and the page itself.
 
 ```{figure} figures/warc-record.*
-:name: fig-ch3-warc-record
-:alt: A gzip member of 9,882 bytes decompresses to one WARC record, drawn as a stack of five bands. The WARC header (WARC/1.0, WARC-Type response, the target URI, WARC-Date 2026-09-08T10:00:30Z, the payload digest, Content-Type application/http), a blank line, the HTTP response header starting HTTP/1.1 200 OK, a second blank line, and the HTML payload of 34,357 bytes.
+---
+name: fig-ch3-warc-record
+alt: >-
+  A gzip member of 9,882 bytes decompresses to one WARC record, drawn as a stack of five
+  bands. The WARC header (WARC/1.0, WARC-Type response, the target URI, WARC-Date
+  2026-09-08T10:00:30Z, the payload digest, Content-Type application/http), a blank
+  line, the HTTP response header starting HTTP/1.1 200 OK, a second blank line, and the
+  HTML payload of 34,357 bytes.
+---
 
-Anatomy of the response record fetched above. The first two blank lines (`\r\n\r\n`) divide the record into `warc_head`, `http_head` and `html`, which is the split the code makes. The WARC date and the payload digest are the capture time and digest in the index line; a record cut off at the size limit would also carry `WARC-Truncated: length`. The HTML length is that of the run shown, so it may differ if the record is fetched again.
+Anatomy of the response record fetched above. The first two blank lines (`\r\n\r\n`)
+divide the record into `warc_head`, `http_head` and `html`, which is the split the code
+makes. The WARC date and the payload digest are the capture time and digest in the index
+line; a record cut off at the size limit would also carry `WARC-Truncated: length`. The
+HTML length is that of the run shown, so it may differ if the record is fetched again.
 ```
 
 Through the CDX API the same lookup is one request per URL, so a list of a hundred thousand URLs means a hundred thousand requests to the shared index server; at that scale the columnar index is the better route.
@@ -367,6 +468,9 @@ Most open web corpora are a choice of snapshots plus a choice of pipeline:
 
 ```{raw} latex
 \begingroup\footnotesize\setlength{\tabcolsep}{3pt}
+```
+
+```{tabularcolumns} \Y{0.20}\Y{0.16}\Y{0.13}\Y{0.12}\Y{0.39}
 ```
 
 | Corpus | Snapshots | Text from | Languages | Notable choices |
@@ -391,7 +495,11 @@ Two trends run through the table. Later corpora re-extract from WARC with a boil
 
 ```{admonition} A Slice of the Crawl
 :class: tip
-The notebook section {ref}`nb-acq-crawl` downloads the manifest of a current snapshot, range-fetches a slice of a WARC file at a file and byte offset drawn with a fixed seed, parses the records, tabulates record types and declared payload types, and shows the HTTP response and HTML of one page, so that you can see exactly what a crawl contains before any cleaning.
+The notebook section {ref}`nb-acq-crawl` downloads the manifest of a current snapshot,
+range-fetches a slice of a WARC file at a file and byte offset drawn with a fixed seed,
+parses the records, tabulates record types and declared payload types, and shows the
+HTTP response and HTML of one page, so that you can see exactly what a crawl contains
+before any cleaning.
 ```
 
 (sec-ch3-crawling-web-yourself)=
@@ -419,10 +527,24 @@ The Robots Exclusion Protocol (RFC 9309) {cite}`koster2022robots` lets a site st
 {numref}`fig-ch3-robots-decision` lays out the first two rules as the decision a crawler makes before each URL.
 
 ```{figure} figures/robots-decision.*
-:name: fig-ch3-robots-decision
-:alt: Flow chart from top to bottom. Fetch /robots.txt, reusing a copy for at most 24 hours. A 4xx answer means no restrictions; a 5xx answer or network failure means the whole site is disallowed; a 3xx answer is followed, at least five redirects in a row and even to another host, and the file reached is applied to the original host, while more than five redirects may be treated as unavailable; a 2xx answer is parsed for at least the first 500 KiB and the group for this user agent, or else the star group, is used. The longest matching rule then decides: Allow or no match leads to a fetch at the host's delay, Disallow to skipping the URL.
+---
+name: fig-ch3-robots-decision
+alt: >-
+  Flow chart from top to bottom. Fetch /robots.txt, reusing a copy for at most 24 hours.
+  A 4xx answer means no restrictions; a 5xx answer or network failure means the whole
+  site is disallowed; a 3xx answer is followed, at least five redirects in a row and
+  even to another host, and the file reached is applied to the original host, while more
+  than five redirects may be treated as unavailable; a 2xx answer is parsed for at least
+  the first 500 KiB and the group for this user agent, or else the star group, is used.
+  The longest matching rule then decides: Allow or no match leads to a fetch at the
+  host's delay, Disallow to skipping the URL.
+---
 
-The robots.txt decision under RFC 9309. Note the asymmetry between the two failures: a missing file (4xx) permits everything, while a server error or network failure (5xx) forbids everything. A redirect (3xx) is followed to the file it leads to, up to at least five in a row; only beyond five may the crawler give up and treat the file as unavailable.
+The robots.txt decision under RFC 9309. Note the asymmetry between the two failures: a
+missing file (4xx) permits everything, while a server error or network failure (5xx)
+forbids everything. A redirect (3xx) is followed to the file it leads to, up to at least
+five in a row; only beyond five may the crawler give up and treat the file as
+unavailable.
 ```
 
 Python's standard library parses the file:
@@ -434,7 +556,8 @@ import urllib.request
 import urllib.robotparser
 
 # Fetch with a named user agent: RobotFileParser.read() would send Python's default
-# agent, which Wikipedia answers with 403, and the parser would then disallow everything.
+# agent, which Wikipedia answers with 403, and the parser would then disallow
+# everything.
 agent = os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")
 req = urllib.request.Request("https://en.wikipedia.org/robots.txt",
                              headers={"User-Agent": agent})
@@ -500,10 +623,21 @@ Bloom filter: 12.0 GB; 8-byte fingerprints: 80 GB
 Ten billion URLs fit in 12 GB, a fraction of a single machine's memory, against 80 GB for exact fingerprints. When to fetch is a priority order within each host's queue, set by an estimate of a page's value (links pointing to it, its host's quality) and, for pages already fetched, of how likely it is to have changed since. Two limits protect the frontier from pages that generate links without end, such as calendars with a "next month" link or URLs carrying a fresh session id: a page budget per host, and a cap on URL length and link depth. Choosing how often to re-fetch pages that change at different rates is its own problem, treated by {cite:t}`cho2003effective`; {cite:t}`olston2010web` survey all of these questions.
 
 ```{figure} figures/crawler-architecture.*
-:name: fig-ch3-crawler-architecture
-:alt: Left to right. Seed URLs and sitemaps fill a frontier of per-host queues. A scheduler, consulting a robots.txt cache, serves the host whose delay expires first, at most one request per host every two seconds. Fetchers handle DNS, connections, timeouts and back-off. Their output goes to a WARC writer and to content deduplication, then to link extraction and canonicalization, and the new URLs join their host's queue in the frontier.
+---
+name: fig-ch3-crawler-architecture
+alt: >-
+  Left to right. Seed URLs and sitemaps fill a frontier of per-host queues. A scheduler,
+  consulting a robots.txt cache, serves the host whose delay expires first, at most one
+  request per host every two seconds. Fetchers handle DNS, connections, timeouts and
+  back-off. Their output goes to a WARC writer and to content deduplication, then to
+  link extraction and canonicalization, and the new URLs join their host's queue in the
+  frontier.
+---
 
-A crawler's parts. Politeness lives in the scheduler, which is why throughput is bounded by the number of hosts in flight rather than by bandwidth. The dashed box closes the loop: links found in fetched pages, once canonicalized and checked against the seen-set, go back into the frontier.
+A crawler's parts. Politeness lives in the scheduler, which is why throughput is bounded
+by the number of hosts in flight rather than by bandwidth. The dashed box closes the
+loop: links found in fetched pages, once canonicalized and checked against the seen-set,
+go back into the frontier.
 ```
 
 Rendering is the expensive option. A page that builds its content with JavaScript yields a near-empty HTML response to a plain fetcher; running a headless browser recovers the content at many times the cost per page. Most training-data crawls do not render, which is one reason single-page applications are under-represented in corpora.
@@ -712,7 +846,11 @@ print(status, size, "bytes")
 
 ```{admonition} Reading robots.txt
 :class: note
-The notebook section {ref}`nb-acq-robots` parses with the standard library the robots.txt files of Wikipedia (one of the most detailed on the web, with 428 Disallow rules for every agent (`*`), which treats search and training crawlers alike) and of a major news site, which allows Googlebot and disallows every AI crawler by name. It counts the Disallow rules per agent in each.
+The notebook section {ref}`nb-acq-robots` parses with the standard library the
+robots.txt files of Wikipedia (one of the most detailed on the web, with 428 Disallow
+rules for every agent (`*`), which treats search and training crawlers alike) and of a
+major news site, which allows Googlebot and disallows every AI crawler by name. It
+counts the Disallow rules per agent in each.
 ```
 
 (sec-ch3-economics)=
@@ -789,7 +927,17 @@ News archives are mostly licensed commercially now; the open sources are the CC-
 
 ```{admonition} Comparing Sources
 :class: tip
-The notebook section {ref}`nb-acq-sources` samples five hosted corpora through the Hugging Face rows API: the first hundred rows each of FineWeb, FineWeb-Edu and C4, the first fifty of the French portion of FineWeb-2, and fifty Wikipedia articles in five pulls of ten at offsets drawn with a fixed seed (the first rows in page-id order are the oldest and longest articles, so they would mislead). It compares document lengths, language scores and the FineWeb-Edu educational score, and measures domain concentration on 2,000 C4 host names from twenty pulls at seeded random offsets. The rows API serves only the first 2,207,027 rows of C4's English split, so those offsets are random within that range only. The samples are small: Wikipedia's median article (206.5 words in 50) is only slightly longer than C4's median page (188.5 words in 100), a gap too narrow to read as a general result.
+The notebook section {ref}`nb-acq-sources` samples five hosted corpora through the
+Hugging Face rows API: the first hundred rows each of FineWeb, FineWeb-Edu and C4, the
+first fifty of the French portion of FineWeb-2, and fifty Wikipedia articles in five
+pulls of ten at offsets drawn with a fixed seed (the first rows in page-id order are the
+oldest and longest articles, so they would mislead). It compares document lengths,
+language scores and the FineWeb-Edu educational score, and measures domain concentration
+on 2,000 C4 host names from twenty pulls at seeded random offsets. The rows API serves
+only the first 2,207,027 rows of C4's English split, so those offsets are random within
+that range only. The samples are small: Wikipedia's median article (206.5 words in 50)
+is only slightly longer than C4's median page (188.5 words in 100), a gap too narrow to
+read as a general result.
 ```
 
 (sec-ch3-rights-licenses-consent)=
@@ -833,10 +981,22 @@ Consent in Crisis {cite}`longpre2024consent` measured, across C4, RefinedWeb and
 {numref}`fig-ch3-consent-restrictions` shows how abrupt the change was. From 2016, where the study's series begins, to mid-2023 the restricted share sat at a few percent; between August 2023 and April 2024 it rose to 19 to 32% of the head domains' tokens, against 5 to 7% of each corpus as a whole.
 
 ```{figure} figures/consent-restrictions.*
-:name: fig-ch3-consent-restrictions
-:alt: Line plot from January 2016 to April 2024 of the percentage of tokens fully restricted by robots.txt. Three dashed red lines for head domains stay between 2 and 5 percent until August 2023, then rise steeply to between 19 and 32 percent by April 2024. Three solid blue lines for the full corpora stay between about 1 and 4.5 percent until August 2023, highest in 2016 and 2017, and rise to between 5 and 7 percent.
+---
+name: fig-ch3-consent-restrictions
+alt: >-
+  Line plot from January 2016 to April 2024 of the percentage of tokens fully restricted
+  by robots.txt. Three dashed red lines for head domains stay between 2 and 5 percent
+  until August 2023, then rise steeply to between 19 and 32 percent by April 2024. Three
+  solid blue lines for the full corpora stay between about 1 and 4.5 percent until
+  August 2023, highest in 2016 and 2017, and rise to between 5 and 7 percent.
+---
 
-Share of tokens fully restricted to AI crawlers by robots.txt, by domain tier, monthly from January 2016 to April 2024; data read from Fig. 2 of {cite:t}`longpre2024consent`. Each tier has three lines, one for each of the three corpora the paper studied (C4, RefinedWeb and Dolma); the source figure does not label which line is which corpus, so they are drawn alike. Head domains are the most-used, most actively maintained sources in each corpus.
+Share of tokens fully restricted to AI crawlers by robots.txt, by domain tier, monthly
+from January 2016 to April 2024; data read from Fig. 2 of {cite:t}`longpre2024consent`.
+Each tier has three lines, one for each of the three corpora the paper studied (C4,
+RefinedWeb and Dolma); the source figure does not label which line is which corpus, so
+they are drawn alike. Head domains are the most-used, most actively maintained sources
+in each corpus.
 ```
 
 Opt-out mechanisms beyond robots.txt:
@@ -950,10 +1110,21 @@ The recurring finding, first established by the audit by {cite:t}`kreutzer2022qu
 {numref}`fig-ch3-fineweb2-rehydration` shows the U shape for French. The filters removed 70.4% of unique documents and 66.2% of the most-copied group, both above the global rate of 62.4%, but only 44.6% of documents with 19 copies; the sizes around that minimum get the weight 10, and the sizes whose removal rate is at or near the global rate get 1.
 
 ```{figure} figures/fineweb2-rehydration.*
-:name: fig-ch3-fineweb2-rehydration
-:alt: Bar chart of the percentage of documents removed by filters against MinHash cluster size from 1 to 218, bars colored by upsampling weight from 1 to 10. Removal is 70.4 percent at size 1, falls to a minimum of about 45 percent near sizes 17 to 28 (weight 10), then rises slowly past 60 percent above size 175 (weight 1 to 2). A dashed line marks the global removal rate of 62.4 percent.
+---
+name: fig-ch3-fineweb2-rehydration
+alt: >-
+  Bar chart of the percentage of documents removed by filters against MinHash cluster
+  size from 1 to 218, bars colored by upsampling weight from 1 to 10. Removal is 70.4
+  percent at size 1, falls to a minimum of about 45 percent near sizes 17 to 28 (weight
+  10), then rises slowly past 60 percent above size 175 (weight 1 to 2). A dashed line
+  marks the global removal rate of 62.4 percent.
+---
 
-Filter removal rate by duplicate-cluster size for French in FineWeb-2, and the upsampling weight each size receives; data read from Fig. 2 of {cite:t}`penedo2025fineweb2`. The weight is 10 at the size with the lowest removal rate, 1 above the global removal rate, and interpolated between. The last bar groups the most-copied 0.1% of documents.
+Filter removal rate by duplicate-cluster size for French in FineWeb-2, and the
+upsampling weight each size receives; data read from Fig. 2 of
+{cite:t}`penedo2025fineweb2`. The weight is 10 at the size with the lowest removal rate,
+1 above the global removal rate, and interpolated between. The last bar groups the
+most-copied 0.1% of documents.
 ```
 
 (sec-ch3-beyond-crawl)=
@@ -1159,16 +1330,29 @@ The procedure says nothing about whether the preferred weights are good; it only
 
 ```{admonition} Planning a Mixture
 :class: note
-The notebook section {ref}`nb-acq-mixture` starts from a compute budget, derives the token count with the relation of {ref}`sec-ch2-flops`, runs `plan_mixture` over a realistic table of sources, plots the planned epochs per source against the epoch cap, and shows what happens to the plan when the high-quality web slice loses the share the consent study measured for the best-maintained domains.
+The notebook section {ref}`nb-acq-mixture` starts from a compute budget, derives the
+token count with the relation of {ref}`sec-ch2-flops`, runs `plan_mixture` over a
+realistic table of sources, plots the planned epochs per source against the epoch cap,
+and shows what happens to the plan when the high-quality web slice loses the share the
+consent study measured for the best-maintained domains.
 ```
 
 {numref}`fig-ch3-epochs-per-source` is the notebook's plot. Its run is larger than the 2T-token example above: a budget of $C = 10^{24}$ FLOPs for an 8B-parameter model gives $D = C / 6N \approx 20.8$T tokens, so four small sources reach the cap of $e_{\max} = 4$ and the opt-outs push more of the load onto the quality web slice.
 
 ```{figure} figures/epochs-per-source.*
-:name: fig-ch3-epochs-per-source
-:alt: Grouped bar chart of epochs per source for a 21T-token run, planned and after opt-outs. Web rises slightly, from about 1.17 to 1.23 epochs, web_quality from 1.5 to 2.1, code stays at 1.8, and papers, wikipedia, books and dialogue all sit at the 4-epoch cap in both plans. A dashed line marks the cap at 4.
+---
+name: fig-ch3-epochs-per-source
+alt: >-
+  Grouped bar chart of epochs per source for a 21T-token run, planned and after
+  opt-outs. Web rises slightly, from about 1.17 to 1.23 epochs, web_quality from 1.5 to
+  2.1, code stays at 1.8, and papers, wikipedia, books and dialogue all sit at the
+  4-epoch cap in both plans. A dashed line marks the cap at 4.
+---
 
-Epochs $e_s$ per source from the notebook's `plan_mixture` run ($D \approx 20.8$T tokens, cap $e_{\max} = 4$), before and after removing 5% of the web and 28% of the quality web, the losses measured by {cite:t}`longpre2024consent`. Sources already at the cap cannot absorb the loss, so it falls on the web slices that still have room.
+Epochs $e_s$ per source from the notebook's `plan_mixture` run ($D \approx 20.8$T
+tokens, cap $e_{\max} = 4$), before and after removing 5% of the web and 28% of the
+quality web, the losses measured by {cite:t}`longpre2024consent`. Sources already at the
+cap cannot absorb the loss, so it falls on the web slices that still have room.
 ```
 
 (sec-ch3-provenance-documentation)=
@@ -1248,7 +1432,10 @@ The output of acquisition is a set of raw shards plus a manifest: one provenance
 
 ```{admonition} Provenance in Practice
 :class: tip
-The notebook section {ref}`nb-acq-provenance` writes a provenance record for every fetch made earlier in the notebook, checks every committed sample against the checksums recorded when it was collected, and prints the manifest that would accompany the samples into Chapter 4.
+The notebook section {ref}`nb-acq-provenance` writes a provenance record for every fetch
+made earlier in the notebook, checks every committed sample against the checksums
+recorded when it was collected, and prints the manifest that would accompany the samples
+into Chapter 4.
 ```
 
 (sec-ch3-summary)=
@@ -1272,20 +1459,36 @@ The notebook section {ref}`nb-acq-provenance` writes a provenance record for eve
 
 ```{admonition} Solution 1
 :class: dropdown
-A `HEAD` request returns a file's headers without its body, and `Content-Length` is the file's size in bytes. The manifest of `CC-MAIN-2026-39` lists 100,000 WARC files. Ten of them, drawn with `random.Random(0).sample(paths, 10)` and measured on 12 November 2026, were 910,707,757, 966,719,339, 903,957,552, 915,750,155, 911,469,743, 933,101,733, 896,086,136, 935,203,619, 918,424,076 and 939,744,129 bytes long.
+A `HEAD` request returns a file's headers without its body, and `Content-Length` is the
+file's size in bytes. The manifest of `CC-MAIN-2026-39` lists 100,000 WARC files. Ten of
+them, drawn with `random.Random(0).sample(paths, 10)` and measured on 12 November 2026,
+were 910,707,757, 966,719,339, 903,957,552, 915,750,155, 911,469,743, 933,101,733,
+896,086,136, 935,203,619, 918,424,076 and 939,744,129 bytes long.
 
 - Mean size: 923,116,424 bytes, with a sample standard deviation of 20.8 MB.
-- Estimate: $100{,}000 \times 923{,}116{,}424 \approx 9.231 \times 10^{13}$ bytes, which is 92.3 TB or 83.96 TiB ($1\ \text{TiB} = 2^{40}$ bytes).
-- Uncertainty: the standard error of a ten-file mean is $20.8 / \sqrt{10} \approx 6.6$ MB, 0.71% of the mean.
+- Estimate: $100{,}000 \times 923{,}116{,}424 \approx 9.231 \times 10^{13}$ bytes, which
+  is 92.3 TB or 83.96 TiB ($1\ \text{TiB} = 2^{40}$ bytes).
+- Uncertainty: the standard error of a ten-file mean is $20.8 / \sqrt{10} \approx 6.6$
+  MB, 0.71% of the mean.
 
-Common Crawl's announcement of the crawl gives the WARC files as 82.79 TiB {cite}`commoncrawl2026september`. The estimate is 1.4% high, about two standard errors, which a sample of ten can produce; a hundred files would cut the standard error to about 0.2%. Note the units: the announcement's 82.79 TiB is 91.0 TB, the "about 90 TB" of the table in {ref}`sec-ch3-snapshots-segments-files`. The notebook's estimate, from the first three files of the manifest, is about 95 TB: three files are a smaller sample, and the first files of a manifest are not a random draw, which is why this solution samples with a seed.
+Common Crawl's announcement of the crawl gives the WARC files as 82.79 TiB
+{cite}`commoncrawl2026september`. The estimate is 1.4% high, about two standard errors,
+which a sample of ten can produce; a hundred files would cut the standard error to about
+0.2%. Note the units: the announcement's 82.79 TiB is 91.0 TB, the "about 90 TB" of the
+table in {ref}`sec-ch3-snapshots-segments-files`. The notebook's estimate, from the
+first three files of the manifest, is about 95 TB: three files are a smaller sample, and
+the first files of a manifest are not a random draw, which is why this solution samples
+with a seed.
 ```
 
 2. **Who is blocked.** The notebook commits the two robots.txt files it reads, Wikipedia's and a news site's, under `examples/data/`. Parse both and tabulate which of `*`, `CCBot`, `GPTBot`, `ClaudeBot` and `Google-Extended` may fetch an article. Which site blocks Common Crawl, and did it likely intend to leave the open corpora? How would you extend the table to fifty news sites?
 
 ```{admonition} Solution 2
 :class: dropdown
-Parse each file with `urllib.robotparser`, as in the listing of {ref}`sec-ch3-robots-txt-politeness-conventions`, and ask `can_fetch(agent, url)` for the article URL the notebook uses on each site (`/wiki/Language_model` on Wikipedia, a dated article path on the news site):
+Parse each file with `urllib.robotparser`, as in the listing of
+{ref}`sec-ch3-robots-txt-politeness-conventions`, and ask `can_fetch(agent, url)` for
+the article URL the notebook uses on each site (`/wiki/Language_model` on Wikipedia, a
+dated article path on the news site):
 
 | Agent | Wikipedia | News site |
 | --- | --- | --- |
@@ -1295,42 +1498,89 @@ Parse each file with `urllib.robotparser`, as in the listing of {ref}`sec-ch3-ro
 | `ClaudeBot` | allowed | disallowed |
 | `Google-Extended` | allowed | disallowed |
 
-The news site blocks Common Crawl; Wikipedia does not. How the block is written suggests the intent. The news file has 69 `User-agent` lines, and 55 groups that consist of `Disallow: /` alone, each naming one crawler or a few related ones. `CCBot` is one of them, with the same single line as `GPTBot`, `ClaudeBot` and `Google-Extended`. That is the form of a list of AI crawlers copied into the file, not a decision about research corpora, although the effect is the same: the site is absent from every future Common Crawl snapshot and from every corpus derived from one.
+The news site blocks Common Crawl; Wikipedia does not. How the block is written suggests
+the intent. The news file has 69 `User-agent` lines, and 55 groups that consist of
+`Disallow: /` alone, each naming one crawler or a few related ones. `CCBot` is one of
+them, with the same single line as `GPTBot`, `ClaudeBot` and `Google-Extended`. That is
+the form of a list of AI crawlers copied into the file, not a decision about research
+corpora, although the effect is the same: the site is absent from every future Common
+Crawl snapshot and from every corpus derived from one.
 
-To extend the table to fifty sites, fetch each `https://<host>/robots.txt` with a named user agent and record the status first, since a 4xx answer means no restrictions and a 5xx answer means everything is disallowed. Mark whether each answer came from a group that names the agent or from the `*` fallback, because only named answers show intent, and use an RFC 9309 parser such as `protego` for files with wildcards. Report the list and the date with the count, because both change it. Terms of service often state restrictions the robots file does not express ({ref}`sec-ch3-robots-txt-opt-outs-commons`), so the table is a lower bound on what the sites forbid.
+To extend the table to fifty sites, fetch each `https://<host>/robots.txt` with a named
+user agent and record the status first, since a 4xx answer means no restrictions and a
+5xx answer means everything is disallowed. Mark whether each answer came from a group
+that names the agent or from the `*` fallback, because only named answers show intent,
+and use an RFC 9309 parser such as `protego` for files with wildcards. Report the list
+and the date with the count, because both change it. Terms of service often state
+restrictions the robots file does not express
+({ref}`sec-ch3-robots-txt-opt-outs-commons`), so the table is a lower bound on what the
+sites forbid.
 ```
 
 3. **Source comparison.** Before adding a sixth source to the notebook's comparison, find out how well its statistics separate the five it has. Using the committed samples under `examples/data/`, compute the median word count of each source and the ratio of medians for every pair. Which pair is closest and which farthest apart, and what kind of sixth source would median length separate clearly?
 
 ```{admonition} Solution 3
 :class: dropdown
-The committed samples store each document's full word count as `full_words`, and give these medians: C4 188.5 words, Wikipedia 206.5, FineWeb-2 French 266, FineWeb 354.5 and FineWeb-Edu 387. Of the ten pairs, the closest is FineWeb and FineWeb-Edu, with a ratio of 1.09, followed by C4 and Wikipedia at 1.10. The farthest is FineWeb-Edu and C4, at 2.05.
+The committed samples store each document's full word count as `full_words`, and give
+these medians: C4 188.5 words, Wikipedia 206.5, FineWeb-2 French 266, FineWeb 354.5 and
+FineWeb-Edu 387. Of the ten pairs, the closest is FineWeb and FineWeb-Edu, with a ratio
+of 1.09, followed by C4 and Wikipedia at 1.10. The farthest is FineWeb-Edu and C4, at
+2.05.
 
-So among the five, median length separates at most by a factor of about two, and two pairs differ by less than 10%, which samples of fifty or a hundred documents cannot resolve. FineWeb-Edu is told apart from FineWeb by its educational score, not by length. A sixth source is separated clearly by length only if its documents are of a different kind: books, which run to tens of thousands of words, or forum posts and question-answer pairs, which are much shorter than a web page. For a sixth web corpus, use a statistic tied to how it was built (a quality or language score the dataset ships, or the host count if the rows carry URLs).
+So among the five, median length separates at most by a factor of about two, and two
+pairs differ by less than 10%, which samples of fifty or a hundred documents cannot
+resolve. FineWeb-Edu is told apart from FineWeb by its educational score, not by length.
+A sixth source is separated clearly by length only if its documents are of a different
+kind: books, which run to tens of thousands of words, or forum posts and question-answer
+pairs, which are much shorter than a web page. For a sixth web corpus, use a statistic
+tied to how it was built (a quality or language score the dataset ships, or the host
+count if the rows carry URLs).
 ```
 
 4. **License tracing.** For three kinds of hosted dataset, a filtered web corpus (FineWeb), a copy of the Stack Exchange dump, and an instruction dataset generated by a model, trace the license on the hub card to the terms of the original sources, and record every discrepancy in the style of the Data Provenance Initiative audit.
 
 ```{admonition} Solution 4
 :class: dropdown
-For each dataset, record four things in a table: the license on the hub card, the sources the card or paper names, the terms of each source, and whether the two agree.
+For each dataset, record four things in a table: the license on the hub card, the
+sources the card or paper names, the terms of each source, and whether the two agree.
 
-- **FineWeb.** The card states ODC-BY. ODC-BY covers the compilation, and the card itself says that Common Crawl's terms of use apply to the pages. The pages keep their authors' copyright. The entry records ODC-BY for the compilation and the pages' own rights for the content, which is not a contradiction but is often misread as one ({ref}`sec-ch3-dataset-licenses-not-content-licenses`).
-- **A Stack Exchange dataset.** A hub copy of the Stack Exchange dump typically carries CC BY-SA, the license of the posts. Since July 2024 the official download requires a login and an agreement that the file is for projects that do not train a large language model ({ref}`sec-ch3-forums-dialogue-question-answering`). A copy made from a later dump therefore carries a restriction the card does not show. Record which dump the copy was made from.
-- **An instruction dataset generated by a model.** The card's license covers the released text; the terms of the model that generated it may restrict using its outputs to train competing models. Record the generating model and its terms.
+- **FineWeb.** The card states ODC-BY. ODC-BY covers the compilation, and the card
+  itself says that Common Crawl's terms of use apply to the pages. The pages keep their
+  authors' copyright. The entry records ODC-BY for the compilation and the pages' own
+  rights for the content, which is not a contradiction but is often misread as one
+  ({ref}`sec-ch3-dataset-licenses-not-content-licenses`).
+- **A Stack Exchange dataset.** A hub copy of the Stack Exchange dump typically carries
+  CC BY-SA, the license of the posts. Since July 2024 the official download requires a
+  login and an agreement that the file is for projects that do not train a large
+  language model ({ref}`sec-ch3-forums-dialogue-question-answering`). A copy made from a
+  later dump therefore carries a restriction the card does not show. Record which dump
+  the copy was made from.
+- **An instruction dataset generated by a model.** The card's license covers the
+  released text; the terms of the model that generated it may restrict using its outputs
+  to train competing models. Record the generating model and its terms.
 
-The discrepancies the audit of {cite:t}`longpre2023data` found most often are the ones to look for: no license on the card, a license more permissive than the sources allow, and a commercial-use restriction in a source that the card omits.
+The discrepancies the audit of {cite:t}`longpre2023data` found most often are the ones
+to look for: no license on the card, a license more permissive than the sources allow,
+and a commercial-use restriction in a source that the card omits.
 ```
 
 5. **Budget sensitivity.** Using `plan_mixture`, hold the mixture preferences fixed and sweep the total budget from 0.5T to 20T tokens. At what budget does each source hit the epoch cap, and what does the mixture look like at 20T?
 
 ```{admonition} Solution 5
 :class: dropdown
-Use the source table of {ref}`sec-ch3-budgeting-procedure`. A source $s$ reaches the cap when its weight $w_s$ reaches $e_{\max} U_s / D$. Before any source is clipped the weights are the preferred ones, so Wikipedia (preferred 0.03, $U_s = 6.5$B) is the first to reach the cap, at
+Use the source table of {ref}`sec-ch3-budgeting-procedure`. A source $s$ reaches the cap
+when its weight $w_s$ reaches $e_{\max} U_s / D$. Before any source is clipped the
+weights are the preferred ones, so Wikipedia (preferred 0.03, $U_s = 6.5$B) is the first
+to reach the cap, at
 
 $$D = \frac{4 \times 6.5\text{B}}{0.03} \approx 0.867\text{T}.$$
 
-From then on Wikipedia contributes a fixed 26B tokens, and the other sources share the rest in proportion to their preferences. Books (preferred 0.03 of the remaining 0.97, $U_s = 30$B) reach the cap when $0.03\,(D - 26\text{B}) / 0.97 = 4 \times 30\text{B}$, that is at $D \approx 3.906$T. Papers (0.04 of the remaining 0.94, $U_s = 150$B) reach it when $0.04\,(D - 26\text{B} - 120\text{B}) / 0.94 = 600\text{B}$, at $D \approx 14.25$T. Web and code never reach it in the sweep.
+From then on Wikipedia contributes a fixed 26B tokens, and the other sources share the
+rest in proportion to their preferences. Books (preferred 0.03 of the remaining 0.97,
+$U_s = 30$B) reach the cap when $0.03\,(D - 26\text{B}) / 0.97 = 4 \times 30\text{B}$,
+that is at $D \approx 3.906$T. Papers (0.04 of the remaining 0.94, $U_s = 150$B) reach
+it when $0.04\,(D - 26\text{B} - 120\text{B}) / 0.94 = 600\text{B}$, at
+$D \approx 14.25$T. Web and code never reach it in the sweep.
 
 At 20T the plan is:
 
@@ -1342,32 +1592,69 @@ At 20T the plan is:
 | wikipedia | 0.0013 | 0.026T | 4.00 |
 | books | 0.006 | 0.12T | 4.00 |
 
-The three small sources are pinned at four epochs and together supply 3.7% of the tokens instead of the preferred 10%; the web absorbs almost all of the difference. A larger budget makes the mixture more web-heavy, not more diverse, unless more unique data is acquired.
+The three small sources are pinned at four epochs and together supply 3.7% of the tokens
+instead of the preferred 10%; the web absorbs almost all of the difference. A larger
+budget makes the mixture more web-heavy, not more diverse, unless more unique data is
+acquired.
 ```
 
 6. **Low-resource audit.** You plan to take fifty documents labeled as a language you read from mC4 or OSCAR and classify each by hand as genuine text, boilerplate, mislabeled or machine-translated. Write the classification rules you would fix before reading. If 12 of the 50 turn out not to be genuine, what is the 95% interval for the rate, and how many documents would you need to read for an interval of about plus or minus five percentage points? When does a comparison with the MADLAD-400 audit for that language mean something?
 
 ```{admonition} Solution 6
 :class: dropdown
-Draw the documents at random offsets, not from the start of the split, for the reason the notebook gives for Wikipedia. Fix the rules before reading: a document is genuine if most of its sentences are fluent text in the labeled language; boilerplate if it is mostly navigation, lists or templates; mislabeled if most of it is another language; machine-translated if it shows the signs of translation (calques, untranslated named entities, sentences that read as a word-by-word rendering of English).
+Draw the documents at random offsets, not from the start of the split, for the reason
+the notebook gives for Wikipedia. Fix the rules before reading: a document is genuine if
+most of its sentences are fluent text in the labeled language; boilerplate if it is
+mostly navigation, lists or templates; mislabeled if most of it is another language;
+machine-translated if it shows the signs of translation (calques, untranslated named
+entities, sentences that read as a word-by-word rendering of English).
 
-The result is a proportion with a wide interval at this sample size. With 12 of 50 not genuine, the rate is 24%. The 95% Wilson score interval, which behaves better than the normal approximation at small samples and rates far from one half, runs from 14.3% to 37.4%, an interval 23 points wide. For a half-width of five points at a rate near 24%, the normal approximation gives the sample size as $1.96^2 \times 0.24 \times 0.76 / 0.05^2 \approx 280.3$ documents, so 281. A comparison with the audit of {cite:t}`kudugunta2023madlad` is meaningful only if its figure for the language lies outside such an interval. The audits of {cite:t}`kreutzer2022quality` and MADLAD-400 found the problem concentrated in the smaller languages, so expect a high-resource language to come out mostly genuine and a low-resource one to show far more mislabeled text and boilerplate.
+The result is a proportion with a wide interval at this sample size. With 12 of 50 not
+genuine, the rate is 24%. The 95% Wilson score interval, which behaves better than the
+normal approximation at small samples and rates far from one half, runs from 14.3% to
+37.4%, an interval 23 points wide. For a half-width of five points at a rate near 24%,
+the normal approximation gives the sample size as
+$1.96^2 \times 0.24 \times 0.76 / 0.05^2 \approx 280.3$ documents, so 281. A comparison
+with the audit of {cite:t}`kudugunta2023madlad` is meaningful only if its figure for the
+language lies outside such an interval. The audits of {cite:t}`kreutzer2022quality` and
+MADLAD-400 found the problem concentrated in the smaller languages, so expect a
+high-resource language to come out mostly genuine and a low-resource one to show far
+more mislabeled text and boilerplate.
 ```
 
 7. **A datasheet.** Write the collection-process section of a datasheet for the samples the notebook fetched, answering every question in the Datasheets template that applies.
 
 ```{admonition} Solution 7
 :class: dropdown
-The collection-process questions of {cite:t}`gebru2021datasheets`, answered for the notebook's samples:
+The collection-process questions of {cite:t}`gebru2021datasheets`, answered for the
+notebook's samples:
 
-- **How was the data acquired?** Directly from public services: the Common Crawl manifest and a byte range of one WARC file over HTTPS, two robots.txt files, and rows of five datasets from the Hugging Face dataset-viewer rows API. Nothing was inferred or derived at collection time.
-- **What mechanisms were used?** Python's `urllib` with a named user agent, a fixed seed for every random offset, and a fallback to the committed copies under `examples/data/` when a source is unreachable. The checksums in `examples/data/checksums.json` validate the committed copies.
-- **What was the sampling strategy?** The first rows of FineWeb, FineWeb-Edu, C4 and FineWeb-2 French, Wikipedia articles at seeded random offsets, and C4 host names from seeded random offsets within the rows the API serves. The samples are small, are not representative of any corpus, and are meant to illustrate.
-- **Who collected the data, and over what time frame?** The person who ran the notebook, on the dates in the manifest's `fetched_at` fields: `fetch` stamps each live request with the time it was made, and a record served from a committed sample carries the date that sample was collected (the `collected` table of `checksums.json`).
-- **Were the people the data is about notified or asked for consent?** No. The documents are public web pages and dataset rows. Their consent is expressed only through robots.txt and the hosting datasets' terms, which the manifest records.
-- **Was an ethical review conducted?** No; the samples are small and used only for illustration.
+- **How was the data acquired?** Directly from public services: the Common Crawl
+  manifest and a byte range of one WARC file over HTTPS, two robots.txt files, and rows
+  of five datasets from the Hugging Face dataset-viewer rows API. Nothing was inferred
+  or derived at collection time.
+- **What mechanisms were used?** Python's `urllib` with a named user agent, a fixed seed
+  for every random offset, and a fallback to the committed copies under `examples/data/`
+  when a source is unreachable. The checksums in `examples/data/checksums.json` validate
+  the committed copies.
+- **What was the sampling strategy?** The first rows of FineWeb, FineWeb-Edu, C4 and
+  FineWeb-2 French, Wikipedia articles at seeded random offsets, and C4 host names from
+  seeded random offsets within the rows the API serves. The samples are small, are not
+  representative of any corpus, and are meant to illustrate.
+- **Who collected the data, and over what time frame?** The person who ran the notebook,
+  on the dates in the manifest's `fetched_at` fields: `fetch` stamps each live request
+  with the time it was made, and a record served from a committed sample carries the
+  date that sample was collected (the `collected` table of `checksums.json`).
+- **Were the people the data is about notified or asked for consent?** No. The documents
+  are public web pages and dataset rows. Their consent is expressed only through
+  robots.txt and the hosting datasets' terms, which the manifest records.
+- **Was an ethical review conducted?** No; the samples are small and used only for
+  illustration.
 
-The answer that most datasheets leave blank is the one that matters here: what was deliberately excluded. For these samples, nothing was filtered at collection; the content is whatever the first rows or the seeded offsets returned, including any personal data they hold.
+The answer that most datasheets leave blank is the one that matters here: what was
+deliberately excluded. For these samples, nothing was filtered at collection; the
+content is whatever the first rows or the seeded offsets returned, including any
+personal data they hold.
 ```
 
 (sec-ch3-further-reading)=

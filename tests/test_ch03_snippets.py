@@ -26,20 +26,22 @@ SYNC_EXEMPT: dict[str, str] = {  # name -> reason it may differ between the chap
 # Comparator: eq, gt, lt or approx:<rel>, applied as `chapter_value <op> notebook_value`.
 RESULT_CLAIMS: list[tuple[str, str, str]] = [
     (r"\\approx (20\.8)\$T tokens", r"D = (\d+\.\d+)T tokens", "approx:0.01"),
-    (r"with (428) Disallow rules for every agent", r"Disallow lines: \{'\*': (\d+)\}", "eq"),
+    # \s+ between words: the page's prose inside admonitions is wrapped at 88 columns
+    (r"with (428)\s+Disallow\s+rules\s+for\s+every\s+agent", r"Disallow lines: \{'\*': (\d+)\}", "eq"),
     (r"median article \((206\.5) words", r"(?m)^wikipedia\s+\d+\s+(\d+\.\d)", "eq"),
     (r"median page \((188\.5) words", r"(?m)^c4\s+\d+\s+(\d+\.\d)", "eq"),
-    (r"from the first three files of the manifest, is about (95) TB", r"GB -> ~(\d+) TB of WARC", "eq"),
+    (r"from\s+the\s+first\s+three\s+files\s+of\s+the\s+manifest,\s+is\s+about\s+(95)\s+TB",
+     r"GB -> ~(\d+) TB of WARC", "eq"),
 ]
 
 # regex over a sentence -> one-line reason; such a sentence links a notebook and mentions a number but states
 # no result, so the notebook-link check (rule c of test_notebook_prose.py) does not flag it
 NOT_A_RESULT: dict[str, str] = {
-    r"samples five hosted corpora through the Hugging Face rows API": "the numbers of rows and pulls the notebook "
+    r"samples\s+five\s+hosted\s+corpora\s+through\s+the\s+Hugging\s+Face\s+rows\s+API": "the numbers of rows and pulls the notebook "
         "requests from each corpus: sample sizes chosen in advance, not results",
-    r"measures domain concentration on 2,000 C4 host names": "the size of the host sample and the number of pulls "
+    r"measures\s+domain\s+concentration\s+on\s+2,000\s+C4\s+host\s+names": "the size of the host sample and the number of pulls "
         "are settings of the notebook, not results",
-    r"serves only the first 2,207,027 rows": "a property of the hosting API (the row count the API reports), "
+    r"serves\s+only\s+the\s+first\s+2,207,027\s+rows": "a property of the hosting API (the row count the API reports), "
         "stated to explain the offsets, not a result of the notebook",
 }
 
