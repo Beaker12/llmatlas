@@ -34,7 +34,7 @@ h	hidden state (h^{(l)}_i at layer l, position i)
 p_{data}	data distribution
 p_{\theta}	model distribution
 p	a distribution (generic pair p, q)
-p	sampling probability of source s (p_s)
+p	sampling probability of source $s$ (p_s)
 Q	query matrix
 K	key matrix
 V	value matrix
@@ -57,18 +57,18 @@ W_E	embedding matrix
 W_{out}	unembedding matrix
 E	number of experts
 \mathrm{i}	imaginary unit (the complex conjugate is a superscript star, k^{*}, never an overline: the bar accent is a batch mean)
-H	entropy H(p) and cross-entropy H(p, q)
-U	left singular vectors (U \Sigma R^\top)
-U	unique tokens of source s (U_s)
+H	entropy $H(p)$ and cross-entropy $H(p, q)$
+U	left singular vectors ($U \Sigma R^\top$)
+U	unique tokens of source $s$ (U_s)
 \Sigma	singular values (diagonal, \Sigma_{jj})
-R	right singular vectors (U \Sigma R^\top)
+R	right singular vectors ($U \Sigma R^\top$)
 \epsilon_{ls}	label-smoothing mass
 \epsilon	numerical-stability constant
 a_N	compute-optimal parameter exponent (N^* \propto C^{a_N})
 a_D	compute-optimal data exponent (D^* \propto C^{a_D})
 \zeta	loss-scaling factor (mixed precision)
-w	given weight of source s (w_s)
-e	epochs of source s (e_s)
+w	given weight of source $s$ (w_s)
+e	epochs of source $s$ (e_s)
 e	Euler's number
 b	RoPE base (b' a rescaled base)
 \omega	RoPE frequency (\omega_i = b^{-2i/d_k})
@@ -112,7 +112,7 @@ j	running index (range stated where used)
 l	layer index
 s	source index
 x	token (x_i at position i, x_{<i} the prefix)
-x	input row vector of a layer (xW)
+x	input row vector of a layer ($xW$)
 x_1	first token of a sequence
 x_2	second token of a sequence
 x_n	last token of a sequence of length n

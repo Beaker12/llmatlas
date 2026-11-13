@@ -3,12 +3,12 @@
 # chapters' notation-local.md files; test_notation.py checks that the found meanings are exactly these.
 m	position in a positional encoding or relative offset (m' a second position) | Adam's first moment (m_t)	The plan's index rule: Adam's m_t is a named quantity, always subscripted with the step, and never meets a positional encoding in the same formula.
 v	Adam's second moment (v_t) | value vector (v_i at position i)	Adam's v_t is a named quantity (the plan's index rule); the value vector appears only in chapter 6's latent-attention paragraph, where no optimizer appears.
-p	a distribution (generic pair p, q) | sampling probability of source s (p_s)	p_s is always subscripted with the source and is a probability over sources, the standard symbol in data-mixing papers.
-q	query vector (q_m at position m) | a distribution (generic pair p, q)	Both are standard; the query vector always carries a position subscript and the distribution an argument q(x), and they never share a formula.
-U	left singular vectors (U \Sigma R^\top) | unique tokens of source s (U_s)	The SVD lives in chapter 2's primer; U_s always carries its source subscript and lives in chapters 3 and 5.
-e	epochs of source s (e_s) | Euler's number	Euler's number is universal; e_s always carries its source subscript.
-x	token (x_i at position i, x_{<i} the prefix) | input row vector of a layer (xW)	Both are universal; a token is indexed by position inside a probability, a layer input appears as a function argument or in xW.
+p	a distribution (generic pair p, q) | sampling probability of source $s$ (p_s)	p_s is always subscripted with the source and is a probability over sources, the standard symbol in data-mixing papers.
+q	query vector (q_m at position m) | a distribution (generic pair p, q)	Both are standard; the query vector always carries a position subscript and the distribution an argument $q(x)$, and they never share a formula.
+U	left singular vectors ($U \Sigma R^\top$) | unique tokens of source $s$ (U_s)	The SVD lives in chapter 2's primer; U_s always carries its source subscript and lives in chapters 3 and 5.
+e	epochs of source $s$ (e_s) | Euler's number	Euler's number is universal; e_s always carries its source subscript.
+x	token (x_i at position i, x_{<i} the prefix) | input row vector of a layer ($xW$)	Both are universal; a token is indexed by position inside a probability, a layer input appears as a function argument or in xW.
 b	RoPE base (b' a rescaled base) | number of LSH bands	Settled by the plan for chapter 4 (LSH bands b, rows r are the standard symbols); chapter 4 has no RoPE.
 r	router logit (r_i for expert i) | rows per LSH band	Settled by the plan for chapter 4; chapter 4 has no router.
-h	hidden state (h^{(l)}_i at layer l, position i) | MinHash hash function (h_i the i-th)	The MinHash literature writes h for the hash function; chapter 4 has no hidden state in its math, and the hash function always takes an argument.
+h	hidden state (h^{(l)}_i at layer l, position i) | MinHash hash function (h_i the i-th)	The MinHash literature writes $h$ for the hash function; chapter 4 has no hidden state in its math, and the hash function always takes an argument.
 n	sequence or context length (n' the target context length) | order of an n-gram	"n-gram" is the universal name; chapter 4 has no sequence length in its math once its string length is written T_{idx}.

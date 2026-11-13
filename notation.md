@@ -23,30 +23,30 @@ layer computes $xW$.
 | $d_k$ | per-head query and key width |
 | $d_v$ | per-head value width (equal to $d_k$) |
 | $d_{attn}$ | attention width $n_h$ $d_k$ |
-| $n$ | sequence or context length (n' the target context length) |
+| $n$ | sequence or context length ($n'$ the target context length) |
 | $n_{train}$ | trained context length |
-| $m$ | position in a positional encoding or relative offset (m' a second position) |
+| $m$ | position in a positional encoding or relative offset ($m'$ a second position) |
 | $m$ | Adam's first moment ($m_t$) |
-| $q$ | query vector ($q_m$ at position m) |
-| $q$ | a distribution (generic pair p, q) |
-| $k$ | key vector ($k_{m'}$ at position m') |
+| $q$ | query vector ($q_m$ at position $m$) |
+| $q$ | a distribution (generic pair $p$, $q$) |
+| $k$ | key vector ($k_{m'}$ at position $m'$) |
 | $n_{win}$ | sliding-window span |
 | $B$ | batch size |
-| $\mathcal{B}$ | a mini-batch ($\mathcal{B}_t$ at step t) |
+| $\mathcal{B}$ | a mini-batch ($\mathcal{B}_t$ at step $t$) |
 | $\mathcal{V}$ | vocabulary ($\vert \mathcal{V}\vert $ its size) |
 | $T$ | number of tokens in a loss, perplexity sum or batch |
 | $\tau$ | temperature (sampling, source mixing, YaRN) |
 | $g_{\max}$ | gradient-clipping threshold |
-| $N$ | number of parameters (non-embedding where Kaplan's N is meant) |
+| $N$ | number of parameters (non-embedding where Kaplan's $N$ is meant) |
 | $D$ | number of training tokens |
 | $C$ | training compute |
 | $\theta$ | model parameters as a vector |
 | $\mathcal{L}$ | loss, mean per token, in nats |
-| $h$ | hidden state ($h^{(l)}_i$ at layer l, position i) |
+| $h$ | hidden state ($h^{(l)}_i$ at layer $l$, position $i$) |
 | $p_{data}$ | data distribution |
 | $p_{\theta}$ | model distribution |
-| $p$ | a distribution (generic pair p, q) |
-| $p$ | sampling probability of source s ($p_s$) |
+| $p$ | a distribution (generic pair $p$, $q$) |
+| $p$ | sampling probability of source $s$ ($p_s$) |
 | $Q$ | query matrix |
 | $K$ | key matrix |
 | $V$ | value matrix |
@@ -57,7 +57,7 @@ layer computes $xW$.
 | $W_K$ | key projection matrix |
 | $W_V$ | value projection matrix |
 | $W_O$ | attention output projection matrix |
-| $g$ | gradient vector (the upstream gradient in a backward pass; $g_t$ the loss gradient at step t) |
+| $g$ | gradient vector (the upstream gradient in a backward pass; $g_t$ the loss gradient at step $t$) |
 | $G$ | upstream gradient matrix |
 | $\tilde{g}$ | LayerNorm's scaled upstream gradient |
 | $W_{gate}$ | SwiGLU gate matrix |
@@ -69,23 +69,23 @@ layer computes $xW$.
 | $W_{out}$ | unembedding matrix |
 | $E$ | number of experts |
 | $\mathrm{i}$ | imaginary unit (the complex conjugate is a superscript star, $k^{*}$, never an overline: the bar accent is a batch mean) |
-| $H$ | entropy H(p) and cross-entropy H(p, q) |
-| $U$ | left singular vectors (U $\Sigma$ $R^\top$) |
-| $U$ | unique tokens of source s ($U_s$) |
+| $H$ | entropy $H(p)$ and cross-entropy $H(p, q)$ |
+| $U$ | left singular vectors ($U \Sigma R^\top$) |
+| $U$ | unique tokens of source $s$ ($U_s$) |
 | $\Sigma$ | singular values (diagonal, $\Sigma_{jj}$) |
-| $R$ | right singular vectors (U $\Sigma$ $R^\top$) |
+| $R$ | right singular vectors ($U \Sigma R^\top$) |
 | $\epsilon_{ls}$ | label-smoothing mass |
 | $\epsilon$ | numerical-stability constant |
 | $a_N$ | compute-optimal parameter exponent ($N^*$ $\propto$ $C^{a_N}$) |
 | $a_D$ | compute-optimal data exponent ($D^*$ $\propto$ $C^{a_D}$) |
 | $\zeta$ | loss-scaling factor (mixed precision) |
-| $w$ | given weight of source s ($w_s$) |
-| $e$ | epochs of source s ($e_s$) |
+| $w$ | given weight of source $s$ ($w_s$) |
+| $e$ | epochs of source $s$ ($e_s$) |
 | $e$ | Euler's number |
-| $b$ | RoPE base (b' a rescaled base) |
+| $b$ | RoPE base ($b'$ a rescaled base) |
 | $\omega$ | RoPE frequency ($\omega_i$ = $b^{-2i/d_k}$) |
 | $s_{ctx}$ | context scale factor $n'/n_{train}$ |
-| $r$ | router logit ($r_i$ for expert i) |
+| $r$ | router logit ($r_i$ for expert $i$) |
 | $\rho$ | router probability |
 | $\tilde{\rho}$ | router gate weight |
 | $\bar{\rho}$ | batch-mean router probability |
@@ -93,7 +93,7 @@ layer computes $xW$.
 | $\kappa$ | expert capacity |
 | $\phi$ | capacity factor |
 | $\Phi$ | kernel feature map |
-| $c$ | multi-head latent attention latent ($c_i$ at position i) |
+| $c$ | multi-head latent attention latent ($c_i$ at position $i$) |
 | $d_c$ | multi-head latent attention latent width |
 | $\lambda$ | weight decay |
 | $\lambda_{\max}$ | largest Hessian eigenvalue |
@@ -123,8 +123,8 @@ layer computes $xW$.
 | $j$ | running index (range stated where used) |
 | $l$ | layer index |
 | $s$ | source index |
-| $x$ | token ($x_i$ at position i, $x_{<i}$ the prefix) |
-| $x$ | input row vector of a layer (xW) |
+| $x$ | token ($x_i$ at position $i$, $x_{<i}$ the prefix) |
+| $x$ | input row vector of a layer ($xW$) |
 | $x_1$ | first token of a sequence |
 | $x_2$ | second token of a sequence |
 | $x_n$ | last token of a sequence of length n |
@@ -141,17 +141,17 @@ layer computes $xW$.
 
 | Symbol | Meanings | Why both are kept |
 |---|---|---|
-| $m$ | position in a positional encoding or relative offset (m' a second position); Adam's first moment ($m_t$) | The plan's index rule: Adam's $m_t$ is a named quantity, always subscripted with the step, and never meets a positional encoding in the same formula. |
-| $v$ | Adam's second moment ($v_t$); value vector ($v_i$ at position i) | Adam's $v_t$ is a named quantity (the plan's index rule); the value vector appears only in chapter 6's latent-attention paragraph, where no optimizer appears. |
-| $p$ | a distribution (generic pair p, q); sampling probability of source s ($p_s$) | $p_s$ is always subscripted with the source and is a probability over sources, the standard symbol in data-mixing papers. |
-| $q$ | query vector ($q_m$ at position m); a distribution (generic pair p, q) | Both are standard; the query vector always carries a position subscript and the distribution an argument q(x), and they never share a formula. |
-| $U$ | left singular vectors (U $\Sigma$ $R^\top$); unique tokens of source s ($U_s$) | The SVD lives in chapter 2's primer; $U_s$ always carries its source subscript and lives in chapters 3 and 5. |
-| $e$ | epochs of source s ($e_s$); Euler's number | Euler's number is universal; $e_s$ always carries its source subscript. |
-| $x$ | token ($x_i$ at position i, $x_{<i}$ the prefix); input row vector of a layer (xW) | Both are universal; a token is indexed by position inside a probability, a layer input appears as a function argument or in xW. |
-| $b$ | RoPE base (b' a rescaled base); number of LSH bands | Settled by the plan for chapter 4 (LSH bands b, rows r are the standard symbols); chapter 4 has no RoPE. |
-| $r$ | router logit ($r_i$ for expert i); rows per LSH band | Settled by the plan for chapter 4; chapter 4 has no router. |
-| $h$ | hidden state ($h^{(l)}_i$ at layer l, position i); MinHash hash function ($h_i$ the i-th) | The MinHash literature writes h for the hash function; chapter 4 has no hidden state in its math, and the hash function always takes an argument. |
-| $n$ | sequence or context length (n' the target context length); order of an n-gram | "n-gram" is the universal name; chapter 4 has no sequence length in its math once its string length is written $T_{idx}$. |
+| $m$ | position in a positional encoding or relative offset ($m'$ a second position); Adam's first moment ($m_t$) | The plan's index rule: Adam's $m_t$ is a named quantity, always subscripted with the step, and never meets a positional encoding in the same formula. |
+| $v$ | Adam's second moment ($v_t$); value vector ($v_i$ at position $i$) | Adam's $v_t$ is a named quantity (the plan's index rule); the value vector appears only in chapter 6's latent-attention paragraph, where no optimizer appears. |
+| $p$ | a distribution (generic pair $p$, $q$); sampling probability of source $s$ ($p_s$) | $p_s$ is always subscripted with the source and is a probability over sources, the standard symbol in data-mixing papers. |
+| $q$ | query vector ($q_m$ at position $m$); a distribution (generic pair $p$, $q$) | Both are standard; the query vector always carries a position subscript and the distribution an argument $q(x)$, and they never share a formula. |
+| $U$ | left singular vectors ($U \Sigma R^\top$); unique tokens of source $s$ ($U_s$) | The SVD lives in chapter 2's primer; $U_s$ always carries its source subscript and lives in chapters 3 and 5. |
+| $e$ | epochs of source $s$ ($e_s$); Euler's number | Euler's number is universal; $e_s$ always carries its source subscript. |
+| $x$ | token ($x_i$ at position $i$, $x_{<i}$ the prefix); input row vector of a layer ($xW$) | Both are universal; a token is indexed by position inside a probability, a layer input appears as a function argument or in xW. |
+| $b$ | RoPE base ($b'$ a rescaled base); number of LSH bands | Settled by the plan for chapter 4 (LSH bands $b$, rows $r$ are the standard symbols); chapter 4 has no RoPE. |
+| $r$ | router logit ($r_i$ for expert $i$); rows per LSH band | Settled by the plan for chapter 4; chapter 4 has no router. |
+| $h$ | hidden state ($h^{(l)}_i$ at layer $l$, position $i$); MinHash hash function ($h_i$ the $i$-th) | The MinHash literature writes $h$ for the hash function; chapter 4 has no hidden state in its math, and the hash function always takes an argument. |
+| $n$ | sequence or context length ($n'$ the target context length); order of an n-gram | "n-gram" is the universal name; chapter 4 has no sequence length in its math once its string length is written $T_{idx}$. |
 
 ## Symbols used in one chapter
 
@@ -159,10 +159,22 @@ layer computes $xW$.
 
 | Symbol | Meaning | Introduced in |
 |---|---|---|
-| $\mathcal{M}$ | set of masked positions in the masked-language-model objective | {doc}`LLM Foundations </chapters/01-foundations/index>` |
-| $H_{enc}$ | encoder output states, the keys and values of cross-attention | {doc}`LLM Foundations </chapters/01-foundations/index>` |
-| $n_{src}$ | source sequence length in an encoder-decoder model | {doc}`LLM Foundations </chapters/01-foundations/index>` |
-| $W_P$ | learned position-embedding matrix | {doc}`LLM Foundations </chapters/01-foundations/index>` |
+| $\mathcal{M}$ | set of masked positions in the masked-language-model objective | {ref}`sec-ch1-masked-lm` |
+| $H_{enc}$ | encoder output states, the keys and values of cross-attention | {ref}`sec-ch1-encoder-decoder` |
+| $n_{src}$ | source sequence length in an encoder-decoder model | {ref}`sec-ch1-encoder-decoder` |
+| $\mathcal{R}$ | RoPE rotation matrix ($\mathcal{R}_m$ at position $m$, block diagonal) | {ref}`sec-ch1-rope` |
+| $\varphi$ | rotation angle of one RoPE pair ($\varphi = m\omega_i$) in the derivation | {ref}`sec-ch1-rope` |
+| $\mathcal{N}$ | normal distribution | {ref}`sec-ch1-embedding-initialization-strategies` |
+| $\tilde{q}$ | RoPE-rotated query ($\tilde{q}_m = q_m \mathcal{R}_m^\top$) | {ref}`sec-ch1-rope` |
+| $\tilde{k}$ | RoPE-rotated key ($\tilde{k}_{m'} = k_{m'} \mathcal{R}_{m'}^\top$) | {ref}`sec-ch1-rope` |
+| $Y$ | decoder states that supply the queries of cross-attention | {ref}`sec-ch1-encoder-decoder` |
+| $\mathcal{L}_{MLM}$ | masked-language-model loss, mean over the masked positions | {ref}`sec-ch1-masked-lm` |
+| $\tilde{x}$ | corrupted input sequence of the masked-language-model objective | {ref}`sec-ch1-masked-lm` |
+| $n_{ctx}$ | context length (number of learned position embeddings) | {ref}`sec-ch1-parameter-count` |
+| $a_h$ | ALiBi slope of head $h$ | {ref}`sec-ch1-positional-encodings` |
+| $\omega_0$ | highest RoPE frequency | {ref}`sec-ch1-rope` |
+| $\omega_{d_k/2-1}$ | lowest RoPE frequency | {ref}`sec-ch1-rope` |
+| $\mathcal{R}_1$ | RoPE rotation for a position offset of 1 | {ref}`sec-ch1-exercise-9` |
 
 ### Chapter 2: Mathematical Foundations
 
@@ -214,7 +226,7 @@ layer computes $xW$.
 | $J$ | Jaccard similarity of two shingle sets | {ref}`sec-ch4-near-duplicate-detection-minhash-lsh` |
 | $\mathcal{X}$ | shingle set of the first document | {ref}`sec-ch4-near-duplicate-detection-minhash-lsh` |
 | $\mathcal{Y}$ | shingle set of the second document | {ref}`sec-ch4-near-duplicate-detection-minhash-lsh` |
-| $h$ | MinHash hash function ($h_i$ the i-th) | {ref}`sec-ch4-near-duplicate-detection-minhash-lsh` |
+| $h$ | MinHash hash function ($h_i$ the $i$-th) | {ref}`sec-ch4-near-duplicate-detection-minhash-lsh` |
 | $n_{hash}$ | MinHash signature length (number of MinHash hash functions) | {ref}`sec-ch4-near-duplicate-detection-minhash-lsh` |
 | $b$ | number of LSH bands | {ref}`sec-ch4-near-duplicate-detection-minhash-lsh` |
 | $r$ | rows per LSH band | {ref}`sec-ch4-near-duplicate-detection-minhash-lsh` |
@@ -250,10 +262,10 @@ layer computes $xW$.
 |---|---|---|
 | $f$ | fraction of tokens dispatched to expert i ($f_i$) | {ref}`sec-ch6-keeping-experts-balanced` |
 | $\lambda_{aux}$ | weight of the auxiliary load-balancing loss | {ref}`sec-ch6-keeping-experts-balanced` |
-| $v$ | value vector ($v_i$ at position i) | {ref}`sec-ch6-multi-head-latent-attention` |
+| $v$ | value vector ($v_i$ at position $i$) | {ref}`sec-ch6-multi-head-latent-attention` |
 | $d_{rope}$ | per-head width of the decoupled rotary query and key in latent attention | {ref}`sec-ch6-inference-drives-design` |
 | $\omega_0$ | highest RoPE frequency | {ref}`sec-ch6-rope-one-paragraph` |
 | $\omega_{d_k/2-1}$ | lowest RoPE frequency | {ref}`sec-ch6-rope-one-paragraph` |
-| $\hat{q}$ | pair i of a query read as a complex number ($\hat{q}_{m,i}$ at position m; $\hat{k}$ likewise for a key) | {ref}`sec-ch6-rope-one-paragraph` |
-| $\hat{k}$ | pair i of a key read as a complex number ($\hat{k}_{m',i}$ at position m') | {ref}`sec-ch6-rope-one-paragraph` |
-| $\rho$ | router probability (book-wide; $rho_i$ = $softmax(r)_i$); also DeepSeek-V3's sigmoid router score $rho_i$ = $sigmoid(r_i)$ in 6.3, stated there as a score that is not a probability | {ref}`sec-ch6-moe-idea` |
+| $\hat{q}$ | pair i of a query read as a complex number ($\hat{q}_{m,i}$ at position $m$; $\hat{k}$ likewise for a key) | {ref}`sec-ch6-rope-one-paragraph` |
+| $\hat{k}$ | pair i of a key read as a complex number ($\hat{k}_{m',i}$ at position $m'$) | {ref}`sec-ch6-rope-one-paragraph` |
+| $\rho$ | router probability (book-wide; $\rho_i = \mathrm{softmax}(r)_i$); also DeepSeek-V3's sigmoid router score $\rho_i = \sigma(r_i)$ in 6.3, stated there as a score that is not a probability | {ref}`sec-ch6-moe-idea` |

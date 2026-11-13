@@ -17,6 +17,8 @@ A language model reads text as a sequence of integer token ids and outputs, at e
 
 A companion page, {doc}`tokenization-deep-dive`, goes further into tokenizers used in practice.
 
+Every symbol the book uses is listed on the {ref}`notation page <sec-notation>`, with a link to the section that introduces each symbol used only in this chapter.
+
 (sec-ch1-learning-objectives)=
 
 ## Learning Objectives

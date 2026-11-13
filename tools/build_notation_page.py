@@ -25,7 +25,7 @@ PAGE = ROOT / "notation.md"
 EXCEPTIONS = ROOT / "tests" / "notation_exceptions.txt"
 LABEL = re.compile(r"^\(([A-Za-z0-9_-]+)\)=\s*$")
 HEADING = re.compile(r"^#{1,6} ")
-MATHLIKE = re.compile(r"[\\_^]|^sec-")
+MATHLIKE = re.compile(r"[\\_^]|^sec-|^[A-Za-z]'+$")  # TeX, a section label, or a primed letter (n')
 SECTION = re.compile(r"sec-[A-Za-z0-9_-]+")
 
 INTRO = """\
@@ -64,15 +64,28 @@ def _math_token(token: str) -> str:
     return f"{lead}${core}${tail}"
 
 
+def _letter_token(token: str) -> str:
+    """Inside parentheses a lone letter is a symbol ("at position m", "pair p, q", "the i-th"): math."""
+    match = re.match(r"^([(\[]*)([A-Za-z])(-th)?([)\],;.:]*)$", token)
+    if match and match.group(2) not in ("a", "A"):
+        lead, letter, suffix, tail = match.groups()
+        return f"{lead}${letter}${suffix or ''}{tail}"
+    return _math_token(token)
+
+
 def render(text: str) -> str:
     """A meaning for a table cell: bare TeX tokens outside $...$ set as math, pipes escaped."""
     parts = re.split(r"(\$[^$]*\$)", text)
-    out = []
+    out, depth = [], 0
     for k, part in enumerate(parts):
         if k % 2:
             out.append(part)
         else:
-            out.append(" ".join(_math_token(t) for t in part.split(" ")))
+            tokens = []
+            for t in part.split(" "):
+                tokens.append(_letter_token(t) if depth > 0 or t.startswith("(") else _math_token(t))
+                depth += t.count("(") - t.count(")")
+            out.append(" ".join(tokens))
     return "".join(out).replace("|", "\\vert ")
 
 
