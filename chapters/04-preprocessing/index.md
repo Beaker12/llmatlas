@@ -1370,6 +1370,62 @@ assert redact_pii(directory)[2] is False
 
 Two cautions. Regular expressions written for North American formats miss most of the world's phone numbers, and a pattern loose enough to catch them all will also catch ISBNs, timestamps and version numbers. And redaction is not anonymization: a document that names a person and describes their circumstances is still identifying after its email address is removed. Pipelines that need stronger guarantees drop whole documents from sources known to contain personal records rather than trying to scrub them.
 
+Regular expressions find structured values; names and secrets need other tools. A named-entity recognizer such as StarPII tags people, usernames and keys by context. Secret scanners look for credentials in code: the StarCoder team pre-filtered files for its PII annotation with the detect-secrets tool and all its default plugins {cite}`li2023starcoder`, and two of those plugins flag base64 and hex strings whose Shannon entropy per character exceeds a limit (4.5 and 3.0 bits by default). The replacement need not be a placeholder either. FineWeb anonymizes email and public IP addresses with regular expressions {cite}`penedo2024fineweb`, and its datatrove PIIFormatter substitutes realistic dummy values used in rotation (`email@example.com` and `firstname.lastname@example.org` for email, a list of random IP addresses that did not answer ping when the list was made), so the text still reads as natural text.
+
+```python
+import itertools
+import math
+import re
+from collections import Counter
+
+
+def shannon_entropy(s: str) -> float:
+    """Bits per character of the string's own character distribution."""
+    counts = Counter(s)
+    return -sum(c / len(s) * math.log2(c / len(s)) for c in counts.values())
+
+
+TOKEN = re.compile(r"[A-Za-z0-9+/=_-]{20,}")
+EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
+DUMMY_EMAILS = ("email@example.com", "firstname.lastname@example.org")  # datatrove's defaults
+
+
+def find_secrets(code: str, limit: float = 4.5) -> list:
+    """Flag long base64-like tokens whose entropy exceeds the limit (detect-secrets' default is 4.5)."""
+    return [t for t in TOKEN.findall(code) if shannon_entropy(t) > limit]
+
+
+def replace_emails(text: str) -> str:
+    """Swap each email for a realistic dummy, cycling through the list as datatrove's PIIFormatter does."""
+    dummies = itertools.cycle(DUMMY_EMAILS)
+    return EMAIL.sub(lambda m: next(dummies), text)
+
+
+code = """
+API_KEY = "ks_live_9fQ2xLr7Vb3KpZt8NwYc4HdJ6mUe1Ao5"
+PLACEHOLDER = "your_api_key_goes_here_please_change"
+ROUTE = "/api/v1/users/profile/settings/update"
+"""
+for token in TOKEN.findall(code):
+    print(f"{shannon_entropy(token):.3f} bits/char  {token}")
+assert find_secrets(code) == ["ks_live_9fQ2xLr7Vb3KpZt8NwYc4HdJ6mUe1Ao5"]
+
+text = "Write to anna.fields@school.org or to the desk at raffle@school.org."
+print(replace_emails(text))
+assert replace_emails(text).count("@example.") == 2
+```
+
+% output
+
+```text
+5.222 bits/char  ks_live_9fQ2xLr7Vb3KpZt8NwYc4HdJ6mUe1Ao5
+3.672 bits/char  your_api_key_goes_here_please_change
+3.810 bits/char  /api/v1/users/profile/settings/update
+Write to email@example.com or to the desk at firstname.lastname@example.org
+```
+
+The random key carries 5.222 bits per character, above the limit; the placeholder and the URL path, made of English words, stay below it. An entropy test has false positives too (hashes, UUIDs, minified code), which is why the StarCoder team reported many false positives from detect-secrets and added rules of its own.
+
 (sec-ch4-toxicity-adult-content)=
 
 ### 6.2 Toxicity and adult content
