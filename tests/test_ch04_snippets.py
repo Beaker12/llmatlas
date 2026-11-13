@@ -34,3 +34,46 @@ NOTATION_OK: dict[str, str] = {}
 INTERFACE_LABELS: dict[str, str] = {
     "sec-ch4-dedup-scope": "5.3 Near-duplicate detection with MinHash and LSH",
 }
+
+
+# --- Tests of the chapter's code ------------------------------------------------------------------------------
+import itertools  # noqa: E402
+import re  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+CH04 = Path(__file__).resolve().parent.parent / "chapters" / "04-preprocessing" / "index.md"
+FENCE = re.compile(r"^```python\n(.*?)^```", re.S | re.M)
+
+
+def fence_containing(marker: str) -> str:
+    for m in FENCE.finditer(CH04.read_text(encoding="utf-8")):
+        if marker in m.group(1):
+            return m.group(1)
+    raise AssertionError(f"no python fence in ch04 contains {marker!r}")
+
+
+def run(marker: str) -> dict:
+    ns: dict = {}
+    exec(fence_containing(marker), ns)  # noqa: S102 - executing the book's own example
+    return ns
+
+
+def test_repeated_spans_keeps_only_the_earliest_of_three_copies_in_every_ordering():
+    # C4-02 (a): 36 orderings of three copies of a 5-token run; every copy but the first is removed.
+    repeated_spans = run("def repeated_spans")["repeated_spans"]
+    run_ = "p q r s t".split()
+    for followers in itertools.permutations(["a", "m", "z"]):
+        for preceders in itertools.permutations(["b", "n", "y"]):
+            tokens, starts = [], []
+            for f, p in zip(followers, preceders):
+                tokens.append(p + "0")
+                starts.append(len(tokens))
+                tokens += run_ + [f + "1"]
+            assert repeated_spans(tokens, 5) == [(s, s + 5) for s in starts[1:]], (followers, preceders)
+
+
+def test_repeated_spans_returns_one_maximal_span_when_the_repeat_is_longer_than_min_len():
+    # C4-02 (b): an 8-token repeat with min_len 4 gives one span, not five overlapping ones.
+    repeated_spans = run("def repeated_spans")["repeated_spans"]
+    tokens = ["x1"] + "a b c d e f g h".split() + ["x2"] + "a b c d e f g h".split() + ["x3"]
+    assert repeated_spans(tokens, 4) == [(10, 18)]

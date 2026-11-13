@@ -312,7 +312,7 @@ The terminal-punctuation rule is the most consequential: it removes almost every
 - At least 80% of words containing at least one alphabetic character.
 - At least two of a short list of English stop words (`the`, `be`, `to`, `of`, `and`, `that`, `have`, `with`).
 
-**FineWeb additions**, found by comparing the rejected and retained halves of the Gopher filter on a held-out sample:
+**FineWeb additions**, found by computing document statistics on a higher-quality and a lower-quality version of one snapshot (the individually and the globally deduplicated 2013-48 crawl) and choosing thresholds where the two distributions separate {cite}`penedo2024fineweb`:
 
 - Fraction of lines ending in punctuation at least 0.12 (a soft version of the C4 line rule).
 - Fraction of characters in duplicated lines below 0.1.
@@ -666,7 +666,7 @@ $$\Pr[\text{candidate}] = 1 - (1 - J^r)^b$$
 
 which is a steep S-curve with its midpoint near $(1/b)^{1/r}$. Choosing $b$ and $r$ sets the similarity threshold.
 
-Gopher used 13-word shingles with 450 hash functions at a 0.8 threshold; RefinedWeb used 5-word shingles with 9,000 hash functions at the same threshold; FineWeb used 5-word shingles with 112 hash functions in 14 bands of 8 rows, which puts its threshold near 0.75. Dolma relied on exact matching of URLs, documents and paragraphs through a Bloom filter rather than MinHash. The implementation below uses a universal hash family $h_i(\chi) = (a_{i,1} \chi + a_{i,0}) \bmod P$ over the 32-bit integer id $\chi$ of a shingle, with $P$ a large prime, which is what most production implementations do.
+Gopher {cite}`rae2021scaling` used 13-word shingles and removed one document of any pair with Jaccard similarity above 0.8; it does not report the number of hash functions. Lee et al. {cite}`lee2022deduplicating` used 5-word shingles with a 9,000-value signature in $b = 20$ bands of $r = 450$ rows, then confirmed candidate pairs with edit similarity above 0.8. RefinedWeb {cite}`penedo2023refinedweb` copied those MinHash settings (9,000 hashes in 20 buckets of 450) without a separate verification step; at those settings the midpoint of the banding curve is $(1/20)^{1/450} \approx 0.993$, so banding alone catches only near-identical pairs. FineWeb used 5-word shingles with 112 hash functions in 14 bands of 8 rows, which puts its threshold near 0.75. Dolma relied on exact matching of URLs, documents and paragraphs through a Bloom filter rather than MinHash. The implementation below uses a universal hash family $h_i(\chi) = (a_{i,1} \chi + a_{i,0}) \bmod P$ over the 32-bit integer id $\chi$ of a shingle, with $P$ a large prime, which is what most production implementations do.
 
 ```python
 import hashlib
@@ -767,29 +767,56 @@ Which document to keep from a cluster is not a detail. Keeping the shortest copy
 
 ### 5.4 Substring deduplication with suffix arrays
 
-Document-level methods miss the case where a long passage (a licence header, a quotation, a boilerplate disclaimer) is embedded in otherwise distinct documents. Lee et al. {cite}`lee2022deduplicating` address this with a suffix array over the concatenated, tokenized corpus: sort all suffixes, then any two adjacent suffixes that share a prefix of at least 50 tokens mark a repeated span, which is removed from all but one occurrence.
+Document-level methods miss the case where a long passage (a licence header, a quotation, a boilerplate disclaimer) is embedded in otherwise distinct documents. Lee et al. {cite}`lee2022deduplicating` address this with a suffix array over the concatenated, tokenized corpus: sort all suffixes, and every occurrence of a run of at least 50 tokens that appears more than once sits in one group of adjacent suffixes that share a prefix of that length. All occurrences in the group except the earliest are marked for removal, and the marks are merged into maximal spans. Comparing only neighboring pairs and removing the later of each pair is not enough: with three copies, the earliest copy can be the later member of some adjacent pair, and two copies survive.
 
 A suffix array over $T_{idx}$ tokens needs about $8T_{idx}$ bytes for the index alone, so the method is run over a few hundred gigabytes at a time on a large-memory machine rather than in a distributed map. The implementation below is the naive $\mathcal{O}(T_{idx} \log T_{idx})$-comparison version, enough to see the idea on a few thousand tokens.
 
 ```python
 def repeated_spans(tokens, min_len: int = 50):
-    """Return (start, end) of every span that occurs at least twice, via a suffix array.
+    """Return the maximal (start, end) spans to delete so that every run of at least
+    min_len tokens that occurs more than once survives only at its earliest position.
 
     Naive construction (sorts full suffixes); fine for a few thousand tokens,
     hopeless for a corpus, which uses SA-IS or a parallel construction instead.
     """
     n = len(tokens)
     suffix_array = sorted(range(n), key=lambda i: tokens[i:])
-    spans = []
-    for k in range(1, n):
-        i, j = suffix_array[k - 1], suffix_array[k]
-        lcp = 0
-        while i + lcp < n and j + lcp < n and tokens[i + lcp] == tokens[j + lcp]:
-            lcp += 1
-        if lcp >= min_len:
-            later = max(i, j)  # remove the occurrence that comes later in the text
-            spans.append((later, later + lcp))
-    return sorted(set(spans))
+
+    def lcp(i, j):
+        k = 0
+        while i + k < n and j + k < n and tokens[i + k] == tokens[j + k]:
+            k += 1
+        return k
+
+    # Suffixes that share a prefix of at least min_len tokens are adjacent in the suffix
+    # array, so each repeated run is one group of consecutive entries.
+    remove = [False] * n
+    k = 1
+    while k < n:
+        if lcp(suffix_array[k - 1], suffix_array[k]) < min_len:
+            k += 1
+            continue
+        group = [suffix_array[k - 1]]
+        while k < n and lcp(suffix_array[k - 1], suffix_array[k]) >= min_len:
+            group.append(suffix_array[k])
+            k += 1
+        keep = min(group)  # the earliest occurrence survives
+        for start in group:
+            if start != keep:
+                remove[start : start + min_len] = [True] * min_len
+
+    # Merge the marked positions into maximal spans.
+    spans, i = [], 0
+    while i < n:
+        if remove[i]:
+            j = i
+            while j < n and remove[j]:
+                j += 1
+            spans.append((i, j))
+            i = j
+        else:
+            i += 1
+    return spans
 
 
 licence = "permission is hereby granted free of charge to any person obtaining a copy".split()
@@ -809,7 +836,7 @@ Because substring removal cuts through the middle of documents, it is applied af
 
 ### 5.5 Semantic deduplication
 
-MinHash finds documents that share words. SemDeDup {cite}`abbas2023semdedup` finds documents that share meaning: embed every document with a pretrained encoder, cluster the embeddings with k-means, and within each cluster remove all but one of any group of documents whose cosine similarity exceeds a threshold (0.95 or higher in the paper). On LAION and C4 the method removed a further 20 to 50% of data after conventional deduplication with little or no loss, and training on the smaller set was correspondingly faster.
+MinHash finds documents that share words. SemDeDup {cite}`abbas2023semdedup` finds documents that share meaning: embed every document with a pretrained encoder, cluster the embeddings with k-means, and within each cluster remove all but one of any group of documents whose cosine similarity exceeds a threshold (0.95 or higher in the paper). On LAION-440M it removed 37% of the data with no loss in zero-shot ImageNet accuracy and 50% with a loss below half a point; on C4, models trained for several epochs on SemDeDup-pruned subsets matched the single-epoch full-data baseline with 10 to 15% less compute.
 
 The cost is an embedding pass over the corpus, which is a forward pass of a small model per document, and the risk is removing paraphrases that a model would benefit from seeing both of. It is applied last among the deduplication stages and, in most published pipelines, conservatively.
 
@@ -983,7 +1010,7 @@ The notebook section {ref}`nb-prep-decontam` builds a 13-gram index from a toy b
 Code corpora use the same stages with different rules. The Stack {cite}`kocetkov2022stack` and its successor StarCoder data pipelines:
 
 - **Licence filtering** by repository, keeping permissive licences only.
-- **Near-deduplication** at the file level with MinHash at a 0.85 threshold on 5-gram shingles, which removes roughly 40% of files, since forks and vendored dependencies dominate GitHub.
+- **Near-deduplication** at the file level, since forks and vendored dependencies dominate GitHub. The Stack computes MinHash with 256 permutations over the files' alphanumeric tokens and treats two files as near-duplicates above Jaccard similarity 0.85, which removes 38.6% of the permissively licensed files; StarCoder {cite}`li2023starcoder` uses 5-gram shingles and a Jaccard threshold of 0.7.
 - **Quality heuristics** per file: drop files whose fraction of alphanumeric characters is below 0.25, whose maximum line length exceeds 1,000 characters, or whose mean line length exceeds 100 characters (minified or generated code), and files with "auto-generated" in the first few lines.
 - **Data file removal**: JSON, YAML and CSV files are kept only below a size cap, since they are data rather than code.
 - **Secrets and PII** via regular expressions for keys and the StarPII model for names and emails.
