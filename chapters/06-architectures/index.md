@@ -355,7 +355,7 @@ Queries are also compressed through a low-rank bottleneck in V3 (rank 1,536) to 
 :alt: Data flow of multi-head latent attention. The hidden state is projected to a latent of 512 elements and to a rotary key of 64 elements, both cached. Dashed boxes, content keys and values reconstructed from the latent by up-projections, feed the attention scores and the output. Queries come from the hidden state through a rank-1,536 bottleneck.
 :width: 100%
 
-Multi-head latent attention in DeepSeek-V3. Only the two orange boxes are cached, 576 elements per token per layer. The dashed keys and values are what the up-projections would produce; at inference they are never formed, because $W^{UK}$ is folded into the query side and $W^{UV}$ into the output projection.
+Multi-head latent attention in DeepSeek-V3. Only the two orange boxes are cached, 576 elements per token per layer. Queries pass through a rank-1,536 bottleneck of their own, which is not cached. The dashed keys and values are what the up-projections would produce; at inference they are never formed, because $W^{UK}$ is folded into the query side and $W^{UV}$ into the output projection.
 ```
 
 DeepSeek-V3 caches 70 KB per token against Llama 3.1 70B's 328 KB, although it has 128 heads against 64. The design is a bet that the cache is the binding constraint and that the extra projection compute is cheap by comparison.
@@ -623,7 +623,7 @@ A sparse model has two sizes. Its *total* parameters set the memory needed to ho
 :alt: Stacked horizontal bars, each 100 percent of a model's parameters, split into input embedding, output head, attention with norms and routers, dense and shared feed-forward, active routed experts and idle routed experts. The idle share dominates: active excluding the input embedding is 27.3 percent for Mixtral, 17.0 for OLMoE, 15.6 for DeepSeek-V2-Lite and 5.5 for DeepSeek-V3.
 :width: 100%
 
-Where the parameters of the four sparse models are, as shares of each total, computed from the committed configurations with the counting rules of Section 8 (the totals match {ref}`sec-ch6-validation`). Everything except the pale idle experts and the input-embedding lookup is used for a token; finer-grained routing pushes the active share down from Mixtral's 27.3% to DeepSeek-V3's 5.5%.
+Where the parameters of the four sparse models are, as shares of each total, computed from the committed configurations with the counting rules of {ref}`sec-ch6-accounting` (the totals match {ref}`sec-ch6-validation`). Everything except the pale idle experts and the input-embedding lookup is used for a token; finer-grained routing pushes the active share down from Mixtral's 27.3% to DeepSeek-V3's 5.5%.
 ```
 
 This changes what "size" means when comparing models. For compute, FLOPs per token, and training cost, the active count is what matters. For serving memory, and the number of GPUs needed to hold the weights, the total counts. Because a batch of tokens activates many different experts, the whole parameter set is touched at any reasonable batch size, so the memory bandwidth required per decoding step is also closer to that of the total than of the active count. Sparse models are cheaper to *train* than dense models of equal quality: Switch Transformers reached the quality of a dense T5 model up to seven times faster "while still using the same FLOPS per token" {cite}`fedus2022switch`. Their serving advantage is smaller and depends on batch size and the interconnect.

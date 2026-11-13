@@ -1651,27 +1651,27 @@ z
    </g>
    <g id="legend_1">
     <g id="patch_9">
-     <path d="M 58.68 231.92 
-L 197.295625 231.92 
-Q 199.295625 231.92 199.295625 229.92 
-L 199.295625 185.917656 
-Q 199.295625 183.917656 197.295625 183.917656 
-L 58.68 183.917656 
-Q 56.68 183.917656 56.68 185.917656 
-L 56.68 229.92 
-Q 56.68 231.92 58.68 231.92 
+     <path d="M 346.504375 101.210344 
+L 485.12 101.210344 
+Q 487.12 101.210344 487.12 99.210344 
+L 487.12 55.208 
+Q 487.12 53.208 485.12 53.208 
+L 346.504375 53.208 
+Q 344.504375 53.208 344.504375 55.208 
+L 344.504375 99.210344 
+Q 344.504375 101.210344 346.504375 101.210344 
 z
-" style="fill: #ffffff; opacity: 0.8; stroke: #cccccc; stroke-linejoin: miter"/>
+" style="fill: #ffffff; stroke: #cccccc; stroke-linejoin: miter"/>
     </g>
     <g id="line2d_15">
-     <path d="M 60.68 192.016094 
-L 70.68 192.016094 
-L 80.68 192.016094 
+     <path d="M 348.504375 61.306437 
+L 358.504375 61.306437 
+L 368.504375 61.306437 
 " style="fill: none; stroke: #c44e52; stroke-width: 2; stroke-linecap: square"/>
     </g>
     <g id="text_17">
      <!-- position interpolation -->
-     <g transform="translate(88.68 195.516094) scale(0.1 -0.1)">
+     <g transform="translate(376.504375 64.806437) scale(0.1 -0.1)">
       <use xlink:href="#DejaVuSans-53"/>
       <use xlink:href="#DejaVuSans-52" transform="translate(63.484375 0)"/>
       <use xlink:href="#DejaVuSans-56" transform="translate(124.671875 0)"/>
@@ -1697,14 +1697,14 @@ L 80.68 192.016094
      </g>
     </g>
     <g id="line2d_16">
-     <path d="M 60.68 207.016875 
-L 70.68 207.016875 
-L 80.68 207.016875 
+     <path d="M 348.504375 76.307219 
+L 358.504375 76.307219 
+L 368.504375 76.307219 
 " style="fill: none; stroke: #4c72b0; stroke-width: 2; stroke-linecap: square"/>
     </g>
     <g id="text_18">
      <!-- NTK-aware base -->
-     <g transform="translate(88.68 210.516875) scale(0.1 -0.1)">
+     <g transform="translate(376.504375 79.807219) scale(0.1 -0.1)">
       <defs>
        <path id="DejaVuSans-37" d="M -19 4666 
 L 3928 4666 
@@ -1756,14 +1756,14 @@ z
      </g>
     </g>
     <g id="line2d_17">
-     <path d="M 60.68 222.017656 
-L 70.68 222.017656 
-L 80.68 222.017656 
+     <path d="M 348.504375 91.308 
+L 358.504375 91.308 
+L 368.504375 91.308 
 " style="fill: none; stroke: #55a868; stroke-width: 2.4; stroke-linecap: square"/>
     </g>
     <g id="text_19">
      <!-- YaRN (NTK-by-parts) -->
-     <g transform="translate(88.68 225.517656) scale(0.1 -0.1)">
+     <g transform="translate(376.504375 94.808) scale(0.1 -0.1)">
       <use xlink:href="#DejaVuSans-3c"/>
       <use xlink:href="#DejaVuSans-44" transform="translate(47.3125 0)"/>
       <use xlink:href="#DejaVuSans-35" transform="translate(108.59375 0)"/>

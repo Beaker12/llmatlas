@@ -141,7 +141,7 @@ def rope_scaling(out):
     ax.set_xlabel("pair index i (high frequency at left, low at right)")
     ax.set_ylabel(r"new frequency / old,  $\omega'_i / \omega_i$")
     ax.set_title(r"Extending 4,096 trained positions 8×: $d_k$ = 128, $b$ = 10,000")
-    ax.legend(loc="lower left")
+    ax.legend(loc="upper right", bbox_to_anchor=(1.0, 0.9), framealpha=1)
     fig.tight_layout()
     save(fig, out / "rope-scaling.svg")
 
@@ -272,7 +272,9 @@ def flops_context(out):
     ax.set_xlabel(r"context length $n$ (tokens before the current one)")
     ax.set_ylabel("forward GFLOPs per token")
     ax.set_title("Llama 3.1 8B: when attention outgrows the weights")
-    ax.legend(loc="upper left", bbox_to_anchor=(0, 0.88))
+    ax.text(600, two_n + 0.8, r"weights, $2N$ = 15.0", color=BLUE, fontsize=10.5)
+    ax.text(24000, 27, r"attention, $2\,L\,n\,d_{attn}$", color=RED, fontsize=10.5, ha="right")
+    ax.text(90000, 5, "causal\naverage", color=RED, fontsize=10.5, ha="center")
     fig.tight_layout()
     save(fig, out / "flops-context.svg")
 
