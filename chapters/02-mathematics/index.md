@@ -1087,7 +1087,7 @@ The compute axis of the scaling laws counts floating-point operations, and nearl
 
 $$2N + 4N = 6N \text{ FLOPs}, \qquad C \approx 6ND$$
 
-for $D$ training tokens. {cite:t}`kaplan2020scaling` count the forward pass as $2N + 2 L n d$ per token, the second term being the attention scores. They word these as add-multiply operations, but the factor 2 in each term counts a multiply-add as two operations, so both terms are FLOPs in this page's sense. They drop the second term because, when $d > n/12$, it is "a relatively small fraction of the total compute"; {ref}`sec-ch2-training-complexity` derives where the crossover lies. They also leave the embedding out of $N$. Biases, normalization, the softmax and the optimizer step add work proportional to $N$ or smaller, not to $N$ times a width, and are left out as well.
+for $D$ training tokens. {cite:t}`kaplan2020scaling` count the forward pass as $2N + 2 L n d$ per token, the second term being the attention scores. They call these "add-multiply operations, where the factor of two comes from the multiply-accumulate operation used in matrix multiplication": each multiply-add is counted as two operations, so both terms are FLOPs in this page's sense. They drop the second term because, when $d > n/12$, it is "a relatively small fraction of the total compute"; {ref}`sec-ch2-training-complexity` derives where the crossover lies. They also leave the embedding out of $N$. Biases, normalization, the softmax and the optimizer step add work proportional to $N$ or smaller, not to $N$ times a width, and are left out as well.
 
 For Chinchilla, $N = 70 \times 10^9$ and $D = 1.4 \times 10^{12}$ give $C \approx 5.88 \times 10^{23}$ FLOPs. Turning the rule around answers the planning question: with $D = 20N$ ({ref}`sec-ch2-training-implications`), $C = 6N \cdot 20N = 120N^2$, so a budget $C$ buys a compute-optimal model of $N = \sqrt{C/120}$ parameters.
 
@@ -1168,7 +1168,7 @@ For long sequences, attention dominates; for large models, linear layers dominat
 
 $$12nd^2 = 2n^2 d \quad\Longleftrightarrow\quad n = 6d.$$
 
-At $d = 4096$ attention costs as much as the linear layers only at $n = 24{,}576$ tokens; for GPT-3's $d = 12{,}288$ at its context of 2048 tokens, attention costs $n/(6d) = 2.78\%$ as much as the linear layers, 2.7% of the layer's work. Kaplan et al. count the context term as $2 L n d$ FLOPs per token, half of the $4 L n d$ above, so in their accounting the terms meet at $n = 12d$, which is their condition $d > n/12$ ({ref}`sec-ch2-flops`).
+At $d = 4096$ attention costs as much as the linear layers only at $n = 24{,}576$ tokens; for GPT-3's $d = 12{,}288$ at its context of 2048 tokens, attention costs $n/(6d) = 2.78\%$ as much as the linear layers, 2.7% of the layer's work. In FLOPs per token the $2n^2d$ multiply-adds above are $4nd$ per layer, $4Lnd$ over $L$ layers; Kaplan et al. count the context term as $2 L n d$ FLOPs per token, half of that, so in their accounting the terms meet at $n = 12d$, which is their condition $d > n/12$ ({ref}`sec-ch2-flops`).
 
 ```python
 def attention_share(n, d):
@@ -1359,7 +1359,7 @@ $$\mathrm{loss}_{\text{scaled}} = \mathrm{loss} \times \zeta$$
 
 where $\zeta$ is the scale factor. By the chain rule every gradient is multiplied by $\zeta$ as well, and the optimizer divides them by $\zeta$ in fp32 before the update, so the update itself is unchanged. A gradient of $10^{-8}$ is below fp16's smallest subnormal, $2^{-24} = 5.96 \times 10^{-8}$, and would be stored as zero; with $\zeta = 2^{16}$ it becomes $6.55 \times 10^{-4}$, which fp16 stores with its full ten mantissa bits (Exercise 5).
 
-The right $\zeta$ depends on the largest gradient, which changes during training, so **dynamic loss scaling** adjusts it as it goes {cite}`micikevicius2017mixed`. PyTorch's `GradScaler` uses these defaults: it starts at $\zeta = 2^{16}$; when any scaled gradient overflows to infinity or NaN it skips that optimizer step and multiplies $\zeta$ by 0.5; and after 2,000 consecutive steps without overflow it multiplies $\zeta$ by 2. The scale therefore settles just below the largest value that does not overflow, halving quickly when it is too large and probing upward again every 2,000 steps.
+The right $\zeta$ depends on the largest gradient: {cite:t}`micikevicius2017mixed` trained with constant factors between 8 and 32K, chosen so that the factor times "the maximum absolute gradient value is below 65,504", and noted that an overflow can be detected in the gradients and that update skipped. They proposed, as future work, that the factor "could be dynamically increased or decreased by inspecting the weight gradients for overflow". **Dynamic loss scaling** is that rule as frameworks implement it; PyTorch's `GradScaler` uses these defaults: it starts at $\zeta = 2^{16}$; when any scaled gradient overflows to infinity or NaN it skips that optimizer step and multiplies $\zeta$ by 0.5; and after 2,000 consecutive steps without overflow it multiplies $\zeta$ by 2. The scale therefore settles just below the largest value that does not overflow, halving quickly when it is too large and probing upward again every 2,000 steps.
 
 (sec-ch2-bfloat16)=
 
