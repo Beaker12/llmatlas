@@ -371,6 +371,42 @@ $$\theta_{t+1} = \theta_t - \eta\, \nabla_\theta \mathcal{L}(\theta_t; \mathcal{
 
 where $\eta$ is the learning rate and $\mathcal{B}_t$ is a mini-batch drawn at random at step $t$, over which the loss is averaged. Its gradient is an unbiased estimate of the gradient of the loss over the whole training set.
 
+(sec-ch2-minibatch-noise)=
+
+#### Mini-batch Noise
+
+Write $g_i$ for the gradient of the loss of example $i$ and $\hat{g} = \frac{1}{B}\sum_{i \in \mathcal{B}_t} g_i$ for the mini-batch gradient. If the $B$ examples are drawn independently, $\mathbb{E}[\hat{g}]$ is the full gradient, and each coordinate of $\hat{g}$ has variance $\sigma_g^2 / B$, where $\sigma_g$ is the standard deviation of that coordinate of $g_i$ across examples: the variance of a mean of $B$ independent terms is the single-term variance divided by $B$. The noise therefore falls only as $1/\sqrt{B}$: four times the batch buys half the noise. {cite:t}`mccandlish2018empirical` build their gradient noise scale, the batch size beyond which a larger batch stops paying for itself, on this $1/B$ term.
+
+```python
+import torch
+
+torch.manual_seed(0)
+sigma_g = 2.0
+per_example = 1.0 + sigma_g * torch.randn(20_000, 64)  # 20,000 draws of 64 per-example gradients
+for B in (1, 4, 16, 64):
+    g_hat = per_example[:, :B].mean(dim=1)
+    print(f"B={B:2d}: std of g_hat {g_hat.std().item():.3f}, predicted sigma_g/sqrt(B) {sigma_g / B ** 0.5:.3f}")
+```
+
+% output
+
+```text
+B= 1: std of g_hat 1.996, predicted sigma_g/sqrt(B) 2.000
+B= 4: std of g_hat 1.000, predicted sigma_g/sqrt(B) 1.000
+B=16: std of g_hat 0.498, predicted sigma_g/sqrt(B) 0.500
+B=64: std of g_hat 0.249, predicted sigma_g/sqrt(B) 0.250
+```
+
+(sec-ch2-stability-condition)=
+
+#### The Stability Condition
+
+Why can the learning rate not simply be made large? Near a minimum the loss is close to a quadratic, and along the direction of largest curvature it behaves like $\frac{1}{2}\lambda_{\max}\theta^2$, whose gradient is $\lambda_{\max}\theta$. One gradient-descent step gives $\theta_{t+1} = (1 - \eta\lambda_{\max})\,\theta_t$, so the iterates shrink exactly when $|1 - \eta\lambda_{\max}| < 1$, that is when
+
+$$0 < \eta < \frac{2}{\lambda_{\max}}.$$
+
+At $\eta = 1/\lambda_{\max}$ one step lands on the minimum; between $1/\lambda_{\max}$ and $2/\lambda_{\max}$ the iterates overshoot and oscillate but still shrink; beyond $2/\lambda_{\max}$ each step multiplies the error by more than one in magnitude and training diverges. Directions of smaller curvature converge more slowly at the same $\eta$, which is the conditioning problem of {ref}`sec-ch2-norms-conditioning-scale-matters`. For $\lambda_{\max} = 100$ the limit is $\eta < 0.02$.
+
 (sec-ch2-momentum)=
 
 #### Momentum
@@ -381,6 +417,37 @@ $$u_{t+1} = \beta_{\text{mom}} u_t + \nabla_\theta \mathcal{L}(\theta_t)$$
 $$\theta_{t+1} = \theta_t - \eta u_{t+1}$$
 
 The momentum coefficient $\beta_{\text{mom}}$ (typically 0.9) controls how much previous gradients influence the current update {cite}`polyak1964some`. On a quadratic whose Hessian has largest eigenvalue $\lambda_{\max}$, plain gradient descent converges for $\eta < 2/\lambda_{\max}$ and momentum for $\eta < 2(1+\beta_{\text{mom}})/\lambda_{\max}$ {cite}`goh2017momentum`; at $\beta_{\text{mom}} = 0.9$ the second limit is 1.9 times the first.
+
+The momentum bound follows the same way. On $\frac{1}{2}\lambda_{\max}\theta^2$ the two update lines combine, using $\eta u_t = \theta_{t-1} - \theta_t$, into one recurrence,
+
+$$\theta_{t+1} = (1 + \beta_{\text{mom}} - \eta\lambda_{\max})\,\theta_t - \beta_{\text{mom}}\,\theta_{t-1}.$$
+
+As $\eta$ grows, the first instability is a solution that flips sign every step, $\theta_t \propto (-1)^t$. Substituting it gives $1 + (1 + \beta_{\text{mom}} - \eta\lambda_{\max}) + \beta_{\text{mom}} = 0$, so the boundary is $\eta\lambda_{\max} = 2(1 + \beta_{\text{mom}})$ {cite}`goh2017momentum`. With $\lambda_{\max} = 100$ and $\beta_{\text{mom}} = 0.9$ the limits are 0.02 without momentum and 0.038 with it, and the run below lands on either side of each.
+
+```python
+lam_max = 100.0
+
+
+def final_size(eta, beta_mom=0.0, steps=200):
+    theta, u = 1.0, 0.0
+    for _ in range(steps):
+        u = beta_mom * u + lam_max * theta
+        theta = theta - eta * u
+    return abs(theta)
+
+
+for eta, beta_mom in ((0.019, 0.0), (0.021, 0.0), (0.037, 0.9), (0.039, 0.9)):
+    print(f"eta={eta}, beta_mom={beta_mom}: |theta| after 200 steps = {final_size(eta, beta_mom):.3g}")
+```
+
+% output
+
+```text
+eta=0.019, beta_mom=0.0: |theta| after 200 steps = 7.06e-10
+eta=0.021, beta_mom=0.0: |theta| after 200 steps = 1.9e+08
+eta=0.037, beta_mom=0.9: |theta| after 200 steps = 0.000161
+eta=0.039, beta_mom=0.9: |theta| after 200 steps = 2.58e+24
+```
 
 (sec-ch2-adam-optimizer)=
 
@@ -395,7 +462,17 @@ $$\hat{m}_t = \frac{m_t}{1 - \beta_1^t}, \quad \hat{v}_t = \frac{v_t}{1 - \beta_
 
 $$\theta_{t+1} = \theta_t - \frac{\eta}{\sqrt{\hat{v}_t} + \epsilon} \hat{m}_t$$
 
-AdamW {cite}`loshchilov2017decoupled`, the variant implemented below, decouples weight decay from this update: it shrinks the weights directly by $\eta \lambda \theta_t$ instead of adding $\lambda \theta_t$ to the gradient, where it would be divided by $\sqrt{\hat{v}_t}$ like everything else.
+The bias correction undoes the zero start of the two averages. Unrolling the first recurrence from its zero start gives $m_t = (1-\beta_1)\sum_{i=1}^{t} \beta_1^{t-i} g_i$. If the gradients have a constant mean, $\mathbb{E}[g_i] = \mathbb{E}[g]$, then
+
+$$\mathbb{E}[m_t] = (1-\beta_1)\,\mathbb{E}[g]\sum_{i=1}^{t}\beta_1^{t-i} = (1-\beta_1^t)\,\mathbb{E}[g],$$
+
+because the geometric sum is $(1-\beta_1^t)/(1-\beta_1)$. Dividing by $1-\beta_1^t$ makes $\hat{m}_t$ an unbiased estimate of the mean gradient, and the same argument applies to $v_t$ and $\mathbb{E}[g^2]$ {cite}`kingma2014adam`. The correction matters most early: at the first step, $t = 1$, with $\beta_1 = 0.9$ and $\beta_2 = 0.999$, $m_t = 0.1\,g_t$ and $v_t = 0.001\,g_t^2$, so the uncorrected ratio $m_t/\sqrt{v_t}$ has magnitude 3.162, while the corrected $\hat{m}_t/\sqrt{\hat{v}_t}$ is exactly one in magnitude.
+
+AdamW {cite}`loshchilov2017decoupled`, the variant implemented below, decouples weight decay $\lambda$ from this update. Its step, as PyTorch's `AdamW` and the class below take it, is
+
+$$\theta_{t+1} = \theta_t - \eta_t \left(\frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon} + \lambda\,\theta_t\right).$$
+
+The alternative, L2 regularization, adds $\lambda\theta_t$ to the gradient $g_t$ before the moments are formed, and so the decay is divided by $\sqrt{\hat{v}_t}$ like everything else. A weight whose gradients have been large is then decayed less than one whose gradients have been small. Take two weights both at $\theta = 1$ with $\lambda = 0.01$, one with $\sqrt{\hat{v}_t} = 0.001$ and one with $\sqrt{\hat{v}_t} = 1$: once the moment has absorbed the decay term, L2 decays them by about $\eta \cdot 10$ and $\eta \cdot 0.01$ per step, a thousandfold difference, while AdamW decays both by $\eta \cdot 0.01$. {cite:t}`loshchilov2017decoupled` show that this decoupling is what makes weight decay effective with Adam.
 
 {cite:t}`kingma2014adam` designed Adam for "problems with very noisy and/or sparse gradients". A language model's embedding table is one source of sparse gradients: the row of a token that does not occur in a batch receives a zero gradient from that batch, so a rare token's row is updated only now and then, and Adam's per-parameter scaling gives those infrequent updates a usable size.
 
@@ -425,6 +502,35 @@ Warm-up keeps the first updates small while the weights are random and Adam's mo
 Cosine schedules {cite}`loshchilov2017sgdr` provide smooth learning rate decay:
 
 $$\eta_t = \eta_{\min} + \frac{1}{2}(\eta_{\max} - \eta_{\min})\left(1 + \cos\left(\frac{t - t_{\text{warm}}}{t_{\text{end}} - t_{\text{warm}}} \pi\right)\right)$$
+
+(sec-ch2-inverse-sqrt)=
+
+#### Inverse Square Root
+
+The original transformer {cite}`vaswani2017attention` warms up linearly and then decays in proportion to the inverse square root of the step, with no end point:
+
+$$\eta_t = d^{-0.5} \cdot \min\left(t^{-0.5},\; t \cdot t_{\text{warm}}^{-1.5}\right),$$
+
+counting steps from $t = 1$. The two arguments of the minimum are equal at $t = t_{\text{warm}}$, so the peak is $\eta_{\max} = (d\,t_{\text{warm}})^{-0.5}$, and after it the rate is $\eta_{\max}\sqrt{t_{\text{warm}}/t}$: four times as many steps, half the rate. With the paper's $d = 512$ and $t_{\text{warm}} = 4000$ the peak is $6.988 \times 10^{-4}$. Unlike cosine decay, the schedule does not need the length of training in advance, which suits runs that may be extended.
+
+```python
+def inverse_sqrt_lr(t, d=512, t_warm=4000):
+    return d ** -0.5 * min(t ** -0.5, t * t_warm ** -1.5)
+
+
+for t in (1, 1000, 4000, 16000, 100000):
+    print(f"step {t:6d}: lr {inverse_sqrt_lr(t):.4g}")
+```
+
+% output
+
+```text
+step      1: lr 1.747e-07
+step   1000: lr 0.0001747
+step   4000: lr 0.0006988
+step  16000: lr 0.0003494
+step 100000: lr 0.0001398
+```
 
 (sec-ch2-gradient-clipping)=
 
@@ -503,6 +609,70 @@ class AdamWWithWarmup:
 ```{admonition} Interactive Exploration
 :class: note
 The notebook section {ref}`nb-math-optimizers` implements SGD, momentum and Adam from scratch (Adam is asserted to match `torch.optim.Adam`), compares them on the Rosenbrock function ({ref}`nb-math-rosenbrock`), and plots warm-up with cosine, inverse-square-root and constant schedules ({ref}`nb-math-schedules`).
+```
+
+(sec-ch2-gradient-accumulation)=
+
+### 2.4 Gradient Accumulation
+
+When memory limits the batch size, **gradient accumulation** runs $n_{acc}$ micro-batches of $B$ examples through forward and backward passes before one optimizer step, dividing each micro-batch loss by $n_{acc}$. Gradients add, so the accumulated gradient is the mean over all $n_{acc} B$ examples, the same $\hat{g}$ as one batch of that size ({ref}`sec-ch2-minibatch-noise`), with the noise of the larger batch and the memory of the smaller one. The equality is exact for a loss that is a mean over examples and a model with no batch-dependent layers; batch normalization, which transformers do not use, would break it. Four micro-batches of 8 sequences of 2048 tokens give an update over 65,536 tokens. The demonstration at the end of the listing checks the equality on a one-parameter model.
+
+```python
+import torch
+
+
+def train_with_gradient_accumulation(model, data_loader, optimizer, accumulation_steps=4):
+    """Average gradients over `accumulation_steps` micro-batches before each update."""
+    model.train()
+    optimizer.zero_grad()
+
+    running_loss, num_batches = 0.0, 0
+    for i, batch in enumerate(data_loader, start=1):
+        # a Hugging Face causal LM returns .loss only when it is given labels
+        outputs = model(batch["input_ids"], labels=batch["input_ids"])
+        loss = outputs.loss / accumulation_steps  # scale so the accumulated gradient is a mean
+        loss.backward()
+        running_loss += outputs.loss.item()
+        num_batches += 1
+
+        last = i == len(data_loader)
+        if i % accumulation_steps == 0 or last:  # do not drop a final partial accumulation
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+            optimizer.zero_grad()
+
+    return running_loss / max(num_batches, 1)  # mean per-batch loss, unscaled
+
+
+# Demonstration: four micro-batches of two examples against one batch of eight
+from types import SimpleNamespace
+
+
+class OneWeight(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.w = torch.nn.Parameter(torch.tensor([0.5]))
+
+    def forward(self, input_ids, labels):
+        x, y = input_ids.float(), 0.3 * labels.float()
+        return SimpleNamespace(loss=((self.w * x - y) ** 2).mean())
+
+
+ids = torch.tensor([1, 2, 1, 3, 2, 1, 2, 1])
+accumulated, full = OneWeight(), OneWeight()
+train_with_gradient_accumulation(accumulated, [{"input_ids": ids[i:i + 2]} for i in range(0, 8, 2)],
+                                 torch.optim.SGD(accumulated.parameters(), lr=0.1))
+train_with_gradient_accumulation(full, [{"input_ids": ids}], torch.optim.SGD(full.parameters(), lr=0.1),
+                                 accumulation_steps=1)
+print(f"w after 4 accumulated micro-batches: {accumulated.w.item():.4f}")
+print(f"w after one batch of 8:              {full.w.item():.4f}")
+```
+
+% output
+
+```text
+w after 4 accumulated micro-batches: 0.4000
+w after one batch of 8:              0.4000
 ```
 
 (sec-ch2-backpropagation-through-transformers)=
@@ -819,45 +989,6 @@ $$W \sim \mathcal{N}\left(0, \frac{2}{d_{\text{in}}}\right)$$
 #### Transformer-Specific Initialization
 
 Deep residual networks also scale their initialization with depth: Fixup {cite}`zhang2019fixup` shows that with the right depth-dependent scaling of the residual branches a transformer can be trained with no normalization layers at all, and GPT-2 scales the weights of its residual layers at initialization by one over the square root of the number of residual layers {cite}`radford2019language`. A block has two residual layers, attention and feed-forward, so $L$ blocks give $2L$ of them and the factor is $1/\sqrt{2L}$, or 0.1021 for GPT-2's 48 blocks.
-
-(sec-ch2-gradient-accumulation)=
-
-### 5.3 Gradient Accumulation
-
-When memory constraints limit batch size, **gradient accumulation** simulates larger batches:
-
-```python
-import torch
-
-
-def train_with_gradient_accumulation(model, data_loader, optimizer, accumulation_steps=4):
-    """Average gradients over `accumulation_steps` micro-batches before each update."""
-    model.train()
-    optimizer.zero_grad()
-
-    running_loss, num_batches = 0.0, 0
-    for i, batch in enumerate(data_loader, start=1):
-        # a Hugging Face causal LM returns .loss only when it is given labels
-        outputs = model(batch["input_ids"], labels=batch["input_ids"])
-        loss = outputs.loss / accumulation_steps  # scale so the accumulated gradient is a mean
-        loss.backward()
-        running_loss += outputs.loss.item()
-        num_batches += 1
-
-        last = i == len(data_loader)
-        if i % accumulation_steps == 0 or last:  # do not drop a final partial accumulation
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimizer.step()
-            optimizer.zero_grad()
-
-    return running_loss / max(num_batches, 1)  # mean per-batch loss, unscaled
-```
-
-% output
-
-```text
-
-```
 
 ```{admonition} Numerical Stability Demonstrations
 :class: tip

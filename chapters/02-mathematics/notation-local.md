@@ -26,6 +26,7 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $\mathbb{E}$ | expectation | index.md:L82 |  |
 | $\mathcal{N}$ | normal distribution | index.md:L529 |  |
 | $g_{clipped}$ | clipped gradient | index.md:L223 |  |
+| $n_{acc}$ | number of micro-batches accumulated per optimizer step | index.md, sec-ch2-gradient-accumulation |  |
 | $z_{\max}$ | largest logit, the shift in log-sum-exp | reserved: C2-12 |  |
 | $\hat{g}$ | mini-batch gradient estimate | reserved: C2-12 |  |
 | $\sigma_g$ | standard deviation of a per-example gradient (mini-batch noise) | reserved: C2-12 |  |
