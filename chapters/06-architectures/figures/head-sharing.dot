@@ -1,0 +1,57 @@
+digraph head_sharing {
+  ranksep=0.35; nodesep=0.12; newrank=true;
+  graph [fontname="DejaVu Sans", fontsize=15];
+  node [shape=box, style="filled", fontname="DejaVu Sans", fontsize=15, width=0.75, height=0.5, fixedsize=true];
+  edge [arrowsize=0.6];
+
+  subgraph cluster_mha {
+    label=<<B>multi-head (MHA)</B>: 8 K/V heads, cache 2 × 8 × dₖ per token per layer>;
+    style="rounded,filled"; fillcolor="#f7fafc"; color="#4a5568"; penwidth=1.3; fontsize=22;
+    m_lab [label="K/V", shape=plaintext, style="", fixedsize=false, color="#2d3748", fontsize=20];
+    m_k0 [label="kv1", fillcolor="#fde8d7", color="#2d3748", fontsize=20]; m_k1 [label="kv2", fillcolor="#fde8d7", color="#2d3748", fontsize=20];
+    m_k2 [label="kv3", fillcolor="#fde8d7", color="#2d3748", fontsize=20]; m_k3 [label="kv4", fillcolor="#fde8d7", color="#2d3748", fontsize=20];
+    m_k4 [label="kv5", fillcolor="#fde8d7", color="#2d3748", fontsize=20]; m_k5 [label="kv6", fillcolor="#fde8d7", color="#2d3748", fontsize=20];
+    m_k6 [label="kv7", fillcolor="#fde8d7", color="#2d3748", fontsize=20]; m_k7 [label="kv8", fillcolor="#fde8d7", color="#2d3748", fontsize=20];
+    m_qlab [label="query", shape=plaintext, style="", fixedsize=false, color="#2d3748", fontsize=20];
+    m_q0 [label="q1", fillcolor="#e6f0fa", color="#2d3748", fontsize=20]; m_q1 [label="q2", fillcolor="#e6f0fa", color="#2d3748", fontsize=20];
+    m_q2 [label="q3", fillcolor="#e6f0fa", color="#2d3748", fontsize=20]; m_q3 [label="q4", fillcolor="#e6f0fa", color="#2d3748", fontsize=20];
+    m_q4 [label="q5", fillcolor="#e6f0fa", color="#2d3748", fontsize=20]; m_q5 [label="q6", fillcolor="#e6f0fa", color="#2d3748", fontsize=20];
+    m_q6 [label="q7", fillcolor="#e6f0fa", color="#2d3748", fontsize=20]; m_q7 [label="q8", fillcolor="#e6f0fa", color="#2d3748", fontsize=20];
+    m_lab -> m_qlab [style=invis];
+    m_k0 -> m_q0; m_k1 -> m_q1; m_k2 -> m_q2; m_k3 -> m_q3; m_k4 -> m_q4; m_k5 -> m_q5; m_k6 -> m_q6; m_k7 -> m_q7;
+  }
+  subgraph cluster_gqa {
+    label=<<B>grouped-query (GQA)</B>: 2 K/V heads, cache 2 × 2 × dₖ>;
+    style="rounded,filled"; fillcolor="#f7fafc"; color="#4a5568"; penwidth=1.3; fontsize=22;
+    g_lab [label="K/V", shape=plaintext, style="", fixedsize=false, color="#2d3748", fontsize=20];
+    g_k0 [label="kv1", width=3.3, fillcolor="#fde8d7", color="#2d3748", fontsize=20];
+    g_k1 [label="kv2", width=3.3, fillcolor="#fde8d7", color="#2d3748", fontsize=20];
+    g_qlab [label="query", shape=plaintext, style="", fixedsize=false, color="#2d3748", fontsize=20];
+    g_q0 [label="q1", fillcolor="#e6f0fa", color="#2d3748", fontsize=20]; g_q1 [label="q2", fillcolor="#e6f0fa", color="#2d3748", fontsize=20];
+    g_q2 [label="q3", fillcolor="#e6f0fa", color="#2d3748", fontsize=20]; g_q3 [label="q4", fillcolor="#e6f0fa", color="#2d3748", fontsize=20];
+    g_q4 [label="q5", fillcolor="#e6f0fa", color="#2d3748", fontsize=20]; g_q5 [label="q6", fillcolor="#e6f0fa", color="#2d3748", fontsize=20];
+    g_q6 [label="q7", fillcolor="#e6f0fa", color="#2d3748", fontsize=20]; g_q7 [label="q8", fillcolor="#e6f0fa", color="#2d3748", fontsize=20];
+    g_lab -> g_qlab [style=invis];
+    g_k0 -> {g_q0 g_q1 g_q2 g_q3}; g_k1 -> {g_q4 g_q5 g_q6 g_q7};
+  }
+  subgraph cluster_mqa {
+    label=<<B>multi-query (MQA)</B>: 1 K/V head, cache 2 × dₖ>;
+    style="rounded,filled"; fillcolor="#f7fafc"; color="#4a5568"; penwidth=1.3; fontsize=22;
+    q_lab [label="K/V", shape=plaintext, style="", fixedsize=false, color="#2d3748", fontsize=20];
+    q_k0 [label="kv1", width=6.9, fillcolor="#fde8d7", color="#2d3748", fontsize=20];
+    q_qlab [label="query", shape=plaintext, style="", fixedsize=false, color="#2d3748", fontsize=20];
+    q_q0 [label="q1", fillcolor="#e6f0fa", color="#2d3748", fontsize=20]; q_q1 [label="q2", fillcolor="#e6f0fa", color="#2d3748", fontsize=20];
+    q_q2 [label="q3", fillcolor="#e6f0fa", color="#2d3748", fontsize=20]; q_q3 [label="q4", fillcolor="#e6f0fa", color="#2d3748", fontsize=20];
+    q_q4 [label="q5", fillcolor="#e6f0fa", color="#2d3748", fontsize=20]; q_q5 [label="q6", fillcolor="#e6f0fa", color="#2d3748", fontsize=20];
+    q_q6 [label="q7", fillcolor="#e6f0fa", color="#2d3748", fontsize=20]; q_q7 [label="q8", fillcolor="#e6f0fa", color="#2d3748", fontsize=20];
+    q_lab -> q_qlab [style=invis];
+    q_k0 -> {q_q0 q_q1 q_q2 q_q3 q_q4 q_q5 q_q6 q_q7};
+  }
+  { rank=same; m_lab; m_k0; m_k1; m_k2; m_k3; m_k4; m_k5; m_k6; m_k7; }
+  { rank=same; m_qlab; m_q0; m_q1; m_q2; m_q3; m_q4; m_q5; m_q6; m_q7; }
+  { rank=same; g_lab; g_k0; g_k1; }
+  { rank=same; g_qlab; g_q0; g_q1; g_q2; g_q3; g_q4; g_q5; g_q6; g_q7; }
+  { rank=same; q_lab; q_k0; }
+  { rank=same; q_qlab; q_q0; q_q1; q_q2; q_q3; q_q4; q_q5; q_q6; q_q7; }
+  m_qlab -> g_lab [style=invis]; g_qlab -> q_lab [style=invis];
+}
