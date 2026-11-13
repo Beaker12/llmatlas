@@ -8,7 +8,7 @@ A pretraining corpus is not a file. It is tens of thousands of shards, produced 
 
 Think of a training dataset the way a software team thinks of a release. Source code is edited constantly, but what ships is a build: a fixed set of files with a version number, produced by a pinned build script, with a changelog and a way to verify that the bytes you downloaded are the bytes that were released. Nobody debugs a production incident against "whatever was in the repository on Tuesday".
 
-**Storage formats** are the file types of the build. Text is kept as compressed JSON Lines or Parquet for inspection and reprocessing, and as flat token arrays for training, because a training loop that parses JSON on every step is wasting the accelerator.
+**Storage formats** are the file types of the build. Text is kept as compressed JSON Lines or Parquet for inspection and reprocessing, and as flat token arrays for training, because token arrays with an index of offsets give random access to any document and fix the token stream when the dataset is built.
 
 **Versioning** gives the build its number. A version is the set of content hashes of its shards; two versions can be diffed shard by shard, and a downloaded copy can be checked against the manifest. Nothing in a released version is ever modified in place.
 
@@ -103,7 +103,7 @@ Those numbers drive the design choices in the rest of the chapter: shards rather
 
 Most pipelines use two of these: a text format for everything up to and including the released corpus, and a tokenized binary for training. The text format is what gets versioned and documented; the binary is derived from it and the tokenizer, and is rebuilt rather than versioned.
 
-The Hugging Face hub's dataset viewer converts every hosted dataset to Parquet {cite}`huggingface2026datasetviewer`, and `datasets` streams hosted corpora without downloading everything {cite}`lhoest2021datasets`. The Megatron-LM codebase {cite}`shoeybi2019megatron` (the paper is about model parallelism; the data format lives in the repository), GPT-NeoX and their descendants train from an indexed binary format, a flat array of token ids alongside an array of document offsets. Mosaic's streaming format and WebDataset shards exist for the case where training reads directly from object storage and sequential throughput matters more than random access.
+The Hugging Face hub's dataset viewer converts every hosted dataset to Parquet {cite}`huggingface2026datasetviewer`, and `datasets` streams hosted corpora without downloading everything {cite}`lhoest2021datasets`. The Megatron-LM codebase {cite}`shoeybi2019megatron` (the paper is about model parallelism; the data format lives in the repository), GPT-NeoX {cite}`black2022gptneox` and their descendants train from an indexed binary format, a flat array of token ids alongside an array of document offsets. Mosaic's streaming format and WebDataset shards exist for the case where training reads directly from object storage and sequential throughput matters more than random access.
 
 The two streaming formats differ in how a reader finds a sample, as {numref}`fig-ch5-wds-mds` shows.
 
@@ -274,7 +274,7 @@ The `filename=""` and `mtime=0` arguments matter more than they look. A gzip hea
 
 ### 2.3 Tokenized binaries and the document index
 
-Training reads tokens, not text. Tokenizing on the fly costs CPU time per step that is better spent once, and makes the stream depend on the tokenizer library's version at run time. The standard layout, shared in spirit by Megatron-LM's indexed dataset and the `.bin` files that nanoGPT-style codebases use, is:
+Training reads tokens, not text. Tokenizing on the fly costs CPU time per step that is better spent once, and makes the stream depend on the tokenizer library's version at run time. The standard layout, shared in spirit by Megatron-LM's indexed dataset and the `.bin` files that [nanoGPT](https://github.com/karpathy/nanoGPT)-style codebases use, is:
 
 - A flat array of token ids, `uint16` for vocabularies of at most 65,536 tokens (ids 0 to 65,535) and `uint32` above, for all documents in the shard concatenated with an end-of-document token after each.
 - An offsets array giving the start of each document, so that document $i$ is `tokens[offsets[i]:offsets[i + 1]]`.
@@ -1189,7 +1189,7 @@ restored at step 300 from the cursors alone: 176 of the next 200 draws differ; w
 
 The `seek` method replays draws, which is fine for millions of steps and a few sources. Constant work per step needs two further constructions, and it is worth seeing why seeding alone does not give it. Seeding each permutation by `(seed, source, epoch)`, as `_permutation` does, makes an epoch's order reproducible without replay, but `permutation` still builds the whole array, $\mathcal{O}(n_{ex})$ work and memory for a source of $n_{ex}$ documents, to read one element of it. And the cursor, $\operatorname{drawn}_s(t)$, the number of documents of source $s$ drawn before step $t$, is a sum over $t$ independent source draws: hashing each slot fixes every term, but it does not give the sum without adding up the terms.
 
-- **Within-epoch order: a keyed bijection.** Replace the stored array by a function $\Pi$ on $\{0, \dots, n_{ex} - 1\}$ that can be evaluated at one point. A Feistel network does this. It splits an integer of an even number of bits into a left and a right half and, in each round, replaces (left, right) by (right, left XOR F(right)) with a keyed hash F. A round is undone from its output whatever F is, so the network is a bijection on its domain for any key. Taking the smallest even bit width that covers $n_{ex}$ gives a domain of fewer than $4 n_{ex}$ integers when $n_{ex} > 1$ (and of 4 for a single document); a value that lands outside the range is encrypted again until it falls back in (cycle-walking). This is still a bijection, because each cycle of the network visits the in-range values in a fixed order and the walk moves each one to the next. Summed over all $n_{ex}$ starting points the walks touch each point of the domain at most once, so the mean cost is at most the domain size over $n_{ex}$: below four encryptions per index for $n_{ex} > 1$, and 1.024 for $n_{ex} = 1{,}000$ with its 1,024-point domain.
+- **Within-epoch order: a keyed bijection.** Replace the stored array by a function $\Pi$ on $\{0, \dots, n_{ex} - 1\}$ that can be evaluated at one point. A Feistel network does this {cite}`luby1988pseudorandom`. It splits an integer of an even number of bits into a left and a right half and, in each round, replaces (left, right) by (right, left XOR F(right)) with a keyed hash F. A round is undone from its output whatever F is, so the network is a bijection on its domain for any key. Taking the smallest even bit width that covers $n_{ex}$ gives a domain of fewer than $4 n_{ex}$ integers when $n_{ex} > 1$ (and of 4 for a single document); a value that lands outside the range is encrypted again until it falls back in (cycle-walking, {cite:t}`black2002ciphers`). This is still a bijection, because each cycle of the network visits the in-range values in a fixed order and the walk moves each one to the next. Summed over all $n_{ex}$ starting points the walks touch each point of the domain at most once, so the mean cost is at most the domain size over $n_{ex}$: below four encryptions per index for $n_{ex} > 1$, and 1.024 for $n_{ex} = 1{,}000$ with its 1,024-point domain.
 - **Cursors: a stride schedule.** Fix the mixture in advance as a repeating pattern of $n_{slots}$ slots, here $n_{slots} = 20$. Source $s$ gets $\lfloor w_s n_{slots} \rfloor$ slots, and the slots still free go to the sources with the largest remainders $w_s n_{slots} - \lfloor w_s n_{slots} \rfloor$, so each count is within one slot of $w_s n_{slots}$ and each realized share within $1/n_{slots}$ of its weight. The shares equal the weights exactly when every $w_s n_{slots}$ is a whole number, that is, when every weight is a multiple of $1/n_{slots}$: 0.7, 0.15 and 0.15 are exact at $n_{slots} = 20$, thirds need $n_{slots}$ a multiple of 3, and a weight given to 0.1% needs $n_{slots} = 1{,}000$. The slots are spread out by the smooth weighted round-robin of nginx's load balancer ([`ngx_http_upstream_round_robin.c`](https://github.com/nginx/nginx/blob/master/src/http/ngx_http_upstream_round_robin.c)), which keeps each source's slots evenly spaced. Then $\operatorname{drawn}_s(t)$ is the number of whole periods before $t$ times the source's slots per period, plus the source's count among the first $t \bmod 20$ slots, read from a table of 21 prefix counts. The document at step $t$ is $\Pi(\operatorname{drawn}_s(t) \bmod n_{ex})$, with $\Pi$ keyed by the seed, the source and the epoch $\lfloor \operatorname{drawn}_s(t) / n_{ex} \rfloor$.
 
 Each step is then a table lookup, a division and a few hash evaluations, whatever $t$ is. The price is that the mixture is fixed when the schedule is computed: epoch caps and changes of weight between phases are applied there, and a change of weights mid-run starts a new schedule at a recorded step. A sampler that draws sources at random, like the one above, cannot seek in constant work, but it need not replay from step 0 either. A checkpoint that stores its step, its cursors and the state of its random generator lets it resume exactly at the checkpoint, so reaching a step between two checkpoints replays at most one checkpoint interval. The cursors alone are not enough: the next source draw comes from `self.rng`, whose state depends on every draw before it, which is why the end of the `MixtureSampler` listing restores the generator state as well and shows that a restore from the cursors alone continues with a different stream.
@@ -1335,7 +1335,7 @@ Three levels of shuffling exist and they are not interchangeable:
 - **Within a shard**: the order of documents inside it. Needed because shards are often written in crawl or alphabetical order, which correlates documents.
 - **Across the whole corpus**: a global permutation, which is what the sampler above does with per-source permutations. Ideal, but requires random access to any document, which object storage and sequential formats do not give cheaply.
 
-Streaming loaders compromise with a shuffle buffer: read shards in a seeded order, hold a few thousand documents in memory, and emit from the buffer at random. The quality of the mix depends on the buffer size relative to the shard size, and a buffer smaller than a shard barely shuffles at all. Mosaic's streaming documentation describes several shuffle algorithms and the parameters that control them {cite}`mosaicml2026streamingdocs`. A stream that is shuffled too little feeds the model runs of related documents, and the effect on training is hard to trace after the fact, so the shuffle settings belong in the run's configuration.
+Streaming loaders compromise with a shuffle buffer: read shards in a seeded order, hold a few thousand documents in memory, and emit from the buffer at random. The quality of the mix depends on the buffer size relative to the shard size. The end of the next listing measures it on 20 shards of 1,000 documents read in shard order: a batch of 64 documents holds 1.48 different shards on average with a buffer of 100 documents, 4.94 with a buffer of one shard, 12.64 with five shards, and 19.34 of the 20 when the buffer holds the whole epoch. A buffer smaller than a shard barely shuffles at all. Mosaic's streaming documentation describes several shuffle algorithms and the parameters that control them {cite}`mosaicml2026streamingdocs`. A stream that is shuffled too little feeds the model runs of related documents, and the effect on training is hard to trace after the fact, so the shuffle settings belong in the run's configuration.
 
 A loader that must resume mid-epoch therefore checkpoints more than its step. For the sampler of {ref}`sec-ch5-determinism-resumption` the checkpoint is the cursors and the generator state. For a streaming loader it is the read position in the shard order, the documents in the shuffle buffer (or their indices, which keeps the checkpoint small) and the buffer's generator state. The listing checkpoints a 1,000-document buffer after it has emitted 4,000 documents, when it holds 999: restoring all three continues the stream exactly, while restoring only the read position loses every buffered document for the rest of the epoch.
 
@@ -1390,6 +1390,13 @@ lost = set(docs) - set(seen) - set(position_only)
 print(f"checkpoint after {len(seen):,} documents: read position {state['position']:,}, {len(state['buffer']):,} buffered")
 print(f"restoring the read position alone loses {len(lost):,} documents for the rest of the epoch")
 assert lost == set(state["buffer"])
+
+# How much a buffer mixes: 20 shards of 1,000 documents read in order, batches of 64
+shard_of = np.repeat(np.arange(20), 1000)
+for size in (100, 1_000, 5_000, 20_000):
+    order = np.fromiter(ShuffleBuffer(range(20_000), size, seed=0), dtype=int)
+    per_batch = [len(set(shard_of[order[k : k + 64]])) for k in range(0, 20_000 - 63, 64)]
+    print(f"buffer {size:>6,}: {np.mean(per_batch):5.2f} shards in a batch of 64")
 ```
 
 % output
@@ -1397,6 +1404,10 @@ assert lost == set(state["buffer"])
 ```text
 checkpoint after 4,000 documents: read position 4,999, 999 buffered
 restoring the read position alone loses 999 documents for the rest of the epoch
+buffer    100:  1.48 shards in a batch of 64
+buffer  1,000:  4.94 shards in a batch of 64
+buffer  5,000: 12.64 shards in a batch of 64
+buffer 20,000: 19.34 shards in a batch of 64
 ```
 
 {numref}`fig-ch5-shuffle` puts the three levels and the buffer in the order a streaming loader applies them.
@@ -1411,6 +1422,102 @@ Three granularities of shuffling in a streaming loader. Shard order and within-s
 ```{admonition} The Sampler
 :class: note
 The notebook section {ref}`nb-dm-sampler` runs the mixture sampler, plots the realized source fractions at several temperatures with the tempered target weights marked, shows the epoch cap re-normalizing the mixture once the smallest source is exhausted, and checks resumption at a hundred random steps.
+```
+
+(sec-ch5-sampler-to-ranks)=
+
+### 5.4 From documents to the sequences a rank reads
+
+The samplers above return a source and a document number; training reads sequences of a fixed length, and {ref}`sec-ch5-sharding-across-ranks` splits a global batch of $B$ of them over the ranks. Joining the two takes four steps, and the order matters, because only one order keeps the batch at step $t$ a function of the seed and $t$ alone:
+
+1. **Pack offline, per source.** At build time each shard's documents, each ended by the end-of-document token, are concatenated and cut into rows of the sequence length (the packing of {ref}`sec-ch5-documents-sequences`, done once). Each source's sequences are then numbered from 0, shard after shard.
+2. **Index the sequences.** The build stores, for each shard, the number of its first sequence: a cumulative count. Sequence $j$ of a source is then found by a binary search over these counts, which gives the shard, and a subtraction, which gives the row: a lookup whose cost grows with the logarithm of the number of shards, and one read, with no scan. This is the index that locates data without scanning.
+3. **Sample sequence numbers.** The sampler draws a source and a sequence number instead of a document number. The mixture weights and epoch caps then count sequences, which at a fixed length are shares of tokens.
+4. **Split by global position.** The sample at global position $t B + i$ goes to rank $i \bmod n_{ranks}$, as in {ref}`sec-ch5-sharding-across-ranks`.
+
+Packing online instead, after documents are drawn, mixes sources within a sequence and makes each sequence depend on the leftover tokens of the one before. The packer's state then has to be checkpointed with the sampler's, and reaching step $t$ means replaying from the last checkpoint, which is the cost the seekable sampler of {ref}`sec-ch5-determinism-resumption` exists to avoid. Packing offline has its own costs: a document is split wherever a row ends, a shard's last partial row is dropped or carried into the next shard at build time, and a new sequence length means a new build. The listing packs three sources of 6, 4 and 2 shards, finds web sequence 1,000 by binary search and checks every lookup against a scan of the concatenated shards, and asserts that the rows at step 37 are the same for 1, 2, 4 and 8 ranks and in a process that rebuilt the index from the same shards.
+
+```python
+import numpy as np
+
+SEQ_LEN, EOD = 64, 0
+
+
+def pack_shard(documents) -> np.ndarray:
+    """Build time: a shard's documents, each ended by EOD, cut into rows of SEQ_LEN.
+    The last partial row is dropped (a build can instead carry it to the next shard)."""
+    stream = np.concatenate([np.append(d, EOD) for d in documents])
+    rows = stream.size // SEQ_LEN
+    return stream[: rows * SEQ_LEN].reshape(rows, SEQ_LEN)
+
+
+class SequenceIndex:
+    """Sequence j of a source -> (shard, row), by binary search over first numbers."""
+
+    def __init__(self, shards):
+        self.shards = shards
+        self.first = np.cumsum([0] + [len(s) for s in shards])  # per shard, then total
+
+    def __len__(self):
+        return int(self.first[-1])
+
+    def locate(self, j: int):
+        shard = int(np.searchsorted(self.first, j, side="right")) - 1
+        return shard, j - int(self.first[shard])
+
+    def __getitem__(self, j: int) -> np.ndarray:
+        shard, row = self.locate(j)
+        return self.shards[shard][row]  # one memory-mapped read in a real loader
+
+
+PATTERN = ["web", "code", "web", "wiki", "web", "code", "web", "web", "code", "web"]
+
+
+def sample(t: int, seed: int, index: dict):
+    """(source, sequence number) at global position t, from (seed, t) alone. The
+    permutation is built whole here; the Feistel network of section 5.2 avoids that."""
+    s, period = PATTERN[t % len(PATTERN)], len(PATTERN)
+    drawn = (t // period) * PATTERN.count(s) + PATTERN[: t % period].count(s)
+    epoch, within = divmod(drawn, len(index[s]))
+    key = [seed, sorted(index).index(s), epoch]
+    return s, int(np.random.default_rng(key).permutation(len(index[s]))[within])
+
+
+def rank_batch(step, rank, n_ranks, batch, seed, index) -> np.ndarray:
+    """The rows a rank reads at `step`: positions step * batch + i, i = rank mod n_ranks."""
+    drawn = [sample(step * batch + i, seed, index) for i in range(rank, batch, n_ranks)]
+    return np.stack([index[s][j] for s, j in drawn])
+
+
+def build(seed: int = 0) -> dict:
+    """Three sources of 6, 4 and 2 shards, 150 documents per shard, packed offline."""
+    rng = np.random.default_rng(seed)
+    docs = lambda: [rng.integers(1, 1000, int(rng.geometric(1 / 200))) for _ in range(150)]
+    return {s: SequenceIndex([pack_shard(docs()) for _ in range(n)])
+            for s, n in {"web": 6, "code": 4, "wiki": 2}.items()}
+
+
+index = build()
+print({s: len(ix) for s, ix in index.items()}, "sequences of", SEQ_LEN, "tokens")
+print("web sequence 1,000 is (shard, row)", index["web"].locate(1000))
+flat = np.concatenate(index["web"].shards)  # the binary search agrees with a scan
+assert all((index["web"][j] == flat[j]).all() for j in range(len(index["web"])))
+
+B, step = 16, 37
+world = {n: np.concatenate([rank_batch(step, r, n, B, 1, index) for r in range(n)])
+         for n in (1, 2, 4, 8)}
+assert all(sorted(map(bytes, w)) == sorted(map(bytes, world[1])) for w in world.values())
+fresh = build()  # another process opens the same shards
+assert (rank_batch(step, 3, 4, B, 1, fresh) == rank_batch(step, 3, 4, B, 1, index)).all()
+print("batch at step 37: the same for 1, 2, 4 and 8 ranks and in a fresh process")
+```
+
+% output
+
+```text
+{'web': 2972, 'code': 1808, 'wiki': 920} sequences of 64 tokens
+web sequence 1,000 is (shard, row) (1, 434)
+batch at step 37: the same for 1, 2, 4 and 8 ranks and in a fresh process
 ```
 
 (sec-ch5-distributed-loading)=
@@ -1492,9 +1599,43 @@ The documents in the global batch at step 3 ($B = 8$, ten shards of 16 documents
 
 ### 6.2 Throughput
 
-The loader's job is to never make the accelerator wait. The arithmetic for a modern run: a step over a 4-million-token batch on a large cluster takes a few seconds; the batch is 8 MB of `uint16` ids (16 MB as `uint32`), spread over all ranks, so each rank reads kilobytes per step, trivial for local disk and comfortable for object storage with a few requests in flight. Text formats change the picture less in volume than in work: the same batch is some 16 MB of UTF-8 that must be decompressed, parsed and tokenized, which is CPU time on the step's critical path unless it is prefetched, and whose output depends on the tokenizer library's version at run time. This is the practical argument for pre-tokenized binaries: not storage (gzip-compressed text is comparable in size to 16-bit ids), but zero parsing, random access, and a token stream fixed when the dataset is built rather than when it is read.
+The loader's job is to never make the accelerator wait. The arithmetic for a modern run: a step over a 4-million-token batch on a large cluster takes a few seconds; the batch is 8 MB of `uint16` ids (16 MB as `uint32`), spread over all ranks, so each rank reads kilobytes per step, trivial for local disk and comfortable for object storage with a few requests in flight. Text formats change the picture less in volume than in work: the same batch is some 16 MB of UTF-8 that must be decompressed, parsed and tokenized, which is CPU time on the step's critical path unless it is prefetched, and whose output depends on the tokenizer library's version at run time. The argument for pre-tokenized binaries is therefore not storage (gzip-compressed text is comparable in size to 16-bit ids), and it rests on two rates: the rate at which a rank consumes tokens and the rate at which one CPU core turns compressed text into token ids. The first is the global batch over the step time over the ranks. For the example above, 4 million tokens every 4 seconds on 1,024 ranks, it is about 1,000 tokens per second per rank. A small model on a fast accelerator consumes far more; take 500,000 tokens per second per rank as an example. The second rate the listing measures: decompressing gzip JSON Lines, parsing each line and tokenizing it with the `cl100k_base` encoding of tiktoken runs at about 1.9 million tokens per second on one core of the machine shown (on generated text of common words; real text with rarer words is slower). The number of loader workers a rank needs is the first rate over the second, rounded up, with headroom: one worker keeps up with the large run with three orders of magnitude to spare, and one or two with the small model. Prefetching, a queue of batches prepared ahead, absorbs the occasional slow read from object storage; it should hold at least as many steps as the slowest read takes. Parsing and tokenizing on the fly is thus rarely what holds a run back. Of the three advantages of pre-tokenized binaries, the binding ones are random access, which the seekable sampler, resumption and the sequence index of {ref}`sec-ch5-sampler-to-ranks` need, and a token stream fixed when the dataset is built rather than by the tokenizer library's version when it is read.
 
-The remaining ingredients are standard: a few worker processes per rank that prefetch the next batches, reads of whole shards or large ranges rather than per-document requests, and a local cache for shards that will be read again in a later epoch.
+```python
+# network
+import gzip
+import json
+import time
+
+import numpy as np
+import tiktoken  # downloads the encoding on first use
+
+rng = np.random.default_rng(0)
+words = ["the", "data", "model", "shard", "version", "token", "of", "and", "a", "loader",
+         "batch", "in", "training", "which", "is", "for", "with", "that", "documents"]
+docs = [{"id": i, "text": " ".join(rng.choice(words, int(rng.integers(50, 600))))}
+        for i in range(2000)]
+blob = gzip.compress("".join(json.dumps(d) + "\n" for d in docs).encode(), mtime=0)
+encoding = tiktoken.get_encoding("cl100k_base")
+
+start = time.perf_counter()
+lines = gzip.decompress(blob).splitlines()
+n = sum(len(encoding.encode_ordinary(json.loads(line)["text"])) for line in lines)
+seconds = time.perf_counter() - start
+rate = n / seconds
+print(f"{n:,} tokens from {len(lines):,} gzip JSON Lines in {seconds:.2f} s on one core")
+print(f"{rate / 1e6:.1f} million tokens/s; cores needed per rank: {1_000 / rate:.4f} "
+      f"at 1,000 tokens/s, {500_000 / rate:.2f} at 500,000")
+```
+
+% output-shape
+
+```text
+644,094 tokens from 2,000 gzip JSON Lines in 0.34 s on one core
+1.9 million tokens/s; cores needed per rank: 0.0005 at 1,000 tokens/s, 0.26 at 500,000
+```
+
+The remaining ingredients are standard: reads of whole shards or large ranges rather than per-document requests, and a local cache for shards that will be read again in a later epoch.
 
 ```{admonition} Sharding Across Ranks
 :class: tip

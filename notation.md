@@ -272,7 +272,7 @@ layer computes $xW$.
 | Symbol | Meaning | Introduced in |
 |---|---|---|
 | $M$ | document mask ($M_{ij} = 1$ when position $i$ may attend to position $j$) | {ref}`sec-ch5-cross-document-attention` |
-| $n_{ranks}$ | world size (number of data-parallel ranks) | {ref}`sec-ch5-sharding-across-ranks` |
+| $n_{ranks}$ | world size (number of data-parallel ranks) | {ref}`sec-ch5-sampler-to-ranks` |
 | $\Pi$ | keyed bijection on example indices that fixes the within-epoch order | {ref}`sec-ch5-determinism-resumption` |
 | $n_{ex}$ | number of examples in an epoch | {ref}`sec-ch5-determinism-resumption` |
 | $n_{loader}$ | DataLoader worker processes per rank | {ref}`sec-ch5-loader-workers` |
