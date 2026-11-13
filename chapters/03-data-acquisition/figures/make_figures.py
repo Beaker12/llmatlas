@@ -86,12 +86,13 @@ def corpus_sizes(out):
     ax.text(2029, 2e12, "projected\nexhaustion\n2026 to 2032", ha="center", va="center", fontsize=9.5, color="#444444")
     ax.axhspan(100e12, 1000e12, xmin=0, xmax=1, color="#f9c99a", alpha=0.6, linewidth=0, zorder=1)
     ax.axhline(300e12, color="#d9822b", linestyle="--", linewidth=1, zorder=2)
-    ax.text(2019.6, 1.15e15, "stock of public text: about 300T tokens (dashed), 90% interval 100T to 1,000T (band)",
-            va="bottom", fontsize=9.5, color="#8a4b0f")
-    SHIFT = {"FineWeb": -0.15, "Llama 3": 0.15}
+    ax.text(2019.6, 1.15e15, "effective stock of public text (quality- and repetition-adjusted):\n"
+            "about 300T tokens (dashed), 90% interval 100T to 1,000T (band)",
+            va="bottom", fontsize=9.5, color="#8a4b0f", linespacing=1.15)
     offsets = {"GPT-3": (6, -4), "LLaMA 1": (6, -4), "Dolma": (6, -4), "FineWeb": (-8, -3), "Llama 3": (8, -3)}
     for r in data:
-        x, y = int(r["year"]) + SHIFT.get(r["name"], 0), float(r["tokens"])
+        # Placed at the middle of the month in the cited paper's arXiv identifier (YYMM).
+        x, y = int(r["year"]) + (int(r["month"]) - 0.5) / 12, float(r["tokens"])
         marker = "o" if r["kind"] == "trained" else "s"
         ax.scatter([x], [y], marker=marker, color="#2b5d8a", s=36, zorder=3)
         label = f"{r['name']}  {y / 1e12:g}T" if y >= 1e12 else f"{r['name']}  {y / 1e9:g}B"
@@ -101,7 +102,7 @@ def corpus_sizes(out):
     ax.scatter([], [], marker="o", color="#2b5d8a", label="tokens a model was trained on")
     ax.scatter([], [], marker="s", color="#2b5d8a", label="tokens in a released corpus")
     ax.set_yscale("log")
-    ax.set_ylim(1e10, 3e15)
+    ax.set_ylim(1e10, 6e15)
     ax.set_xlim(2019.5, 2032.5)
     ax.set_xticks(range(2020, 2033, 2))
     ax.set_xlabel("year")

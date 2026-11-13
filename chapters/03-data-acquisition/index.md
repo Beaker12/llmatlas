@@ -119,18 +119,18 @@ The retention figures in {ref}`Chapter 4 <sec-ch4-chapter-overview>` apply on to
 
 Chapter 2 derived the compute-optimal token count ({ref}`sec-ch2-flops`): for a budget of $C$ FLOPs and a model of $N$ parameters, $C \approx 6ND$ and the Chinchilla optimum is about $D \approx 20N$ tokens {cite}`hoffmann2022training`. Production models train well past that point, because inference cost scales with $N$ and not with $D$, so a smaller model trained longer is cheaper to serve. Llama 3's 8B model saw about 15T tokens {cite}`grattafiori2024llama`, almost two thousand per parameter.
 
-Two results set the limits of stretching a fixed corpus:
+Two results bound how far a fixed corpus can be stretched:
 
 - **Repetition is cheap up to a point.** Training for up to about four epochs on the same data costs almost nothing in final loss relative to fresh data; beyond that the returns fall off steeply {cite}`muennighoff2023scaling`. A corpus of 1T unique tokens can support a 4T-token training run, not a 40T one.
-- **The stock of public text is finite.** {cite:t}`villalobos2024run` estimate the stock of human-written public text at about 300 trillion tokens (a 90% interval of 100T to 1,000T) and project that training runs will use all of it at some point between 2026 and 2032.
+- **The stock of public text is finite.** {cite:t}`villalobos2024run` build the estimate in three steps: about 510T tokens of deduplicated text in the indexed web, about 100T once text of too low a quality to train on is set aside, and that figure multiplied by the number of epochs it can be repeated for, the step that uses the result above. They project that training runs will use the whole supply "at some point between 2026 and 2032". The number usually quoted is the end product, the *effective* stock, which Epoch AI's summary of the paper gives as "on the order of 300 trillion tokens, with a 90% confidence interval of 100T to 1000T", an estimate that "includes only data that is sufficiently high-quality to be used for training, and accounts for the possibility of training models for multiple epochs" {cite}`epoch2024runout`.
 
-{numref}`fig-ch3-corpus-size` puts the two together: on a log axis the training sets of the table in {ref}`sec-ch3-published-mixtures` climb about one order of magnitude every two years, and the largest, at 15T tokens, is already within a factor of seven of the lower end of the estimated stock.
+The effective stock is therefore a count of training tokens, not of distinct tokens, and the four-epoch result is already inside it: it should not be applied a second time. {numref}`fig-ch3-corpus-size` sets the training sets of the table in {ref}`sec-ch3-published-mixtures` against it in the same unit: on a log axis they climb about one order of magnitude every two years, and the largest, at 15T training tokens, is already within a factor of seven of the lower end of the interval.
 
 ```{figure} figures/corpus-size.*
 :name: fig-ch3-corpus-size
-:alt: Log-scale plot of tokens against year. GPT-3 300 billion in 2020, LLaMA 1 1.4 trillion in 2023, Dolma 3 trillion, FineWeb 15 trillion and Llama 3 15 trillion in 2024. A shaded band from 100 to 1,000 trillion with a dashed line at 300 trillion marks the stock of public text; a gray span marks the projected exhaustion years 2026 to 2032.
+:alt: Log-scale plot of tokens against year. GPT-3 300 billion in 2020, LLaMA 1 1.4 trillion in 2023, Dolma 3 trillion, FineWeb 15 trillion and Llama 3 15 trillion in 2024. A shaded band from 100 to 1,000 trillion with a dashed line at 300 trillion marks the effective stock of public text, adjusted for quality and repetition; a gray span marks the projected exhaustion years 2026 to 2032.
 
-Training-set and corpus sizes against the stock of public text. Circles are tokens a model was trained on, squares tokens in a released corpus (The Pile is left out because it reports bytes). The band is the 90% interval of 100T to 1,000T tokens estimated by {cite:t}`villalobos2024run`, the dashed line their central 300T, and the gray span the years in which they project the stock to be used up.
+Training-set and corpus sizes against the effective stock of public text. Circles are tokens a model was trained on, squares tokens in a released corpus (The Pile is left out because it reports bytes); each point sits at the month of its paper's arXiv identifier, so FineWeb (June 2024) and Llama 3 (July 2024) nearly coincide. The band is the 90% interval of 100T to 1,000T tokens and the dashed line the central 300T of the effective stock, quality- and repetition-adjusted, as Epoch AI's summary {cite}`epoch2024runout` states them; the gray span is the years in which {cite:t}`villalobos2024run` project it to be used up.
 ```
 
 Both results bear directly on acquisition. If repeated tokens are nearly free, then a small, high-quality source is worth collecting even though it will be seen many times. If the stock is finite, then every source lost to opt-outs or licensing is a permanent reduction, and synthetic data ({ref}`sec-ch3-synthetic-data`) stops being optional.
@@ -151,7 +151,7 @@ Common Crawl is a non-profit foundation that has crawled the web since 2008, on 
 
 ### 2.2 Snapshots, segments and files
 
-A snapshot is identified by a crawl id such as `CC-MAIN-2026-39` (the thirty-ninth ISO week of 2026). Under `crawl-data/<crawl-id>/` it is divided into a hundred segments, and each segment into files of three kinds:
+A snapshot is identified by a crawl id such as `CC-MAIN-2026-39` (the id carries a year and a week number). Under `crawl-data/<crawl-id>/` it is divided into a hundred segments, and each segment into files of three kinds:
 
 | File type | Contents                                                                     | Size per snapshot | Use                                           |
 | --------- | ---------------------------------------------------------------------------- | ----------------- | --------------------------------------------- |
@@ -351,17 +351,27 @@ Through the CDX API the same lookup is one request per URL, so a list of a hundr
 
 Most open web corpora are a choice of snapshots plus a choice of pipeline:
 
-| Corpus                                              | Snapshots      | Extraction      | Language   | Notable choices                                                                   |
-| --------------------------------------------------- | -------------- | --------------- | ---------- | --------------------------------------------------------------------------------- |
-| C4 {cite}`raffel2019exploring`                      | 1 (April 2019) | WET             | English    | Strict line-level rules; a bad-words list that also removed benign text {cite}`dodge2021documenting` |
-| mC4 {cite}`xue2021mt5`                              | 71             | WET             | 101 languages | Per-language C4 rules with a line-length rule instead of terminal punctuation  |
-| OSCAR {cite}`abadji2022oscar`                       | 1 per release  | WET             | 150+       | Language id per line, then per document; minimal filtering by design              |
-| RefinedWeb {cite}`penedo2023refinedweb`             | about 90 (all crawls up to `CC-MAIN-2023-06`; the suffix is year and week, so February 2023, not June) | WARC + trafilatura | English | Web only; argued that enough filtered web matches curated mixtures                |
-| FineWeb {cite}`penedo2024fineweb`                   | 96             | WARC + trafilatura | English | Every filter ablated with 1.7B-parameter training runs; 15T tokens                |
-| FineWeb-Edu {cite}`penedo2024fineweb`               | as FineWeb     | as FineWeb      | English    | Classifier for educational value, 1.3T tokens                                     |
-| CulturaX {cite}`nguyen2023culturax`                 | mC4 + OSCAR    | WET             | 167        | Merge and re-clean two multilingual corpora                                       |
-| FineWeb-2 {cite}`penedo2025fineweb2`                | 96             | WARC + trafilatura | 1,000+ languages | Per-language filter thresholds derived automatically from reference-corpus statistics; duplicates "rehydrated" with cluster-size-dependent weights (1–10) derived from filter rates |
-| Dolma web {cite}`soldaini2024dolma`                 | 25             | WET (CCNet)     | English    | Part of a documented multi-source corpus with released tooling                    |
+```{raw} latex
+\begingroup\footnotesize\setlength{\tabcolsep}{3pt}
+```
+
+| Corpus | Snapshots | Text from | Languages | Notable choices |
+| --- | --- | --- | --- | --- |
+| C4 {cite}`raffel2019exploring` | 1 (April 2019) | WET | English | Strict line-level rules; a bad-words list that also removed benign text {cite}`dodge2021documenting` |
+| mC4 {cite}`xue2021mt5` | 71 | WET | 101 | Per-language C4 rules with a line-length rule instead of terminal punctuation |
+| OSCAR {cite}`abadji2022oscar` | 1 per release | WET | 150+ | Language id per line, then per document; minimal filtering by design |
+| RefinedWeb {cite}`penedo2023refinedweb` | about 90, up to `2023-06` | WARC, trafilatura | English | Web only; argued that enough filtered web matches curated mixtures |
+| FineWeb {cite}`penedo2024fineweb` | 96 | WARC, trafilatura | English | Every filter ablated with 1.7B-parameter training runs; 15T tokens |
+| FineWeb-Edu {cite}`penedo2024fineweb` | FineWeb's | FineWeb's | English | Classifier for educational value, 1.3T tokens |
+| CulturaX {cite}`nguyen2023culturax` | mC4 + OSCAR | WET | 167 | Merge and re-clean two multilingual corpora |
+| FineWeb-2 {cite}`penedo2025fineweb2` | 96 | WARC, trafilatura | over 1,000 | Per-language filter thresholds derived from reference-corpus statistics; duplicates "rehydrated" with weights of 1 to 10 set by cluster size |
+| Dolma web {cite}`soldaini2024dolma` | 25 | WET (CCNet) | English | Part of a documented multi-source corpus with released tooling |
+
+```{raw} latex
+\endgroup
+```
+
+RefinedWeb used all crawls up to `CC-MAIN-2023-06`. The suffix of a crawl id is a year and a week number, so that crawl was published in February 2023, not June.
 
 Two trends run through the table. Later corpora re-extract from WARC with a boilerplate-aware extractor rather than trusting the WET text, and later corpora use far more snapshots, because one snapshot cleans down to about 150 billion tokens (FineWeb: 15T from 96 snapshots) and trillion-token corpora need dozens. FineWeb's ablations add a caution: deduplicating each snapshot separately gave better models than deduplicating across all of them, since global deduplication preferentially removed the good pages that every crawl re-captures and kept the junk that appears once. Chapter 4 compares the two scopes ({ref}`sec-ch4-dedup-scope`).
 
@@ -384,7 +394,7 @@ Common Crawl covers the open, static, mostly English web as of a few weeks ago. 
 
 ### 3.2 robots.txt and the politeness conventions
 
-The Robots Exclusion Protocol (RFC 9309) {cite}`koster2022robots` lets a site state, in `/robots.txt`, which user agents may fetch which paths. It was a convention for thirty years and became a standard in 2022; it is not enforced by anything but the crawler's own code, which is why it has become the center of the consent question in {ref}`sec-ch3-rights-licenses-consent`. A crawler is expected to:
+The Robots Exclusion Protocol (RFC 9309) {cite}`koster2022robots` lets a site state, in `/robots.txt`, which user agents may fetch which paths. It was a convention for almost thirty years and became a standard in 2022; it is not enforced by anything but the crawler's own code, which is why it has become the center of the consent question in {ref}`sec-ch3-rights-licenses-consent`. A crawler is expected to:
 
 - Fetch `/robots.txt` before anything else on a host and obey the `Disallow` and `Allow` rules for its own user agent, falling back to the `*` group. When several rules match a path, the most specific one (the longest match) wins.
 - Treat the answer to that fetch as RFC 9309 says: a 4xx status (the file is "unavailable") means no restrictions, while a 5xx status or a network failure ("unreachable") means the whole site is disallowed. On a 3xx redirect the crawler "SHOULD follow at least five consecutive redirects, even across authorities", and the file reached is applied to the original host; after more than five redirects the crawler may treat the file as unavailable. Use a cached copy for no more than 24 hours, and parse at least the first 500 KiB of the file.
@@ -459,54 +469,77 @@ A crawler's parts. Politeness lives in the scheduler, which is why throughput is
 
 Rendering is the expensive option. A page that builds its content with JavaScript yields a near-empty HTML response to a plain fetcher; running a headless browser recovers the content at many times the cost per page. Most training-data crawls do not render, which is one reason single-page applications are under-represented in corpora.
 
-Two of these parts are worth seeing in code. URL canonicalization decides when two strings name the same page. RFC 3986 {cite}`berners2005rfc3986` defines the normalizations that never change what a URL refers to: lowercase the scheme and host, write the hexadecimal digits of percent-encodings in uppercase and decode those that stand for unreserved characters, remove `.` and `..` path segments, and drop a port that is the scheme's default. Crawlers add rules the RFC does not sanction: dropping the fragment, which never reaches the server, sorting the query parameters, and stripping session and tracking parameters. These merge many duplicates and occasionally two different pages, so each is a per-site decision. Conditional requests make re-crawling cheap: a server that sent an `ETag` with a page answers a later request that carries the tag in `If-None-Match` with `304 (Not Modified)` and no content when the page has not changed {cite}`fielding2022rfc9110`.
+Two of these parts are worth seeing in code. URL canonicalization decides when two strings name the same page. RFC 3986 {cite}`berners2005rfc3986` defines the normalizations that never change what a URL refers to: lowercase the scheme and host, write the hexadecimal digits of percent-encodings in uppercase and decode those that stand for unreserved characters, remove `.` and `..` path segments (but not empty ones: `/a//b` and `/a/b` may name different resources), and drop a port that is the scheme's default. Crawlers add rules the RFC does not sanction: dropping the fragment, which never reaches the server, sorting the query parameters, and stripping session and tracking parameters. These merge many duplicates and occasionally two different pages, so each is a per-site decision. Conditional requests make re-crawling cheap: a server that sent an `ETag` with a page answers a later request that carries the tag in `If-None-Match` with `304 (Not Modified)` and no content when the page has not changed {cite}`fielding2022rfc9110`.
 
-The loop below puts these together with the robots.txt rules of {ref}`sec-ch3-robots-txt-politeness-conventions`. The frontier is a queue per host, and the loop always serves the host whose delay expires first, so requests to different hosts interleave while each host sees at most one request every two seconds. robots.txt is fetched once per host and read as RFC 9309 says: a 4xx answer means no restrictions and a 5xx answer means nothing may be fetched. The transport and the clock are simulated so that the example runs offline and gives the same answer every time; replacing `transport` with an HTTP call gives a working, single-threaded crawler.
+The loop below puts these together with the robots.txt rules of {ref}`sec-ch3-robots-txt-politeness-conventions`. The frontier is a queue per host, and the loop always serves the host whose delay expires first, so requests to different hosts interleave while each host sees at most one request every two seconds. robots.txt is fetched once per host and read as RFC 9309 says: a 4xx answer means no restrictions and a 5xx answer means nothing may be fetched. The transport and the clock are simulated so that the example runs offline and gives the same answer every time: when a host is not yet due, `get` calls the `sleep` hook, which by default only advances the simulated clock. A working single-threaded crawler needs both swapped: `transport` for an HTTP call, and `clock` and `sleep` for `time.monotonic` and `time.sleep`, so that the wait really happens.
 
 ```python
-import posixpath
 import re
 from collections import Counter, deque
 from urllib.parse import urljoin, urlsplit, urlunsplit
 from urllib.robotparser import RobotFileParser
 
 UNRESERVED = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+DEFAULT_PORT = {"http": 80, "https": 443}
+
+
+def remove_dot_segments(path):
+    """RFC 3986, section 5.2.4: drop "." and ".." segments. Empty segments ("//") are
+    significant and are kept."""
+    segments, out = path.split("/")[1:], []
+    for seg in segments:
+        if seg == "..":
+            if out:
+                out.pop()
+        elif seg != ".":
+            out.append(seg)
+    trailing = segments[-1] in (".", "..") and out   # "/a/b/.." names the directory "/a/"
+    return "/" + "/".join(out) + ("/" if trailing else "")
 
 
 def canonicalize(url):
-    """RFC 3986 normalization (case, default port, percent-encoding, dot segments), then three crawler
-    conventions that the RFC does not make: drop the fragment, sort the query parameters, and drop any
-    userinfo (user:password@), which a crawler should neither store nor send. IPv6 hosts keep their brackets."""
+    """RFC 3986 normalization (case, default port, percent-encoding, dot segments),
+    then three crawler conventions that the RFC does not make: drop the fragment,
+    sort the query parameters, and drop any userinfo (user:password@), which a
+    crawler should neither store nor send. IPv6 hosts keep their brackets."""
     p = urlsplit(url)
     scheme, host = p.scheme.lower(), (p.hostname or "").lower()
-    if ":" in host:                     # an IPv6 literal: urlsplit strips the brackets that RFC 3986 requires
+    if ":" in host:          # IPv6 literal: urlsplit strips the brackets RFC 3986 requires
         host = f"[{host}]"
-    netloc = host if p.port in (None, {"http": 80, "https": 443}.get(scheme)) else f"{host}:{p.port}"
+    default = p.port in (None, DEFAULT_PORT.get(scheme))
+    netloc = host if default else f"{host}:{p.port}"
 
     def percent(m):
         ch = chr(int(m[0][1:], 16))
         return ch if ch in UNRESERVED else m[0].upper()
 
-    path = re.sub(r"%[0-9A-Fa-f]{2}", percent, p.path or "/")
-    trailing = path.endswith(("/", "/.", "/..")) and path != "/"
-    path = posixpath.normpath(path) + ("/" if trailing else "")
+    path = remove_dot_segments(re.sub(r"%[0-9A-Fa-f]{2}", percent, p.path or "/"))
     query = "&".join(sorted(p.query.split("&"))) if p.query else ""
     return urlunsplit((scheme, netloc, path, query, ""))
 
 
 class PoliteCrawler:
-    """One robots.txt per host, a minimum delay per host, and conditional re-fetches by ETag."""
+    """One robots.txt per host, a minimum delay per host, and conditional re-fetches by
+    ETag. The clock and the wait are hooks: by default a simulated clock that waiting
+    advances; for real use pass clock=time.monotonic and sleep=time.sleep."""
 
-    def __init__(self, transport, agent="examplebot", delay=2.0):
+    def __init__(self, transport, agent="examplebot", delay=2.0, clock=None, sleep=None):
         self.transport, self.agent, self.delay = transport, agent, delay
-        self.robots, self.ready = {}, {}    # per host: parsed robots.txt, earliest time of the next request
+        self.now = 0.0                          # the simulated clock, in seconds
+        self.clock = clock or (lambda: self.now)
+        self.sleep = sleep or self._advance
+        self.robots, self.ready = {}, {}    # per host: robots.txt, earliest next request
         self.etags, self.store = {}, {}     # per URL: last ETag, last body
-        self.now = 0.0                      # simulated clock, in seconds
+
+    def _advance(self, seconds):
+        self.now += seconds
 
     def get(self, url):
         host = urlsplit(url).netloc
-        self.now = max(self.now, self.ready.get(host, 0.0))   # wait for this host's turn
-        self.ready[host] = self.now + self.delay
+        wait = self.ready.get(host, 0.0) - self.clock()
+        if wait > 0:
+            self.sleep(wait)                # wait for this host's turn
+        self.ready[host] = self.clock() + self.delay
         headers = {"User-Agent": self.agent}
         if url in self.etags:
             headers["If-None-Match"] = self.etags[url]
@@ -522,8 +555,8 @@ class PoliteCrawler:
         if p.netloc not in self.robots:
             status, body = self.get(f"{p.scheme}://{p.netloc}/robots.txt")
             rp = RobotFileParser()
-            rp.parse(body.splitlines() if status == 200 else [])   # 4xx: no restrictions (RFC 9309)
-            rp.disallow_all = status >= 500                         # 5xx: treat the site as disallowed
+            rp.parse(body.splitlines() if status == 200 else [])  # 4xx: no restrictions
+            rp.disallow_all = status >= 500                        # 5xx: disallow all
             self.robots[p.netloc] = rp
         return self.robots[p.netloc].can_fetch(self.agent, url)
 
@@ -541,7 +574,8 @@ class PoliteCrawler:
         for url in seeds:
             add(url)
         while any(frontier.values()):
-            host = min((h for h, q in frontier.items() if q), key=lambda h: self.ready.get(h, 0.0))
+            waiting = (h for h, q in frontier.items() if q)
+            host = min(waiting, key=lambda h: self.ready.get(h, 0.0))
             url = frontier[host].popleft()
             if not self.allowed(url):
                 counts["blocked"] += 1
@@ -555,10 +589,13 @@ class PoliteCrawler:
 
 SITE = {  # a simulated web: URL -> (ETag, body)
     "https://example.com/robots.txt": ("r1", "User-agent: *\nDisallow: /private/\n"),
-    "https://example.com/": ("e1", '<a href="/a">a</a> <a href="/private/x">x</a> <a href="https://example.org/">org</a>'),
-    "https://example.com/a": ("e2", '<a href="/A/../a#part-2">this page</a> <a href="/b">b</a>'),
+    "https://example.com/": ("e1", '<a href="/a">a</a> <a href="/private/x">x</a> '
+                                   '<a href="https://example.org/">org</a>'),
+    "https://example.com/a": ("e2", '<a href="/A/../a#part-2">this page</a> '
+                                    '<a href="/b">b</a>'),
     "https://example.com/b": ("e3", "no links"),
-    "https://example.org/": ("e4", '<a href="/c">c</a> <a href="HTTPS://EXAMPLE.ORG:443/c?">c again</a>'),
+    "https://example.org/": ("e4", '<a href="/c">c</a> '
+                                   '<a href="HTTPS://EXAMPLE.ORG:443/c?">c again</a>'),
     "https://example.org/c": ("e5", "no links"),
 }
 
@@ -573,14 +610,16 @@ def transport(url, headers):
 
 
 print(canonicalize("HTTP://Example.COM:80/a/./b/../c/%7euser?b=2&a=1#top"))
-print(canonicalize("http://user:secret@[2001:DB8::1]:8080/x"))   # IPv6 keeps its brackets; userinfo dropped
+print(canonicalize("http://user:secret@[2001:DB8::1]:8080/x"))  # userinfo dropped
 print(canonicalize("https://[::1]:443/"))
+print(canonicalize("http://example.com/a//b/./c"))   # the empty segment is kept
 bot = PoliteCrawler(transport)
 first = bot.crawl(["https://Example.com/"])
-print("first crawl: ", dict(sorted(first.items(), key=str)), "in", bot.now, "simulated seconds")
+print("first crawl: ", dict(sorted(first.items(), key=str)), "in", bot.now, "simulated s")
 start = bot.now
 second = bot.crawl(["https://example.com/"])
-print("second crawl:", dict(sorted(second.items(), key=str)), "in", bot.now - start, "simulated seconds")
+print("second crawl:", dict(sorted(second.items(), key=str)), "in", bot.now - start,
+      "simulated s")
 ```
 
 % output
@@ -589,8 +628,9 @@ print("second crawl:", dict(sorted(second.items(), key=str)), "in", bot.now - st
 http://example.com/a/c/~user?a=1&b=2
 http://[2001:db8::1]:8080/x
 https://[::1]/
-first crawl:  {'blocked': 1, 'duplicate': 2, 200: 5} in 6.0 simulated seconds
-second crawl: {'blocked': 1, 'duplicate': 2, 304: 5} in 6.0 simulated seconds
+http://example.com/a//b/c
+first crawl:  {'blocked': 1, 'duplicate': 2, 200: 5} in 6.0 simulated s
+second crawl: {'blocked': 1, 'duplicate': 2, 304: 5} in 6.0 simulated s
 ```
 
 The first crawl fetches five pages and two robots.txt files in six simulated seconds, skips the disallowed `/private/x`, and recognizes two links (`/A/../a#part-2` and the upper-case `example.org` URL with an empty query) as pages it already has. The re-crawl receives five `304` answers and transfers no page content. Against a real server the same exchange looks like this:
@@ -708,7 +748,7 @@ News archives are mostly licensed commercially now; the open sources are the CC-
 
 ```{admonition} Comparing Sources
 :class: tip
-The notebook section {ref}`nb-acq-sources` samples five hosted corpora through the Hugging Face rows API: the first hundred rows each of FineWeb, FineWeb-Edu and C4, the first fifty of the French portion of FineWeb-2, and fifty Wikipedia articles in five pulls of ten at offsets drawn with a fixed seed (the first rows in page-id order are the oldest and longest articles, so they would mislead). It compares document lengths, language scores and the FineWeb-Edu educational score, and measures domain concentration on 2,000 C4 host names from twenty pulls at seeded random offsets. The rows API serves only the first 2,207,027 rows of C4's English split, so those offsets are random within that range only. The samples are small: Wikipedia's median article (206 words in 50) is only slightly longer than C4's median page (188 words in 100), a gap too narrow to read as a general result.
+The notebook section {ref}`nb-acq-sources` samples five hosted corpora through the Hugging Face rows API: the first hundred rows each of FineWeb, FineWeb-Edu and C4, the first fifty of the French portion of FineWeb-2, and fifty Wikipedia articles in five pulls of ten at offsets drawn with a fixed seed (the first rows in page-id order are the oldest and longest articles, so they would mislead). It compares document lengths, language scores and the FineWeb-Edu educational score, and measures domain concentration on 2,000 C4 host names from twenty pulls at seeded random offsets. The rows API serves only the first 2,207,027 rows of C4's English split, so those offsets are random within that range only. The samples are small: Wikipedia's median article (206.5 words in 50) is only slightly longer than C4's median page (188.5 words in 100), a gap too narrow to read as a general result.
 ```
 
 (sec-ch3-rights-licenses-consent)=
@@ -815,7 +855,7 @@ print(f"{S * (1 - (1 - 1 / S) ** k):.1f} of {S:,} shards rewritten for {k} docum
 198.0 of 10,000 shards rewritten for 200 documents
 ```
 
-The fourth document is found only through the email address, which is why a request is matched on every identifier it gives. Removing documents is cheap; rewriting the shards they sit in is not. With documents spread uniformly over $n_{\mathrm{shard}}$ shards (`S` in the code), $n_{\mathrm{match}}$ matching documents (`k`) touch about $n_{\mathrm{shard}}\left(1 - (1 - 1/n_{\mathrm{shard}})^{n_{\mathrm{match}}}\right)$ of them, nearly one shard per document while $n_{\mathrm{match}}$ is small compared with $n_{\mathrm{shard}}$, so 200 matches rewrite about 198 of 10,000 shards. The hash blocklist lets the next rebuild from raw data drop the same bytes without repeating the search. A model already trained on the removed text is a separate problem that the corpus cannot fix.
+The fourth document is found only through the email address, which is why a request is matched on every identifier it gives. Removing documents is cheap; rewriting the shards they sit in is not. With documents spread uniformly over $n_{shard}$ shards (`S` in the code), $n_{match}$ matching documents (`k`) touch about $n_{shard}\left(1 - (1 - 1/n_{shard})^{n_{match}}\right)$ of them, nearly one shard per document while $n_{match}$ is small compared with $n_{shard}$, so 200 matches rewrite about 198 of 10,000 shards. The hash blocklist lets the next rebuild from raw data drop the same bytes without repeating the search. A model already trained on the removed text is a separate problem that the corpus cannot fix.
 
 (sec-ch3-infrastructure-replacing-robots-txt)=
 
@@ -1090,14 +1130,15 @@ import hashlib
 import time
 
 
-def provenance_record(source, locator, raw_bytes, license, robots_decision, synthetic=False, **extra):
+def provenance_record(source, locator, raw_bytes, license, robots_decision, fetched_at,
+                      synthetic=False, **extra):
     """One manifest line per acquired document; stable field order, content-addressed."""
     return {
         "source": source,
         "locator": locator,
         "sha256": hashlib.sha256(raw_bytes).hexdigest(),
         "bytes": len(raw_bytes),
-        "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "fetched_at": fetched_at,          # when the bytes were fetched, not when the record is written
         "license": license,
         "robots": robots_decision,
         "synthetic": synthetic,
@@ -1106,11 +1147,15 @@ def provenance_record(source, locator, raw_bytes, license, robots_decision, synt
 
 
 doc = b"<html><body><p>Example page.</p></body></html>"
-rec = provenance_record("commoncrawl", "crawl-data/CC-MAIN-2026-39/.../00000.warc.gz#offset=0", doc,
-                        license="CC terms of use", robots_decision="allowed:CCBot")
-other = provenance_record("commoncrawl", "same locator", doc + b"\n", "CC terms of use", "allowed:CCBot")
-assert provenance_record("x", "y", doc, "l", "r")["sha256"] == rec["sha256"]  # same bytes, same id
-assert other["sha256"] != rec["sha256"]                                        # one byte changed, different id
+now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())   # stamp at fetch time
+loc = "crawl-data/CC-MAIN-2026-39/.../00000.warc.gz#offset=0"
+rec = provenance_record("commoncrawl", loc, doc, license="CC terms of use",
+                        robots_decision="allowed:CCBot", fetched_at=now)
+other = provenance_record("commoncrawl", "same locator", doc + b"\n", "CC terms of use",
+                          "allowed:CCBot", now)
+same = provenance_record("x", "y", doc, "l", "r", "2026-10-20")
+assert same["sha256"] == rec["sha256"]          # same bytes, same id
+assert other["sha256"] != rec["sha256"]         # one byte changed, different id
 print(rec["sha256"][:16], rec["bytes"], "bytes")
 print(other["sha256"][:16], other["bytes"], "bytes")
 ```
@@ -1147,7 +1192,7 @@ The notebook section {ref}`nb-acq-provenance` writes a provenance record for eve
 
 ## Summary
 
-- **Composition.** Most published mixtures are mostly web crawl, because nothing else is large enough; The Pile, at 18% web crawl, is the exception; curated sources are a few percent each in most mixtures (The Pile's papers, 37%, and Dolma's code, 13%, are the exceptions) and are upweighted. Training sets grew from GPT-3's 300B tokens to 15T in four years and are now within a factor of seven of the lower end (100T tokens) of the estimated stock of public text, and a factor of twenty below its central 300T ({ref}`sec-ch3-epochs`).
+- **Composition.** Most published mixtures are mostly web crawl, because nothing else is large enough; The Pile, at 18% web crawl, is the exception; curated sources are a few percent each in most mixtures (The Pile's papers, 37%, and Dolma's code, 13%, are the exceptions) and are upweighted. Training sets grew from GPT-3's 300B tokens to 15T in four years and are now within a factor of seven of the lower end (100T tokens) of the estimated effective stock of public text, and a factor of twenty below its central 300T; that stock is already adjusted for quality and for repeated epochs ({ref}`sec-ch3-epochs`).
 - **Common Crawl.** A snapshot is 100 segments and 100,000 WARC files, about 90 TB compressed. Each record is its own gzip member, so an index line (file, offset, length) and one range request retrieve a single page ({ref}`sec-ch3-index-targeted-retrieval`).
 - **Crawling.** A crawler obeys robots.txt as RFC 9309 defines it (redirects followed, at least five in a row, 4xx permits, 5xx forbids, longest match wins), spaces its requests per host, canonicalizes URLs and re-fetches with `ETag`s. Politeness, not bandwidth, sets its throughput ({ref}`sec-ch3-crawler-architecture`).
 - **Curated sources.** Wikipedia, books, papers, code, forums and public records each supply something the web lacks, and each comes with its own terms; the books lawsuits turned on how the copies were obtained ({ref}`sec-ch3-books`).
@@ -1255,7 +1300,7 @@ The collection-process questions of {cite:t}`gebru2021datasheets`, answered for 
 - **How was the data acquired?** Directly from public services: the Common Crawl manifest and a byte range of one WARC file over HTTPS, two robots.txt files, and rows of five datasets from the Hugging Face dataset-viewer rows API. Nothing was inferred or derived at collection time.
 - **What mechanisms were used?** Python's `urllib` with a named user agent, a fixed seed for every random offset, and a fallback to the committed copies under `examples/data/` when a source is unreachable. The checksums in `examples/data/checksums.json` validate the committed copies.
 - **What was the sampling strategy?** The first rows of FineWeb, FineWeb-Edu, C4 and FineWeb-2 French, Wikipedia articles at seeded random offsets, and C4 host names from seeded random offsets within the rows the API serves. The samples are small, are not representative of any corpus, and are meant to illustrate.
-- **Who collected the data, and over what time frame?** The person who ran the notebook, on the dates in the manifest's fetch times. The committed copies record when they were first collected.
+- **Who collected the data, and over what time frame?** The person who ran the notebook, on the dates in the manifest's `fetched_at` fields: `fetch` stamps each live request with the time it was made, and a record served from a committed sample carries the date that sample was collected (the `collected` table of `checksums.json`).
 - **Were the people the data is about notified or asked for consent?** No. The documents are public web pages and dataset rows. Their consent is expressed only through robots.txt and the hosting datasets' terms, which the manifest records.
 - **Was an ethical review conducted?** No; the samples are small and used only for illustration.
 
