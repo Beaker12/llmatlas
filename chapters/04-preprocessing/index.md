@@ -49,7 +49,7 @@ The accompanying notebook, [Preprocessing Pipeline Demo](examples/preprocessing_
 - Unicode normalization and whitespace clean-up ({ref}`nb-prep-normalize`)
 - A character n-gram language identifier ({ref}`nb-prep-langid`)
 - Gopher-style quality and repetition filters ({ref}`nb-prep-filters`)
-- A smoothed n-gram perplexity filter ({ref}`nb-prep-perplexity`)
+- Perplexity ranking under a smoothed unigram model ({ref}`nb-prep-perplexity`) and a hashed n-gram quality classifier ({ref}`nb-prep-classifier`)
 - Exact and MinHash near-duplicate detection, with the LSH probability curve ({ref}`nb-prep-dedup`)
 - Personal-data redaction and benchmark decontamination ({ref}`nb-prep-pii`, {ref}`nb-prep-decontam`)
 - A complete multi-stage pipeline with per-stage drop accounting ({ref}`nb-prep-pipeline`)
@@ -244,7 +244,7 @@ Unicode defines four normalization forms. The two that matter here:
 - **NFC** composes characters with their combining marks: the two-code-point sequence `e` + U+0301 becomes the single code point `é`. This preserves canonical equivalence (the text displays and means the same) and is almost always wanted.
 - **NFKC** additionally replaces compatibility characters with their compatibility equivalents: the ligature `ﬁ` becomes `fi`, full-width `Ａ` becomes `A`, superscript `²` becomes `2`. This loses information that matters in mathematics and some scripts, so it is applied selectively.
 
-{numref}`fig-ch4-unicode-forms` shows all four forms on three inputs: the two canonical forms (NFC and NFD) only compose or split accents, and only the compatibility forms (NFKC and NFKD) touch the ligature and the superscript.
+{numref}`fig-ch4-unicode-forms` shows all four forms on four inputs (the two spellings of é, the ligature and the superscript): the two canonical forms (NFC and NFD) only compose or split accents, and only the compatibility forms (NFKC and NFKD) touch the ligature and the superscript.
 
 ```{figure} figures/unicode-forms.*
 :name: fig-ch4-unicode-forms
@@ -1800,7 +1800,7 @@ Putting the stages together, this is the order of FineWeb's released pipeline (d
 1. Decontamination against the evaluation suite.
 1. Optional classifier scoring (the FineWeb-Edu step).
 
-The principles behind the order: cheap before expensive; rules that depend on a property (language) after the stage that establishes it; deduplication after the text has been normalized and the cheapest filters have shrunk it, but before classifier scoring, so the classifier is not run on copies; redaction last among the content stages so that placeholders do not affect filters; decontamination last of all, against the final text. FineWeb-2 {cite}`penedo2025fineweb2` departs from this on purpose: it deduplicates first, so that every filtering experiment is measured on the deduplicated data it will produce.
+The principles behind the order: cheap before expensive; rules that depend on a property (language) after the stage that establishes it; deduplication after the text has been normalized and the cheapest filters have shrunk it, but before classifier scoring, so the classifier is not run on copies; redaction last among the content stages so that placeholders do not affect filters; decontamination after redaction, against the text that will be trained on. An optional classifier step such as FineWeb-Edu's only removes whole documents, so it can follow decontamination without undoing it. FineWeb-2 {cite}`penedo2025fineweb2` departs from this on purpose: it deduplicates first, so that every filtering experiment is measured on the deduplicated data it will produce.
 
 (sec-ch4-sharding-streaming-idempotence)=
 
