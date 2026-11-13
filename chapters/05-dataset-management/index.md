@@ -411,12 +411,12 @@ assert results["zstd-19"] > results["zstd-3"] > results["lz4"]
 % output-shape
 
 ```text
-lz4       ratio 1.73, compress 208 MB/s, decompress 636 MB/s
-zstd-1    ratio 2.76, compress 162 MB/s, decompress 499 MB/s
-zstd-3    ratio 2.77, compress 105 MB/s, decompress 379 MB/s
-zstd-19   ratio 3.25, compress 1 MB/s, decompress 598 MB/s
-gzip-6    ratio 2.85, compress 6 MB/s, decompress 200 MB/s
-brotli-9  ratio 3.02, compress 4 MB/s, decompress 224 MB/s
+lz4       ratio 1.73, compress 209 MB/s, decompress 675 MB/s
+zstd-1    ratio 2.76, compress 166 MB/s, decompress 515 MB/s
+zstd-3    ratio 2.77, compress 106 MB/s, decompress 406 MB/s
+zstd-19   ratio 3.25, compress 1 MB/s, decompress 600 MB/s
+gzip-6    ratio 2.85, compress 6 MB/s, decompress 198 MB/s
+brotli-9  ratio 3.02, compress 4 MB/s, decompress 192 MB/s
 ```
 
 (sec-ch5-versioning)=
@@ -1298,7 +1298,7 @@ Two monitoring practices borrowed from other fields:
 - **Canaries.** Insert a handful of unique, random strings into the corpus at known positions and with known repetition counts. After training, test whether the model can complete them. Canaries measure memorization directly {cite}`carlini2019secret`, and a canary that appears in a version where it should not have is proof that an upstream shard leaked.
 - **Drift.** Compare every statistic in Section 7.1 between consecutive versions and flag changes beyond a threshold. Most data bugs (an extractor update that drops tables, a language-identification model update that rejects more of one language, a source that silently went offline) show up as a drift in a per-source statistic before they show up in a loss curve.
 
-A drift check needs a statistic and a threshold fixed before the comparison. For a length distribution, the two-sample Kolmogorov-Smirnov statistic, the largest gap between the two empirical distribution functions, has a large-sample critical value at significance level $\alpha$ of $\sqrt{-\ln(\alpha / 2) / 2}$ times the square root of the sum of the two sample sizes over their product. With 20,000 documents on each side and $\alpha = 0.001$ that is 0.0195. The listing compares a version with an unchanged rebuild and with a build in which an extractor update dropped the tables from 15% of documents: the first stays under the threshold and the second is flagged. On corpora of millions of documents the threshold becomes so small that real but harmless changes cross it, so in practice it is paired with a minimum effect size, such as a change in mean length of more than a few percent.
+A drift check needs a statistic and a threshold fixed before the comparison. For a length distribution, a good statistic is the two-sample Kolmogorov-Smirnov statistic D, the largest gap between the two empirical distribution functions. The threshold can come from the data themselves: pool the two versions' lengths, relabel them at random into groups of the original sizes many times, and take the value of D that only 1% of the relabelings exceed. That fixes the false-alarm rate: about one unchanged rebuild in a hundred is flagged. The listing compares a version with an unchanged rebuild and with a build in which an extractor update dropped the tables from 15% of documents: the first stays under the threshold and the second is flagged. On corpora of millions of documents the threshold becomes so small that real but harmless changes cross it, so in practice it is paired with a minimum effect size, such as a change in mean length of more than a few percent.
 
 ```python
 import numpy as np
@@ -1312,9 +1312,15 @@ def ks_statistic(a, b) -> float:
                                - np.searchsorted(b, grid, side="right") / b.size)))
 
 
-def ks_threshold(n: int, m: int, alpha: float = 0.001) -> float:
-    """Large-sample critical value of the two-sample statistic at level alpha."""
-    return float(np.sqrt(-np.log(alpha / 2) / 2) * np.sqrt((n + m) / (n * m)))
+def permutation_threshold(a, b, false_alarm: float = 0.01, trials: int = 200, seed: int = 0) -> float:
+    """The statistic that only `false_alarm` of random relabelings of the pooled lengths exceed."""
+    rng = np.random.default_rng(seed)
+    pooled = np.concatenate([a, b])
+    null = []
+    for _ in range(trials):
+        shuffled = rng.permutation(pooled)
+        null.append(ks_statistic(shuffled[: a.size], shuffled[a.size :]))
+    return float(np.quantile(null, 1 - false_alarm))
 
 
 rng = np.random.default_rng(7)
@@ -1324,21 +1330,19 @@ v2_bug = v2_same.copy()
 tables = rng.random(v2_bug.size) < 0.15   # an extractor update drops the tables from 15% of documents ...
 v2_bug[tables] = (v2_bug[tables] * 0.6).astype(int) + 1  # ... which removes 40% of their tokens
 
-limit = ks_threshold(v1.size, v2_same.size)
-d_same, d_bug = ks_statistic(v1, v2_same), ks_statistic(v1, v2_bug)
-print(f"threshold at alpha = 0.001: {limit:.4f}")
-print(f"unchanged rebuild: D = {d_same:.4f}, flagged {d_same > limit}")
-print(f"tables dropped:    D = {d_bug:.4f}, flagged {d_bug > limit}")
+for name, v2 in (("unchanged rebuild", v2_same), ("tables dropped", v2_bug)):
+    d, limit = ks_statistic(v1, v2), permutation_threshold(v1, v2)
+    print(f"{name:17s}: D = {d:.4f}, threshold {limit:.4f}, flagged {d > limit}")
 print(f"mean length {v1.mean():.4g} -> {v2_bug.mean():.4g} tokens")
-assert d_same < limit < d_bug
+assert ks_statistic(v1, v2_same) < permutation_threshold(v1, v2_same)
+assert ks_statistic(v1, v2_bug) > permutation_threshold(v1, v2_bug)
 ```
 
 % output
 
 ```text
-threshold at alpha = 0.001: 0.0195
-unchanged rebuild: D = 0.0049, flagged False
-tables dropped:    D = 0.0356, flagged True
+unchanged rebuild: D = 0.0049, threshold 0.0170, flagged False
+tables dropped   : D = 0.0356, threshold 0.0171, flagged True
 mean length 656.2 -> 617.9 tokens
 ```
 
