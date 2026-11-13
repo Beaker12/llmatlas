@@ -1,0 +1,29 @@
+digraph EncoderDecoder {
+    graph [fontname="Arial" fontsize=13 bgcolor=white label=<Each sublayer adds its input back (residual) and is normalized> labelloc=t];
+
+    src [label=<<b>Source tokens</b><br/>+ position> shape=box style="rounded,filled" fillcolor="#fffaf0" color="#975a16" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    tgt [label=<<b>Target so far</b> (n)<br/>BOS first, + position> shape=box style="rounded,filled" fillcolor="#fffaf0" color="#975a16" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    { rank=same; src; tgt; }
+    subgraph cluster_enc {
+        label=<<b>Encoder block, repeated</b>>; fontsize=13; style="rounded,filled"; fillcolor="#f7fafc"; color="#2d3748"; penwidth=1.2;
+        esa [label=<<b>Self-attention</b><br/>unmasked: every source token> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+        eff [label=<<b>Feed-forward</b>> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    }
+    subgraph cluster_dec {
+        label=<<b>Decoder block, repeated</b>>; fontsize=13; style="rounded,filled"; fillcolor="#f7fafc"; color="#2d3748"; penwidth=1.2;
+        dsa [label=<<b>Masked self-attention</b><br/>earlier and current target tokens> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+        dca [label=<<b>Cross-attention</b><br/>queries: decoder<br/>keys, values: encoder output> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+        dff [label=<<b>Feed-forward</b>> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    }
+    h [label=<<b>Encoder output H<sub>enc</sub></b>  (n<sub>src</sub> × d)> shape=box style="rounded,filled" fillcolor="#f0fff4" color="#276749" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    p [label=<<b>Next-token distribution</b><br/>linear to |𝒱| scores, softmax> shape=box style="rounded,filled" fillcolor="#f0fff4" color="#276749" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    { rank=same; h; dca; }
+    src -> esa [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
+    esa -> eff [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
+    eff -> h [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
+    tgt -> dsa [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
+    dsa -> dca [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
+    dca -> dff [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
+    dff -> p [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
+    h -> dca [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
+}

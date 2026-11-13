@@ -1,0 +1,39 @@
+{
+ "encodings": [
+  "gpt2",
+  "cl100k_base",
+  "o200k_base"
+ ],
+ "counts": {
+  "English": {
+   "characters": 11,
+   "gpt2": 2,
+   "cl100k_base": 2,
+   "o200k_base": 2
+  },
+  "French": {
+   "characters": 16,
+   "gpt2": 6,
+   "cl100k_base": 3,
+   "o200k_base": 3
+  },
+  "Spanish": {
+   "characters": 10,
+   "gpt2": 4,
+   "cl100k_base": 2,
+   "o200k_base": 2
+  },
+  "Japanese": {
+   "characters": 7,
+   "gpt2": 10,
+   "cl100k_base": 4,
+   "o200k_base": 2
+  },
+  "Arabic": {
+   "characters": 13,
+   "gpt2": 12,
+   "cl100k_base": 10,
+   "o200k_base": 4
+  }
+ }
+}
