@@ -37,7 +37,7 @@ Imagine being asked to assemble a library for someone who will read every book i
 
 **The web** is the only source large enough to fill most of the shelves. Common Crawl, a non-profit that has crawled the web since 2008 and publishes the result for free, supplies the raw material for nearly every open corpus and, by all accounts, for most closed ones.
 
-**Curated sources** fill the gaps the web leaves: encyclopaedias for facts, books for long-form prose, scientific papers for technical reasoning, source code for programming, and conversation for dialogue. Each is a few per cent of the corpus and each is upweighted far beyond its size.
+**Curated sources** fill the gaps the web leaves: encyclopaedias for facts, books for long-form prose, scientific papers for technical reasoning, source code for programming, and conversation for dialogue. Each is a few percent of the corpus, and the smallest (Wikipedia, books) are typically seen two or more times.
 
 **Crawling** is how new material is obtained when the published crawls are not enough. It is a matter of HTTP mechanics, politeness conventions that are rapidly hardening into legal lines, and arithmetic about how many machines it takes to fetch a billion pages.
 
@@ -67,7 +67,7 @@ The training sets of the major models are reported, when they are reported at al
 | Dolma {cite}`soldaini2024dolma`                  | 80% (Common Crawl)           | 3% (Reddit, Wikipedia, Wikibooks)     | 0.2% (Gutenberg) | 2.3% (peS2o)     | 13% (The Stack) | 3T |
 | FineWeb {cite}`penedo2024fineweb`                | 100%                         |                                       |                |                  |                 | 15T |
 
-Three things stand out. The web is the bulk of every corpus, because nothing else is large enough. Curated sources are small in tokens but upweighted: Wikipedia is 3% of GPT-3's training tokens while being a tiny fraction of the raw data, and LLaMA samples it for more than two epochs. And the totals have grown fifty-fold in four years, from GPT-3's 300B tokens to the 15T of FineWeb and the roughly 15T used by Llama 3, which is why the question of whether the supply of human-written text is finite {cite}`villalobos2024run` is now taken seriously.
+Three things stand out. The web is the bulk of every corpus, because nothing else is large enough. Curated sources are small in tokens but upweighted: Wikipedia is 3% of GPT-3's training tokens while being a tiny fraction of the raw data, and LLaMA samples it for more than two epochs. And the totals have grown fifty-fold in four years, from GPT-3's 300B tokens to the 15T of FineWeb and the roughly 15T used by Llama 3 {cite}`grattafiori2024llama`, which is why the question of whether the supply of human-written text is finite {cite}`villalobos2024run` is now taken seriously.
 
 (sec-ch3-tokens-documents-bytes)=
 
@@ -75,7 +75,7 @@ Three things stand out. The web is the bulk of every corpus, because nothing els
 
 Corpus sizes are quoted in three units and the conversions are rough:
 
-- **Bytes** are what storage and transfer cost. A Common Crawl snapshot is 80 to 100 TB compressed as WARC and about a tenth of that as extracted text.
+- **Bytes** are what storage and transfer cost. A Common Crawl snapshot is 80 to 100 TB compressed as WARC and about 7% of that as extracted text (WET).
 - **Documents** are the unit of acquisition and deduplication. A snapshot holds two to three billion pages.
 - **Tokens** are what training cost and the scaling laws count. English prose runs about four characters per token with a GPT-style tokenizer, so one terabyte of UTF-8 text is roughly 250 billion tokens; code and non-Latin scripts tokenize less efficiently.
 
@@ -85,7 +85,7 @@ The retention figures in Chapter 4 apply on top of this: of a snapshot's two bil
 
 ### 1.3 How much is enough
 
-Chapter 2 derived the compute-optimal token count: for a budget of $C$ FLOPs and a model of $N$ parameters, $C \approx 6ND$ and the Chinchilla optimum is about $D \approx 20N$ tokens {cite}`hoffmann2022training`. Production models train well past that point, because inference cost scales with $N$ and not with $D$, so a smaller model trained longer is cheaper to serve. Llama 3's 8B model saw about 15T tokens, almost two thousand per parameter.
+Chapter 2 derived the compute-optimal token count: for a budget of $C$ FLOPs and a model of $N$ parameters, $C \approx 6ND$ and the Chinchilla optimum is about $D \approx 20N$ tokens {cite}`hoffmann2022training`. Production models train well past that point, because inference cost scales with $N$ and not with $D$, so a smaller model trained longer is cheaper to serve. Llama 3's 8B model saw about 15T tokens {cite}`grattafiori2024llama`, almost two thousand per parameter.
 
 Two results set the limits of stretching a fixed corpus:
 
@@ -113,8 +113,8 @@ A snapshot is identified by a crawl id such as `CC-MAIN-2026-39` (the thirty-nin
 | File type | Contents                                                                     | Size per snapshot | Use                                           |
 | --------- | ---------------------------------------------------------------------------- | ----------------- | --------------------------------------------- |
 | **WARC**  | Raw HTTP requests and responses, including headers and the full HTML payload | ~90 TB            | Re-extracting text with your own extractor    |
-| **WET**   | Plain text that Common Crawl's own extractor pulled from each page           | ~9 TB             | Quick corpora (C4, OSCAR, mC4 used WET)       |
-| **WAT**   | JSON metadata per page: links, headers, title, language guess                | ~20 TB            | Link graphs, URL filtering, domain statistics |
+| **WET**   | Plain text that Common Crawl's own extractor pulled from each page           | ~7 TB             | Quick corpora (C4, OSCAR, mC4 used WET)       |
+| **WAT**   | JSON metadata per page: links, headers, title, language guess                | ~16 TB            | Link graphs, URL filtering, domain statistics |
 
 A WARC file is a sequence of gzip members, one per record, so that any record can be decompressed on its own once its byte offset is known. Each record has a header block (`WARC-Type`, `WARC-Target-URI`, `WARC-Date`, a content digest, the detected payload type) followed by the payload; a fetched page produces three records, `request`, `response` and `metadata`. The manifest files `warc.paths.gz`, `wet.paths.gz` and `wat.paths.gz` list every file in the snapshot, which is how a job divides the snapshot across machines.
 
@@ -190,7 +190,7 @@ Most open web corpora are a choice of snapshots plus a choice of pipeline:
 | C4 {cite}`raffel2019exploring`                      | 1 (April 2019) | WET             | English    | Strict line-level rules; a bad-words list that also removed benign text {cite}`dodge2021documenting` |
 | mC4 {cite}`xue2021mt5`                              | 71             | WET             | 101 languages | Per-language C4 rules with a line-length rule instead of terminal punctuation  |
 | OSCAR {cite}`abadji2022oscar`                       | 1 per release  | WET             | 150+       | Language id per line, then per document; minimal filtering by design              |
-| RefinedWeb {cite}`penedo2023refinedweb`             | 90             | WARC + trafilatura | English | Web only; argued that enough filtered web matches curated mixtures                |
+| RefinedWeb {cite}`penedo2023refinedweb`             | about 90 (all dumps to 2023-06) | WARC + trafilatura | English | Web only; argued that enough filtered web matches curated mixtures                |
 | FineWeb {cite}`penedo2024fineweb`                   | 96             | WARC + trafilatura | English | Every filter ablated with 1.7B-parameter training runs; 15T tokens                |
 | FineWeb-Edu {cite}`penedo2024fineweb`               | as FineWeb     | as FineWeb      | English    | Classifier for educational value, 1.3T tokens                                     |
 | CulturaX {cite}`nguyen2023culturax`                 | mC4 + OSCAR    | WET             | 167        | Merge and re-clean two multilingual corpora                                       |
@@ -218,9 +218,10 @@ Common Crawl covers the open, static, mostly English web as of a few weeks ago. 
 
 ### 3.2 robots.txt and the politeness conventions
 
-The Robots Exclusion Protocol (RFC 9309) lets a site state, in `/robots.txt`, which user agents may fetch which paths. It was a convention for thirty years and became a standard in 2022; it is not enforced by anything but the crawler's own code, which is why it has become the centre of the consent question in Section 5. A crawler is expected to:
+The Robots Exclusion Protocol (RFC 9309) {cite}`koster2022robots` lets a site state, in `/robots.txt`, which user agents may fetch which paths. It was a convention for thirty years and became a standard in 2022; it is not enforced by anything but the crawler's own code, which is why it has become the centre of the consent question in Section 5. A crawler is expected to:
 
-- Fetch `/robots.txt` before anything else on a host, cache it, and obey the `Disallow` and `Allow` rules for its own user agent, falling back to the `*` group.
+- Fetch `/robots.txt` before anything else on a host and obey the `Disallow` and `Allow` rules for its own user agent, falling back to the `*` group. When several rules match a path, the most specific one (the longest match) wins.
+- Treat the answer to that fetch as RFC 9309 says: a 4xx status (the file is "unavailable") means no restrictions, while a 5xx status or a network failure ("unreachable") means the whole site is disallowed. Use a cached copy for no more than 24 hours, and parse at least the first 500 KiB of the file.
 - Honour `Crawl-delay` where present (it is a widely used extension, not part of RFC 9309) and otherwise limit itself to a request every few seconds per host, with backoff on `429` and `503` responses.
 - Identify itself with a user agent string that names the crawler and links to a page explaining it, so that site operators can block it or write to its operator.
 - Use the `Sitemap:` entries, which list the URLs a site wants crawled, as the frontier for that site.
@@ -246,6 +247,8 @@ for agent in ["*", "Googlebot", "CCBot", "GPTBot", "Google-Extended"]:
     print(f"{agent:16} article: {article}  search: {search}")
 ```
 
+The standard-library parser predates RFC 9309: it ignores the `*` wildcard and the end-of-path anchor (a final dollar sign) and applies the first matching rule instead of the longest, so `Disallow: /*.pdf` does not block `/a/b.pdf`, and `Disallow: /a` followed by `Allow: /a/b` blocks `/a/b/c`, which the RFC allows. Use it for inspection, as here; a production crawler needs a compliant parser, such as Google's `robotstxt` library or `protego` in Python.
+
 The user agents in that list are the ones that matter for training data: `CCBot` is Common Crawl, `GPTBot` is OpenAI's crawler, `Google-Extended` is Google's token for opting out of model training without leaving search, and `ClaudeBot`, `anthropic-ai`, `Bytespider`, `PerplexityBot` and `Applebot-Extended` are the others most often named in robots files. A site that disallows `CCBot` removes itself from every future Common Crawl snapshot, and therefore from every corpus derived from one.
 
 (sec-ch3-crawler-architecture)=
@@ -259,7 +262,7 @@ A crawler at corpus scale is a distributed system with four parts:
 - **Deduplication of URLs** before fetching (canonicalisation, a seen-set of URL hashes) and of content after fetching (so that mirrors and soft-404 pages do not fill the frontier with links).
 - **Storage** as WARC, with the request, response and metadata records written together, because the raw response is what later re-extraction needs. Writing only extracted text saves space and throws away the option of re-extracting with a better tool next year.
 
-Rendering is the expensive option. A page that builds its content with JavaScript yields a near-empty HTML response to a plain fetcher; running a headless browser recovers the content at ten to a hundred times the cost per page. Most training-data crawls do not render, which is one reason single-page applications are under-represented in corpora.
+Rendering is the expensive option. A page that builds its content with JavaScript yields a near-empty HTML response to a plain fetcher; running a headless browser recovers the content at many times the cost per page. Most training-data crawls do not render, which is one reason single-page applications are under-represented in corpora.
 
 ```{admonition} Reading robots.txt
 :class: note
@@ -276,13 +279,13 @@ Order-of-magnitude arithmetic for a billion-page crawl: pages average about 100 
 
 ## 4. Curated Sources
 
-The web supplies volume; the sources in this section supply things the web is short of: long documents, reliable facts, technical reasoning, working code and natural conversation. Each is a small fraction of a corpus and each is sampled several times over.
+The web supplies volume; the sources in this section supply things the web is short of: long documents, reliable facts, technical reasoning, working code and natural conversation. Each is a small fraction of a corpus, and the smallest of them (Wikipedia, books) are typically seen two or more times.
 
 (sec-ch3-wikipedia-wikimedia-projects)=
 
 ### 4.1 Wikipedia and the Wikimedia projects
 
-Wikipedia is in every corpus. The Wikimedia Foundation publishes complete database dumps of every language edition twice a month (`dumps.wikimedia.org`), licensed CC BY-SA 4.0, as XML with the wikitext markup; converting wikitext to clean text (templates, infoboxes, references, tables) is the main work, and the `wikimedia/wikipedia` dataset on Hugging Face is a widely used pre-converted version. English Wikipedia is about 4.5 billion words, roughly 5 billion tokens or 0.03% of a 15T-token corpus, and models typically see it two to four times. Wiktionary, Wikibooks, Wikisource and Wikidata are published the same way; Dolma includes Wikibooks alongside Wikipedia.
+Wikipedia is in every corpus. The Wikimedia Foundation publishes complete database dumps of every language edition twice a month (`dumps.wikimedia.org`), under CC BY-SA and the GFDL, as XML with the wikitext markup; converting wikitext to clean text (templates, infoboxes, references, tables) is the main work, and the `wikimedia/wikipedia` dataset on Hugging Face is a widely used pre-converted version. English Wikipedia is about 5.3 billion words in 7.3 million articles (November 2026), roughly 6 to 7 billion tokens or about 0.04% of a 15T-token corpus, and models typically see it two to four times. Wiktionary, Wikibooks, Wikisource and Wikidata are published the same way; Dolma includes Wikibooks alongside Wikipedia.
 
 (sec-ch3-books)=
 
@@ -327,8 +330,8 @@ Licence filtering is the acquisition-time decision that matters most for code: a
 
 Conversation teaches turn-taking, register and the question-answer form that instruction tuning (Chapter 10) later refines. The sources have become harder to obtain:
 
-- **Reddit** was the backbone of WebText (GPT-2 used links with at least three upvotes as a quality signal) and of the Pushshift archive used by many corpora, until API access was closed to free bulk use in 2023 and licensed to model developers instead.
-- **Stack Exchange** published a quarterly dump of every question and answer on its sites under CC BY-SA, which is in The Pile and LLaMA, and is the single best source of paired technical questions and answers; in 2024 the dump moved behind a login with terms that restrict its use for training.
+- **Reddit** was the backbone of WebText (GPT-2 {cite}`radford2019language` used links with at least three upvotes as a quality signal) and of the Pushshift archive used by many corpora, until Reddit restricted bulk access through its API.
+- **Stack Exchange** published a quarterly dump of every question and answer on its sites under CC BY-SA, which is in The Pile and LLaMA, and is the single best source of paired technical questions and answers; in July 2024 the download moved behind a login, with an agreement that the file is for "projects that do not include training a large language model".
 - **Mailing lists, IRC logs and email archives**, the Ubuntu IRC logs and the Enron email corpus in The Pile, supply informal dialogue.
 - **Subtitles and transcripts** (OpenSubtitles, YouTube captions) supply spoken-register dialogue; their licensing is unsettled and most recent open corpora omit them.
 
@@ -336,7 +339,7 @@ Conversation teaches turn-taking, register and the question-answer form that ins
 
 ### 4.6 News, government and legal text
 
-News archives are mostly licensed commercially now; the open sources are the CC-NEWS subset of Common Crawl (news sites crawled continuously, used by RoBERTa) and national-library collections with their own terms. Government text, court opinions (the FreeLaw project in The Pile), patents (USPTO), legislation and regulatory filings are public records in most jurisdictions, large, well edited and formal, and under-used relative to their quality because they have to be collected site by site.
+News archives are mostly licensed commercially now; the open sources are the CC-NEWS subset of Common Crawl (news sites crawled continuously, used by RoBERTa {cite}`liu2019roberta`) and national-library collections with their own terms. Government text, court opinions (the FreeLaw project in The Pile), patents (USPTO), legislation and regulatory filings are public records in most jurisdictions, large, well edited and formal, and under-used relative to their quality because they have to be collected site by site.
 
 ```{admonition} Comparing Sources
 :class: tip
@@ -355,9 +358,9 @@ This section describes the landscape as of 2026 and is not legal advice. The que
 
 Almost every document on the web is under copyright from the moment it is written; the open question is whether copying it into a training set, and training on it, is permitted without a licence.
 
-- In the **United States** the argument is fair use: that training is a transformative, non-expressive use that does not substitute for the work. Several suits by authors, publishers and news organisations against model developers were pending or partly decided in 2024 and 2025, with rulings so far turning on how the data was obtained (a pirated library is treated differently from a lawful copy) and on whether the model's outputs reproduce the works.
-- The **European Union**'s Digital Single Market directive (2019) created a text-and-data-mining exception for research institutions and a general one that rights holders may opt out of in a machine-readable way; the AI Act (2024) requires providers to publish a summary of training content and to honour those opt-outs. A robots.txt directive is the usual machine-readable form.
-- **Japan** permits training on copyrighted works under a 2018 exception with narrow limits; the **United Kingdom** has a research exception and has consulted repeatedly on a broader one; **Singapore** has a computational-analysis exception.
+- In the **United States** the argument is fair use: that training is a transformative, non-expressive use that does not substitute for the work. Several suits by authors, publishers and news organisations against model developers were pending or partly decided in 2024 and 2025. The rulings so far have turned on how the data was obtained (a pirated library is treated differently from a lawful copy) {cite}`bartz2025order`, on market harm, which decided *Kadrey v. Meta* because the plaintiffs offered no evidence that the model's outputs would dilute the market for their books {cite}`kadrey2025order`, and, for a non-generative tool built from a competitor's content to compete with it, against fair use in *Thomson Reuters v. Ross* {cite}`thomsonreuters2025ross`. {ref}`sec-ch3-books` gives the three cases in more detail.
+- The **European Union**'s Digital Single Market directive (2019) created a text-and-data-mining exception for research institutions and a general one that rights holders may opt out of in a machine-readable way; the AI Act (Regulation 2024/1689) requires providers of general-purpose models to put in place a copyright policy that identifies and honours those opt-outs (Article 53(1)(c)) and to publish a sufficiently detailed summary of the content used for training, on a template from the AI Office (Article 53(1)(d)). A robots.txt directive is the most common machine-readable form, though the directive says only "such as machine-readable means", and which forms count is contested.
+- **Japan** permits uses that are not for enjoying a work's expression, which covers training, under Article 30-4 of its Copyright Act (added in 2018), unless the use would unreasonably prejudice the copyright owner's interests. The **United Kingdom** allows text and data analysis only for non-commercial research (section 29A of its Copyright Act) and opened a consultation on a broader exception in December 2024.
 
 The practical consequences for acquisition: keep the record of where each document came from and under what terms (Section 9); prefer sources that are public domain, openly licensed, or licensed to you; treat shadow libraries and scraped paywalled content as liabilities, whatever the fair-use argument; and build the machinery to honour opt-outs, because a document that was lawful to collect may not be lawful to keep.
 
@@ -406,8 +409,8 @@ Data-protection law (the GDPR and its relatives) applies to personal data regard
 
 Three developments in 2025 are turning the informal conventions above into machinery, and a corpus built in 2026 should expect to interact with all of them:
 
-- **Default blocking and paid crawling.** Cloudflare, which fronts a large share of the web, began blocking known AI crawlers by default for new sites in July 2025 and introduced a pay-per-crawl mechanism; the IETF's AI Preferences working group is standardising a vocabulary for expressing training and inference permissions in robots.txt and HTTP headers.
-- **Regulatory codes.** The EU's General-Purpose AI Code of Practice (2025) commits signatories to honour robots.txt and other machine-readable opt-outs and to publish a training-content summary, which makes the opt-out handling of Section 5.3 a compliance requirement rather than a courtesy.
+- **Default blocking and paid crawling.** Cloudflare, which fronts a large share of the web, changed its default to block AI crawlers on 1 July 2025 and introduced a pay-per-crawl mechanism the same day; the IETF's AI Preferences working group is standardising a vocabulary for expressing training and inference permissions in robots.txt and HTTP headers.
+- **Regulatory codes.** The EU's General-Purpose AI Code of Practice (published 10 July 2025) is a voluntary code whose copyright chapter shows providers how to meet the AI Act's copyright obligations, which include honouring machine-readable opt-outs. The training-content summary is not a Code commitment but a legal obligation under Article 53(1)(d), with a template the Commission adopted in July 2025. Together they make the opt-out handling of {ref}`sec-ch3-robots-txt-opt-outs-commons` a compliance requirement rather than a courtesy.
 - **Openly licensed corpora.** The Common Pile {cite}`kandpal2025common` (8 TB of public-domain and openly licensed text, with a model trained on it to show the approach is viable), Common Corpus and institutional collections of digitised public-domain books show what a corpus looks like when Section 5's advice is followed to the letter: smaller, older on average, and free of the exposure that the web corpora carry.
 
 One acquisition-time risk is specific to how corpora are distributed. Many web datasets are published as URL lists rather than text, and Carlini et al. {cite}`carlini2024poisoning` showed that buying expired domains on those lists is enough to insert chosen content into anyone who later re-downloads the dataset; content hashes recorded at collection time (Section 9) are the defence.
@@ -455,7 +458,7 @@ If the stock of human-written text is the binding constraint, text generated by 
 
 - **Instruction data**: Self-Instruct {cite}`wang2023selfinstruct` showed that a model can generate the instruction-response pairs used to fine-tune it, bootstrapping from a few hundred human-written seeds; this is the basis of most instruction datasets (Chapter 10).
 - **Textbook-style pretraining data**: phi-1 {cite}`gunasekar2023textbooks`, a 1.3B-parameter code model, trained on under a billion tokens of synthetic textbook-style text plus about six billion tokens of classifier-filtered code and matched much larger models on the HumanEval and MBPP coding benchmarks. Cosmopedia {cite}`benallal2024cosmopedia` reproduced the idea openly, generating 25 billion tokens of textbooks, blog posts and stories from seed topics with an open model.
-- **Rephrased web**: rewriting crawled pages in a cleaner style with a model, then training on the rewritten version, gives a cleaner corpus of the same size.
+- **Rephrased web**: rewriting crawled pages in a cleaner style with a model, then training on the rewritten version alongside the original, gives a cleaner corpus of the same size; WRAP {cite}`maini2024rephrasing` paraphrased C4 into Wikipedia-like and question-answer styles and reached the same perplexity about three times faster.
 - **Translation and augmentation** for low-resource languages, where a model translates high-resource text into a target language.
 
 (sec-ch3-failure-modes)=
@@ -494,7 +497,7 @@ Three ways the weights get set:
 - **By optimisation.** DoReMi {cite}`xie2023doremi` trains a small proxy model with weights adjusted to minimise the worst-case excess loss across domains against a reference, then trains the large model with the resulting weights; on The Pile it improved average downstream accuracy at the same token budget and reached the baseline's downstream accuracy 2.6 times faster.
 - **By ablation.** The FineWeb {cite}`penedo2024fineweb` and DataComp-LM {cite}`li2024datacomp` protocol, training small models on candidate mixtures and comparing benchmarks, is the method of last resort and the one most teams actually use for the final decision.
 
-A fourth, increasingly common choice is **curriculum**: training on the full mixture for most of the run and then "annealing" on a small, high-quality subset (FineWeb-Edu, textbooks, instruction-like data) in the final few per cent of steps, which the Llama 3 report and several open models describe as a measurable gain.
+A fourth, increasingly common choice is **curriculum**: training on the full mixture for most of the run and then "annealing" on a small, high-quality subset (FineWeb-Edu, textbooks, instruction-like data) in the final few per cent of steps, which the Llama 3 report {cite}`grattafiori2024llama` and several open models describe as a measurable gain.
 
 (sec-ch3-budgeting-procedure)=
 
@@ -542,7 +545,7 @@ sources = {               # unique tokens, preferred weight
     "web":        (12e12, 0.82),
     "code":       (1.0e12, 0.08),
     "papers":     (0.15e12, 0.04),
-    "wikipedia":  (0.0045e12, 0.03),
+    "wikipedia":  (0.0065e12, 0.03),
     "books":      (0.03e12, 0.03),
 }
 plan = plan_mixture(total_tokens=2e12, sources=sources)
