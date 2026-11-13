@@ -7,7 +7,7 @@ SHA-256 of every sample as committed.
 
 | File | Source | Fetched | License or terms | Attribution |
 |---|---|---|---|---|
-| `cc_manifest.json` | Common Crawl `CC-MAIN-2026-39`: file count, first five paths of `warc.paths.gz` and their sizes from `HEAD` requests | 2026-10-20 | Common Crawl Terms of Use (https://commoncrawl.org/terms-of-use) | Common Crawl Foundation |
+| `cc_manifest.json` | Common Crawl `CC-MAIN-2026-39`: file count, first five paths of `warc.paths.gz`, and the sizes of the first three from `HEAD` requests | 2026-10-20 | Common Crawl Terms of Use (https://commoncrawl.org/terms-of-use) | Common Crawl Foundation |
 | `cc_warc_slice.json` | Common Crawl `CC-MAIN-2026-39`, 256 KB of WARC file 97,227 (seed 5, second draw) from byte 192,487,287, cut to complete records; headers and the first 1,500 characters of each payload | 2026-11-13 | Common Crawl Terms of Use; the captured pages remain the property of their sites' owners | Common Crawl Foundation; the sites named in each `WARC-Target-URI` |
 | `wikipedia_robots.txt` | `https://en.wikipedia.org/robots.txt` | 2026-10-20 | Wikimedia Foundation; quoted as a factual record of the site's crawler policy | Wikimedia Foundation |
 | `news_robots.txt`, `news_robots_host.txt` | the robots.txt of the news site named in `news_robots_host.txt` | 2026-10-20 | the site's terms; quoted as a factual record of its crawler policy | the site's publisher |
