@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 import torch.nn.functional as F
 
@@ -110,3 +111,39 @@ def test_kl_divergence_asymmetry_on_the_notebook_distributions():
     a, b = kl(peaked, uncertain)[0].item(), kl(uncertain, peaked)[0].item()
     assert abs(a - 0.6064) < 1e-3 and abs(b - 1.2365) < 1e-3, (a, b)
     assert abs(a - b) > 0.1
+
+
+CHAPTER_DIR = CH02.parent
+NOTEBOOK_PATH = CHAPTER_DIR / "examples" / "mathematical_foundations_demo.ipynb"
+
+
+def test_notebook_keeps_its_plots():
+    """Executing with MPLBACKEND=Agg drops inline images; every plotting cell must still carry an image/png."""
+    import json
+
+    cells = json.loads(NOTEBOOK_PATH.read_text(encoding="utf-8"))["cells"]
+    images = {i: sum("image/png" in o.get("data", {}) for o in c.get("outputs", []))
+              for i, c in enumerate(cells) if c["cell_type"] == "code"}
+    plotting = [i for i, c in enumerate(cells)
+                if c["cell_type"] == "code" and "plt.show()" in "".join(c["source"])]
+    assert sum(images.values()) >= len(plotting), f"{sum(images.values())} images for {len(plotting)} plotting cells"
+    tagged = [i for i, c in enumerate(cells)
+              if any(t.startswith("figure:") for t in c.get("metadata", {}).get("tags", []))]
+    assert len(tagged) == 3, tagged
+    assert all(images[i] >= 1 for i in tagged), [i for i in tagged if not images[i]]
+
+
+@pytest.mark.slow
+def test_make_figures_is_deterministic(tmp_path):
+    """Two runs of make_figures.py write byte-identical SVG files."""
+    import os
+    import subprocess
+    import sys
+
+    env = {**os.environ, "MPLBACKEND": "Agg"}
+    for run in ("a", "b"):
+        subprocess.run([sys.executable, str(CHAPTER_DIR / "figures" / "make_figures.py"), str(tmp_path / run)],
+                       check=True, env=env, capture_output=True)
+    names = sorted(p.name for p in (tmp_path / "a").glob("*.svg"))
+    assert len(names) == 10
+    assert all((tmp_path / "a" / n).read_bytes() == (tmp_path / "b" / n).read_bytes() for n in names)

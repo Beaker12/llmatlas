@@ -1,0 +1,32 @@
+// Gradient paths through one block, post-LN (left) and pre-LN (right). Rendered with rankdir TB.
+digraph pre_post_ln {
+  graph [fontname="DejaVu Sans", fontsize=13, nodesep=0.35, ranksep=0.35, newrank=true];
+  node  [fontname="DejaVu Sans", fontsize=13, shape=box, style="rounded,filled", color="#4a5568", penwidth=1.2,
+         fillcolor="#ffffff", margin="0.12,0.06"];
+  edge  [fontname="DejaVu Sans", fontsize=12, color="#4a5568", penwidth=1.2];
+
+  subgraph cluster_post {
+    label="post-LN"; fontsize=14; color="#4a5568"; style="rounded,filled"; fillcolor="#fdf1e6";
+    a_in  [label=<h<SUP>(l)</SUP>>, fillcolor="#e8eef7"];
+    a_f   [label="F"];
+    a_add [label="+", shape=circle, width=0.35, fixedsize=true];
+    a_ln  [label="LN", fillcolor="#f4b183"];
+    a_out [label=<h<SUP>(l+1)</SUP>>, fillcolor="#e8eef7"];
+    a_in -> a_f; a_f -> a_add;
+    a_in -> a_add [label=" residual", color="#d62728", fontcolor="#d62728", penwidth=2];
+    a_add -> a_ln [color="#d62728", penwidth=2];
+    a_ln -> a_out [color="#d62728", penwidth=2, label=" every path passes LN"];
+  }
+
+  subgraph cluster_pre {
+    label="pre-LN"; fontsize=14; color="#4a5568"; style="rounded,filled"; fillcolor="#eaf4ea";
+    b_in  [label=<h<SUP>(l)</SUP>>, fillcolor="#e8eef7"];
+    b_ln  [label="LN", fillcolor="#f4b183"];
+    b_f   [label="F"];
+    b_add [label="+", shape=circle, width=0.35, fixedsize=true];
+    b_out [label=<h<SUP>(l+1)</SUP>>, fillcolor="#e8eef7"];
+    b_in -> b_ln; b_ln -> b_f; b_f -> b_add;
+    b_in -> b_add [label=" identity path, Jacobian I", color="#2ca02c", fontcolor="#2a7a2a", penwidth=2.4];
+    b_add -> b_out [color="#2ca02c", penwidth=2.4];
+  }
+}
