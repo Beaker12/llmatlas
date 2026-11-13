@@ -89,10 +89,13 @@ def corpus_sizes(out):
     ax.text(2019.6, 1.15e15, "effective stock of public text (quality- and repetition-adjusted):\n"
             "about 300T tokens (dashed), 90% interval 100T to 1,000T (band)",
             va="bottom", fontsize=9.5, color="#8a4b0f", linespacing=1.15)
+    SPREAD = {"FineWeb": -0.1, "Llama 3": 0.1}
     offsets = {"GPT-3": (6, -4), "LLaMA 1": (6, -4), "Dolma": (6, -4), "FineWeb": (-8, -3), "Llama 3": (8, -3)}
     for r in data:
         # Placed at the middle of the month in the cited paper's arXiv identifier (YYMM).
-        x, y = int(r["year"]) + (int(r["month"]) - 0.5) / 12, float(r["tokens"])
+        # FineWeb and Llama 3 are one month apart at 15T: each is moved 0.1 year outward.
+        x = int(r["year"]) + (int(r["month"]) - 0.5) / 12 + SPREAD.get(r["name"], 0.0)
+        y = float(r["tokens"])
         marker = "o" if r["kind"] == "trained" else "s"
         ax.scatter([x], [y], marker=marker, color="#2b5d8a", s=36, zorder=3)
         label = f"{r['name']}  {y / 1e12:g}T" if y >= 1e12 else f"{r['name']}  {y / 1e9:g}B"

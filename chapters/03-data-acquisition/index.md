@@ -71,7 +71,7 @@ Everything runs on a CPU in about a minute. The network fetches total a few mega
 
 ### 1.1 The published mixtures
 
-The training sets of the major models are reported, when they are reported at all, as a table of sources with a share of the training tokens. The table below collects the published mixtures. For GPT-3 and LLaMA the shares are of training tokens, which differ from shares of the raw data because sources are sampled at different rates; for The Pile they are shares of the training bytes after upsampling (the paper's "Weight" column: each component's raw size times its epochs, out of 1,254 GiB, not of the 825 GiB raw corpus, so Pile-CC's 227 GiB is 18% of the training bytes but 28% of the raw corpus), and for Dolma and FineWeb shares of the corpus by tokens (Dolma's Table 1, in Llama tokens out of 3,059B).
+The training sets of the major models are reported, when they are reported at all, as a table of sources with a share of the training tokens. The table below collects the published mixtures. The shares are not all of the same quantity. For GPT-3 and LLaMA they are shares of training tokens, which differ from shares of the raw data because sources are sampled at different rates. For The Pile they are shares of the training bytes after upsampling. For Dolma and FineWeb they are shares of the corpus by tokens.
 
 ```{raw} latex
 \begingroup\footnotesize\setlength{\tabcolsep}{2pt}
@@ -89,6 +89,7 @@ The training sets of the major models are reported, when they are reported at al
 \endgroup
 ```
 
+The Pile's shares are the paper's "Weight" column: each component's raw size times its epochs, out of 1,254 GiB, not of the 825 GiB raw corpus. Pile-CC's 227 GiB is therefore 18% of the training bytes but 28% of the raw corpus. Dolma's shares are from its Table 1, in Llama tokens out of 3,059B.
 
 {numref}`fig-ch3-mixtures` draws the same shares as bars, which makes the contrast visible at a glance: The Pile is the only mixture in which the web crawl is not the largest part.
 
@@ -130,7 +131,7 @@ The effective stock is therefore a count of training tokens, not of distinct tok
 :name: fig-ch3-corpus-size
 :alt: Log-scale plot of tokens against year. GPT-3 300 billion in 2020, LLaMA 1 1.4 trillion in 2023, Dolma 3 trillion, FineWeb 15 trillion and Llama 3 15 trillion in 2024. A shaded band from 100 to 1,000 trillion with a dashed line at 300 trillion marks the effective stock of public text, adjusted for quality and repetition; a gray span marks the projected exhaustion years 2026 to 2032.
 
-Training-set and corpus sizes against the effective stock of public text. Circles are tokens a model was trained on, squares tokens in a released corpus (The Pile is left out because it reports bytes); each point sits at the month of its paper's arXiv identifier, so FineWeb (June 2024) and Llama 3 (July 2024) nearly coincide. The band is the 90% interval of 100T to 1,000T tokens and the dashed line the central 300T of the effective stock, quality- and repetition-adjusted, as Epoch AI's summary {cite}`epoch2024runout` states them; the gray span is the years in which {cite:t}`villalobos2024run` project it to be used up.
+Training-set and corpus sizes against the effective stock of public text. Circles are tokens a model was trained on, squares tokens in a released corpus (The Pile is left out because it reports bytes); each point sits at the month of its paper's arXiv identifier, except that FineWeb (June 2024) and Llama 3 (July 2024), both at 15T, are drawn 0.1 year to either side of their months so that both markers show. The band is the 90% interval of 100T to 1,000T tokens and the dashed line the central 300T of the effective stock, quality- and repetition-adjusted, as Epoch AI's summary {cite}`epoch2024runout` states them; the gray span is the years in which {cite:t}`villalobos2024run` project it to be used up.
 ```
 
 Both results bear directly on acquisition. If repeated tokens are nearly free, then a small, high-quality source is worth collecting even though it will be seen many times. If the stock is finite, then every source lost to opt-outs or licensing is a permanent reduction, and synthetic data ({ref}`sec-ch3-synthetic-data`) stops being optional.
@@ -145,7 +146,7 @@ Age matters as well as amount. {cite:t}`longpre2023pretrainers` pretrained model
 
 ### 2.1 What Common Crawl is
 
-Common Crawl is a non-profit foundation that has crawled the web since 2008, on a regular (roughly monthly to bi-monthly) schedule since 2013, and publishes every snapshot, free of charge, on Amazon S3 under the Open Data program. Each snapshot is a sample of the web, not a copy: a few billion pages selected by a crawl frontier that balances breadth across domains against depth within them, fetched over two to three weeks, with per-domain page budgets derived from a harmonic-centrality ranking of hosts so that no single site dominates. Common Crawl is the raw material for C4, RefinedWeb, FineWeb, Dolma's web portion, OSCAR, mC4 and CulturaX, and for the web portion of nearly every model whose training data has been described. A critical analysis of it as a training source {cite}`baack2024critical` is worth reading before building on it: the crawl over-represents English, under-represents the parts of the web behind login walls or heavy JavaScript, and, being a sample, is not the web.
+Common Crawl is a non-profit foundation that has crawled the web since 2008, on a regular (roughly monthly to bi-monthly) schedule since 2013, and publishes every snapshot, free of charge, on Amazon S3 under the Open Data program. Each snapshot is a sample of the web, not a copy: a few billion pages selected by a crawl frontier that balances breadth across domains against depth within them, fetched over two to three weeks. Its crawler, CCBot, is "a Nutch-based web crawler" whose candidate list "is sorted by host (domain name) and then distributed to a set of crawler servers" {cite}`commoncrawl2026faq`. Common Crawl is the raw material for C4, RefinedWeb, FineWeb, Dolma's web portion, OSCAR, mC4 and CulturaX, and for the web portion of nearly every model whose training data has been described. A critical analysis of it as a training source {cite}`baack2024critical` is worth reading before building on it: the crawl over-represents English, under-represents the parts of the web behind login walls or heavy JavaScript, and, being a sample, is not the web.
 
 (sec-ch3-snapshots-segments-files)=
 
@@ -190,7 +191,8 @@ def fetch(url, headers=None, timeout=60):
 
 def warc_paths(crawl_id):
     """The manifest: one line per WARC file in the snapshot."""
-    return gzip.decompress(fetch(f"{BASE}crawl-data/{crawl_id}/warc.paths.gz")).decode().splitlines()
+    paths = fetch(f"{BASE}crawl-data/{crawl_id}/warc.paths.gz")
+    return gzip.decompress(paths).decode().splitlines()
 
 
 def warc_records(blob):
@@ -212,7 +214,9 @@ def warc_records(blob):
 def parse_record(record):
     head, _, payload = record.partition(b"\r\n\r\n")
     headers = dict(
-        line.split(": ", 1) for line in head.decode("utf-8", "replace").splitlines()[1:] if ": " in line
+        line.split(": ", 1)
+        for line in head.decode("utf-8", "replace").splitlines()[1:]
+        if ": " in line
     )
     return headers, payload
 
@@ -246,8 +250,9 @@ A worked lookup in two steps. An index entry gives, for one capture, the WARC fi
 ```python
 import json
 
-# Three lines of the CC-MAIN-2026-39 URL index (cdx-00000.gz), copied verbatim. Each is a SURT key
-# (the host reversed, so that one site's pages sort together), a 14-digit capture time and a JSON record.
+# Three lines of the CC-MAIN-2026-39 URL index (cdx-00000.gz), copied verbatim.
+# Each is a SURT key (the host reversed, so that one site's pages sort
+# together), a 14-digit capture time and a JSON record.
 INDEX_LINES = """\
 0,11,214,3)/galleries/garys-gallery/yazyk 20260908100030 {"url": "https://3.214.11.0/galleries/garys-gallery/yazyk/", "mime": "text/html", "mime-detected": "text/html", "status": "200", "digest": "4FPPZ452ITDX4GHJQJ354OVFUQJCBZVS", "length": "9882", "offset": "48374322", "filename": "crawl-data/CC-MAIN-2026-39/segments/1788492699801.50/warc/CC-MAIN-20260908083825-20260908113825-00403.warc.gz", "charset": "UTF-8", "languages": "eng", "recordid": "01a08076-484a-783b-8b87-4cc051e242c1"}
 0,131,250,3)/ 20260917030102 {"url": "http://3.250.131.0/", "mime": "text/html", "mime-detected": "text/html", "status": "200", "digest": "Q2UDGWTKF2JOTDPWVJ7K45VJFAEWOL5C", "length": "8698", "offset": "272424", "filename": "crawl-data/CC-MAIN-2026-39/segments/1788493000724.71/warc/CC-MAIN-20260917025921-20260917055921-00427.warc.gz", "charset": "UTF-8", "languages": "por,eng", "recordid": "01a0ad4f-7be6-719d-a7fd-693aa3f9997c"}
@@ -259,7 +264,8 @@ for line in INDEX_LINES.splitlines():
     hit = json.loads(fields)
     start, length = int(hit["offset"]), int(hit["length"])
     print(hit["url"], timestamp[:8], hit["status"])
-    print(f"  GET {hit['filename'].rsplit('/', 1)[1]}  Range: bytes={start}-{start + length - 1}")
+    name = hit["filename"].rsplit("/", 1)[1]
+    print(f"  GET {name}  Range: bytes={start}-{start + length - 1}")
 ```
 
 % output
@@ -283,13 +289,17 @@ import urllib.parse
 import urllib.request
 
 UA = os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")
-query = urllib.parse.urlencode({"url": "https://3.214.11.0/galleries/garys-gallery/yazyk/", "output": "json"})
-req = urllib.request.Request(f"https://index.commoncrawl.org/CC-MAIN-2026-39-index?{query}", headers={"User-Agent": UA})
-hits = [json.loads(line) for line in urllib.request.urlopen(req, timeout=120).read().decode().splitlines()]
+url = "https://3.214.11.0/galleries/garys-gallery/yazyk/"
+query = urllib.parse.urlencode({"url": url, "output": "json"})
+req = urllib.request.Request(f"https://index.commoncrawl.org/CC-MAIN-2026-39-index?{query}",
+                             headers={"User-Agent": UA})
+reply = urllib.request.urlopen(req, timeout=120).read().decode()
+hits = [json.loads(line) for line in reply.splitlines()]
 hit = hits[0]
 print(len(hits), "capture(s);", hit["urlkey"], hit["timestamp"], hit["status"])
 FILENAME, START, LENGTH = hit["filename"], int(hit["offset"]), int(hit["length"])
-print(FILENAME.rsplit("/", 1)[1], START, LENGTH)    # the three values the range fetch below uses
+# the three values the range fetch below uses
+print(FILENAME.rsplit("/", 1)[1], START, LENGTH)
 ```
 
 % output-shape
@@ -310,15 +320,19 @@ import os
 import urllib.request
 
 UA = os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")
-# FILENAME, START and LENGTH are the values the index query above returns for the first index line (the record
-# is 9882 bytes at offset 48374322 of this file); they are restated so that this fetch runs even when the index
+# FILENAME, START and LENGTH are the values the index query above returns for the
+# first index line (the record is 9882 bytes at offset 48374322 of this file); they
+# are restated so that this fetch runs even when the index
 # server is unreachable.
-FILENAME = "crawl-data/CC-MAIN-2026-39/segments/1788492699801.50/warc/CC-MAIN-20260908083825-20260908113825-00403.warc.gz"
+FILENAME = ("crawl-data/CC-MAIN-2026-39/segments/1788492699801.50/warc/"
+            "CC-MAIN-20260908083825-20260908113825-00403.warc.gz")
 START, LENGTH = 48374322, 9882
 
 req = urllib.request.Request("https://data.commoncrawl.org/" + FILENAME,
-                             headers={"User-Agent": UA, "Range": f"bytes={START}-{START + LENGTH - 1}"})
-record = gzip.decompress(urllib.request.urlopen(req, timeout=60).read())   # one gzip member, one record
+                             headers={"User-Agent": UA,
+                                      "Range": f"bytes={START}-{START + LENGTH - 1}"})
+# one gzip member, one record
+record = gzip.decompress(urllib.request.urlopen(req, timeout=60).read())
 warc_head, http_head, html = record.split(b"\r\n\r\n", 2)
 target = [l for l in warc_head.split(b"\r\n") if l.startswith(b"WARC-Target-URI")][0]
 print(warc_head.split(b"\r\n")[0].decode(), "|", target.decode())
@@ -421,7 +435,9 @@ import urllib.robotparser
 
 # Fetch with a named user agent: RobotFileParser.read() would send Python's default
 # agent, which Wikipedia answers with 403, and the parser would then disallow everything.
-req = urllib.request.Request("https://en.wikipedia.org/robots.txt", headers={"User-Agent": os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")})
+agent = os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")
+req = urllib.request.Request("https://en.wikipedia.org/robots.txt",
+                             headers={"User-Agent": agent})
 robots_txt = urllib.request.urlopen(req, timeout=20).read().decode("utf-8", "replace")
 
 rp = urllib.robotparser.RobotFileParser()
@@ -429,7 +445,8 @@ rp.parse(robots_txt.splitlines())
 
 for agent in ["*", "Googlebot", "CCBot", "GPTBot", "Google-Extended"]:
     article = rp.can_fetch(agent, "https://en.wikipedia.org/wiki/Language_model")
-    search = rp.can_fetch(agent, "https://en.wikipedia.org/w/index.php?title=Special:Search&search=x")
+    search = rp.can_fetch(
+        agent, "https://en.wikipedia.org/w/index.php?title=Special:Search&search=x")
     print(f"{agent:16} article: {article}  search: {search}")
 ```
 
@@ -453,12 +470,34 @@ The user agents in that list are the ones that matter for training data: `CCBot`
 
 A crawler at corpus scale is a distributed system with four parts:
 
-- **Frontier**: the queue of URLs to fetch, prioritized by some estimate of value (links in, freshness, site quality) and partitioned by host so that per-host politeness can be enforced locally. The frontier is the crawl's main state and its main engineering problem; Common Crawl uses Apache Nutch's.
-- **Fetchers**: many workers, each holding a pool of connections, resolving DNS, fetching with timeouts, and respecting the per-host schedule. Throughput is bounded by politeness rather than bandwidth: at one request per two seconds per host, a hundred thousand hosts in flight give fifty thousand pages per second in theory and a tenth of that in practice.
+- **Frontier**: the queue of URLs to fetch, prioritized by some estimate of value (links in, freshness, site quality) and partitioned by host so that per-host politeness can be enforced locally. The frontier is the crawl's main state and its main engineering problem; Common Crawl's is that of Apache Nutch {cite}`commoncrawl2026faq`.
+- **Fetchers**: many workers, each holding a pool of connections, resolving DNS, fetching with timeouts, and respecting the per-host schedule. Throughput is bounded by politeness rather than bandwidth: at one request per two seconds per host, a hundred thousand hosts in flight give at most $10^5 / 2 =$ fifty thousand pages per second. That is a ceiling, not a rate: most hosts have only a few URLs queued, and slow servers hold connections open.
 - **Deduplication of URLs** before fetching (canonicalization, a seen-set of URL hashes) and of content after fetching (so that mirrors and soft-404 pages do not fill the frontier with links).
 - **Storage** as WARC, with the request, response and metadata records written together, because the raw response is what later re-extraction needs. Writing only extracted text saves space and throws away the option of re-extracting with a better tool next year.
 
 {numref}`fig-ch3-crawler-architecture` arranges the four parts in the order a URL passes through them.
+
+The frontier has to answer two questions for every URL: has it been seen, and when should it be fetched. The seen-set at web scale holds billions of URLs, too many to keep as strings in memory, so crawlers keep fixed-size fingerprints and test new URLs against them in batches {cite}`heydon1999mercator,lee2009irlbot`. A Bloom filter {cite}`bloom1970space`, the structure {ref}`Chapter 4 <sec-ch4-exact-deduplication>` uses for paragraph hashes, trades a small false-positive rate for less memory still: with the optimal number of hash functions it needs $-\ln p / (\ln 2)^2$ bits per URL for a false-positive rate $p$. A false positive here means a new URL is wrongly taken as seen and never fetched, which a crawl can afford at 1%:
+
+```python
+import math
+
+p, urls = 0.01, 10e9                       # false-positive rate; URLs in the seen-set
+bits = -math.log(p) / math.log(2) ** 2     # bits per URL, optimal number of hashes
+probes = round(bits * math.log(2))
+print(f"{bits:.2f} bits and {probes} hash functions per URL")
+print(f"Bloom filter: {bits * urls / 8 / 1e9:.1f} GB;",
+      f"8-byte fingerprints: {8 * urls / 1e9:.0f} GB")
+```
+
+% output
+
+```text
+9.59 bits and 7 hash functions per URL
+Bloom filter: 12.0 GB; 8-byte fingerprints: 80 GB
+```
+
+Ten billion URLs fit in 12 GB, a fraction of a single machine's memory, against 80 GB for exact fingerprints. When to fetch is a priority order within each host's queue, set by an estimate of a page's value (links pointing to it, its host's quality) and, for pages already fetched, of how likely it is to have changed since. Two limits protect the frontier from pages that generate links without end, such as calendars with a "next month" link or URLs carrying a fresh session id: a page budget per host, and a cap on URL length and link depth. Choosing how often to re-fetch pages that change at different rates is its own problem, treated by {cite:t}`cho2003effective`; {cite:t}`olston2010web` survey all of these questions.
 
 ```{figure} figures/crawler-architecture.*
 :name: fig-ch3-crawler-architecture
@@ -493,7 +532,7 @@ def remove_dot_segments(path):
                 out.pop()
         elif seg != ".":
             out.append(seg)
-    trailing = segments[-1] in (".", "..") and out   # "/a/b/.." names the directory "/a/"
+    trailing = segments[-1] in (".", "..") and out   # "/a/b/.." names "/a/"
     return "/" + "/".join(out) + ("/" if trailing else "")
 
 
@@ -504,7 +543,7 @@ def canonicalize(url):
     crawler should neither store nor send. IPv6 hosts keep their brackets."""
     p = urlsplit(url)
     scheme, host = p.scheme.lower(), (p.hostname or "").lower()
-    if ":" in host:          # IPv6 literal: urlsplit strips the brackets RFC 3986 requires
+    if ":" in host:      # IPv6 literal: urlsplit strips the brackets RFC 3986 requires
         host = f"[{host}]"
     default = p.port in (None, DEFAULT_PORT.get(scheme))
     netloc = host if default else f"{host}:{p.port}"
@@ -523,12 +562,13 @@ class PoliteCrawler:
     ETag. The clock and the wait are hooks: by default a simulated clock that waiting
     advances; for real use pass clock=time.monotonic and sleep=time.sleep."""
 
-    def __init__(self, transport, agent="examplebot", delay=2.0, clock=None, sleep=None):
+    def __init__(self, transport, agent="examplebot", delay=2.0,
+                 clock=None, sleep=None):
         self.transport, self.agent, self.delay = transport, agent, delay
         self.now = 0.0                          # the simulated clock, in seconds
         self.clock = clock or (lambda: self.now)
         self.sleep = sleep or self._advance
-        self.robots, self.ready = {}, {}    # per host: robots.txt, earliest next request
+        self.robots, self.ready = {}, {}    # per host: robots.txt, next allowed time
         self.etags, self.store = {}, {}     # per URL: last ETag, last body
 
     def _advance(self, seconds):
@@ -615,7 +655,8 @@ print(canonicalize("https://[::1]:443/"))
 print(canonicalize("http://example.com/a//b/./c"))   # the empty segment is kept
 bot = PoliteCrawler(transport)
 first = bot.crawl(["https://Example.com/"])
-print("first crawl: ", dict(sorted(first.items(), key=str)), "in", bot.now, "simulated s")
+print("first crawl: ", dict(sorted(first.items(), key=str)), "in", bot.now,
+      "simulated s")
 start = bot.now
 second = bot.crawl(["https://example.com/"])
 print("second crawl:", dict(sorted(second.items(), key=str)), "in", bot.now - start,
@@ -651,13 +692,13 @@ def get(headers):
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             return r.status, r.headers, len(r.read())
-    except urllib.error.HTTPError as e:   # urllib raises on 304, which is not an error here
+    except urllib.error.HTTPError as e:   # urllib raises on 304, not an error here
         return e.code, e.headers, len(e.read())
 
 
 status, headers, size = get({})
 print(status, size, "bytes, ETag", headers["ETag"].strip('"')[:8])
-time.sleep(2)                             # politeness: two seconds between requests to one host
+time.sleep(2)              # politeness: two seconds between requests to one host
 status, _, size = get({"If-None-Match": headers["ETag"]})
 print(status, size, "bytes")
 ```
@@ -678,7 +719,7 @@ The notebook section {ref}`nb-acq-robots` parses with the standard library the r
 
 ### 3.4 The economics
 
-Order-of-magnitude arithmetic for a billion-page crawl: pages average about 100 KB of HTML, so the raw fetch is 100 TB of transfer, which is free as cloud ingress but costs a few thousand dollars in NAT-gateway or bandwidth charges, and far more if the crawl is then moved between regions or clouds. Compressed, the WARC output is about a quarter of that. Fetching at an aggregate 5,000 pages per second takes two to three days of wall-clock time on a few hundred small machines; politeness, not hardware, sets that rate. Extraction and filtering, by comparison, are a few CPU-milliseconds per page and run in hours. The dominant cost of a serious crawl is not any of these but the engineering of the frontier and the handling of the long tail of malformed responses, redirect loops, tar pits and hosts that respond slowly enough to tie up a fetcher without timing out.
+Order-of-magnitude arithmetic for a billion-page crawl: pages average about 100 KB of HTML, so the raw fetch is 100 TB of transfer, which is free as cloud ingress but costs a few thousand dollars in NAT-gateway or bandwidth charges, and far more if the crawl is then moved between regions or clouds. Compressed, the WARC output is about a quarter of that. At an aggregate 5,000 pages per second, a tenth of the ceiling above, a billion pages take $10^9 / (5{,}000 \times 86{,}400) \approx 2.3$ days of wall-clock time; politeness, not hardware, sets that rate. Extraction and filtering, by comparison, are a few CPU-milliseconds per page and run in hours. The dominant cost of a serious crawl is not any of these but the engineering of the frontier and the handling of the long tail of malformed responses, redirect loops, tar pits and hosts that respond slowly enough to tie up a fetcher without timing out.
 
 (sec-ch3-curated-sources)=
 
@@ -699,9 +740,9 @@ Wikipedia is in every corpus. The Wikimedia Foundation publishes complete databa
 Books are the best source of long-range structure (a plot, an argument, a chapter that refers to an earlier one), and the most legally fraught. The sources that have been used:
 
 - **Project Gutenberg**: more than 75,000 public-domain books, mostly English works published before 1931 (the US public-domain cutoff as of 2026), downloadable in bulk. Legally clean and stylistically dated; it is the books portion of Dolma and part of LLaMA's.
-- **BookCorpus**: 11,000 self-published novels scraped from Smashwords for a 2015 study that aligned books with their film adaptations, and later used to train BERT and the original GPT; a retrospective datasheet {cite}`bandy2021addressing` found duplicates, skewed genres and books whose licenses did not permit the use.
+- **BookCorpus**: 11,000 self-published novels scraped from Smashwords for a 2015 study {cite}`zhu2015aligning` that aligned books with their film adaptations, and later used to train BERT and the original GPT; a retrospective datasheet {cite}`bandy2021addressing` found duplicates, skewed genres and books whose licenses did not permit the use.
 - **Books3**: about 196,000 pirated books from a shadow library, included in The Pile and used by several models, withdrawn after takedown notices in 2023 and the subject of ongoing lawsuits. Its presence in a training set is now a legal liability.
-- **Licensed collections**: publishers and aggregators now sell training licenses, and the large labs increasingly buy them, or buy and scan print books, rather than rely on shadow libraries. In *Bartz v. Anthropic* (N.D. Cal., June 2025) training on lawfully acquired books was held fair use, while building a permanent central library from pirated copies was not and was sent to trial {cite}`bartz2025order`; the case then settled for a fund of 1.5 billion dollars, and the court "granted final approval" of the settlement on 20 July 2026 {cite}`bartz2026settlement`. In *Kadrey v. Meta* (N.D. Cal., June 2025) Meta won summary judgment on fair use although it had downloaded books from shadow libraries, because the plaintiffs offered no evidence that the models' outputs would dilute the market for their books; the judge wrote that the ruling "does not stand for the proposition that Meta's use of copyrighted materials to train its language models is lawful" and limited it to those thirteen authors and that record {cite}`kadrey2025order`. In *Thomson Reuters v. Ross Intelligence* (D. Del., February 2025) the court rejected fair use for a non-generative legal-research tool trained on Westlaw headnotes to compete with Westlaw {cite}`thomsonreuters2025ross`.
+- **Licensed collections**: publishers and aggregators now sell training licenses, and the large labs increasingly buy them, or buy and scan print books, rather than rely on shadow libraries. The US rulings of 2025 that made the difference between a lawful and a pirated copy matter are in {ref}`sec-ch3-copyright-training-question`.
 
 The practical rule in 2026: use public-domain text, text whose license explicitly allows the use, or text you have licensed, and keep the receipts. Books3 in The Pile is the cautionary example of what happens otherwise.
 
@@ -736,7 +777,7 @@ License filtering is the acquisition-time decision that matters most for code: a
 Conversation teaches turn-taking, register and the question-answer form that instruction tuning ({ref}`roadmap-post-training-and-alignment`) later refines. The sources have become harder to obtain:
 
 - **Reddit** was the backbone of WebText (GPT-2 {cite}`radford2019language` used links with at least three upvotes as a quality signal) and of the Pushshift archive used by many corpora, until Reddit restricted bulk access through its API. Its Data API Terms, in effect since 19 June 2023 and last revised in July 2026, grant no right to use Reddit content "for training a machine learning or AI model, without the express permission of rightsholders" {cite}`reddit2026dataapi`, and access for training is licensed instead: Google announced in February 2024 that it has access to the Data API to "display, train on, and otherwise use" Reddit content {cite}`google2024reddit`.
-- **Stack Exchange** published a quarterly dump of every question and answer on its sites under CC BY-SA, which is in The Pile and LLaMA, and is the single best source of paired technical questions and answers; in July 2024 the download moved behind a login, with an agreement that the file is for "projects that do not include training a large language model".
+- **Stack Exchange** published a quarterly dump of every question and answer on its sites under CC BY-SA, which is in The Pile and LLaMA, and is the single best source of paired technical questions and answers; in July 2024 the download moved behind a login, with an agreement that the file is for "projects that do not include training a large language model" {cite}`stackexchange2024dump`.
 - **Mailing lists, IRC logs and email archives**, the Ubuntu IRC logs and the Enron email corpus in The Pile, supply informal dialogue.
 - **Subtitles and transcripts** (OpenSubtitles, YouTube captions) supply spoken-register dialogue; their licensing is unsettled and most recent open corpora omit them.
 
@@ -763,9 +804,15 @@ This section describes the landscape as of 2026 and is not legal advice. The que
 
 Almost every document on the web is under copyright from the moment it is written; the open question is whether copying it into a training set, and training on it, is permitted without a license.
 
-- In the **United States** the argument is fair use: that training is a transformative, non-expressive use that does not substitute for the work. Several suits by authors, publishers and news organizations against model developers were pending or partly decided in 2024 and 2025. The rulings so far have turned on how the data was obtained (a pirated library is treated differently from a lawful copy) {cite}`bartz2025order`, on market harm, which decided *Kadrey v. Meta* because the plaintiffs offered no evidence that the model's outputs would dilute the market for their books {cite}`kadrey2025order`, and, for a non-generative tool built from a competitor's content to compete with it, against fair use in *Thomson Reuters v. Ross* {cite}`thomsonreuters2025ross`. {ref}`sec-ch3-books` gives the three cases in more detail.
-- The **European Union**'s Digital Single Market directive (2019) created a text-and-data-mining exception for research institutions and a general one that rights holders may opt out of in a machine-readable way; the AI Act (Regulation 2024/1689) requires providers of general-purpose models to put in place a copyright policy that identifies and honors those opt-outs (Article 53(1)(c)) and to publish a sufficiently detailed summary of the content used for training, on a template from the AI Office (Article 53(1)(d)). A robots.txt directive is the most common machine-readable form, though the directive says only "such as machine-readable means", and which forms count is contested.
-- **Japan** permits uses that are not for enjoying a work's expression, which covers training, under Article 30-4 of its Copyright Act (added in 2018), unless the use would unreasonably prejudice the copyright owner's interests. The **United Kingdom** allows text and data analysis only for non-commercial research (section 29A of its Copyright Act) and opened a consultation on a broader exception in December 2024. **Singapore**'s Copyright Act 2021 has a statutory exception for computational data analysis: in its Part 5 (permitted uses), Division 8, section 243 defines what computational data analysis is and section 244 permits "copying or communicating for computational data analysis" {cite}`singapore2021copyright`.
+- In the **United States** the argument is fair use: that training is a transformative, non-expressive use that does not substitute for the work. Suits by authors, publishers and news organizations against model developers were filed from 2023 on, and three rulings of 2025 show the factors that have decided cases so far.
+  - *How the copies were obtained.* In *Bartz v. Anthropic* (N.D. Cal., June 2025) training on lawfully acquired books was held fair use, while building a permanent central library from pirated copies was not and was sent to trial {cite}`bartz2025order`. The case then settled for a fund of 1.5 billion dollars, and the court "granted final approval" of the settlement on 20 July 2026 {cite}`bartz2026settlement`.
+  - *Market harm.* In *Kadrey v. Meta* (N.D. Cal., June 2025) Meta won summary judgment on fair use although it had downloaded books from shadow libraries, because the plaintiffs offered no evidence that the models' outputs would dilute the market for their books. The judge wrote that the ruling "does not stand for the proposition that Meta's use of copyrighted materials to train its language models is lawful" and limited it to those thirteen authors and that record {cite}`kadrey2025order`.
+  - *A competing, non-generative tool.* In *Thomson Reuters v. Ross Intelligence* (D. Del., February 2025) the court rejected fair use for a legal-research tool trained on Westlaw headnotes to compete with Westlaw {cite}`thomsonreuters2025ross`.
+
+  The US Copyright Office's report on generative AI training (Part 3, pre-publication version of May 2025) reaches no single answer either: "some uses of copyrighted works for generative AI training will qualify as fair use, and some will not" {cite}`usco2025part3`.
+- The **European Union**'s Digital Single Market directive (Directive 2019/790) created a text-and-data-mining exception for scientific research (Article 3) and a general one (Article 4) that applies only where use has not been "expressly reserved by their rightholders in an appropriate manner, such as machine-readable means in the case of content made publicly available online" {cite}`eu2019dsm`. The AI Act (Regulation 2024/1689) requires providers of general-purpose models to "put in place a policy to comply with Union law on copyright" that identifies and complies with those reservations (Article 53(1)(c)), and to publish "a sufficiently detailed summary about the content used for training" on a template from the AI Office (Article 53(1)(d)) {cite}`eu2024aiact`. A robots.txt directive is the most common machine-readable form, but the directive names none, and which forms count is contested.
+- **European courts** have begun to apply these rules to models. In *GEMA v. OpenAI* the Munich Regional Court I (judgment of 11 November 2025, 42 O 14139/24, under appeal) held that song lyrics memorized by a language model are reproduced in it, and that the text-and-data-mining exception covers copies made in assembling the training data but not the training of the model {cite}`gema2025openai`. In England, *Getty Images v. Stability AI* ([2025] EWHC 2863 (Ch), 4 November 2025) went the other way on the model itself: the judge found that the model "does not store any of those Copyright Works" and that "the model weights are not themselves an infringing copy", so Getty's secondary-infringement claim failed {cite}`getty2025stability`. Getty had abandoned its claim about the training itself, for want of evidence that it took place in the United Kingdom, so the court did not rule on it.
+- **Japan**'s Copyright Act, Article 30-4, permits exploiting a work in any case "in which it is not a person's purpose to personally enjoy or cause another person to enjoy the thoughts or sentiments expressed in that work", which covers training, unless the use "would unreasonably prejudice the interests of the copyright owner" {cite}`japan2024copyright`. The **United Kingdom** allows copying for text and data analysis only "for the sole purpose of research for a non-commercial purpose" (section 29A of the Copyright, Designs and Patents Act 1988) {cite}`uk1988cdpa29a`. Its government published a consultation on a broader exception on 17 December 2024 {cite}`ukipo2024consultation`, and the Data (Use and Access) Act 2025 then required it to publish, within nine months of the Act's passing, an economic impact assessment of the consultation's four policy options and a report on the use of copyright works in developing AI systems (sections 135 and 136) {cite}`uk2025duaa`. **Singapore**'s Copyright Act 2021 has a statutory exception for computational data analysis: in its Part 5 (permitted uses), Division 8, section 243 defines what computational data analysis is and section 244 permits "copying or communicating for computational data analysis" {cite}`singapore2021copyright`.
 
 Copyright is not the only legal route. A site's terms of service raise a contract question, and in the United States anti-hacking law adds another: the Computer Fraud and Abuse Act forbids accessing a protected computer "without authorization". In *hiQ Labs v. LinkedIn* the Ninth Circuit, reconsidering the case after the Supreme Court's *Van Buren* decision, held that hiQ had raised serious questions whether access can be "without authorization" under the CFAA "where, as here, prior authorization is not generally required, but a particular person—or bot—is refused access", that is, to pages anyone can view, while noting that trespass to chattels and breach of contract claims may still be available {cite}`hiq2022linkedin`. Scraping public pages is therefore not thereby lawful: the risk moves from copyright to contract and tort, which is why the terms-of-service restrictions measured in {ref}`sec-ch3-robots-txt-opt-outs-commons` matter even where robots.txt admits a crawler.
 
@@ -794,7 +841,6 @@ Share of tokens fully restricted to AI crawlers by robots.txt, by domain tier, m
 
 Opt-out mechanisms beyond robots.txt:
 
-- **Registries** such as Spawning's Do Not Train list and the `ai.txt` proposal, which some corpus builders query at acquisition time.
 - **Per-dataset opt-out forms**, as The Stack provides for GitHub repositories, honored in the next release.
 - **Retroactive removal**: FineWeb and RefinedWeb state that they will remove pages whose owners ask, and Common Crawl removes content on request from future snapshots.
 - **Reservations in the response or the page.** The TDM Reservation Protocol (TDMRep) of a W3C community group {cite}`w3c2024tdmrep` expresses the EU text-and-data-mining opt-out as two properties, `tdm-reservation` (1 means the rights are reserved) and `tdm-policy` (where to learn how to obtain a license), declared in a `tdmrep.json` file under `/.well-known`, in an HTTP response header or in HTML metadata. DeviantArt introduced `noai` and `noimageai` directives in November 2022, placed in an HTML tag on the page and sent in an HTTP header when an image is downloaded {cite}`deviantart2022noai`. Search engines read directives of the same kind from the robots meta tag and from its HTTP-header form, `X-Robots-Tag` {cite}`google2026robotsmeta`. A crawler that checks only robots.txt sees none of these; honoring them means parsing the headers and HTML it has already fetched.
@@ -828,22 +874,29 @@ Erasure is where acquisition decisions come back. A request names a person, an a
 import hashlib
 import re
 
-# A manifest as in the provenance section: one record per document, with the shard it was written to.
+# A manifest as in the provenance section: one record per document, with the
+# shard it was written to.
 docs = {
-    "https://example.com/team": b"Contact Jane Roe at jane.roe@example.com or on extension 4417.",
+    "https://example.com/team":
+        b"Contact Jane Roe at jane.roe@example.com or on extension 4417.",
     "https://example.com/blog/1": b"Jane Roe wrote about tokenizers.",
     "https://example.org/news": b"The council met on Tuesday.",
-    "https://example.org/people/jroe": b"J. Roe (jane.roe@example.com) lives on Elm Street.",
+    "https://example.org/people/jroe":
+        b"J. Roe (jane.roe@example.com) lives on Elm Street.",
 }
-manifest = [{"locator": u, "sha256": hashlib.sha256(b).hexdigest(), "shard": i % 2} for i, (u, b) in enumerate(docs.items())]
+manifest = [{"locator": u, "sha256": hashlib.sha256(b).hexdigest(), "shard": i % 2}
+            for i, (u, b) in enumerate(docs.items())]
 
-# An erasure request names the person and their address; the matching runs over the raw text.
+# An erasure request names the person and their address; the matching runs over
+# the raw text.
 request = re.compile(r"jane\.roe@example\.com|\bjane roe\b", re.IGNORECASE)
 hits = [r for r in manifest if request.search(docs[r["locator"]].decode())]
-blocklist = {r["sha256"] for r in hits}   # kept so that the next rebuild drops the same bytes
-print(len(hits), "of", len(manifest), "documents match; shards to rewrite:", sorted({r["shard"] for r in hits}))
+blocklist = {r["sha256"] for r in hits}   # so the next rebuild drops the same bytes
+print(len(hits), "of", len(manifest), "documents match; shards to rewrite:",
+      sorted({r["shard"] for r in hits}))
 
-# At corpus scale: k matching documents spread uniformly over S shards touch S(1 - (1 - 1/S)^k) shards.
+# At corpus scale: k matching documents spread uniformly over S shards touch
+# S(1 - (1 - 1/S)^k) shards.
 S, k = 10_000, 200
 print(f"{S * (1 - (1 - 1 / S) ** k):.1f} of {S:,} shards rewritten for {k} documents")
 ```
@@ -863,11 +916,11 @@ The fourth document is found only through the email address, which is why a requ
 
 Three developments in 2025 are turning the informal conventions above into machinery, and a corpus built in 2026 should expect to interact with all of them:
 
-- **Default blocking and paid crawling.** Cloudflare, which fronts a large share of the web, changed its default to block AI crawlers on 1 July 2025 and introduced a pay-per-crawl mechanism the same day; the IETF's AI Preferences working group is standardizing a vocabulary for expressing training and inference permissions in robots.txt and HTTP headers.
-- **Regulatory codes.** The EU's General-Purpose AI Code of Practice (published 10 July 2025) is a voluntary code whose copyright chapter shows providers how to meet the AI Act's copyright obligations, which include honoring machine-readable opt-outs. The training-content summary is not a Code commitment but a legal obligation under Article 53(1)(d), with a template the Commission adopted in July 2025. Together they make the opt-out handling of {ref}`sec-ch3-robots-txt-opt-outs-commons` a compliance requirement rather than a courtesy.
+- **Default blocking and paid crawling.** Cloudflare, which fronts a large share of the web, announced on 1 July 2025 that it was "changing the default to block AI crawlers unless they pay creators for their content" {cite}`cloudflare2025content`. The IETF's AI Preferences working group is chartered to standardize a "vocabulary for expressing AI-related preferences" and the means of attaching those preferences to content in IETF protocols and formats {cite}`ietf2025aipref`.
+- **Regulatory codes.** The EU's General-Purpose AI Code of Practice is "a voluntary tool" whose chapters on transparency and copyright "offer all providers of general-purpose AI models a way to demonstrate compliance with their obligations under Article 53 AI Act", which include honoring machine-readable opt-outs {cite}`ec2025gpaicode`. The training-content summary is not a Code commitment but a legal obligation under Article 53(1)(d), with a template the Commission published on 24 July 2025 {cite}`ec2025template`. Together they make the opt-out handling of {ref}`sec-ch3-robots-txt-opt-outs-commons` a compliance requirement rather than a courtesy.
 - **Openly licensed corpora.** The Common Pile {cite}`kandpal2025common` (8 TB of public-domain and openly licensed text, with a model trained on it to show the approach is viable), Common Corpus and institutional collections of digitized public-domain books show what a corpus looks like when the advice of {ref}`sec-ch3-rights-licenses-consent` is followed to the letter: smaller, older on average, and free of the exposure that the web corpora carry.
 
-One acquisition-time risk is specific to how corpora are distributed. Many image-text datasets are published as URL lists rather than content, and {cite:t}`carlini2024poisoning` showed that buying expired domains on those lists is enough to insert chosen content into the copy of anyone who later re-downloads the dataset; the same work showed that timing edits to land just before a Wikipedia snapshot is taken poisons the snapshot; content hashes recorded at collection time ({ref}`sec-ch3-record-contents`) defend against the first attack, because a re-downloaded page whose bytes changed no longer matches its hash, but not against the second, because the poisoned text is what was collected and the hash records it faithfully. For that one the authors propose timing defenses: "randomizing the order in which data is snapshotted", or delaying content before it enters a snapshot so that trusted moderators can revert malicious edits first.
+One acquisition-time risk is specific to how corpora are distributed. Many image-text datasets are published as URL lists rather than content, and {cite:t}`carlini2024poisoning` showed two attacks. Buying expired domains on those lists is enough to insert chosen content into the copy of anyone who later re-downloads the dataset. And timing edits to land just before a Wikipedia snapshot is taken poisons the snapshot. Content hashes recorded at collection time ({ref}`sec-ch3-record-contents`) defend against the first attack, because a re-downloaded page whose bytes changed no longer matches its hash. They do not defend against the second, because the poisoned text is what was collected and the hash records it faithfully. For that one the authors propose timing defenses: "randomizing the order in which data is snapshotted", or delaying content before it enters a snapshot so that trusted moderators can revert malicious edits first.
 
 (sec-ch3-multilingual-low-resource-sources)=
 
@@ -916,8 +969,10 @@ budget = 1e12        # tokens in the training run
 max_epochs = 4
 for unique in [5e6, 50e6, 500e6]:
     share = max_epochs * unique / budget
-    print(f"{unique / 1e6:5.0f}M unique tokens -> at most {share * 100:.1g}% of a 1T-token run")
-print(f"for a 1% share at {max_epochs} epochs: {0.01 * budget / max_epochs / 1e9:.1f}B unique tokens")
+    print(f"{unique / 1e6:5.0f}M unique tokens -> at most {share * 100:.1g}%",
+          "of a 1T-token run")
+needed = 0.01 * budget / max_epochs
+print(f"for a 1% share at {max_epochs} epochs: {needed / 1e9:.1f}B unique tokens")
 ```
 
 % output
@@ -959,11 +1014,12 @@ import random
 
 rng = random.Random(0)
 V, N, GENERATIONS = 1000, 10_000, 10
-human = [1 / r for r in range(1, V + 1)]        # Zipf-shaped frequencies over V word types
+human = [1 / r for r in range(1, V + 1)]   # Zipf-shaped frequencies over V word types
 
 
 def train(sample):
-    """'Training' here is estimating unigram frequencies; a type never sampled gets zero."""
+    """'Training' here is estimating unigram frequencies; a type never sampled
+    gets zero."""
     counts = [0] * V
     for t in sample:
         counts[t] += 1
@@ -974,11 +1030,14 @@ synthetic = mixed = human
 print("generation  types left (all synthetic)  types left (half human)")
 for g in range(1, GENERATIONS + 1):
     synthetic = train(rng.choices(range(V), weights=synthetic, k=N))
-    mixed = train(rng.choices(range(V), weights=mixed, k=N // 2) + rng.choices(range(V), weights=human, k=N // 2))
+    mixed = train(rng.choices(range(V), weights=mixed, k=N // 2)
+                  + rng.choices(range(V), weights=human, k=N // 2))
     if g in (1, 2, 5, 10):
-        print(f"{g:10}  {sum(c > 0 for c in synthetic):25}  {sum(c > 0 for c in mixed):23}")
-assert all(c > 0 for c in synthetic[:50]) and all(c > 0 for c in mixed[:50])   # the head survives in both
-assert sum(c > 0 for c in synthetic) < sum(c > 0 for c in mixed)               # the tail survives with human data
+        alive_s, alive_m = sum(c > 0 for c in synthetic), sum(c > 0 for c in mixed)
+        print(f"{g:10}  {alive_s:25}  {alive_m:23}")
+# the head survives in both; the tail survives only with human data
+assert all(c > 0 for c in synthetic[:50]) and all(c > 0 for c in mixed[:50])
+assert sum(c > 0 for c in synthetic) < sum(c > 0 for c in mixed)
 ```
 
 % output
@@ -1036,7 +1095,8 @@ import math
 
 
 def plan_mixture(total_tokens, sources, max_epochs=4.0):
-    """Return {source: (weight, tokens, epochs)} obeying sum(weight) == 1 and epochs <= max_epochs.
+    """Return {source: (weight, tokens, epochs)} obeying sum(weight) == 1 and
+    epochs <= max_epochs.
 
     sources: {name: (unique_tokens, preferred_weight)}
     """
@@ -1045,7 +1105,8 @@ def plan_mixture(total_tokens, sources, max_epochs=4.0):
         raise ValueError("not enough unique data for this budget at this epoch cap")
     weights = {s: w for s, (_, w) in sources.items() if w > 0}
     if sum(caps[s] for s in weights) < 1.0:
-        raise ValueError("the sources with a positive preferred weight cannot absorb the budget")
+        raise ValueError(
+            "the sources with a positive preferred weight cannot absorb the budget")
     total = sum(weights.values())
     weights = {s: w / total for s, w in weights.items()}
     clipped = set()
@@ -1062,7 +1123,8 @@ def plan_mixture(total_tokens, sources, max_epochs=4.0):
         for s in free:
             weights[s] += surplus * free[s] / scale
     return {
-        s: (weights.get(s, 0.0), weights.get(s, 0.0) * total_tokens, weights.get(s, 0.0) * total_tokens / sources[s][0])
+        s: (weights.get(s, 0.0), weights.get(s, 0.0) * total_tokens,
+            weights.get(s, 0.0) * total_tokens / sources[s][0])
         for s in sources
     }
 
@@ -1077,8 +1139,8 @@ sources = {               # unique tokens, preferred weight
 plan = plan_mixture(total_tokens=2e12, sources=sources)
 assert abs(sum(w for w, _, _ in plan.values()) - 1) < 1e-9
 assert all(e <= 4.0 + 1e-9 for _, _, e in plan.values())
-assert math.isclose(plan["wikipedia"][2], 4.0)   # the smallest source is pinned at the epoch cap
-assert plan["web"][0] > 0.82              # and its surplus went to the sources with room
+assert math.isclose(plan["wikipedia"][2], 4.0)   # smallest source pinned at the cap
+assert plan["web"][0] > 0.82              # its surplus went to the sources with room
 for name, (w, t, e) in plan.items():
     print(f"{name:10} weight {w:6.3f}  tokens {t/1e12:5.2f}T  epochs {e:4.2f}")
 ```
@@ -1132,13 +1194,14 @@ import time
 
 def provenance_record(source, locator, raw_bytes, license, robots_decision, fetched_at,
                       synthetic=False, **extra):
-    """One manifest line per acquired document; stable field order, content-addressed."""
+    """One manifest line per acquired document; stable field order,
+    content-addressed."""
     return {
         "source": source,
         "locator": locator,
         "sha256": hashlib.sha256(raw_bytes).hexdigest(),
         "bytes": len(raw_bytes),
-        "fetched_at": fetched_at,          # when the bytes were fetched, not when the record is written
+        "fetched_at": fetched_at,      # when the bytes were fetched, not when recorded
         "license": license,
         "robots": robots_decision,
         "synthetic": synthetic,
@@ -1365,7 +1428,6 @@ The answer that most datasheets leave blank is the one that matters here: what w
 - [Hugging Face dataset viewer API](https://huggingface.co/docs/dataset-viewer) - the rows endpoint the notebook uses to sample hosted corpora
 - [datatrove](https://github.com/huggingface/datatrove) and the [Dolma toolkit](https://github.com/allenai/dolma) - pipeline libraries with Common Crawl readers
 - [Wikimedia dumps](https://dumps.wikimedia.org/) - Wikipedia and sister projects
-- [Spawning](https://spawning.ai/) - the Do Not Train registry
 
 ______________________________________________________________________
 

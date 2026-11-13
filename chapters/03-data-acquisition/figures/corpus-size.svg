@@ -1979,12 +1979,12 @@ z
    </g>
    <g id="PathCollection_6">
     <g clip-path="url(#p092119cfab)">
-     <use xlink:href="#m3cfb1dc476" x="221.789014" y="110.322362" style="fill: #2b5d8a; stroke: #2b5d8a"/>
+     <use xlink:href="#m3cfb1dc476" x="218.413955" y="110.322362" style="fill: #2b5d8a; stroke: #2b5d8a"/>
     </g>
    </g>
    <g id="text_21">
     <!-- FineWeb  15T -->
-    <g transform="translate(149.868858 113.322362) scale(0.095 -0.095)">
+    <g transform="translate(146.493799 113.322362) scale(0.095 -0.095)">
      <defs>
       <path id="DejaVuSans-29" d="M 628 4666 
 L 3309 4666 
@@ -2032,12 +2032,12 @@ z
    </g>
    <g id="PathCollection_7">
     <g clip-path="url(#p092119cfab)">
-     <use xlink:href="#m61edca5612" x="224.601563" y="110.322362" style="fill: #2b5d8a; stroke: #2b5d8a"/>
+     <use xlink:href="#m61edca5612" x="227.976622" y="110.322362" style="fill: #2b5d8a; stroke: #2b5d8a"/>
     </g>
    </g>
    <g id="text_22">
     <!-- Llama 3  15T -->
-    <g transform="translate(232.601563 113.322362) scale(0.095 -0.095)">
+    <g transform="translate(235.976622 113.322362) scale(0.095 -0.095)">
      <use xlink:href="#DejaVuSans-2f"/>
      <use xlink:href="#DejaVuSans-4f" transform="translate(55.71875 0)"/>
      <use xlink:href="#DejaVuSans-44" transform="translate(83.5 0)"/>
