@@ -66,7 +66,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            texlive-xetex texlive-latex-extra texlive-fonts-extra \
+            texlive-xetex texlive-latex-extra texlive-fonts-recommended texlive-fonts-extra \
             texlive-lang-chinese texlive-lang-arabic latexmk poppler-utils \
             fonts-freefont-otf fonts-noto-cjk fonts-noto-core
 
