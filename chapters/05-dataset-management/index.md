@@ -411,12 +411,12 @@ assert results["zstd-19"] > results["zstd-3"] > results["lz4"]
 % output-shape
 
 ```text
-lz4       ratio 1.73, compress 208 MB/s, decompress 678 MB/s
-zstd-1    ratio 2.76, compress 170 MB/s, decompress 532 MB/s
-zstd-3    ratio 2.77, compress 100 MB/s, decompress 270 MB/s
-zstd-19   ratio 3.25, compress 2 MB/s, decompress 387 MB/s
-gzip-6    ratio 2.85, compress 6 MB/s, decompress 202 MB/s
-brotli-9  ratio 3.02, compress 5 MB/s, decompress 246 MB/s
+lz4       ratio 1.73, compress 207 MB/s, decompress 679 MB/s
+zstd-1    ratio 2.76, compress 170 MB/s, decompress 529 MB/s
+zstd-3    ratio 2.77, compress 105 MB/s, decompress 379 MB/s
+zstd-19   ratio 3.25, compress 2 MB/s, decompress 597 MB/s
+gzip-6    ratio 2.85, compress 6 MB/s, decompress 195 MB/s
+brotli-9  ratio 3.02, compress 5 MB/s, decompress 216 MB/s
 ```
 
 (sec-ch5-versioning)=
@@ -555,6 +555,44 @@ A released version is never modified. If a shard is found to be corrupt or to co
 
 A dataset tag is the thing a training configuration references. A configuration that says `data: fineweb-edu-v1.2.0` with the tag resolved to a root hash at launch and recorded in the run's metadata is reproducible; one that says `data: /mnt/data/fineweb-edu/latest` is not.
 
+The same rule applies to a corpus pulled from the Hugging Face Hub, where every dataset is a Git repository. Its branches and tags move when the maintainers push, so a configuration names the commit: the download functions take a `revision` argument that accepts a branch, a tag or a commit hash, and a commit must be given as the full 40-character hash, not the 7-character abbreviation {cite}`huggingface2026hubdownload`. A launcher can enforce this before any data is read, as the listing does; the resolved hash then goes into the run's metadata beside the corpus root.
+
+```python
+import re
+
+FULL_COMMIT = re.compile(r"[0-9a-f]{40}")
+
+
+def check_data_pin(config: dict) -> list:
+    """Problems with a run configuration's data reference: the revision must be a full commit hash."""
+    revision = config.get("revision", "main")
+    if FULL_COMMIT.fullmatch(revision):
+        return []
+    if re.fullmatch(r"[0-9a-f]{7,39}", revision):
+        return [f"{revision!r} is an abbreviated hash; the Hub needs all 40 characters"]
+    return [f"{revision!r} is a branch or tag, which can move; pin the commit it points to"]
+
+
+configs = {
+    "pinned": {"repo_id": "org/corpus", "revision": "877b84a8f93f2d619faa2a6e514a32beef88ab0a"},
+    "branch": {"repo_id": "org/corpus", "revision": "main"},
+    "short": {"repo_id": "org/corpus", "revision": "877b84a"},
+    "unset": {"repo_id": "org/corpus"},
+}
+for name, cfg in configs.items():
+    print(f"{name:6s} -> {check_data_pin(cfg) or 'ok'}")
+assert check_data_pin(configs["pinned"]) == [] and all(check_data_pin(configs[n]) for n in ("branch", "short", "unset"))
+```
+
+% output
+
+```text
+pinned -> ok
+branch -> ["'main' is a branch or tag, which can move; pin the commit it points to"]
+short  -> ["'877b84a' is an abbreviated hash; the Hub needs all 40 characters"]
+unset  -> ["'main' is a branch or tag, which can move; pin the commit it points to"]
+```
+
 (sec-ch5-lineage)=
 
 ### 3.3 Lineage
@@ -623,6 +661,54 @@ versions built from wiki-2024-03: ['c-v1.2.0', 'm-run17', 't-v1.2.0']
 ```{admonition} Versions and Diffs
 :class: note
 The notebook section {ref}`nb-dm-versioning` builds a manifest for the corpus written earlier, rebuilds it with one document changed and one removed, and shows that the version root changes while the diff names exactly the affected shards. It then verifies a downloaded copy against the manifest and detects a corrupted shard.
+```
+
+(sec-ch5-splits-leakage)=
+
+### 3.4 Splits and leakage
+
+A version also fixes its splits: the training set, a validation set used to choose checkpoints and hyperparameters, and a held-out test set opened only for final numbers. A split is useful only if no document in it, and no near-copy of one, is also in training; otherwise the validation loss measures memorization. Such leakage is common in practice: {cite:t}`lee2022deduplicating` found train-test overlap affecting over 4% of the validation sets of standard datasets.
+
+Versioning creates a second route for leakage. If each version draws its validation set afresh at random, documents that were held out in one version are trained on in the next, and a model fine-tuned from the earlier one has seen them. The fix is to assign the split by a hash of a stable key, so that a document keeps its split in every version, and to make that key the near-duplicate cluster from deduplication rather than the document, so that copies of a validation document cannot sit in training. The listing removes 5% of a 100,000-document version and adds 8,000 documents: a fresh 1% random split sends 94.2% of the old validation documents into the new training set, and the hash split sends none.
+
+```python
+import hashlib
+
+import numpy as np
+
+
+def split_of(key: str, salt: str = "split-v1", validation: float = 0.01) -> str:
+    """Stable split by a hash of the key: the same key lands in the same split in every version."""
+    u = int(hashlib.sha256(f"{salt}:{key}".encode()).hexdigest()[:15], 16) / 16**15
+    return "validation" if u < validation else "train"
+
+
+rng = np.random.default_rng(1)
+v1 = [f"doc{i}" for i in range(100_000)]
+v2 = [d for d in v1 if rng.random() > 0.05] + [f"new{i}" for i in range(8000)]  # 5% removed, 8,000 added
+
+# A fresh random 1% split per version puts most of v1's validation set into v2's training set
+val_v1 = set(rng.choice(v1, size=len(v1) // 100, replace=False))
+val_v2 = set(rng.choice(v2, size=len(v2) // 100, replace=False))
+train_v2_random = set(v2) - val_v2
+leak_random = len(val_v1 & train_v2_random) / len(val_v1)
+
+# A hash split by key keeps every surviving validation document in validation
+val_v1_hash = {d for d in v1 if split_of(d) == "validation"}
+train_v2_hash = {d for d in v2 if split_of(d) == "train"}
+leak_hash = len(val_v1_hash & train_v2_hash) / len(val_v1_hash)
+print(f"v1 validation documents in v2 training: random split {leak_random:.1%}, hash split {leak_hash:.1%}")
+assert leak_random > 0.9 and leak_hash == 0.0
+
+# Near-duplicates must share a split: key the hash on the duplicate cluster, not the document
+cluster = {"doc7": "c42", "doc7-mirror": "c42"}
+assert split_of(cluster["doc7"]) == split_of(cluster["doc7-mirror"])
+```
+
+% output
+
+```text
+v1 validation documents in v2 training: random split 94.2%, hash split 0.0%
 ```
 
 (sec-ch5-tokenization-packing)=
