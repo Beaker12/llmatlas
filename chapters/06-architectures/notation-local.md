@@ -13,5 +13,8 @@ chapter writes today and must change to the symbol in the first column. This fil
 | $d_{rope}$ | per-head width of the decoupled rotary query and key in latent attention | index.md:L179 | $d_h^{R}$ at L179, L238, L539 |
 | $\omega_0$ | highest RoPE frequency | index.md:L261 | $\theta_0$ at L261, L275, L293 |
 | $\omega_{d_k/2-1}$ | lowest RoPE frequency | index.md:L261 | $\theta_{d/2-1}$ at L261, L293 |
+| $\hat{q}$ | pair i of a query read as a complex number ($\hat{q}_{m,i}$ at position m; $\hat{k}$ likewise for a key) | ch6 acceptance item 10 |  |
+| $\hat{k}$ | pair i of a key read as a complex number ($\hat{k}_{m',i}$ at position m') | ch6 acceptance item 10 |  |
+| $\rho$ | router probability (book-wide; rho_i = softmax(r)_i) | index.md 6.1 |  | DeepSeek-V3's sigmoid router score rho_i = sigmoid(r_i) in 6.3, stated there as a score that is not a probability |
 
 In the complex-form RoPE proof (C6-12a) the complex conjugate is a superscript star, $k^{*}$, which is not a symbol ($k^{*}$ lists as $k$); never an overline, because the bar accent already means a batch mean ($\bar{\rho}$).

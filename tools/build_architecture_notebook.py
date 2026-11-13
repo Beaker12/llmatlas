@@ -38,25 +38,30 @@ def function(path: Path, name: str) -> str:
 
 
 CELLS: list[tuple[str, str]] = []
+TAGS: dict[int, list[str]] = {}  # cell index -> metadata tags; `figure:<slug>` marks a plot the chapter shows
 
 
-def md(text: str) -> None:
+def md(text: str, tags: tuple[str, ...] = ()) -> None:
     CELLS.append(("markdown", text.strip("\n")))
+    if tags:
+        TAGS[len(CELLS) - 1] = list(tags)
 
 
-def code(text: str) -> None:
+def code(text: str, tags: tuple[str, ...] = ()) -> None:
     CELLS.append(("code", text.strip("\n")))
+    if tags:
+        TAGS[len(CELLS) - 1] = list(tags)
 
 
 md(r"""
 # Modern Architectures Demo
 
-**Purpose**: This notebook builds the pieces of Chapter 6 and checks each against an independent reference: the parameter count of ten real models from their configuration files (seven downloaded, three transcribed from papers), a grouped-query attention layer, a KV cache, a simplified latent cache, rotary-frequency scaling, a mixture-of-experts router, and a seeded comparison of post-norm and pre-norm training. Every section ends in assertions, so a silent change to any formula fails the notebook.
+**Purpose**: This notebook builds the pieces of Chapter 6 and checks each against an independent reference: the parameter count of twelve real models from their configuration files (eight downloaded, four transcribed from papers), a grouped-query attention layer, a KV cache, a simplified latent cache, rotary-frequency scaling, a mixture-of-experts router, and a seeded comparison of post-norm and pre-norm training. Every section ends in assertions, so a silent change to any formula fails the notebook.
 
-**Data**: model configurations are read from the Hugging Face hub at pinned commits when a network is available, and from copies committed in `data/` otherwise; set `LLMATLAS_OFFLINE=1` to skip the network. Both sources are verified against the committed checksums, so the results do not depend on which one is used. The training text is Jane Austen's *Pride and Prejudice*, public domain, from Project Gutenberg.
+**Data**: model configurations are read from the Hugging Face hub at pinned commits when a network is available, and from copies committed in `data/` otherwise; set `LLMATLAS_OFFLINE=1` to skip the network. Both sources are verified against the committed checksums, so the results do not depend on which one is used, and the configuration cell prints the same label either way (the source of each file is kept in `SOURCES`). The training text is Jane Austen's *Pride and Prejudice*, public domain, from Project Gutenberg.
 """)
 
-md("## 1. Setup")
+md("## Setup")
 code(r'''
 import hashlib
 import json
@@ -82,6 +87,7 @@ plt.rcParams["figure.dpi"] = 100
 
 DATA = Path("data")
 OFFLINE = os.environ.get("LLMATLAS_OFFLINE") == "1"
+USER_AGENT = os.environ.get("LLMATLAS_USER_AGENT", "llmatlas-notebook/0.1")
 
 
 @contextmanager
@@ -97,9 +103,9 @@ def sha256(raw):
 
 md(r"""
 (nb-arch-configs)=
-## 2. Real Configurations and Exact Parameter Counts
+## Real Configurations and Exact Parameter Counts
 
-Seven ungated models are read from their pinned commits (`data/pins.json`). Each file is checked against `data/checksums.json`, whether it came from the hub or from the committed copy. Three gated models (Llama 3.1 8B and 70B, Gemma 2 9B) cannot be downloaded without an account; their architectures are transcribed from their papers and checked against the exact parameter totals the hub publishes for them.
+The ungated models are read from their pinned commits (`data/pins.json`). Each file is checked against `data/checksums.json`, whether it came from the hub or from the committed copy. The gated models, Llama 3.1 in its smaller and larger size and the Gemma models, cannot be downloaded without an account; their architectures are transcribed from their papers and checked against the exact parameter totals the hub publishes for them, or, for the multimodal Gemma model, against its paper's table.
 """)
 code(r'''
 PINS = json.loads((DATA / "pins.json").read_text())
@@ -116,7 +122,7 @@ def load_config(repo):
     if live_ok:
         url = f"https://huggingface.co/{repo}/resolve/{PINS[repo]}/config.json"
         try:
-            request = urllib.request.Request(url, headers={"User-Agent": "llmatlas-notebook/0.1"})
+            request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
             with urllib.request.urlopen(request, timeout=10) as response:
                 live = response.read()
             if sha256(live) == CHECKSUMS[name]:
@@ -124,21 +130,20 @@ def load_config(repo):
             return json.loads(committed), "committed copy (hub bytes differ)"
         except (urllib.error.URLError, TimeoutError, OSError) as error:  # incl. HTTP 401/403/404/429
             live_ok = False  # do not wait for a timeout on every remaining model
-            print(f"hub unreachable ({type(error).__name__}); using committed copies")
     return json.loads(committed), "committed copy"
 
 
-with timed("configs"):
-    CONFIGS, SOURCES = {}, {}
-    for repo in PINS:
-        CONFIGS[repo], SOURCES[repo] = load_config(repo)
-for repo, source in SOURCES.items():
-    print(f"{repo:32} {CONFIGS[repo]['model_type']:12} {source}")
+CONFIGS, SOURCES = {}, {}  # SOURCES records where each file came from; the printed label does not depend on it
+for repo in PINS:
+    CONFIGS[repo], SOURCES[repo] = load_config(repo)
+assert set(SOURCES.values()) <= {"hub, pinned commit", "committed copy", "committed copy (hub bytes differ)"}
+for repo in PINS:
+    print(f"{repo:32} {CONFIGS[repo]['model_type']:12} checksum verified")
 ''')
 
 md(r"""
-The three gated models, transcribed from their papers. Gemma 2's head dimension (256) is larger than $d_{model}/n_{heads}$, and its embeddings are tied.
-""")
+The four gated models, transcribed from their papers, except Gemma 2's vocabulary, which is the released checkpoint's as the hub reports it, and Gemma 3's layer shapes, which come from Google's reference implementation (the paper gives the counts but not the shapes); Gemma 3 is the text decoder of a multimodal model. Gemma 2's vocabulary: the paper's Table 1 lists 256,128 entries, the released checkpoint has 256,000 rows, and the hub's total is reproduced with 256,000. Gemma 2's head dimension (256) is larger than $d/n_h$, and its embeddings are tied.
+""", tags=("static-numbers",))  # literature constants: the paper's and the checkpoint's vocabulary and head sizes
 code(r'''
 PAPER_CONFIGS = {
     "meta-llama/Llama-3.1-8B": {
@@ -152,8 +157,14 @@ PAPER_CONFIGS = {
     "google/gemma-2-9b": {
         "model_type": "gemma2", "hidden_size": 3584, "num_hidden_layers": 42,
         "num_attention_heads": 16, "num_key_value_heads": 8, "head_dim": 256,
-        "intermediate_size": 14336, "vocab_size": 256000, "tie_word_embeddings": True},
+        "intermediate_size": 14336, "vocab_size": 256000, "tie_word_embeddings": True},  # vocabulary: hub, not paper
+    # Gemma 3 12B, text decoder only: shapes from Google's reference code, vocabulary 262,144
+    "google/gemma-3-12b-pt": {
+        "model_type": "gemma3_text", "hidden_size": 3840, "num_hidden_layers": 48,
+        "num_attention_heads": 16, "num_key_value_heads": 8, "head_dim": 256,
+        "intermediate_size": 15360, "vocab_size": 262144, "tie_word_embeddings": True},
 }
+TEXT_ONLY = {"google/gemma-3-12b-pt"}  # multimodal checkpoint: the hub total includes the vision encoder
 ALL_CONFIGS = {**CONFIGS, **PAPER_CONFIGS}
 ''')
 
@@ -162,7 +173,7 @@ code(fence(CH06, "def count_params"))
 code(fence(CH06, "def kv_cache_elements_per_token"))
 
 md(r"""
-Three checks, each catching a different kind of mistake. First, against the checkpoint: the element counts were read from the tensor shapes in each safetensors header (`tools/fetch_arch_samples.py`), which does not depend on whether a model is stored in float32, BF16 or FP8. Second, against the hub's published total for the gated models. Third, against each vendor's own published figure, in that vendor's convention for "active" parameters; the other convention must miss.
+The checks below each catch a different kind of mistake. First, against the checkpoint: the element counts were read from the tensor shapes in each safetensors header (`tools/fetch_arch_samples.py`), which does not depend on whether a model is stored in `float32`, `BF16` or `FP8`. Second, against the hub's published total for the gated models. Third, against each vendor's own published figure, in that vendor's convention for "active" parameters; the other convention must miss.
 """)
 code(r'''
 CHECKPOINT = json.loads((DATA / "checkpoint_counts.json").read_text())
@@ -179,16 +190,25 @@ print(f"  DeepSeek-V3 also stores {v3['elements_mtp_layer']:,} multi-token-predi
       f"{v3['elements_fp8_scales']:,} FP8-scale elements, counted separately")
 
 # 2. Gated models: the hub's public metadata reports the exact total
-for repo in PAPER_CONFIGS:
+exact = [repo for repo in PAPER_CONFIGS if repo not in TEXT_ONLY]
+for repo in exact:
     assert COUNTS[repo]["total"] == HUB_TOTALS[repo]["elements_total"], repo
-print("hub totals reproduced exactly for", ", ".join(PAPER_CONFIGS))
+print("hub totals reproduced exactly for", ", ".join(exact))
+# Gemma 3: the paper's Table 1 gives 10,759M non-embedding parameters and a 417M vision encoder
+gemma3 = PAPER_CONFIGS["google/gemma-3-12b-pt"]
+non_embedding = COUNTS["google/gemma-3-12b-pt"]["total"] - gemma3["vocab_size"] * gemma3["hidden_size"]
+rest = HUB_TOTALS["google/gemma-3-12b-pt"]["elements_total"] - COUNTS["google/gemma-3-12b-pt"]["total"]
+assert round(non_embedding / 1e6) == 10759 and 417e6 <= rest < 430e6, (non_embedding, rest)
+print(f"Gemma 3 12B text decoder: {non_embedding / 1e6:,.0f}M non-embedding, as in the paper; "
+      f"{rest / 1e6:.1f}M of the hub total is vision")
 
 # 3. Published figures (billions): (total, tolerance, active, convention, tolerance)
-# Tolerances are half a unit in the last published digit, widened where the vendor truncates
-# (Qwen 7.6156 -> 7.61, DeepSeek-V2-Lite 2.451 -> 2.4) or rounds up (Mistral 7.2417 -> 7.3).
+# Tolerances are half a unit in the last published digit, widened where the figure is consistent
+# with truncation (Qwen 7.6156 -> 7.61, DeepSeek-V2-Lite 2.451 -> 2.4) or with rounding up
+# (Mistral 7.2417 -> 7.3). OLMo 2 7B has no published total more precise than its name.
 PUBLISHED = {
     "Qwen/Qwen2.5-7B": (7.61, 0.01, None, None, None),
-    "allenai/OLMo-2-1124-7B": (7.3, 0.05, None, None, None),
+    "Qwen/Qwen3-8B-Base": (8.2, 0.05, None, None, None),
     "allenai/OLMoE-1B-7B-0924": (6.9, 0.05, 1.3, "with", 0.05),
     "deepseek-ai/DeepSeek-V2-Lite": (15.7, 0.05, 2.4, "without", 0.1),
     "deepseek-ai/DeepSeek-V3": (671, 0.5, 37, "without", 0.5),
@@ -213,7 +233,7 @@ assert {"qwen2", "mixtral", "deepseek_v2", "deepseek_v3"} <= kinds
 ''')
 
 md(r"""
-The derived columns used in the chapter: embedding share, feed-forward share (dense models), and the bf16 KV-cache bytes per token for every layer.
+The derived columns used in the chapter: embedding share, feed-forward share (dense models), and the KV-cache bytes per token over all layers in `bf16`.
 """)
 code(r'''
 rows = []
@@ -237,21 +257,45 @@ kv_bytes = {repo: kv for repo, *_, kv in rows}
 assert kv_bytes["meta-llama/Llama-3.1-8B"] == 131072 and kv_bytes["deepseek-ai/DeepSeek-V3"] == 70272
 assert kv_bytes["deepseek-ai/DeepSeek-V3"] == 61 * (512 + 64) * 2  # MLA: latent + rotary key per layer
 
+def attention_family(cfg):
+    if cfg["model_type"].startswith("deepseek"):
+        return "MLA"
+    n_heads = cfg["num_attention_heads"]
+    return "MHA" if (cfg.get("num_key_value_heads") or n_heads) == n_heads else "GQA"
+
+
+family_colors = {"MHA": "#c44e52", "GQA": "#4c72b0", "MLA": "#55a868"}
+DISPLAY = {  # the names the chapter's tables use
+    "meta-llama/Llama-3.1-8B": "Llama 3.1 8B", "meta-llama/Llama-3.1-70B": "Llama 3.1 70B",
+    "mistralai/Mistral-7B-v0.1": "Mistral 7B v0.1", "Qwen/Qwen2.5-7B": "Qwen2.5 7B",
+    "google/gemma-2-9b": "Gemma 2 9B", "allenai/OLMo-2-1124-7B": "OLMo 2 7B", "Qwen/Qwen3-8B-Base": "Qwen3 8B",
+    "google/gemma-3-12b-pt": "Gemma 3 12B", "mistralai/Mixtral-8x7B-v0.1": "Mixtral 8x7B v0.1",
+    "allenai/OLMoE-1B-7B-0924": "OLMoE 1B-7B", "deepseek-ai/DeepSeek-V2-Lite": "DeepSeek-V2-Lite",
+    "deepseek-ai/DeepSeek-V3": "DeepSeek-V3",
+}
+assert set(DISPLAY) == set(kv_bytes)
 order = sorted(kv_bytes, key=kv_bytes.get)
-fig, ax = plt.subplots(figsize=(7, 3.6))
-ax.barh([name.split("/")[1] for name in order], [kv_bytes[name] / 1024 for name in order], color="#4c72b0")
+kib = [kv_bytes[name] / 1024 for name in order]
+fig, ax = plt.subplots(figsize=(7, 4.2))
+ax.barh([DISPLAY[name] for name in order], kib,
+        color=[family_colors[attention_family(ALL_CONFIGS[name])] for name in order])
+for row, value in enumerate(kib):
+    ax.text(value * 1.06, row, f"{value:.4g}", va="center", fontsize=9)
 ax.set_xscale("log")
+ax.set_xlim(10, 2000)
 ax.set_xlabel("KV cache per token, all layers (KiB, bf16)")
 ax.set_title("What one token costs in the KV cache")
+ax.legend([plt.Rectangle((0, 0), 1, 1, color=c) for c in family_colors.values()], list(family_colors),
+          loc="lower right", fontsize=9)
 plt.tight_layout()
 plt.show()
-''')
+''', tags=("figure:kv-bytes",))
 
 md(r"""
 (nb-arch-block)=
-## 3. The Block: RMSNorm, Grouped-Query Attention, SwiGLU
+## The Block: RMSNorm, Grouped-Query Attention, SwiGLU
 
-`RMSNorm`, `SwiGLU`, `PreLNBlock` and `apply_rope` below are copied from Chapter 1. The new piece is the attention layer, which supports any number of key/value heads (`n_kv_heads = n_heads` is multi-head attention, `1` is multi-query) and exposes `project` and `attend` separately so the cache section can reuse them.
+`RMSNorm`, `SwiGLU`, `PreLNBlock` and `apply_rope` below are copied from the foundations chapter ({ref}`sec-ch1-modern-block`, {ref}`sec-ch1-rope`). The new piece is the attention layer, which supports any number of key/value heads (`n_kv_heads = n_heads` is multi-head attention, `1` is multi-query) and exposes `project` and `attend` separately so the cache section can reuse them.
 """)
 code(fence(CH01, "class RMSNorm"))
 code(function(CH01, "apply_rope"))
@@ -383,7 +427,7 @@ print(f"TinyLM has {measured:,} parameters, as count_params predicts")
 
 md(r"""
 (nb-arch-kvcache)=
-## 4. The KV Cache
+## The KV Cache
 
 Decoding one token at a time with a cache must give the same logits as running the whole sequence at once. The loop below is the cache in its simplest form: every layer appends the new token's keys and values, and the query attends to everything stored (no mask is needed, because the cache holds only the past).
 """)
@@ -423,7 +467,7 @@ for n_kv in (4, 2, 1):
 ''')
 
 md(r"""
-A simplified multi-head latent attention layer. Only a small latent $c_t$ and a shared rotary key are cached. The reference expands the latent into full keys and values and runs ordinary attention; the decoding path never builds them, because the key up-projection is absorbed into the query and the value up-projection is applied after the weighted sum. This is a simplified layer (no query compression, one rotary key), not DeepSeek's implementation.
+A simplified multi-head latent attention layer. Only a small latent $c_i$ and a shared rotary key are cached. The reference expands the latent into full keys and values and runs ordinary attention; the decoding path never builds them, because the key up-projection is absorbed into the query and the value up-projection is applied after the weighted sum. This is a simplified layer (no query compression, one rotary key), not DeepSeek's implementation.
 """)
 code(r'''
 class MiniMLA(nn.Module):
@@ -492,9 +536,9 @@ print(f"latent decoding equals the expanded attention; cache {per_token} element
 
 md(r"""
 (nb-arch-rope)=
-## 5. Rotary Positions and Longer Contexts
+## Rotary Positions and Longer Contexts
 
-First the two defining properties of RoPE, for the function copied from Chapter 1: rotation preserves norms, and a query-key product depends only on the offset. Then the frequency arithmetic of the chapter, in float64: the NTK-aware base $b' = b\, s^{d/(d-2)}$ leaves the highest frequency alone and divides the lowest by exactly the scale $s$.
+First the defining properties of RoPE, for the function copied from the foundations chapter ({ref}`sec-ch1-rope`): rotation preserves norms, and a query-key product depends only on the offset. Then the frequency arithmetic of the chapter, in `float64`: the NTK-aware base $b' = b\, s_{ctx}^{d_k/(d_k-2)}$ leaves the highest frequency alone and divides the lowest by exactly the scale $s_{ctx}$ (the variable `s` below).
 """)
 code(r'''
 torch.manual_seed(2)
@@ -522,18 +566,20 @@ for s in (2.0, 4.0, 8.0, 40.0):
     assert abs(scaled[0] - theta[0]) < 1e-12                       # highest frequency unchanged
     assert abs(theta[last] / scaled[last] - s) < 1e-9 * s          # lowest divided by exactly s
 
-# Position interpolation, s = 4: trained on positions 0 .. L-1, extended to 0 .. L*s-1.
+# Position interpolation, s = 4: trained on positions 0 .. TRAINED-1, extended to 0 .. TRAINED*s-1.
 s = 4.0
 low = [i for i in range(D // 2) if TRAINED * theta[i] < 2 * math.pi]   # turn less than once in training
 high = [i for i in range(D // 2) if TRAINED * theta[i] >= 2 * math.pi]
-seen = TRAINED * theta[low]                                            # largest angle seen in training
+seen = (TRAINED - 1) * theta[low]                                      # largest angle seen in training
 interpolated = (TRAINED - 1 / s) * theta[low]                          # largest angle after dividing positions by s
 extrapolated = (TRAINED * s - 1) * theta[low]                          # largest angle when positions are not rescaled
 assert len(low) > 0 and last in low
-assert torch.all(interpolated < seen) and torch.all(extrapolated > seen)
+assert torch.all(interpolated > seen)                  # the last rescaled position, 4095.75, is past 4095 ...
+assert torch.all(interpolated < seen + theta[low])     # ... but within one position's rotation of it
+assert torch.all(extrapolated > seen + theta[low])     # without rescaling, angles run far past it
 assert high[0] == 0 and all(TRAINED * theta[i] > 2 * math.pi for i in high)  # these wrap many times already
 print(f"{len(low)} of {D // 2} frequency pairs turn less than once in {TRAINED} positions; "
-      f"interpolation keeps them inside the trained range, extrapolation does not")
+      f"interpolation keeps them within one position's rotation of the trained range, extrapolation does not")
 
 fig, ax = plt.subplots(figsize=(6.5, 3.4))
 index = np.arange(D // 2)
@@ -549,9 +595,9 @@ plt.show()
 
 md(r"""
 (nb-arch-moe)=
-## 6. A Mixture-of-Experts Router
+## A Mixture-of-Experts Router
 
-The router from the chapter, run on 4,096 random tokens with 8 experts and top-2 routing. Each row of the router weight has unit norm, so no expert is favoured at initialisation, and the dispatch fraction of an expert is its share of the routed slots (they sum to one).
+The router from the chapter, run on a batch of random tokens; the token count `T`, the number of experts `E` and the number each token is routed to, `K`, are set in the cell below. Each row of the router weight has unit norm, so no expert is favored at initialization, and the dispatch fraction of an expert is its share of the routed slots (they sum to one).
 """)
 code(fence(CH06, "def route_top_k"))
 code(r'''
@@ -579,7 +625,7 @@ w, x = make_router(0)
 ids, gates, aux_balanced = route_top_k(x, w, K)
 assert torch.allclose(gates.sum(-1), torch.ones(T)) and ids.shape == (T, K)
 
-# A router that favours expert 0: shift every token towards its weight row
+# A router that favors expert 0: shift every token towards its weight row
 ids_b, _, aux_biased = route_top_k(x + 3 * w[0], w, K)
 print(f"load-balancing loss: balanced {aux_balanced:.3f}, biased {aux_biased:.3f} (uniform routing gives 1)")
 assert 0.95 < aux_balanced < 1.1 and aux_biased > 2
@@ -622,7 +668,7 @@ plt.show()
 ''')
 
 md(r"""
-A full layer, checked against a per-token reference that follows Mixtral's formulation literally: take the top-2 router *logits*, then apply a softmax over just those two. The chapter's router renormalises the full softmax over the selected pair, which is the same thing. The layer is then placed in a small model, and its total and active parameters are compared with `count_params`.
+A full layer, checked against a per-token reference that follows Mixtral's formulation literally: take the router's largest *logits*, as many as the layer routes each token to, then apply a softmax over just those. The chapter's router renormalizes the full softmax over the selected experts, which is the same thing. The layer is then placed in a small model, and its total and active parameters are compared with `count_params`.
 """)
 code(r'''
 class MoELayer(nn.Module):
@@ -678,23 +724,60 @@ print(f"sparse toy model: {total:,} total parameters, {total - idle:,} active pe
       f"({100 * (total - idle) / total:.0f}%)")
 ''')
 
+CLAIMS_CELL = r"""
+import numpy as np
+
+STUCK, TRAINS = 3.0, 2.5  # nats: a byte-frequency model sits at 3.11; below 2.5 a model is using context
+
+
+def norm_claims(arms):
+    # each statement this section makes about the sweep, as a boolean, from its arms (lr, warmup, pre, post)
+    by = {(a["lr"], a["warmup"]): {k: np.array(a[k]) for k in ("pre", "post")} for a in arms}
+    top, warm = by[(3e-3, 0)], by[(3e-3, 100)]["post"]
+    lower = [key for key in by if key[0] < 3e-3]
+    return {
+        "at 3e-3 without warm-up, post-norm stays at the byte-frequency loss and pre-norm trains, in every seed":
+            bool((top["post"] > STUCK).all() and (top["pre"] < TRAINS).all()),
+        "at 3e-3 with warm-up, post-norm trains in some seeds but not in all":
+            bool((warm < TRAINS).any() and (warm > STUCK).any()),
+        "at 1e-3 and 3e-4, with and without warm-up, post-norm ends lower than pre-norm in every seed":
+            bool(all((by[key]["post"] < by[key]["pre"]).all() for key in lower)),
+    }
+""".strip("\n")
+
+
 md(r"""
 (nb-arch-train)=
-## 7. Post-Norm Against Pre-Norm
+## Post-Norm Against Pre-Norm
 
-A six-layer byte-level model (about 0.3 million parameters) is trained on the first 150 KB of *Pride and Prejudice*, once with each norm placement, at a learning rate of $3 \times 10^{-3}$ with no warm-up, for 400 steps of 8 sequences of 64 bytes. A model that has only learned byte frequencies sits near a loss of 3.1 nats; anything lower means it is using context. For each of five seeds both variants see the same batches. The score is the mean training loss over the last 20 steps. Everything is single-threaded and deterministic, so a seed reproduces exactly.
-""")
+A six-layer byte-level model is trained on the first 150 KB of *Pride and Prejudice*, once with each norm placement, for 400 steps of 8 sequences of 64 bytes. A model that has only learned byte frequencies sits near the entropy of the text's byte distribution, which the next cell computes with the model's size; anything clearly lower means it is using context. For each of five seeds both variants see the same batches. The score is the mean training loss over the last 20 steps. Everything is single-threaded and deterministic, so a seed reproduces exactly.
+
+The comparison is a sweep over three learning rates ($3 \times 10^{-3}$, $10^{-3}$, $3 \times 10^{-4}$), each with no warm-up and with a linear warm-up over the first 100 steps: six arms of ten runs. **Live:** the $3 \times 10^{-3}$, no-warm-up arm is trained below. **Loaded:** the other five arms are read from `data/norm_sweep.json`, which `tools/build_architecture_notebook.py --sweep` wrote by running this notebook's own training cell; the file records that cell's SHA-256 and the torch version, and `--sweep --check` recomputes every arm.
+""", tags=("static-numbers",))  # experiment settings: model size, data, steps, rates, seeds
 code(r'''
+import numpy as np
+
+_counts = np.bincount(np.frombuffer((DATA / "pride_and_prejudice_150k.txt").read_bytes(), dtype=np.uint8), minlength=256)
+_freq = _counts[_counts > 0] / _counts.sum()
+BYTE_FREQ_LOSS = float(-(_freq * np.log(_freq)).sum())
+n_params = sum(p.numel() for p in TinyLM(n_layers=6, n_kv_heads=4).parameters())
+print(f"model: {n_params:,} parameters; byte-frequency loss of the text: {BYTE_FREQ_LOSS:.2f} nats")
+assert n_params == 311_360 and round(BYTE_FREQ_LOSS, 2) == 3.11
+''')
+TRAIN_CELL = r'''
 raw = (DATA / "pride_and_prejudice_150k.txt").read_bytes()
 assert sha256(raw) == CHECKSUMS["pride_and_prejudice_150k.txt"]
 TEXT = torch.tensor(list(raw), dtype=torch.long)
 BATCH, SEQ, STEPS, LR = 8, 64, 400, 3e-3
 
 
-def train(style, seed):
+def train(style, seed, lr=LR, warmup=0):
+    """Training losses of one run; `warmup` > 0 raises the rate linearly over that many steps."""
     torch.manual_seed(seed)
     model = TinyLM(n_layers=6, n_kv_heads=4, style=style)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    if warmup:
+        schedule = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda t: min(1.0, (t + 1) / warmup))
     g = torch.Generator().manual_seed(1000 + seed)           # the same batches for both variants
     losses = []
     for _ in range(STEPS):
@@ -705,15 +788,23 @@ def train(style, seed):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        if warmup:
+            schedule.step()
         losses.append(loss.item())
     return losses
 
 
+def score(losses):
+    """The score of a run: the mean training loss over its last 20 steps."""
+    return float(np.mean(losses[-20:]))
+
+
 print(f"{sum(p.numel() for p in TinyLM(n_layers=6, n_kv_heads=4).parameters()):,} parameters; "
-      f"{BATCH * SEQ:,} tokens per step; unigram-uniform loss is ln 256 = {math.log(256):.3f}")
+      f"{BATCH * SEQ:,} tokens per step; uniform-distribution loss is ln 256 = {math.log(256):.3f}")
 RESULTS = {"pre": [], "post": []}
-''')
-md("One cell per run keeps each well inside the time limit of a notebook cell on a small machine (a run takes about twenty seconds on one thread).")
+'''
+code(TRAIN_CELL)
+md("One cell per run keeps each well inside the time limit of a notebook cell on a small machine; each cell prints the time its run took.")
 for _style in ("pre", "post"):
     for _seed in range(5):
         code(f'''
@@ -730,8 +821,6 @@ print(f"post {final['post'].mean():.3f} +- {final['post'].std():.3f}")
 print(f"gap per seed {np.round(gap, 3)}; mean gap {gap.mean():.3f} = {gap.mean() / spread:.1f}x the larger spread")
 
 assert all(np.isfinite(v).all() for v in final.values())
-POSITIVE_RESULT = bool((gap > 0).all() and gap.mean() > 3 * spread)
-print("pre-norm beats post-norm in every seed by more than 3x the seed spread:", POSITIVE_RESULT)
 
 # Reproducibility: re-running one seed gives the identical curve
 assert train("pre", 0) == RESULTS["pre"][0]
@@ -749,14 +838,73 @@ plt.show()
 ''')
 
 md(r"""
-## 8. Summary
+### The sweep: one live arm, five loaded
 
-- The parameter counter reproduces the stored tensors of seven checkpoints and the published totals of three more, exactly, and the vendors' own "active" figures only under the convention each vendor uses.
-- Grouped-query attention is multi-head attention with shared key/value weights; the cache is smaller by exactly the ratio of head counts, and decoding with it equals the full pass.
-- A latent cache stores `d_c + d_rope` numbers per token and gives the same attention output as the expanded keys and values.
-- NTK-aware scaling keeps the highest rotation frequency and divides the lowest by the scale; interpolation keeps the low frequencies inside the angles seen in training.
-- A top-k router with an auxiliary loss distributes tokens evenly when it is balanced; capacity limits drop the overflow of a router that is not.
+The row marked *live* is the runs above; the other rows are *loaded* from `data/norm_sweep.json`. Each statement printed after the table is asserted on these numbers.
 """)
+code(CLAIMS_CELL)
+code(r'''
+SWEEP = json.loads((DATA / "norm_sweep.json").read_text())
+recorded = next(a for a in SWEEP["arms"] if (a["lr"], a["warmup"]) == (LR, 0))
+difference = max(float(np.abs(final[k] - np.array(recorded[k])).max()) for k in ("pre", "post"))
+if SWEEP["torch"] == torch.__version__:  # same version: the live arm reproduces the recorded one exactly
+    assert difference == 0.0
+print(f"sweep recorded with torch {SWEEP['torch']}, this kernel {torch.__version__}; "
+      f"largest live-recorded difference {difference:.1g}")
+ARMS = [{**a, **{k: [float(v) for v in final[k]] for k in ("pre", "post")}} if (a["lr"], a["warmup"]) == (LR, 0)
+        else a for a in SWEEP["arms"]]
+
+print(f"{'rate':>6} {'warm-up':>8} {'source':>7} {'pre-norm':>9} {'post-norm':>10}  (mean over 5 seeds)")
+for a in ARMS:
+    source = "live" if (a["lr"], a["warmup"]) == (LR, 0) else "loaded"
+    print(f"{a['lr']:6.0e} {a['warmup']:8d} {source:>7} {np.mean(a['pre']):9.3f} {np.mean(a['post']):10.3f}")
+for claim, holds in norm_claims(ARMS).items():
+    print(f"{claim}: {holds}")
+    assert holds, claim
+
+fig, ax = plt.subplots(figsize=(6.5, 3.4))
+for style, color in (("pre", "#4c72b0"), ("post", "#c44e52")):
+    for warmup, line in ((0, "-"), (100, "--")):
+        rows = [a for a in ARMS if a["warmup"] == warmup]
+        rates = [a["lr"] for a in rows]
+        mean = np.array([np.mean(a[style]) for a in rows])
+        low = mean - np.array([np.min(a[style]) for a in rows])
+        high = np.array([np.max(a[style]) for a in rows]) - mean
+        ax.errorbar(rates, mean, yerr=[low, high], fmt="o" + line, color=color, capsize=3,
+                    label=f"{style}-norm, {'no warm-up' if warmup == 0 else f'{warmup}-step warm-up'}")
+ax.axhline(BYTE_FREQ_LOSS, color="gray", lw=0.8, ls=":")
+ax.set_xscale("log")
+ax.set_xlabel("peak learning rate")
+ax.set_ylabel("final loss (nats per byte; mean, min-max over 5 seeds)")
+ax.legend(fontsize=8)
+plt.tight_layout()
+plt.show()
+''')
+
+md(r"""
+## Summary
+
+The summary below is printed from the results computed above; each line is asserted.
+""")
+code(r'''
+assert all(COUNTS[repo]["total"] == CHECKPOINT[repo]["elements_counted"] for repo in PINS)
+assert all(COUNTS[repo]["total"] == HUB_TOTALS[repo]["elements_total"] for repo in exact)
+print(f"checkpoint element counts reproduced exactly for {len(PINS)} models, hub totals for {len(exact)} gated models;")
+print(f"  Gemma 3 12B text decoder: {non_embedding / 1e6:,.0f}M non-embedding parameters, as in the paper")
+smallest, largest = min(kv_bytes, key=kv_bytes.get), max(kv_bytes, key=kv_bytes.get)
+ratio = kv_bytes["allenai/OLMo-2-1124-7B"] / kv_bytes["meta-llama/Llama-3.1-8B"]
+assert ratio == 4 and kv_bytes[smallest] < kv_bytes["deepseek-ai/DeepSeek-V3"] < kv_bytes[largest]
+print(f"KV cache per token in bf16: {kv_bytes[smallest]:,} bytes ({smallest}) to {kv_bytes[largest]:,} ({largest});"
+      f" OLMo 2 7B's multi-head cache is {ratio:.0f} times Llama 3.1 8B's")
+assert per_token < full
+print(f"latent cache: {per_token} numbers per token per layer against {full} for the expanded heads")
+assert 0.95 < aux_balanced < 1.1 < 2 < aux_biased
+print(f"router: load-balancing loss {aux_balanced:.3f} balanced, {aux_biased:.3f} biased toward one expert")
+for claim, holds in norm_claims(ARMS).items():
+    assert holds, claim
+    print(f"norm placement: {claim}")
+''')
+
 
 
 def build() -> None:
@@ -765,12 +913,108 @@ def build() -> None:
         "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
         "language_info": {"name": "python"},
     }
-    for kind, text in CELLS:
-        nb.cells.append(nbf.v4.new_markdown_cell(text) if kind == "markdown" else nbf.v4.new_code_cell(text))
+    for index, (kind, text) in enumerate(CELLS):
+        cell = nbf.v4.new_markdown_cell(text) if kind == "markdown" else nbf.v4.new_code_cell(text)
+        if index in TAGS:
+            cell.metadata["tags"] = TAGS[index]
+        nb.cells.append(cell)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     nbf.write(nb, OUT)
     print(f"wrote {OUT.relative_to(ROOT)} with {len(nb.cells)} cells")
 
 
+# --- the learning-rate sweep behind Section 7 (decision D22) -------------------------------------------------
+# `--sweep` runs every arm (each norm placement, five seeds, three rates, with and without warm-up) with the
+# notebook's own training cell and writes the scores to data/norm_sweep.json; `--sweep --check` recomputes every
+# arm and exits non-zero unless each statement the notebook asserts from the sweep still holds. Runs are
+# independent, seeded and single-threaded, so running them in several processes gives the same numbers as a
+# serial run.
+SWEEP_JSON = OUT.parent / "data" / "norm_sweep.json"
+SWEEP_RATES = (3e-3, 1e-3, 3e-4)
+SWEEP_WARMUPS = (0, 100)
+SWEEP_SEEDS = tuple(range(5))
+_SWEEP_NS: dict = {}
+
+
+def train_cell_sha256() -> str:
+    """SHA-256 of the training cell's source exactly as it appears in the notebook."""
+    import hashlib
+    return hashlib.sha256(TRAIN_CELL.strip("\n").encode("utf-8")).hexdigest()
+
+
+def _sweep_worker_init() -> None:
+    """Run the notebook's code cells up to and including the training cell, offline and without output."""
+    import contextlib
+    import io
+    import os
+    os.environ["LLMATLAS_OFFLINE"] = "1"
+    os.environ["MPLBACKEND"] = "Agg"
+    os.chdir(OUT.parent)
+    stop = CELLS.index(("code", TRAIN_CELL.strip("\n")))
+    with contextlib.redirect_stdout(io.StringIO()):
+        for kind, text in CELLS[:stop + 1]:
+            if kind == "code":
+                exec(compile(text, "<notebook cell>", "exec"), _SWEEP_NS)
+
+
+def _sweep_run(job):
+    style, seed, lr, warmup = job
+    return job, _SWEEP_NS["score"](_SWEEP_NS["train"](style, seed, lr=lr, warmup=warmup))
+
+
+def run_sweep(processes: int) -> dict:
+    import multiprocessing
+    jobs = [(style, seed, lr, warmup) for lr in SWEEP_RATES for warmup in SWEEP_WARMUPS
+            for style in ("pre", "post") for seed in SWEEP_SEEDS]
+    with multiprocessing.get_context("spawn").Pool(processes, initializer=_sweep_worker_init) as pool:
+        scores = dict(pool.map(_sweep_run, jobs, chunksize=1))
+    import torch
+    return {
+        "description": "Final training loss (mean of the last 20 of 400 steps) of the Section 7 model, per arm "
+                       "and seed; written by tools/build_architecture_notebook.py --sweep.",
+        "torch": torch.__version__,
+        "train_cell_sha256": train_cell_sha256(),
+        "seeds": list(SWEEP_SEEDS),
+        "arms": [{"lr": lr, "warmup": warmup,
+                  **{style: [scores[(style, seed, lr, warmup)] for seed in SWEEP_SEEDS] for style in ("pre", "post")}}
+                 for lr in SWEEP_RATES for warmup in SWEEP_WARMUPS],
+    }
+
+
+def sweep_claims(sweep: dict) -> dict:
+    """Each statement the notebook asserts from the sweep, evaluated on `sweep` (the notebook's own cell)."""
+    namespace: dict = {}
+    exec(compile(CLAIMS_CELL, "<claims cell>", "exec"), namespace)
+    return namespace["norm_claims"](sweep["arms"])
+
+
+def main(argv=None) -> int:
+    import argparse
+    import json
+    import time
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--sweep", action="store_true", help="run the Section 7 learning-rate sweep")
+    parser.add_argument("--check", action="store_true", help="with --sweep: recompute and check, write nothing")
+    parser.add_argument("--processes", type=int, default=12)
+    args = parser.parse_args(argv)
+    if not args.sweep:
+        build()
+        return 0
+    start = time.perf_counter()
+    sweep = run_sweep(args.processes)
+    print(f"sweep: {len(sweep['arms']) * 2 * len(SWEEP_SEEDS)} runs in {time.perf_counter() - start:.0f} s")
+    if not args.check:
+        SWEEP_JSON.write_text(json.dumps(sweep, indent=1) + "\n", encoding="utf-8")
+        print(f"wrote {SWEEP_JSON.relative_to(ROOT)}")
+        return 0
+    recorded = json.loads(SWEEP_JSON.read_text(encoding="utf-8"))
+    ok = recorded["train_cell_sha256"] == sweep["train_cell_sha256"]
+    print("recorded training-cell hash matches:", ok)
+    for name, holds in sweep_claims(sweep).items():
+        print(f"{'holds' if holds else 'FAILS'}: {name}")
+        ok = ok and holds
+    return 0 if ok else 1
+
+
 if __name__ == "__main__":
-    build()
+    raise SystemExit(main())

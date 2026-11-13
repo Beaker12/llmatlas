@@ -1,0 +1,40 @@
+digraph block_2017_2025 {
+  ranksep=0.22; nodesep=0.3; newrank=true;
+  graph [fontname="DejaVu Sans", fontsize=15];
+  node [shape=box, style="filled", fontname="DejaVu Sans", fontsize=15];
+  edge [arrowsize=0.7];
+
+  subgraph cluster_old {
+    label=<<B>Original transformer (2017)</B>: post-norm>;
+    style="rounded,filled"; fillcolor="#f7fafc"; color="#4a5568"; penwidth=1.3; fontsize=22;
+    o_in   [label="residual stream x", shape=plaintext, style="", color="#2d3748", fontsize=21];
+    o_attn [label=<multi-head attention<BR/>own K and V per head, biases>, fillcolor="#ffffff", color="#2d3748", penwidth=1.3, fontsize=21];
+    o_add1 [label="+", shape=circle, width=0.5, fixedsize=true, fontsize=24, fillcolor="#edf2f7", color="#2d3748", penwidth=1.3];
+    o_n1   [label="LayerNorm", fillcolor="#fde8d7", color="#2d3748", penwidth=1.3, fontsize=21];
+    o_ffn  [label=<ReLU feed-forward<BR/>width 4d, biases>, fillcolor="#ffffff", color="#2d3748", penwidth=1.3, fontsize=21];
+    o_add2 [label="+", shape=circle, width=0.5, fixedsize=true, fontsize=24, fillcolor="#edf2f7", color="#2d3748", penwidth=1.3];
+    o_n2   [label="LayerNorm", fillcolor="#fde8d7", color="#2d3748", penwidth=1.3, fontsize=21];
+    o_out  [label="to the next block", shape=plaintext, style="", color="#2d3748", fontsize=21];
+    o_in -> o_attn -> o_add1 -> o_n1 -> o_ffn -> o_add2 -> o_n2 -> o_out [color="#2d3748", penwidth=1.3];
+    o_in -> o_add1 [color="#c05621", penwidth=2.2, constraint=false, tailport=e, headport=e];
+    o_n1 -> o_add2 [color="#c05621", penwidth=2.2, constraint=false, tailport=e, headport=e];
+  }
+
+  subgraph cluster_new {
+    label=<<B>Llama 3.1 8B (2024)</B>: pre-norm>;
+    style="rounded,filled"; fillcolor="#f7fafc"; color="#4a5568"; penwidth=1.3; fontsize=22;
+    n_in   [label="residual stream x", shape=plaintext, style="", color="#2d3748", fontsize=21];
+    n_n1   [label="RMSNorm", fillcolor="#fde8d7", color="#2d3748", penwidth=1.3, fontsize=21];
+    n_attn [label=<grouped-query attention<BR/>RoPE, 8 K/V heads, no biases>, fillcolor="#e6f0fa", color="#2d3748", penwidth=1.3, fontsize=21];
+    n_add1 [label="+", shape=circle, width=0.5, fixedsize=true, fontsize=24, fillcolor="#edf2f7", color="#2d3748", penwidth=1.3];
+    n_n2   [label="RMSNorm", fillcolor="#fde8d7", color="#2d3748", penwidth=1.3, fontsize=21];
+    n_ffn  [label=<SwiGLU feed-forward<BR/>width 3.5d, no biases>, fillcolor="#e6f0fa", color="#2d3748", penwidth=1.3, fontsize=21];
+    n_add2 [label="+", shape=circle, width=0.5, fixedsize=true, fontsize=24, fillcolor="#edf2f7", color="#2d3748", penwidth=1.3];
+    n_out  [label="to the next block", shape=plaintext, style="", color="#2d3748", fontsize=21];
+    n_in -> n_n1 -> n_attn -> n_add1 -> n_n2 -> n_ffn -> n_add2 -> n_out [color="#2d3748", penwidth=1.3];
+    n_in -> n_add1 [color="#c05621", penwidth=2.2, constraint=false, tailport=e, headport=e];
+    n_add1 -> n_add2 [color="#c05621", penwidth=2.2, constraint=false, tailport=e, headport=e];
+  }
+  { rank=same; o_in; n_in; }
+  { rank=same; o_out; n_out; }
+}

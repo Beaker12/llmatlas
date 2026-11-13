@@ -1,0 +1,54 @@
+digraph norm_placements {
+  ranksep=0.25; nodesep=0.25; newrank=true;
+  graph [fontname="DejaVu Sans", fontsize=15];
+  node [shape=box, style="filled", fontname="DejaVu Sans", fontsize=15];
+  edge [arrowsize=0.7];
+
+  subgraph cluster_pre {
+    label=<<B>pre-norm</B><BR/>x ← x + F(Norm(x))<BR/>Llama, Qwen, Mistral>;
+    style="rounded,filled"; fillcolor="#f7fafc"; color="#4a5568"; penwidth=1.3; fontsize=27;
+    a_in  [label="x", shape=plaintext, style="", color="#2d3748", fontsize=27];
+    a_n   [label="Norm", fillcolor="#fde8d7", color="#2d3748", penwidth=1.3, fontsize=27];
+    a_f   [label="F", width=1.2, fillcolor="#e6f0fa", color="#2d3748", penwidth=1.3, fontsize=27];
+    a_add [label="+", shape=circle, fixedsize=true, fontsize=28, width=0.5, fillcolor="#edf2f7", color="#2d3748", penwidth=1.3];
+    a_out [label="x", shape=plaintext, style="", color="#2d3748", fontsize=27];
+    a_in -> a_n -> a_f -> a_add -> a_out [color="#2d3748", penwidth=1.3, fontsize=27];
+    a_in -> a_add [color="#c05621", penwidth=2.2, constraint=false, tailport=e, headport=e];
+  }
+  subgraph cluster_post {
+    label=<<B>post-norm</B><BR/>x ← Norm(x + F(x))<BR/>2017 transformer>;
+    style="rounded,filled"; fillcolor="#f7fafc"; color="#4a5568"; penwidth=1.3; fontsize=27;
+    b_in  [label="x", shape=plaintext, style="", color="#2d3748", fontsize=27];
+    b_f   [label="F", width=1.2, fillcolor="#e6f0fa", color="#2d3748", penwidth=1.3, fontsize=27];
+    b_add [label="+", shape=circle, fixedsize=true, fontsize=28, width=0.5, fillcolor="#edf2f7", color="#2d3748", penwidth=1.3];
+    b_n   [label="Norm", fillcolor="#fde8d7", color="#2d3748", penwidth=1.3, fontsize=27];
+    b_out [label="x", shape=plaintext, style="", color="#2d3748", fontsize=27];
+    b_in -> b_f -> b_add -> b_n -> b_out [color="#2d3748", penwidth=1.3, fontsize=27];
+    b_in -> b_add [color="#c05621", penwidth=2.2, constraint=false, tailport=e, headport=e];
+  }
+  subgraph cluster_reordered {
+    label=<<B>reordered</B><BR/>x ← x + Norm(F(x))<BR/>OLMo 2>;
+    style="rounded,filled"; fillcolor="#f7fafc"; color="#4a5568"; penwidth=1.3; fontsize=27;
+    c_in  [label="x", shape=plaintext, style="", color="#2d3748", fontsize=27];
+    c_f   [label="F", width=1.2, fillcolor="#e6f0fa", color="#2d3748", penwidth=1.3, fontsize=27];
+    c_n   [label="Norm", fillcolor="#fde8d7", color="#2d3748", penwidth=1.3, fontsize=27];
+    c_add [label="+", shape=circle, fixedsize=true, fontsize=28, width=0.5, fillcolor="#edf2f7", color="#2d3748", penwidth=1.3];
+    c_out [label="x", shape=plaintext, style="", color="#2d3748", fontsize=27];
+    c_in -> c_f -> c_n -> c_add -> c_out [color="#2d3748", penwidth=1.3, fontsize=27];
+    c_in -> c_add [color="#c05621", penwidth=2.2, constraint=false, tailport=e, headport=e];
+  }
+  subgraph cluster_sandwich {
+    label=<<B>sandwich</B><BR/>x ← x + Norm(F(Norm(x)))<BR/>Gemma 2 and 3>;
+    style="rounded,filled"; fillcolor="#f7fafc"; color="#4a5568"; penwidth=1.3; fontsize=27;
+    d_in  [label="x", shape=plaintext, style="", color="#2d3748", fontsize=27];
+    d_n1  [label="Norm", fillcolor="#fde8d7", color="#2d3748", penwidth=1.3, fontsize=27];
+    d_f   [label="F", width=1.2, fillcolor="#e6f0fa", color="#2d3748", penwidth=1.3, fontsize=27];
+    d_n2  [label="Norm", fillcolor="#fde8d7", color="#2d3748", penwidth=1.3, fontsize=27];
+    d_add [label="+", shape=circle, fixedsize=true, fontsize=28, width=0.5, fillcolor="#edf2f7", color="#2d3748", penwidth=1.3];
+    d_out [label="x", shape=plaintext, style="", color="#2d3748", fontsize=27];
+    d_in -> d_n1 -> d_f -> d_n2 -> d_add -> d_out [color="#2d3748", penwidth=1.3, fontsize=27];
+    d_in -> d_add [color="#c05621", penwidth=2.2, constraint=false, tailport=e, headport=e];
+  }
+  { rank=same; a_in; b_in; c_in; d_in; }
+  { rank=same; a_out; b_out; c_out; d_out; }
+}
