@@ -1259,6 +1259,8 @@ def compare_position_encodings():
         "Relative bias (T5)": [num_buckets * num_heads for _ in seq_lens],  # per (bucket, head), all layers
         "RoPE": [0 for _ in seq_lens],                                              # no parameters
     }
+    for method, params in results.items():
+        print(f"{method:<19}", " ".join(f"{p:>9,}" for p in params))
 
     plt.figure(figsize=(10, 6))
     for method, params in results.items():
@@ -1273,6 +1275,17 @@ def compare_position_encodings():
 
 compare_position_encodings()
 ```
+
+% output
+
+```text
+Sinusoidal                  0         0         0         0         0
+Learned absolute       65,536   262,144   524,288 1,048,576 2,097,152
+Relative bias (T5)        256       256       256       256       256
+RoPE                        0         0         0         0         0
+```
+
+Only learned absolute positions grow with the maximum length, by $d$ parameters per position; T5's bias table is fixed at 32 buckets times 8 heads.
 
 (sec-tdd-advanced-embedding-implementation)=
 
@@ -1373,6 +1386,7 @@ class TokenEmbeddingLayer(nn.Module):
 
 
 # Example usage
+torch.manual_seed(0)
 vocab_size = 50000
 d_model = 512
 max_seq_length = 2048
@@ -1384,7 +1398,7 @@ embedding_layer = TokenEmbeddingLayer(
     position_encoding="learned",
     layer_norm=True,
     scale_embeddings=True,
-)
+).eval()  # eval mode switches dropout off, so the printed norm is reproducible
 
 # Test with sample input
 batch_size = 4
@@ -1396,3 +1410,13 @@ print(f"Input shape: {input_ids.shape}")
 print(f"Output shape: {embeddings.shape}")
 print(f"Embedding norm: {embeddings.norm(dim=-1).mean():.3f}")
 ```
+
+% output
+
+```text
+Input shape: torch.Size([4, 256])
+Output shape: torch.Size([4, 256, 512])
+Embedding norm: 22.627
+```
+
+The norm is $\sqrt{512} = 22.627$ because the final LayerNorm rescales every vector to zero mean and unit variance across its 512 features (its $\gamma$ starts at 1 and $\beta$ at 0).
