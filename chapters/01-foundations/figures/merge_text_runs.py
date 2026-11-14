@@ -13,7 +13,7 @@ From the renderer's directory, with `<figures>` the absolute path of this direct
 direction (keep the one the committed SVG shows: `TB` for a top-to-bottom flow, `LR` for a left-to-right one):
 
 1. Render the SVG:
-   `npx tsx cli/render.ts --format svg --theme white_paper --rankdir <LR|TB> -o <figures>/<name>.svg <figures>/<name>.dot`
+   `npx tsx cli/render.ts --format svg --theme white_paper --transparent --rankdir <LR|TB> -o <figures>/<name>.svg <figures>/<name>.dot`
 2. Merge sub- and superscript runs so each subscript is in the same text run as its letter:
    `python merge_text_runs.py <figures>/<name>.svg`
    It changes only lines that contain a sub- or superscript, so it is safe on every schematic. In this round it was
@@ -65,7 +65,8 @@ while i < len(lines):
             a = attrs(g.group(1))
             extra = " ".join(f'{k}="{a[k]}"' for k in ("font-weight", "baseline-shift") if k in a)
             if "baseline-shift" in a:
-                extra += ' font-size="9.75"'
+                # Three quarters of the run's own size (9.75 for 13-point text), so a script scales with its label.
+                extra += f' font-size="{float(a["font-size"]) * 0.75:g}"'
             spans.append(f"<tspan {extra}>{g.group(2)}</tspan>" if extra else f"<tspan>{g.group(2)}</tspan>")
         out.append(head + "".join(spans) + "</text>")
     else:

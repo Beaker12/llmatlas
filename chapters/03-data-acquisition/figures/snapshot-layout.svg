@@ -8,7 +8,6 @@
  viewBox="14.00 14.00 768.00 520.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
 <g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(43.2 491.6)">
 <title>snapshot_layout</title>
-<polygon fill="#ffffff" stroke="none" points="-28.8,28.8 -28.8,-477.2 725.02,-477.2 725.02,28.8 -28.8,28.8"/>
 <!-- crawl -->
 <g id="node1" class="node">
 <title>crawl</title>
