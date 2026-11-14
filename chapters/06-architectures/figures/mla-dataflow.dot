@@ -1,0 +1,33 @@
+digraph mla_dataflow {
+  ranksep=0.45; nodesep=0.3; newrank=true;
+  graph [fontname="DejaVu Sans"];
+  node [shape=box, style="filled", fontname="DejaVu Sans"];
+  edge [arrowsize=0.7];
+
+  h   [label=<hidden state h<SUB>m</SUB><BR/>width d = 7,168>, fillcolor="#ffffff", color="#2d3748", penwidth=1.3, fontsize=23];
+
+  c  [label=<<TABLE BORDER="0" CELLSPACING="2"><TR><TD><B>cached</B>: latent c<SUB>m</SUB> = h<SUB>m</SUB> W<SUP>DKV</SUP></TD></TR><TR><TD>d<SUB>c</SUB> = 512</TD></TR></TABLE>>, fillcolor="#fde8d7", color="#c05621", penwidth=2.6, fontsize=23];
+  kr [label=<<TABLE BORDER="0" CELLSPACING="2"><TR><TD><B>cached</B>: rotary key</TD></TR><TR><TD>d<SUB>rope</SUB> = 64, all heads</TD></TR></TABLE>>, fillcolor="#fde8d7", color="#c05621", penwidth=2.6, fontsize=23];
+
+  q   [label=<queries, 128 heads<BR/>128 + 64 rotary each>, fillcolor="#e6f0fa", color="#2d3748", penwidth=1.3, fontsize=23];
+  kc  [label=<content keys k<SUB>m</SUB> = c<SUB>m</SUB> W<SUP>UK</SUP><BR/>128 per head>, fillcolor="#edf2f7", color="#2d3748", penwidth=1.3, fontsize=23, style="filled,dashed"];
+  v   [label=<values v<SUB>m</SUB> = c<SUB>m</SUB> W<SUP>UV</SUP><BR/>128 per head>, fillcolor="#edf2f7", color="#2d3748", penwidth=1.3, fontsize=23, style="filled,dashed"];
+  att [label=<attention scores<BR/>content + rotary>, fillcolor="#e6f0fa", color="#2d3748", penwidth=1.3, fontsize=23];
+  out [label=<weighted values,<BR/><BR/>then W<SUP>O</SUP>>, fillcolor="#e6f0fa", color="#2d3748", penwidth=1.3, fontsize=23];
+
+  h -> q  [label=<  W<SUP>DQ</SUP>, W<SUP>UQ</SUP>  >, fontsize=22, fontcolor="#2d3748", color="#2d3748", penwidth=1.3];
+  h -> c  [color="#2d3748", penwidth=1.3];
+  h -> kr [color="#2d3748", penwidth=1.3];
+  c -> kc [color="#2d3748", penwidth=1.3, style=dashed];
+  c -> v  [color="#2d3748", penwidth=1.3, style=dashed];
+  q -> att [color="#2d3748", penwidth=1.3];
+  kc -> att [color="#2d3748", penwidth=1.3, style=dashed];
+  kr -> att [color="#2d3748", penwidth=1.3];
+  att -> out [color="#2d3748", penwidth=1.3];
+  v -> out [color="#2d3748", penwidth=1.3, style=dashed];
+
+  { rank=same; c; kr; q; }
+  c -> kr -> q [style=invis];
+  { rank=same; kc; v; }
+  v -> kc [style=invis];
+}

@@ -1,0 +1,16 @@
+digraph AutoregressiveLoop {
+    graph [fontname="Arial" fontsize=13 bgcolor=white];
+
+    p [label=<<b>Prompt</b><br/>BOS, then the prompt tokens> shape=box style="rounded,filled" fillcolor="#fffaf0" color="#975a16" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    m [label=<<b>Model</b><br/>one forward pass> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    d [label=<<b>Next-token distribution</b><br/>softmax(z / τ) at the last position> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    c [label=<<b>Choose a token</b><br/>greedy, top-k or top-p> shape=box style="rounded,filled" fillcolor="#ebf4ff" color="#2d3748" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    s [label=<<b>EOS or length limit?</b>> shape=box style="rounded,filled" fillcolor="#fff5f5" color="#9b2c2c" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    e [label=<<b>Done</b>> shape=box style="rounded,filled" fillcolor="#f0fff4" color="#276749" penwidth=1.4 fontsize=13 fontcolor="#1a202c"];
+    p -> m [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
+    m -> d [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
+    d -> c [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
+    c -> s [color="#2d3748" penwidth=1.3 fontsize=12 fontcolor="#1a202c"];
+    s -> e [color="#2d3748" penwidth=1.3 fontsize=13 fontcolor="#1a202c" label=<&nbsp;&nbsp;yes>];
+    s -> m [color="#2d3748" penwidth=1.3 fontsize=13 fontcolor="#1a202c" label=<&nbsp;&nbsp;&nbsp;no: append the token> style=dashed constraint=false];
+}

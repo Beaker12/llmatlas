@@ -7,3 +7,4 @@
 *.svg text eol=lf
 # Sample data is hashed byte for byte (checksums.json); never normalise it.
 chapters/06-architectures/examples/data/** -text
+chapters/03-data-acquisition/examples/data/** -text

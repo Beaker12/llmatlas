@@ -8,11 +8,16 @@ logo: _static/logo.svg
 only_build_toc_files: true
 
 execute:
-  # Notebooks are committed with executed outputs and re-executed by the CI
-  # nbconvert step (see .github/workflows/pages.yml); the book build only runs a
-  # notebook that is missing outputs.
-  execute_notebooks: auto
-  timeout: 120
+  # The book build never executes a notebook: outputs are committed, and
+  # tests/test_notebook_outputs.py re-executes every notebook offline and compares
+  # the results (see .github/workflows/pages.yml).
+  execute_notebooks: "off"
+  timeout: 600
+
+latex:
+  latex_engine: xelatex
+  latex_documents:
+    targetname: llmatlas.tex
 
 parse:
   myst_enable_extensions:
@@ -48,10 +53,70 @@ sphinx:
     html_show_sourcelink: false
     bibtex_reference_style: author_year
     bibtex_default_style: plain
+    # Figures, tables, listings and equations are numbered across the book (Fig. 65) in both editions.
+    # Per-chapter numbers in the HTML need a numbered toctree, which would also number the section headings
+    # that carry their own numbers in the text. sphinx-jupyterbook-latex sets this to 2 for the LaTeX build,
+    # so the preamble below stops the LaTeX counters from restarting at each chapter.
+    numfig_secnum_depth: 0
     ogp_site_url: "https://beaker12.github.io/llmatlas/"
     ogp_social_cards:
       enable: false
+    latex_elements:
+      # Code and output at 8.5 pt: FreeMono is 0.6 em wide, so a character is 5.1 pt and the 462.95 pt inside a
+      # code frame (6.5 in text block less 2 x 3.4 pt padding and rule) holds 90 characters, the 88 of
+      # tests/test_line_width.py with room to spare. Keep in sync with tools/latex_smoke/fonts.tex.
+      fvset: '\fvset{fontsize=\fontsize{8.5pt}{10.2pt}\selectfont}'
+      # Non-Latin text under XeLaTeX. Fonts are named in the two \providecommand lines only.
+      # Keep in sync with tools/latex_smoke/fonts.tex (the smoke test of this block); the font
+      # names must also match the defaults in tools/latex_smoke/check_pdf.sh.
+      # ucharclasses is loaded before xeCJK, which otherwise stops handling CJK text.
+      preamble: |
+        \providecommand{\cjkfontname}{Noto Sans CJK SC}
+        \providecommand{\arabicfontname}{Noto Naskh Arabic}
+        \usepackage[Latin,Greek,Arabic]{ucharclasses}  % superset of sphinx-jupyterbook-latex's options (it loads it again); Arabic makes \setTransitionsFor{Arabic} fire
+        \usepackage{xeCJK}
+        \xeCJKDeclareCharClass{Default}{"00B7, "2013, "2014, "2018, "2019, "201C, "201D, "2026}  % middle dot, dashes, curly quotes and ellipsis stay in the Latin font
+        \setCJKmainfont{\cjkfontname}
+        \setCJKmonofont{\cjkfontname}
+        \usepackage{bidi}
+        \newfontfamily\arabicfont[Script=Arabic]{\arabicfontname}
+        \setTransitionsFor{Arabic}{\begingroup\arabicfont\beginR}{\endR\endgroup}
+        % A {cite:t} in a figure caption otherwise stops XeLaTeX ("Argument of \Hy@tempa has an extra }").
+        \usepackage{etoolbox}\robustify{\DUrole}\robustify{\hyperlink}\robustify{\sphinxstyleemphasis}
+        % Let long URLs in the bibliography break at any character instead of overflowing the margin.
+        \usepackage{xurl}
+        % The pages number their own section headings ("1.1 The published mixtures"): LaTeX numbers chapters only.
+        \setcounter{secnumdepth}{0}
+        % Number figures, tables, listings and equations across the book, as the HTML does (see numfig_secnum_depth).
+        \AtBeginDocument{\counterwithout{figure}{chapter}\counterwithout{table}{chapter}%
+          \counterwithout{literalblock}{chapter}\counterwithout{equation}{chapter}}
+        % Floats: let figures take most of a text page so they stay near their reference, and send one to a
+        % page of its own only when it fills most of that page.
+        \renewcommand{\topfraction}{0.85}\renewcommand{\bottomfraction}{0.7}\renewcommand{\textfraction}{0.1}
+        \renewcommand{\floatpagefraction}{0.75}\setcounter{topnumber}{3}\setcounter{bottomnumber}{2}
+        \setcounter{totalnumber}{4}
+        % Table cells are ragged-right and never hyphenated: words move whole to the next line, so headers,
+        % model, tool and citation names are not split. A column too narrow for its longest word is fixed in the
+        % table itself (tabularcolumns). Sphinx's column type T is tabulary's justified J; make it L (left).
+        \newcolumntype{T}{L}
+        \usepackage{etoolbox}
+        \AtBeginEnvironment{tabulary}{\hyphenpenalty=10000 \exhyphenpenalty=10000 }
+        \AtBeginEnvironment{longtable}{\hyphenpenalty=10000 \exhyphenpenalty=10000 }
+        % The same for the fixed-width columns of a tabularcolumns directive (Sphinx's \X and \Y are p columns).
+        \makeatletter
+        \newcolumntype{\X}[2]{>{\raggedright\arraybackslash}p{\dimexpr
+          (\linewidth-\spx@arrayrulewidth)*#1/#2-\tw@\tabcolsep-\spx@arrayrulewidth\relax}}
+        \newcolumntype{\Y}[1]{>{\raggedright\arraybackslash}p{\dimexpr
+          #1\dimexpr\linewidth-\spx@arrayrulewidth\relax-\tw@\tabcolsep-\spx@arrayrulewidth\relax}}
+        \makeatother
+        % Rows of the long tables (the notation page) are several lines tall: a chunk of 20 rows is taller than a
+        % page and ran past the footer, so break after every 3 rows.
+        \LTchunksize=3\relax
+        % An admonition's title bar is never left alone at the foot of a page: start the box on a new page when
+        % fewer than six lines remain (the title row plus the first lines of the body).
+        \BeforeBeginEnvironment{sphinxadmonition}{\par\Needspace*{6\baselineskip}}
     linkcheck_ignore:
+      - "https://doi.org/10.1145/.*"      # dl.acm.org returns 403 to non-browser clients
       - "https://doi.org/10.1162/.*"      # direct.mit.edu returns 403 to non-browser clients
       - "https://doi.org/10.1121/.*"      # pubs.aip.org returns 403 to non-browser clients
     linkcheck_timeout: 20

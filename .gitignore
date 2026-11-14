@@ -64,6 +64,10 @@ Thumbs.db
 # Local working notes (not published)
 .policy/
 .superpowers/
+.claude/
+
+# Intermediate output of `make constraints`
+constraints.body
 
 # Coverage reports
 htmlcov/

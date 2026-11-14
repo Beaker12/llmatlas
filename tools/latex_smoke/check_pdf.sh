@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# Usage: check_pdf.sh <pdf> [CJK font] [Arabic font] [LaTeX log]
+#
+# Passes when
+#   * the CJK and Arabic fonts are embedded (pdffonts; spaces and case are ignored);
+#   * the LaTeX log, if given, has no "Missing character" line (xelatex -halt-on-error does not
+#     stop on one, and the glyph is silently dropped from the PDF);
+#   * the log of fonts.tex, if given, has no overfull box in its code-width probe (a code line of
+#     88 characters at the code size of _config.yml fits the code frame);
+#   * unless CHECK_SAMPLES=0, every sample line of samples.txt is present in the text pdftotext
+#     returns. Text extraction depends on the font's mapping and returns Arabic in visual order
+#     and presentation forms, so lines are compared as sets of characters after NFKC
+#     normalisation: every distinct non-space character of a sample must appear in the extracted
+#     text. For Arabic samples only the Arabic letters are required. Whether letters are joined
+#     and read right to left is judged by looking at the page. A "words:" sample must also appear
+#     as written, with its spacing, in every typeset copy (runs of white space count as one space): a character set in
+#     the CJK font gains a stray space ("paper’ s") that the character-set test cannot see.
+#
+# CHECK_PDF_ALLOW_PUA=1 reports a failing sample line as a warning when the extracted text holds
+# private-use or unassigned code points (a font whose ToUnicode map is wrong). For local runs with substitute
+# fonts only; CI must not set it.
+#
+# Font names: keep the spellings identical to latex_elements.preamble in _config.yml and to
+# tools/latex_smoke/fonts.tex; all three must change together.
+set -euo pipefail
+
+pdf=${1:?usage: check_pdf.sh <pdf> [CJK font] [Arabic font] [LaTeX log]}
+cjk=${2:-Noto Sans CJK SC}
+arabic=${3:-Noto Naskh Arabic}
+log=${4:-}
+[ -f "$pdf" ] || { echo "FAIL: no such PDF: $pdf"; exit 1; }
+here=$(cd "$(dirname "$0")" && pwd)
+status=0
+
+for tool in pdffonts pdftotext python3; do
+  command -v "$tool" >/dev/null || { echo "missing tool: $tool"; exit 2; }
+done
+
+embedded=$(pdffonts "$pdf" | tail -n +3 | awk '$(NF-4) == "yes" {print $1}' | tr -d ' ')
+for want in "$cjk" "$arabic"; do
+  # A TrueType collection (Ubuntu's fonts-noto-cjk ships NotoSansCJK-Regular.ttc) is embedded under the PostScript
+  # name of one of its faces, which need not carry the region suffix of the family asked for: "Noto Sans CJK SC"
+  # may appear as NotoSansCJKsc-Regular, NotoSansCJKjp-Regular or NotoSansCJK-Regular. For a family ending in a
+  # two-letter region the name is therefore matched without the region, followed by an optional region code and a
+  # style ("-Regular") or the end of the name. The glyph check below (samples.txt) still proves the SC glyphs render.
+  base=$(sed -E 's/ [A-Z]{2}$//' <<<"$want")
+  if grep -qiF -- "${want// /}" <<<"$embedded" ||
+     { [ "$base" != "$want" ] && grep -qiE -- "^([A-Z]{6}\+)?${base// /}([a-z]{2})?(-|$)" <<<"$embedded"; }; then
+    echo "ok: font $want is embedded"
+  else
+    echo "FAIL: font $want is not embedded"
+    status=1
+  fi
+done
+
+if [ -n "$log" ]; then
+  if [ ! -r "$log" ]; then
+    echo "FAIL: cannot read the LaTeX log $log"
+    status=1
+  elif grep -q 'Missing character' "$log"; then
+    echo "FAIL: $log reports missing glyphs:"
+    grep -m5 'Missing character' "$log"
+    status=1
+  else
+    echo "ok: no missing characters in $log"
+  fi
+  if ! grep -q 'WIDTH-CHECK-BEGIN' "$log"; then
+    :  # the full book's log: the code-width probe is only in fonts.tex
+  elif sed -n '/WIDTH-CHECK-BEGIN/,/WIDTH-CHECK-END/p' "$log" | grep -q 'Overfull \\hbox'; then
+    echo "FAIL: an 88-character code line does not fit the code frame:"
+    grep -m1 'WIDTH-CHECK:' "$log"
+    status=1
+  else
+    echo "ok: $(grep -m1 -o 'WIDTH-CHECK: .*' "$log" | sed 's/WIDTH-CHECK: //'), no overfull box"
+  fi
+fi
+
+if [ "${CHECK_SAMPLES:-1}" != 0 ]; then
+  text=$(mktemp)
+  trap 'rm -f "$text"' EXIT
+  pdftotext "$pdf" "$text"
+  python3 - "$text" "$here/samples.txt" <<'PY' || status=1
+import os
+import sys
+import unicodedata
+
+raw = open(sys.argv[1], encoding="utf-8").read()
+flat = " ".join(unicodedata.normalize("NFKC", raw).split())
+text = set(unicodedata.normalize("NFKC", raw)) - set(" \t\n\r\f\x0c")
+# private-use or unassigned code points: a font whose ToUnicode map is wrong
+has_pua = any(unicodedata.category(c) in ("Co", "Cn") for c in raw)
+allow_pua = os.environ.get("CHECK_PDF_ALLOW_PUA") == "1"
+
+
+def arabic_letter(c):
+    return "؀" <= c <= "ۿ" and unicodedata.category(c).startswith("L")
+
+
+bad = 0
+for line in open(sys.argv[2], encoding="utf-8"):
+    line = line.rstrip("\n")
+    if not line.strip() or line.startswith("#"):
+        continue
+    kind, _, sample = line.partition(":")
+    chars = set(unicodedata.normalize("NFKC", sample)) - set(" \t\n\r\f\x0c")
+    if kind == "ar":
+        chars = {c for c in chars if arabic_letter(c)}
+    missing = sorted(chars - text)
+    if kind == "words" and not missing:
+        # every typeset copy (body text and verbatim) of the line, found by its "words:" prefix
+        want = " ".join(unicodedata.normalize("NFKC", line).split())
+        copies = [flat[i:i + len(want)] for i in range(len(flat)) if flat.startswith("words:", i)]
+        if not copies or any(copy != want for copy in copies):
+            missing = ["the sample as written, with its spacing: " + " | ".join(copies)]
+    if kind == "ar" and "ٮ" in text:
+        # Noto Naskh Arabic draws beh, teh and theh as the dotless base (U+066E) plus separate
+        # dot marks, and its ToUnicode map reports the base, so pdftotext gives U+066E for them.
+        missing = [c for c in missing if c not in "بتث"]
+    if not missing:
+        print(f"ok: {kind}: {sample.strip()}")
+    elif allow_pua and has_pua:
+        print(f"WARN: {kind}: {sample.strip()} (missing {missing}; private-use code points seen)")
+    else:
+        print(f"FAIL: {kind}: {sample.strip()} (missing {missing})")
+        bad += 1
+sys.exit(1 if bad else 0)
+PY
+fi
+exit $status

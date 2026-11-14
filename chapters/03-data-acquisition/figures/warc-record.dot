@@ -1,0 +1,13 @@
+digraph warc_record {
+  graph [fontname="DejaVu Sans", fontsize=13, nodesep=0.35, ranksep=0.35, pad=0.2];
+  node [fontname="DejaVu Sans", fontsize=12, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3]; edge [fontname="DejaVu Sans", fontsize=11, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
+  member [label=<<B>gzip member</B>: bytes 48,374,322 to 48,384,203 (9,882 bytes)<BR/>gzip.decompress(…) gives one WARC record>, fillcolor="#edf2f7"];
+  record [shape=plain, style="", label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="7" COLOR="#4a5568">
+    <TR><TD BGCOLOR="#dbeafe" ALIGN="LEFT" BALIGN="LEFT"><B>WARC header</B> (warc_head)<BR/>WARC/1.0<BR/>WARC-Type: response<BR/>WARC-Target-URI: https://3.214.11.0/galleries/garys-gallery/yazyk/<BR/>WARC-Date: 2026-09-08T10:00:30Z<BR/>WARC-Payload-Digest: sha1:4FPPZ452ITDX4GHJQJ354OVFUQJCBZVS<BR/>Content-Type: application/http; msgtype=response<BR/>Content-Length: … (WARC-Truncated: length, only if cut off)</TD><TD BORDER="0" ALIGN="LEFT" BALIGN="LEFT">what was fetched,<BR/>when, and a hash<BR/>of the payload</TD></TR>
+    <TR><TD BGCOLOR="#e2e8f0">blank line: \r\n\r\n</TD><TD BORDER="0" ALIGN="LEFT">first split</TD></TR>
+    <TR><TD BGCOLOR="#fde7cf" ALIGN="LEFT" BALIGN="LEFT"><B>HTTP response header</B> (http_head)<BR/>HTTP/1.1 200 OK<BR/>Content-Type: text/html …<BR/>…</TD><TD BORDER="0" ALIGN="LEFT" BALIGN="LEFT">what the server<BR/>answered</TD></TR>
+    <TR><TD BGCOLOR="#e2e8f0">blank line: \r\n\r\n</TD><TD BORDER="0" ALIGN="LEFT">second split</TD></TR>
+    <TR><TD BGCOLOR="#dcfce7" ALIGN="LEFT" BALIGN="LEFT"><B>HTML payload</B> (html)<BR/>&lt;!DOCTYPE html&gt;&lt;html&gt; … &lt;/html&gt;<BR/>34,353 bytes in this record</TD><TD BORDER="0" ALIGN="LEFT" BALIGN="LEFT">input to text<BR/>extraction in<BR/>preprocessing</TD></TR>
+  </TABLE>>];
+  member -> record [label=" record.split(b\"\\r\\n\\r\\n\", 2)"];
+}

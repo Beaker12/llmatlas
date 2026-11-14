@@ -5,5 +5,6 @@
  "deepseek-ai/DeepSeek-V2-Lite": "604d5664dddd88a0433dbae533b7fe9472482de0",
  "deepseek-ai/DeepSeek-V3": "e815299b0bcbac849fa540c768ef21845365c9eb",
  "mistralai/Mistral-7B-v0.1": "27d67f1b5f57dc0953326b2601d68371d40ea8da",
- "mistralai/Mixtral-8x7B-v0.1": "fc7ac94680e38d7348cfa806e51218e6273104b0"
+ "mistralai/Mixtral-8x7B-v0.1": "fc7ac94680e38d7348cfa806e51218e6273104b0",
+ "Qwen/Qwen3-8B-Base": "49e3418fbbbca6ecbdf9608b4d22e5a407081db4"
 }

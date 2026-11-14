@@ -1,0 +1,574 @@
+"""Execute selected code fences from chapter 01 and check what they define."""
+import math
+import re
+from pathlib import Path
+
+import numpy as np
+import pytest
+import torch
+
+from tests._pages import pages
+
+FENCE = re.compile(r"```python\n([\s\S]*?)```")
+
+CH01_DIR = Path(__file__).resolve().parents[1] / "chapters" / "01-foundations"
+
+# --- Per-chapter constants -----------------------------------------------------------------------------------
+# The shared tests read every entry of these through tests/_files.chapter_constants; the chapter changes them
+# here and nowhere else.
+# SYNC_EXEMPT       name -> reason a definition may differ between the chapter page and its notebook.
+#                   Example: {"train_step": "the notebook version also logs the learning rate"}
+# RESULT_CLAIMS     (chapter regex, notebook-output regex, comparator) for a number the chapter states and the
+#                   notebook prints; comparator eq, gt, lt or approx:<rel>. Captured numbers are normalised, so
+#                   10,000 and 1e4 are the same number. Example: (r"loss of (\d+\.\d+)", r"final loss: (\S+)", "approx:0.01")
+# NOT_A_RESULT      sentence regex -> reason for a sentence that links a notebook and holds a number but states no
+#                   result. Example: {r"parses two files": "a count of inputs, not a result"}
+# NOTATION_OK       unit regex -> reason for a sentence the notation check's banned phrases match on purpose.
+#                   Example: {r"capacity factor of the paper": "quoted from the Switch paper"}
+# MIN_FIGURES       the least number of figures the chapter must have. Example: 12
+# INTERFACE_LABELS  label -> text of the heading the label sits directly above, for the section labels other
+#                   chapters link to. Example: {"sec-ch2-flops": "Training Complexity"}
+# A NOT_A_RESULT or NOTATION_OK entry that matches nothing is a failure: remove it with the sentence it was for.
+# The chapter's checker reads every exemption with `python tools/list_exemptions.py chapters/<dir>`.
+SYNC_EXEMPT: dict[str, str] = {}  # name -> reason it may differ between the chapter and its notebook
+
+# (chapter regex, notebook-output regex, comparator); each regex has exactly one capture group.
+# Comparator: eq, gt, lt or approx:<rel>, applied as `chapter_value <op> notebook_value`.
+RESULT_CLAIMS: list[tuple[str, str, str]] = []
+
+# regex over a sentence -> one-line reason; such a sentence links a notebook and mentions a number but states
+# no result, so the notebook-link check (rule c of test_notebook_prose.py) does not flag it
+NOT_A_RESULT: dict[str, str] = {}
+
+MIN_FIGURES: int = 17
+# Units the notation check's banned phrases may match, declared on purpose: unit regex -> reason.
+NOTATION_OK: dict[str, str] = {}
+# Section labels other chapters link to: label -> the text of the heading it sits directly above.
+INTERFACE_LABELS: dict[str, str] = {
+    "sec-ch1-perplexity": "6.3 Evaluation Metrics",
+    "sec-ch1-layernorm": "Layer Normalization",
+    "sec-ch1-modern-block": "5.3 What Changed Since 2017",
+    "sec-ch1-rope": "Rotary Position Embedding (RoPE)",
+    "sec-ch1-relative-bias": "Relative Position Bias (T5)",
+}
+
+
+def ch01_fence(marker: str) -> str:
+    for page in pages(CH01_DIR):
+        for m in FENCE.finditer(page.read_text(encoding="utf-8")):
+            if marker in m.group(1):
+                return m.group(1)
+    raise AssertionError(f"no python fence under chapters/01-foundations contains {marker!r}")
+
+
+def test_comprehensive_tokenizer_round_trips_mixed_case_text():
+    ns = {"torch": torch, "np": np, "math": math}
+    exec(ch01_fence("class ComprehensiveTokenizer"), ns)  # noqa: S102
+    tok = ns["tokenizer"]
+    # byte-level: ids 0..255 are the bytes, the five special tokens follow, then the learned merges (D6)
+    assert tok.special_tokens == {"<PAD>": 256, "<UNK>": 257, "<BOS>": 258, "<EOS>": 259, "<MASK>": 260}
+    assert all(tok.vocab[i] == bytes([i]) for i in range(256))
+    assert len(tok.merges) == 39
+    for text in ["The quick brown fox", "Hello, world!", "The quick brown fox.", "two  spaces", "a\nnewline",
+                 "你好世界", "tabs\tand  \n\n mixed   whitespace "]:
+        ids = tok.encode(text)
+        assert tok.special_tokens["<UNK>"] not in ids
+        assert tok.decode(ids) == text, (text, tok.decode(ids))
+    # C1-08: frequent words merge, an unseen word still splits
+    assert tok.pieces("The") == ["The"]
+    assert len(tok.pieces("unthinkable")) > 1
+
+
+def test_simple_bpe_splits_an_unseen_word():
+    ns = {}
+    exec(ch01_fence("class SimpleBPE"), ns)  # noqa: S102
+    assert ns["bpe"].encode("helper") == ["hel", "p", "e", "r", "</w>"]
+
+
+def test_apply_rope_preserves_norm_and_depends_only_on_relative_offset():
+    ns = {"torch": torch, "math": math}
+    exec(ch01_fence("def apply_rope"), ns)  # noqa: S102
+    torch.manual_seed(0)
+    q, k = torch.randn(8, 16), torch.randn(8, 16)
+    pos = torch.arange(8)
+    qr, kr = ns["apply_rope"](q, pos), ns["apply_rope"](k, pos)
+    assert torch.allclose(qr.norm(dim=-1), q.norm(dim=-1), atol=1e-5)
+    qs, ks = ns["apply_rope"](q, pos + 7), ns["apply_rope"](k, pos + 7)
+    assert torch.allclose(qr @ kr.T, qs @ ks.T, atol=1e-4)
+    # a no-op would pass both checks above; the rotation must actually move position 1+
+    assert not torch.allclose(qr[1:], q[1:], atol=1e-3)
+    # and position 0 (angle 0) must be untouched
+    assert torch.allclose(qr[0], q[0], atol=1e-6)
+
+
+def t5_reference_bucket(relative_position, bidirectional=True, num_buckets=32, max_distance=128):
+    """T5Attention._relative_position_bucket from Hugging Face transformers 4.46.3, transcribed.
+
+    Its argument is HF's relative_position = key position - query position, i.e. m' - m.
+    """
+    relative_buckets = 0
+    if bidirectional:
+        num_buckets //= 2
+        relative_buckets += (relative_position > 0).to(torch.long) * num_buckets
+        relative_position = torch.abs(relative_position)
+    else:
+        relative_position = -torch.min(relative_position, torch.zeros_like(relative_position))
+    max_exact = num_buckets // 2
+    is_small = relative_position < max_exact
+    relative_position_if_large = max_exact + (
+        torch.log(relative_position.float() / max_exact) / math.log(max_distance / max_exact) * (num_buckets - max_exact)
+    ).to(torch.long)
+    relative_position_if_large = torch.min(relative_position_if_large, torch.full_like(relative_position_if_large,
+                                                                                        num_buckets - 1))
+    return relative_buckets + torch.where(is_small, relative_position, relative_position_if_large)
+
+
+def test_relative_position_bias_is_t5_bucketing_with_the_page_sign():
+    ns = {"torch": torch, "math": math}
+    exec(ch01_fence("class RelativePositionBias"), ns)  # noqa: S102
+    bucket = ns["relative_position_bucket"]
+    offsets = torch.arange(-1000, 1001)  # m - m'
+    for bidirectional in (True, False):
+        assert torch.equal(bucket(offsets, bidirectional), t5_reference_bucket(-offsets, bidirectional))
+    # known values, bidirectional (encoder): exact up to 7, log-spaced to 15 at 128, keys after the query in 16..31
+    known = {0: 0, 1: 1, 7: 7, 8: 8, 12: 9, 16: 10, 64: 14, 127: 15, 128: 15, 1000: 15, -1: 17, -8: 24, -128: 31}
+    assert {o: int(bucket(torch.tensor(o), True)) for o in known} == known
+    # causal (decoder): every key at or after the query shares bucket 0; exact up to 15, then log-spaced to 31
+    known_causal = {-5: 0, 0: 0, 1: 1, 15: 15, 16: 16, 32: 21, 127: 31, 128: 31, 1000: 31}
+    assert {o: int(bucket(torch.tensor(o), False)) for o in known_causal} == known_causal
+    rpb = ns["RelativePositionBias"](num_heads=8)
+    assert rpb.table.weight.shape == (32, 8)  # one scalar per (bucket, head), for the whole model
+    bias = rpb(seq_len=16)
+    assert bias.shape == (8, 16, 16)
+    # entry (m, m') is rb(bucket(m - m')): query 5 looking back at key 2 uses bucket 3, not the future-key bucket 19
+    assert torch.equal(bias[:, 5, 2], rpb.table.weight[3])
+    assert torch.equal(bias[:, 2, 5], rpb.table.weight[16 + 3])
+
+
+def test_multi_head_attention_handles_cross_attention_and_padding_masks():
+    ns = {}
+    exec(ch01_fence("class MultiHeadAttention"), ns)  # noqa: S102
+    torch.manual_seed(0)
+    mha = ns["MultiHeadAttention"](d_model=32, num_heads=4).eval()
+    x, memory = torch.randn(2, 5, 32), torch.randn(2, 7, 32)
+    out, weights = mha(x, memory, memory)  # keys and values longer than the queries (C1-18)
+    assert out.shape == (2, 5, 32) and weights.shape == (2, 4, 5, 7)
+    padding = torch.ones(2, 1, 1, 7, dtype=torch.bool)
+    padding[1, ..., 5:] = False  # the last two keys of the second sequence are padding
+    _, weights = mha(x, memory, memory, padding)
+    assert torch.all(weights[1, ..., 5:] == 0)
+    assert torch.allclose(weights.sum(-1), torch.ones(2, 4, 5), atol=1e-6)
+
+
+def test_token_embedding_scaled_by_sqrt_d_has_unit_variance():
+    ns = {}
+    exec(ch01_fence("class TokenEmbeddingLayer"), ns)  # noqa: S102
+    torch.manual_seed(0)
+    layer = ns["TokenEmbeddingLayer"](vocab_size=5000, d_model=512, layer_norm=False, dropout=0.0)
+    token_rms = (layer.token_embeddings.weight * math.sqrt(512)).pow(2).mean().sqrt().item()
+    # the layer's sinusoidal copy was deleted (D8); the chapter's one sinusoidal table is the reference
+    sinusoid_ns = {}
+    exec(ch01_fence("def create_sinusoidal_encoding").split("def visualize_positional_encoding")[0], sinusoid_ns)  # noqa: S102
+    position_rms = sinusoid_ns["create_sinusoidal_encoding"](5000, 512).pow(2).mean().sqrt().item()
+    assert layer.position_encoding.position_embeddings.num_embeddings == 5000  # learned positions by default
+    assert abs(token_rms - 1.0) < 0.01  # N(0, 1/d) times sqrt(d): unit variance (C1-03)
+    assert abs(position_rms - 0.5 ** 0.5) < 0.01  # sin^2 and cos^2 average 1/2
+    assert 1.5 < token_rms**2 / position_rms**2 < 2.5  # comparable power, not 24.7x the other way
+    ns = {}
+    exec(ch01_fence("class TokenEmbedding("), ns)  # noqa: S102
+    emb = ns["TokenEmbedding"](5000, 512)
+    assert abs(emb(torch.arange(5000)).pow(2).mean().sqrt().item() - 1.0) < 0.01
+
+
+def test_rope_equals_the_block_diagonal_rotation_of_the_derivation():
+    ns = {"torch": torch, "math": math}
+    exec(ch01_fence("def apply_rope"), ns)  # noqa: S102
+    d, b = 8, 10000.0
+
+    def rotation(m):  # R_m of eq-ch1-rope: 2x2 blocks [[cos, -sin], [sin, cos]] at angle m * b^(-2i/d)
+        r = torch.zeros(d, d, dtype=torch.float64)
+        for i in range(d // 2):
+            a = m * b ** (-2 * i / d)
+            r[2 * i:2 * i + 2, 2 * i:2 * i + 2] = torch.tensor([[math.cos(a), -math.sin(a)], [math.sin(a), math.cos(a)]])
+        return r
+
+    torch.manual_seed(0)
+    x = torch.randn(1, d, dtype=torch.float64)
+    for m in (0, 1, 5, 37):
+        rotated = ns["apply_rope"](x.float(), torch.tensor([m])).double()
+        assert torch.allclose(rotated[0], rotation(m) @ x[0], atol=1e-5)
+    # the identity the proof rests on: R_m^T R_m' = R_{m'-m}
+    assert torch.allclose(rotation(3).T @ rotation(11), rotation(8), atol=1e-12)
+
+
+def test_evaluate_tokenization_quality_reports_only_measured_metrics():
+    ns = {"torch": torch, "np": np, "math": math}
+    exec(ch01_fence("def evaluate_tokenization_quality"), ns)  # noqa: S102  (same fence as the tokenizer)
+    metrics = ns["evaluate_tokenization_quality"](ns["tokenizer"], ["The quick brown fox", "hello world"])
+    assert set(metrics) == {"chars_per_token", "bytes_per_token", "reversibility_errors"}
+    assert metrics["chars_per_token"] > 1.0
+    assert metrics["reversibility_errors"] == 0.0
+    # the analysis counts only byte-level tokens: special ids are left out, every token is 1+ bytes
+    lengths, kinds = ns["analyze_tokenization_efficiency"](ns["tokenizer"], ns["held_out"])
+    assert sum(lengths.values()) == sum(kinds.values()) == 35 and min(lengths) >= 1
+    assert kinds == {"single byte": 15, "part of a chunk": 13, "whole chunk": 7}
+    held = ns["evaluate_tokenization_quality"](ns["tokenizer"], ns["held_out"])
+    assert round(held["bytes_per_token"], 3) == 1.914 and held["reversibility_errors"] == 0.0
+
+
+def test_deep_dive_exercise_t1_wordpiece_score():
+    ns = {}
+    exec(ch01_fence("def wordpiece_encode"), ns)  # noqa: S102
+    assert ns["pair_counts"]["##u", "##n"] == 16
+    assert abs(ns["scores"]["##u", "##n"] - 1 / 36) < 1e-12 and round(1 / 36, 4) == 0.0278
+    assert ns["scores"]["##u", "##n"] < ns["scores"]["##g", "##s"] == 0.05
+
+
+def test_deep_dive_exercise_t2_unigram_shares():
+    ns = {}
+    exec(ch01_fence("def wordpiece_encode"), ns)  # noqa: S102
+    p = ns["probs"]
+    assert math.isclose(p["un"] * p["happiness"], 1.6e-4) and math.isclose(p["un"] * p["happi"] * p["ness"], 9.6e-5)
+    assert round(1.6e-4 / 9.6e-5, 3) == 1.667
+    total = sum(ns["weights"])
+    assert round(total * 1e4, 3) == 2.608
+    assert round(ns["share"]["un happiness"], 3) == 0.613 and round(ns["share"]["un happi ness"], 3) == 0.368
+
+
+def test_deep_dive_exercise_t3_unseen_script_bytes():
+    ns = {}
+    exec(ch01_fence("class ComprehensiveTokenizer"), ns)  # noqa: S102
+    ids = ns["tokenizer"].encode("你好")
+    assert len(ids) == 8 and ns["tokenizer"].decode(ids) == "你好"
+
+
+def test_deep_dive_exercise_t4_vocabulary_cost():
+    assert 2 * 100_277 * 4096 == 821_469_184
+    assert 2 * 200_019 * 4096 == 1_638_555_648
+    assert 1_638_555_648 - 821_469_184 == 817_086_464 and round(817_086_464 / 8e9, 3) == 0.102
+
+
+def test_unigram_pruning_keeps_the_largest_losses():
+    ns = {}
+    exec(ch01_fence("def wordpiece_encode"), ns)  # noqa: S102
+    loss, kept, dropped = ns["loss"], ns["kept"], ns["dropped"]
+    assert dropped == ["unh"] and len(kept) == 4  # 80% of the five multi-character pieces
+    assert all(loss[k] > loss[d] for k in kept for d in dropped)
+    assert all(len(x) > 1 for x in loss)  # single characters are never candidates for removal
+    assert len([b for b, ch in ns["byte_char"].items() if ord(ch) != b]) == 68  # GPT-2's remapped bytes
+
+
+def test_subword_algorithms_listing_matches_the_deep_dive_prose():
+    ns = {}
+    exec(ch01_fence("def wordpiece_encode"), ns)  # noqa: S102
+    # WordPiece prefers the pair whose parts rarely occur apart: ##g ##s (5 / (20 * 5)) over ##u ##g (20 / (36 * 20))
+    assert ns["frequent"] == ("##u", "##g") and abs(ns["scores"]["##u", "##g"] - 20 / (36 * 20)) < 1e-12
+    assert ns["best"] == ("##g", "##s") and ns["scores"]["##g", "##s"] == 0.05
+    vocab = ns["vocab"]
+    assert ns["wordpiece_encode"]("unhappiness", vocab) == ["un", "##happ", "##i", "##ness"]
+    assert ns["wordpiece_encode"]("sad", vocab) == ["[UNK]"]  # the whole word, not one character
+    # Viterbi equals the exhaustive best over all 12 segmentations
+    assert len(ns["candidates"]) == 12
+    score, pieces = ns["viterbi"]("unhappiness")
+    assert pieces == ["un", "happiness"]
+    assert score == max(sum(ns["logp"][p] for p in seg) for seg in ns["candidates"])
+    # GPT-2's byte map: 256 printable symbols, space is U+0120, e-acute is two symbols
+    byte_char = ns["byte_char"]
+    assert len(set(byte_char.values())) == 256 and byte_char[32] == "Ġ"
+    assert all(not ch.isspace() and ch.isprintable() for ch in byte_char.values())
+    assert "".join(byte_char[b] for b in "é".encode("utf-8")) == "Ã©"
+
+
+def test_committed_notebook_embeds_every_plot():
+    """Each plt.show() in the committed notebook has an image/png output, so the published page shows the plots.
+
+    Executing with MPLBACKEND=Agg strips them; the notebook is committed after a run with the inline backend.
+    """
+    import json
+
+    nb = json.loads((CH01_DIR / "examples" / "attention_mechanisms_demo.ipynb").read_text())
+    shows = images = 0
+    for cell in nb["cells"]:
+        if cell["cell_type"] != "code":
+            continue
+        cell_shows = "".join(cell["source"]).count("plt.show()")
+        cell_images = sum("image/png" in out.get("data", {}) for out in cell.get("outputs", []))
+        assert cell_images >= cell_shows, f"cell with {cell_shows} plots has {cell_images} images"
+        shows, images = shows + cell_shows, images + cell_images
+    assert images >= shows >= 10
+
+
+def test_embedding_to_position_power_ratios_match_the_prose():
+    """Xavier init scaled by sqrt(d) leaves position (|V|+d)/(4d) times stronger; N(0,1) scaled makes tokens 2d times stronger."""
+    import math as _math
+    import pathlib as _pathlib
+
+    V, d = 50_000, 512
+    torch.manual_seed(0)
+    w = torch.empty(V, d)
+    torch.nn.init.xavier_uniform_(w)
+    token_power = (w * _math.sqrt(d)).pow(2).mean().item()
+    pos = torch.arange(1024).unsqueeze(1).float()
+    div = torch.exp(torch.arange(0, d, 2).float() * (-_math.log(10000.0) / d))
+    pe = torch.zeros(1024, d)
+    pe[:, 0::2], pe[:, 1::2] = torch.sin(pos * div), torch.cos(pos * div)
+    pe_power = pe.pow(2).mean().item()
+    assert round(pe_power / token_power, 1) == 24.7
+    normal_power = (torch.randn(V, d) * _math.sqrt(d)).pow(2).mean().item()
+    assert abs(normal_power / pe_power - 2 * d) < 0.02 * 2 * d
+    page = (_pathlib.Path(__file__).resolve().parents[1] / "chapters/01-foundations/index.md").read_text(encoding="utf-8")
+    assert r"(|\mathcal{V}| + d)/(4d) \approx 24.7" in page and "$2d = 1{,}024$" in page
+
+
+def test_notebook_bpe_cell_uses_the_chapter_corpus_and_merge_count():
+    import json as _json
+    import pathlib as _pathlib
+
+    root = _pathlib.Path(__file__).resolve().parents[1] / "chapters/01-foundations"
+    page = (root / "index.md").read_text(encoding="utf-8")
+    nb = _json.loads((root / "examples/attention_mechanisms_demo.ipynb").read_text(encoding="utf-8"))
+    corpus = 'corpus = ["hello", "world", "hello", "help", "held"]'
+    assert corpus in page and "num_merges=4" in page
+    cell = next(c for c in nb["cells"] if c["cell_type"] == "code" and corpus in "".join(c["source"]))
+    assert "range(4)" in "".join(cell["source"])
+    out = "".join("".join(o.get("text", "")) for o in cell.get("outputs", []))
+    for a, b in (("h", "e"), ("he", "l"), ("hel", "l"), ("hell", "o")):
+        assert f"Merged '{a}' + '{b}'" in out
+
+
+# --- Exercises (sec-ch1-exercises): every numerical answer of the solutions -----------------------------------
+
+def _close(a, b, digits=4):
+    return abs(a - b) <= 0.5 * 10 ** (-digits) + 1e-12
+
+
+def test_exercise_1_bpe_merges():
+    ns = {}
+    exec(ch01_fence("class SimpleBPE").split("# Example usage")[0], ns)  # noqa: S102
+    bpe = ns["SimpleBPE"]()
+    bpe.train(["low"] * 5 + ["lower"] * 2 + ["newest"] * 6 + ["widest"] * 3, num_merges=3)
+    assert bpe.merges == [("e", "s"), ("es", "t"), ("est", "</w>")]
+    assert bpe.encode("lowest") == ["l", "o", "w", "est</w>"]
+    # the counts the solution lists for the first round
+    counts = {}
+    for w, f in {"low": 5, "lower": 2, "newest": 6, "widest": 3}.items():
+        sym = list(w) + ["</w>"]
+        for pair in zip(sym, sym[1:]):
+            counts[pair] = counts.get(pair, 0) + f
+    assert counts == {("l", "o"): 7, ("o", "w"): 7, ("w", "</w>"): 5, ("w", "e"): 8, ("e", "r"): 2,
+                      ("r", "</w>"): 2, ("n", "e"): 6, ("e", "w"): 6, ("e", "s"): 9, ("s", "t"): 9,
+                      ("t", "</w>"): 9, ("w", "i"): 3, ("i", "d"): 3, ("d", "e"): 3}
+
+
+def test_exercise_2_attention_2x2():
+    Q = torch.tensor([[1.0, 0.0], [1.0, 1.0]])
+    K = torch.tensor([[2.0, 0.0], [0.0, 2.0]])
+    V = torch.tensor([[1.0, 2.0], [3.0, 0.0]])
+    scores = Q @ K.T / math.sqrt(2)
+    w = torch.softmax(scores, dim=-1)
+    out = w @ V
+    assert torch.allclose(scores, torch.tensor([[1.4142, 0.0], [1.4142, 1.4142]]), atol=5e-5)
+    assert torch.allclose(w, torch.tensor([[0.8044, 0.1956], [0.5, 0.5]]), atol=5e-5)
+    assert torch.allclose(out, torch.tensor([[1.3911, 1.6089], [2.0, 1.0]]), atol=5e-5)
+    assert _close(math.exp(1.4142), 4.113, 3) and _close(1 + math.exp(1.4142), 5.113, 3)
+
+
+def test_exercise_3_uniform_perplexity():
+    loss = -math.log(1 / 50257)
+    assert _close(loss, 10.82, 2)
+    assert round(math.exp(loss)) == 50257
+
+
+def test_exercise_4_masked_scores():
+    row = torch.tensor([1.0, 2.0, 3.0])
+    allowed = torch.tensor([True, True, False])  # query 2 of 3 sees keys 1 and 2
+    w = torch.softmax(row.masked_fill(~allowed, float("-inf")), dim=-1)
+    assert torch.allclose(w, torch.tensor([0.2689, 0.7311, 0.0]), atol=5e-5) and w[2] == 0
+    n = 1024
+    hidden = int((~torch.tril(torch.ones(n, n, dtype=torch.bool))).sum())
+    assert hidden == n * (n - 1) // 2 == 523_776 and n * n == 1_048_576
+    none = torch.zeros(3, dtype=torch.bool)
+    assert torch.isnan(torch.softmax(row.masked_fill(~none, float("-inf")), dim=-1)).all()
+    uniform = torch.softmax(row.masked_fill(~none, torch.finfo(torch.float32).min), dim=-1)
+    assert torch.allclose(uniform, torch.full((3,), 1 / 3))
+    # the finite minimum still gives an exactly zero weight when some key is allowed
+    assert torch.softmax(row.masked_fill(~allowed, torch.finfo(torch.float32).min), dim=-1)[2] == 0
+    # the chapter's attention listing uses the finite fill the solution explains
+    assert "masked_fill(mask == 0, torch.finfo(scores.dtype).min)" in ch01_fence("class ScaledDotProductAttention")
+
+
+def test_exercise_5_temperature():
+    z = torch.tensor([2.0, 1.0, 0.0])
+    assert torch.allclose(torch.softmax(z, -1), torch.tensor([0.6652, 0.2447, 0.0900]), atol=5e-5)
+    assert torch.allclose(torch.softmax(z / 0.5, -1), torch.tensor([0.8668, 0.1173, 0.0159]), atol=5e-5)
+    assert _close(math.exp(2) + math.exp(1) + 1, 11.11, 2) and _close(math.exp(4) + math.exp(2) + 1, 62.99, 2)
+    assert _close(math.exp(4), 54.60, 2) and _close(math.exp(1), 2.718, 3) and _close(math.exp(2), 7.389, 3)
+    assert torch.softmax(z / 0.01, -1)[0] > 0.9999
+
+
+def test_exercise_6_bits_per_byte():
+    assert _close(math.exp(2.0), 7.389, 3)
+    bpb = 0.25 * 2.0 / math.log(2)
+    assert _close(bpb, 0.7213)
+    loss_b = 3 * bpb * math.log(2)
+    assert _close(loss_b, 1.5, 6) and _close(math.exp(loss_b), 4.482, 3)
+
+
+def test_exercise_7_gpt2_small_parameters():
+    ns = {}
+    exec(ch01_fence("def count_parameters").split("print(")[0], ns)  # noqa: S102
+    count = ns["count_parameters"]
+    assert count(50257, 768, 12, 1024, tied=True) == 124_439_808
+    assert count(50257, 768, 12, 1024, tied=False) == 163_037_184
+    assert 50257 * 768 == 38_597_376 and 1024 * 768 == 786_432
+    assert 12 * 768**2 == 7_077_888 and 13 * 768 == 9_984 and 12 * (12 * 768**2 + 13 * 768) == 85_054_464
+    assert round(100 * (38_597_376 + 786_432) / 124_439_808) == 32
+
+
+def test_exercise_8_score_memory():
+    n, heads = 4096, 32
+    assert n * n == 16_777_216 and heads * n * n == 536_870_912
+    assert 2 * heads * n * n == 1_073_741_824 == 2**30
+    assert 2 * heads * (2 * n) ** 2 == 4 * 2**30
+
+
+def test_exercise_9_rope_offset():
+    ns = {}
+    exec(ch01_fence("def apply_rope").split("# Usage inside attention")[0], ns)  # noqa: S102
+    apply_rope = ns["apply_rope"]
+    q = torch.tensor([[1.0, 2.0]], dtype=torch.float64)
+    k = torch.tensor([[3.0, -1.0]], dtype=torch.float64)
+    expected = math.cos(1) + 7 * math.sin(1)
+    assert _close(expected, 6.4306) and _close(math.cos(1), 0.5403) and _close(7 * math.sin(1), 5.8903)
+    assert float(q @ k.T) == 1.0
+    for m in (0, 4):
+        qr = apply_rope(q, torch.tensor([m]))   # d_k = 2: the single frequency is base**0 = 1
+        kr = apply_rope(k, torch.tensor([m + 1]))
+        assert abs(float(qr @ kr.T) - expected) < 1e-5
+    # a different offset gives a different score, so the check can fail
+    assert abs(float(apply_rope(q, torch.tensor([0])) @ apply_rope(k, torch.tensor([2])).T) - expected) > 0.1
+
+
+def test_main_page_kv_cache_and_t5_bias_numbers():
+    # KV cache of GPT-2 small: keys and values, 12 layers, width 768, 2-byte numbers
+    per_token = 2 * 12 * 768 * 2
+    assert per_token == 36_864 and per_token * 1024 == 37_748_736
+    # T5-small: 32 buckets x 8 heads per stack, one table in the encoder and one in the decoder
+    assert 32 * 8 == 256 and 2 * 32 * 8 == 512
+
+
+def test_rescore_r1_numbers():
+    """Numbers added in the re-score fixes: GELU, dropout scaling, embedding sizes, sinusoid offsets, beam search."""
+    gelu = torch.nn.GELU()
+    assert round(gelu(torch.tensor(1.0)).item(), 3) == 0.841
+    assert round(gelu(torch.tensor(-1.0)).item(), 3) == -0.159
+    # dropout: survivors scaled by 1/(1 - p) in training, identity in evaluation mode
+    torch.manual_seed(0)
+    drop = torch.nn.Dropout(0.1)
+    y = drop(torch.ones(10_000))
+    assert set(torch.unique(y).tolist()) <= {0.0, 1 / 0.9} or torch.allclose(torch.unique(y), torch.tensor([0.0, 1 / 0.9]))
+    drop.eval()
+    assert torch.equal(drop(torch.ones(5)), torch.ones(5))
+    # embedding sizes in the vocabulary paragraph and the weight-tying list
+    assert 50_000 * 4_096 == 204_800_000 and 50_257 * 768 == 38_597_376
+    # sinusoidal encoding: pair i at m' is pair i at m rotated by (m' - m) * omega_i
+    d, m, m2 = 16, 5, 12
+    for i in range(d // 2):
+        w = 10000 ** (-2 * i / d)
+        a = (m2 - m) * w
+        rot = np.array([[math.cos(a), -math.sin(a)], [math.sin(a), math.cos(a)]])
+        assert np.allclose(np.array([math.sin(m * w), math.cos(m * w)]) @ rot, [math.sin(m2 * w), math.cos(m2 * w)])
+    # beam search toy: greedy 0.5 * 0.4, width 2 finds 0.4 * 0.9
+    assert round(0.5 * 0.4, 2) == 0.20 and round(0.4 * 0.9, 2) == 0.36
+
+
+def test_transformer_block_shape_and_parameter_count():
+    """TransformerBlock (run after the attention listing) keeps the shape and has 12 d^2 + 13 d parameters."""
+    ns: dict = {}
+    exec(ch01_fence("class MultiHeadAttention"), ns)
+    exec(ch01_fence("class TransformerBlock"), ns)
+    block = ns["TransformerBlock"](64, 8, 256).eval()
+    assert block(torch.randn(2, 5, 64)).shape == (2, 5, 64)
+    counts = {
+        "attention": sum(p.numel() for p in block.attention.parameters()),
+        "ffn": sum(p.numel() for p in block.feed_forward.parameters()),
+        "norms": sum(p.numel() for m in (block.norm1, block.norm2) for p in m.parameters()),
+    }
+    assert counts == {"attention": 16_640, "ffn": 33_088, "norms": 256}
+    assert sum(counts.values()) == 49_984 == 12 * 64 * 64 + 13 * 64
+
+
+def test_padding_listing_mask_reaches_multi_head_attention():
+    """The padding mask of the teacher-forcing section is accepted by MultiHeadAttention and hides padding."""
+    ns: dict = {}
+    exec(ch01_fence("class MultiHeadAttention"), ns)
+    exec(ch01_fence("real keys per query"), ns)
+    mha = ns["MultiHeadAttention"](d_model=16, num_heads=2).eval()
+    x = torch.randn(2, 5, 16)
+    _, w = mha(x, x, x, ns["mask"])
+    assert w.shape == (2, 2, 5, 5)
+    assert w[1, :, :, 3:].abs().sum() == 0 and torch.allclose(w.sum(-1), torch.ones(2, 2, 5))
+    assert (ns["targets"] != ns["pad_id"]).sum().item() == 6
+
+
+@pytest.mark.live
+def test_sentencepiece_wikitext_vocabulary_limits(tmp_path):
+    """The three limits in the SentencePiece subsection, from the raw WikiText-103 training split.
+
+    Data: Hugging Face dataset Salesforce/wikitext, config wikitext-103-raw-v1, train shard 0 of 2; the
+    first 5,000 rows are concatenated and cut to the first N bytes. sentencepiece 0.2.x defaults except
+    vocab_size=32000, model_type and num_threads=1.
+    """
+    import urllib.request
+
+    import pyarrow.parquet as pq
+    import sentencepiece as spm
+
+    url = ("https://huggingface.co/api/datasets/Salesforce/wikitext/parquet/"
+           "wikitext-103-raw-v1/train/0.parquet")
+    shard = tmp_path / "train0.parquet"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; reader)"})
+    with urllib.request.urlopen(req) as r, open(shard, "wb") as out:
+        out.write(r.read())
+    rows = next(pq.ParquetFile(shard).iter_batches(batch_size=5000, columns=["text"]))
+    raw = "".join(rows.to_pydict()["text"]).encode("utf-8")
+    assert len(raw) > 1_000_000
+
+    def limit(nbytes, model_type):
+        path = tmp_path / f"c{nbytes}.txt"
+        path.write_text(raw[:nbytes].decode("utf-8", "ignore"), encoding="utf-8")
+        try:
+            spm.SentencePieceTrainer.train(
+                input=str(path), model_prefix=str(tmp_path / f"m{nbytes}{model_type}"),
+                vocab_size=32000, model_type=model_type, num_threads=1, minloglevel=2)
+        except RuntimeError as e:
+            return int(re.search(r"value <= (\d+)", str(e)).group(1))
+        return None  # trained without complaint
+
+    assert limit(100_000, "bpe") == 14_602
+    assert limit(100_000, "unigram") == 2_743
+    assert limit(1_000_000, "bpe") is None
+    assert limit(1_000_000, "unigram") == 10_599
+
+
+def test_sentencepiece_defaults_do_not_round_trip_whitespace(tmp_path):
+    """The SentencePiece subsection: with default options the double space is lost."""
+    spm = pytest.importorskip("sentencepiece")
+    sentences = ["Hello, world! Tokenizers turn text into integers.",
+                 "The quick brown fox jumps over the lazy dog.",
+                 "Language models predict the next token from the previous ones."]
+    corpus = tmp_path / "c.txt"
+    corpus.write_text("\n".join(sentences * 200), encoding="utf-8")
+    spm.SentencePieceTrainer.train(
+        input=str(corpus), model_prefix=str(tmp_path / "t"), vocab_size=300,
+        model_type="bpe", byte_fallback=True, num_threads=1, minloglevel=2)
+    sp = spm.SentencePieceProcessor(model_file=str(tmp_path / "t.model"))
+    assert sp.decode_ids(sp.encode_as_ids("two  spaces")) == "two spaces"
+    assert sp.decode_ids(sp.encode_as_ids(" leading")) == "leading"
+
+
+def test_beam_search_length_penalty_numbers():
+    """Wu et al.: lp(Y) = ((5 + |Y|) / 6) ** alpha, the values printed on the page."""
+    lp = lambda n, a=0.6: ((5 + n) / 6) ** a
+    assert f"{lp(2):.2f}" == "1.10" and f"{lp(20):.2f}" == "2.35"
+    assert f"{math.log(0.36) / lp(2):.3f}" == "-0.931"

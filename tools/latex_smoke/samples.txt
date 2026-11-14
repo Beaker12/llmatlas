@@ -1,0 +1,8 @@
+cjk: Hello, world! 你好世界
+cjk: こんにちは世界
+cjk: 我喜欢学习自然语言处理
+cjk: 我 喜欢 学习 自然语言处理
+ar: مرحبا بالعالم
+lat: café café ﬁnal Ａ Müller Straße
+lat: • · ◦ ▪ ▫ ‣ ⁃ …
+words: the paper’s “quoted” and ‘single’ marks – en — em

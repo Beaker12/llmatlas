@@ -1,0 +1,2 @@
+# Proper names and titles that are spelled the British way and must stay as written.
+# One phrase per line; matched whole and case-insensitively. A chapter adds its own in chapters/<dir>/spelling-allow.txt.

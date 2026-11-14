@@ -19,7 +19,11 @@ import re
 import sys
 from pathlib import Path
 
-FENCE = re.compile(r"^(```|~~~)[^\n]*\n[\s\S]*?^\1[ \t]*$", re.MULTILINE)
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tools.fences import blank_code, math_bodies  # noqa: E402
+
 DISPLAY = re.compile(r"\$\$[\s\S]*?\$\$")
 INLINE = re.compile(r"(?<![\\$])\$(?!\$)[^$\n]+?(?<!\\)\$(?!\$)")
 
@@ -45,12 +49,14 @@ def _blank_out(text: str, pattern: re.Pattern) -> str:
 
 
 def math_regions(text: str) -> list[tuple[int, int]]:
-    """Return (start, end) offsets of every math region, fenced code excluded."""
-    no_code = _blank_out(text, FENCE)
+    """Return (start, end) offsets of every math region, fenced code excluded (tools/fences.py: the prose and
+    math inside directives such as admonitions and figure captions are read, code fences nested in them are not).
+    The body of a {math} directive is a display region of its own, without $$ delimiters."""
+    no_code = blank_code(text)
     regions = [(m.start(), m.end()) for m in DISPLAY.finditer(no_code)]
     no_display = _blank_out(no_code, DISPLAY)
     regions += [(m.start(), m.end()) for m in INLINE.finditer(no_display)]
-    return sorted(regions)
+    return sorted(regions + math_bodies(text))
 
 
 def unescape_region(region: str) -> str:

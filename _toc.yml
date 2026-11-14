@@ -48,5 +48,7 @@ parts:
     chapters:
       - file: roadmap
         title: "Roadmap"
+      - file: notation
+        title: "Notation"
       - file: bibliography
         title: "Bibliography"

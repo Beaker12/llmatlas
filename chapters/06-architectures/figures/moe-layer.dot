@@ -1,0 +1,33 @@
+digraph moe_layer {
+  ranksep=0.5; nodesep=0.22; newrank=true;
+  graph [fontname="DejaVu Sans"];
+  node [shape=box, style="filled", fontname="DejaVu Sans"];
+  edge [arrowsize=0.7];
+
+  x [label=<token's hidden state x<BR/>(after the norm)>, fillcolor="#ffffff", color="#2d3748", penwidth=1.3, fontsize=20];
+  router [label=<<TABLE BORDER="0" CELLSPACING="2"><TR><TD>router: logits r, probabilities ρ = softmax(r)</TD></TR><TR><TD>keep TopK(r), the n<SUB>act</SUB> largest logits</TD></TR><TR><TD>of E routed experts</TD></TR></TABLE>>, fillcolor="#fde8d7", color="#2d3748", penwidth=1.3, fontsize=20];
+
+  subgraph cluster_routed {
+    style="rounded,filled"; fillcolor="#f7fafc"; color="#4a5568"; penwidth=1.3; label="";
+    e1 [label=<FFN<SUB>1</SUB>>, fillcolor="#e6f0fa", color="#2d3748", penwidth=2.2, fontsize=20];
+    e2 [label=<FFN<SUB>2</SUB>>, fillcolor="#ffffff", color="#a0aec0", fontcolor="#718096", penwidth=1.3, fontsize=20];
+    e3 [label=<FFN<SUB>3</SUB>>, fillcolor="#e6f0fa", color="#2d3748", penwidth=2.2, fontsize=20];
+    e4 [label="…", fillcolor="#ffffff", color="#a0aec0", fontcolor="#718096", penwidth=1.3, fontsize=20];
+    eE [label=<FFN<SUB>E</SUB>>, fillcolor="#ffffff", color="#a0aec0", fontcolor="#718096", penwidth=1.3, fontsize=20];
+  }
+  s1 [label=<<TABLE BORDER="0" CELLSPACING="2"><TR><TD><B>shared experts</B></TD></TR><TR><TD>always active</TD></TR></TABLE>>, fillcolor="#c6f6d5", color="#2d3748", penwidth=2.2, fontsize=20];
+
+  y [label=<<TABLE BORDER="0" CELLSPACING="2"><TR><TD>y = (shared experts' output) + Σ ρ̃<SUB>i</SUB> FFN<SUB>i</SUB>(x)</TD></TR><TR><TD>summed over i in TopK(r)</TD></TR></TABLE>>, fillcolor="#edf2f7", color="#2d3748", penwidth=1.3, fontsize=20];
+
+  x -> router [color="#2d3748", penwidth=1.3];
+  router -> e1 [label=< ρ̃<SUB>1</SUB>>, fontsize=20, fontcolor="#2d3748", color="#2d3748", penwidth=2.2];
+  router -> e3 [label=< ρ̃<SUB>3</SUB>>, fontsize=20, fontcolor="#2d3748", color="#2d3748", penwidth=2.2];
+  router -> e2 [color="#cbd5e0", style=dotted];
+  router -> e4 [color="#cbd5e0", style=dotted];
+  router -> eE [color="#cbd5e0", style=dotted];
+  x -> s1 [color="#2d3748", penwidth=1.3];
+  e1 -> y [color="#2d3748", penwidth=2.2];
+  e3 -> y [color="#2d3748", penwidth=2.2];
+  s1 -> y [color="#2d3748", penwidth=2.2];
+  { rank=same; e1; e2; e3; e4; eE; s1; }
+}

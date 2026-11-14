@@ -1,0 +1,10 @@
+# Training-set or corpus size in tokens by year, as stated on the chapter page (sections 1.1 and 1.3) with the
+# page's citations. The Pile is omitted because it reports bytes (825 GiB), not tokens.
+# month: the month of the cited paper's arXiv identifier (2005, 2302, 2402, 2406, 2407), used for the x position.
+# kind: "trained" = tokens a model was trained on; "corpus" = tokens in a released corpus.
+name,year,month,tokens,kind,source
+GPT-3,2020,5,300e9,trained,brown2020language
+LLaMA 1,2023,2,1.4e12,trained,touvron2023llama
+Dolma,2024,2,3e12,corpus,soldaini2024dolma
+FineWeb,2024,6,15e12,corpus,penedo2024fineweb
+Llama 3,2024,7,15e12,trained,grattafiori2024llama

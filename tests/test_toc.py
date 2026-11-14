@@ -1,8 +1,9 @@
 """Every file in _toc.yml exists, and no chapter page is a placeholder stub."""
-import subprocess
 from pathlib import Path
 
 import yaml
+
+from tests._files import tracked
 
 ROOT = Path(__file__).resolve().parents[1]
 STUB_MARKER = "Phase 1 Skeleton"
@@ -35,8 +36,6 @@ def test_every_toc_entry_exists():
 
 
 def test_no_chapter_page_is_a_stub():
-    tracked = subprocess.run(
-        ["git", "ls-files", "chapters/**/*.md"], cwd=ROOT, capture_output=True, text=True
-    ).stdout.split()
-    stubs = [p for p in tracked if STUB_MARKER in (ROOT / p).read_text(encoding="utf-8")]
+    stubs = [p for p in tracked("chapters/**/*.md")
+             if STUB_MARKER in p.read_text(encoding="utf-8")]
     assert not stubs, f"{len(stubs)} placeholder chapter(s) still present, e.g. {stubs[:3]}"

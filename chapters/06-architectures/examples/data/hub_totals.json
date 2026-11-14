@@ -19,5 +19,12 @@
   "by_dtype": {
    "F32": 9241705984
   }
+ },
+ "google/gemma-3-12b-pt": {
+  "sha": "295efb63d01a7017928f273a94ebb86105c9526f",
+  "elements_total": 12187325040,
+  "by_dtype": {
+   "BF16": 12187325040
+  }
  }
 }

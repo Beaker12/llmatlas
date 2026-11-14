@@ -1,0 +1,256 @@
+"""Each chapter notebook, executed offline in a temporary copy, reproduces its committed outputs.
+
+Stream text and text/plain are compared (HTML is ignored). Images are checked for presence only: a code cell
+that draws a figure when executed fresh (inline backend) must have an image/png output in the committed
+notebook, and so must every cell tagged figure:<slug>. Text must match after the
+MASKS below are applied; numbers must agree to within one unit in the last printed digit, or the absolute
+tolerance in the cell's "tol" metadata (which applies to numbers with a decimal point; integers stay exact); a cell with "compare": "shape" is compared by shape only. The
+committed kernel metadata must name Python 3.12. One test per chapter, check name `outputs`.
+"""
+import json
+import re
+import shutil
+import sys
+from pathlib import Path
+
+import pytest
+
+from tests._files import CHAPTER_DIRS, CHAPTER_IDS, ROOT, chapter_check
+from tests._notebooks import (CELL_TIMEOUT, aborted, compare_cells, execute, image_failures, kernel_failures, mask,
+                              notebooks, read)
+
+# Text that legitimately differs between runs or machines; replaced before comparing.
+MASKS = [
+    (re.compile(r"(?<!\w)(version: )\S+"), r"\1<version>"),                     # PyTorch version: 2.15.0+cpu
+    (re.compile(r"(?<![\w.])\d+\.\d+\.\d+\+[0-9A-Za-z.]+"), "<version>"),       # 2.15.0+cpu
+    (re.compile(r"(?<=: )\d+(?:\.\d+)? s(?=\])"), "<seconds>"),                  # [configs: 1.3 s]
+    (re.compile(r"(?<=took )\d+(?:\.\d+)? ?(?:ms|s)\b"), "<seconds>"),            # took 3.2 s
+    (re.compile(r"(?<![\w/.-])(?:/tmp|/var/folders|/private/var)/[^\s'\")\]]+"), "<tmp>"),  # absolute temp paths
+    (re.compile(r"(?<!\w)0x[0-9a-fA-F]{6,}"), "<address>"),                      # memory addresses
+]
+
+
+def check_notebook(path, executed=None, timeout=CELL_TIMEOUT):
+    """Failure strings for one notebook; `executed` is a pre-executed copy (else it is executed here)."""
+    path = Path(path)
+    committed = read(path)
+    failures = [f"{path.name}: {m}" for m in kernel_failures(committed)]
+    if executed is None:
+        executed = execute(path, offline=True, timeout=timeout)
+    if aborted(executed):
+        return failures + [f"{path.name}: execution aborted at {aborted(executed)}"]
+    failures += [f"{path.name}: {m}" for m in compare_cells(committed, executed, MASKS)]
+    failures += [f"{path.name}: {m}" for m in image_failures(committed, executed)]
+    return failures
+
+
+def check_chapter(chapter_dir):
+    failures = []
+    for path in notebooks(chapter_dir):
+        failures += check_notebook(path)
+    return failures
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("chapter_dir", CHAPTER_DIRS, ids=CHAPTER_IDS)
+def test_notebook_outputs_reproduce(chapter_dir):
+    assert notebooks(chapter_dir), f"no notebook under {chapter_dir.name}/examples"
+    chapter_check("outputs")(chapter_dir, check_chapter(chapter_dir))
+
+
+# Fixture tests: the checker on deliberately broken copies of the sample notebook.
+
+SAMPLE_DIR = ROOT / "tests" / "fixtures" / "sample-chapter" / "examples"
+SAMPLE = SAMPLE_DIR / "sample_demo.ipynb"
+
+
+@pytest.fixture(scope="module")
+def executed():
+    return execute(SAMPLE, offline=True)
+
+
+def sample_copy(tmp_path, old, new, metadata=None):
+    """A copy of the sample notebook (with its data/) where `old` is replaced by `new` in the JSON text.
+
+    `metadata` maps a cell index to a dict merged into that cell's metadata.
+    """
+    text = SAMPLE.read_text(encoding="utf-8")
+    assert old in text
+    nb = json.loads(text.replace(old, new, 1))
+    for index, extra in (metadata or {}).items():
+        nb["cells"][index]["metadata"].update(extra)
+    path = tmp_path / SAMPLE.name
+    path.write_text(json.dumps(nb, indent=1), encoding="utf-8")
+    shutil.copytree(SAMPLE_DIR / "data", tmp_path / "data", dirs_exist_ok=True)
+    return path
+
+
+def test_sample_notebook_passes(executed):
+    assert check_notebook(SAMPLE, executed) == []
+
+
+def test_executing_a_copy_reads_its_data_directory_and_runs_in_this_interpreter(tmp_path):
+    path = sample_copy(tmp_path, "print(f", "print(sys.executable)\\nprint(f")
+    path.write_text(path.read_text(encoding="utf-8").replace("import json", "import json, sys", 1), encoding="utf-8")
+    shown = execute(path, offline=True).cells[1].outputs[0]["text"].splitlines()
+    assert shown[0] == sys.executable
+    assert shown[1] == "mean 2.5000"
+
+
+def test_a_changed_printed_number_is_reported(tmp_path, executed):
+    failures = check_notebook(sample_copy(tmp_path, "mean 2.5000", "mean 2.6000"), executed)
+    assert len(failures) == 1 and failures[0].startswith("sample_demo.ipynb: cell 1: output line 1")
+
+
+def test_a_number_changed_within_one_last_digit_passes(tmp_path, executed):
+    assert check_notebook(sample_copy(tmp_path, "mean 2.5000", "mean 2.5001"), executed) == []
+
+
+def test_a_number_changed_by_two_last_digits_is_reported(tmp_path, executed):
+    assert len(check_notebook(sample_copy(tmp_path, "mean 2.5000", "mean 2.5002"), executed)) == 1
+
+
+def test_tol_in_the_cell_metadata_replaces_the_tolerance(tmp_path, executed):
+    assert len(check_notebook(sample_copy(tmp_path, "mean 2.5000", "mean 2.5200"), executed)) == 1
+    within = sample_copy(tmp_path, "mean 2.5000", "mean 2.5200", metadata={1: {"tol": 0.05}})
+    assert check_notebook(within, executed) == []
+    outside = sample_copy(tmp_path, "mean 2.5000", "mean 2.6000", metadata={1: {"tol": 0.05}})
+    assert len(check_notebook(outside, executed)) == 1
+
+
+def test_compare_shape_ignores_numbers_but_not_text(tmp_path, executed):
+    shape = {1: {"compare": "shape"}}
+    assert check_notebook(sample_copy(tmp_path, "mean 2.5000", "mean 9.9999", metadata=shape), executed) == []
+    assert len(check_notebook(sample_copy(tmp_path, "items 4", "things 4", metadata=shape), executed)) == 1
+
+
+def test_masks_hide_versions_timings_addresses_and_temp_paths():
+    for a, b in [("PyTorch version: 2.15.0+cpu", "PyTorch version: 2.14.1+cpu"),
+                 ("[configs: 1.3 s]", "[configs: 22.0 s]"),
+                 ("at 0x7f3a9c1b2d40", "at 0x7f00deadbeef"),
+                 ("in /tmp/tmpab12cd/data", "in /tmp/tmpzz99yy/data")]:
+        assert mask(a, MASKS) == mask(b, MASKS)
+    assert mask("mean 2.5", MASKS) == "mean 2.5"
+
+
+def test_a_cell_whose_code_now_prints_something_else_is_reported_after_real_execution(tmp_path):
+    path = sample_copy(tmp_path, "mean = average(values)", "mean = average(values) + 1")
+    failures = check_notebook(path)
+    assert any("cell 1: output line 1" in f for f in failures)
+
+
+def test_kernel_metadata_of_python_3_13_is_reported(tmp_path, executed):
+    path = sample_copy(tmp_path, '"version": "3.12.12"', '"version": "3.13.5"')
+    assert check_notebook(path, executed) == [
+        "sample_demo.ipynb: kernel metadata names Python 3.13.5, expected 3.12.x"]
+
+
+def test_an_error_in_a_cell_is_reported(tmp_path):
+    failures = check_notebook(sample_copy(tmp_path, "mean = average(values)", "mean = undefined_name"))
+    assert any("NameError" in f for f in failures)
+
+
+def test_the_version_mask_needs_the_word_version():
+    assert mask("conversion: 1.0", MASKS) != mask("conversion: 2.0", MASKS)
+    assert mask("conversion: 100.00%", MASKS) != mask("conversion: 37.00%", MASKS)
+    assert mask("PyTorch version: 2.14.1+cpu", MASKS) == mask("PyTorch version: 2.15.0+cpu", MASKS)
+    assert mask("torch 2.14.1+cpu", MASKS) == mask("torch 2.15.0+cu121", MASKS)
+
+
+def test_other_masks_do_not_hide_real_changes():
+    assert mask("root 83a9750489d9515d", MASKS) != mask("root bee3d1ab1ef47b34", MASKS)
+    assert mask("see data/tmp/a1", MASKS) != mask("see data/tmp/b2", MASKS)
+    assert mask("p0x1234 vs", MASKS) != mask("p0x9999 vs", MASKS)
+    assert mask("took 3 steps", MASKS) == "took 3 steps"
+
+
+def tiny_notebook(tmp_path, source):
+    import nbformat
+    nb = nbformat.v4.new_notebook()
+    nb.cells = [nbformat.v4.new_code_cell(source)]
+    nb.metadata["language_info"] = {"name": "python", "version": "3.12.1"}
+    path = tmp_path / "t.ipynb"
+    nbformat.write(nb, str(path))
+    return path
+
+
+def test_a_cell_that_times_out_is_reported_not_raised(tmp_path):
+    path = tiny_notebook(tmp_path, "import time\ntime.sleep(30)")
+    failures = check_notebook(path, timeout=1)
+    assert len(failures) == 1
+    assert failures[0].startswith("t.ipynb: execution aborted at cell 0: CellTimeoutError: ")
+
+
+def test_a_cell_that_kills_its_kernel_is_reported_not_raised(tmp_path):
+    path = tiny_notebook(tmp_path, "import os\nos._exit(1)")
+    failures = check_notebook(path, timeout=30)
+    assert len(failures) == 1
+    assert failures[0].startswith("t.ipynb: execution aborted at cell 0: DeadKernelError: ")
+
+
+def test_missing_committed_or_fresh_output_is_named(executed):
+    import copy
+    committed = read(SAMPLE)
+    fresh = copy.deepcopy(executed)
+    committed.cells[1].outputs = []
+    assert compare_cells(committed, fresh, MASKS) == [
+        "cell 1: no committed output (fresh output starts 'mean 2.5000')"]
+    committed = read(SAMPLE)
+    fresh.cells[3].outputs = []
+    assert compare_cells(committed, fresh, MASKS) == [
+        "cell 3: no fresh output (committed output starts 'summary: mean 2.5000 from 4 items')"]
+
+
+PLOT = ("import matplotlib.pyplot as plt\nfig, ax = plt.subplots()\nax.plot([0, 1], [0, 1])\nprint('drawn')\nplt.show()")
+
+
+def test_a_plot_drawn_fresh_but_missing_from_the_committed_notebook_is_reported(tmp_path):
+    path = tiny_notebook(tmp_path, PLOT)
+    executed = execute(path)
+    assert any("image/png" in out.get("data", {}) for out in executed.cells[0].outputs)
+    committed = read(path)
+    committed.cells[0].outputs = [o for o in executed.cells[0].outputs if o["output_type"] == "stream"]
+    import nbformat
+    nbformat.write(committed, str(path))
+    assert check_notebook(path, executed) == [
+        "t.ipynb: cell 0: the fresh run draws a figure; the committed cell has no image/png"]
+    nbformat.write(executed, str(path))
+    assert check_notebook(path, executed) == []
+
+
+@pytest.mark.parametrize("outer_backend", [None, "Agg"])
+def test_the_fresh_run_gives_a_plotting_cell_an_image_and_a_printing_cell_none(tmp_path, monkeypatch, outer_backend):
+    """The execution helper the plot check uses really produces inline images, whatever MPLBACKEND the test
+    process has: the plotting cell's fresh output has image/png, the printing cell's has not, and a committed
+    copy with the image removed is reported."""
+    import nbformat
+    if outer_backend is None:
+        monkeypatch.delenv("MPLBACKEND", raising=False)
+    else:
+        monkeypatch.setenv("MPLBACKEND", outer_backend)
+    nb = nbformat.v4.new_notebook()
+    nb.cells = [nbformat.v4.new_code_cell(PLOT), nbformat.v4.new_code_cell("print('only text')")]
+    nb.metadata["language_info"] = {"name": "python", "version": "3.12.1"}
+    path = tmp_path / "t.ipynb"
+    nbformat.write(nb, str(path))
+    executed = execute(path)
+    assert aborted(executed) is None
+    plot, text = executed.cells
+    assert any("image/png" in out.get("data", {}) for out in plot.outputs), plot.outputs
+    assert not any("image/png" in out.get("data", {}) for out in text.outputs), text.outputs
+    assert [out.get("text") for out in text.outputs] == ["only text\n"]
+    nbformat.write(executed, str(path))
+    assert check_notebook(path, executed) == []
+    committed = read(path)
+    committed.cells[0].outputs = [o for o in committed.cells[0].outputs if "image/png" not in o.get("data", {})]
+    nbformat.write(committed, str(path))
+    assert check_notebook(path, executed) == [
+        "t.ipynb: cell 0: the fresh run draws a figure; the committed cell has no image/png"]
+
+
+def test_a_cell_tagged_as_a_figure_without_an_image_is_reported(tmp_path):
+    path = tiny_notebook(tmp_path, "print('no plot')")
+    nb = read(path)
+    nb.cells[0].metadata["tags"] = ["figure:demo"]
+    nb.cells[0].outputs = [{"output_type": "stream", "name": "stdout", "text": "no plot\n"}]
+    assert image_failures(nb) == ["cell 0: tagged figure:demo but has no image/png output"]
