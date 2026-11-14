@@ -8,7 +8,6 @@
  viewBox="14.00 14.00 596.00 558.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
 <g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(43.2 528.8)">
 <title>TokenizationPipeline</title>
-<polygon fill="#ffffff" stroke="none" points="-28.8,28.8 -28.8,-514.4 552.73,-514.4 552.73,28.8 -28.8,28.8"/>
 <text xml:space="preserve" text-anchor="start" x="201.99" y="-470.9" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00">Input: &quot;The cat sat&quot;</text>
 <!-- s0 -->
 <g id="node1" class="node">

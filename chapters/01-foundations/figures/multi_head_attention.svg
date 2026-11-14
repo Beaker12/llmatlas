@@ -8,7 +8,6 @@
  viewBox="14.00 14.00 488.00 516.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
 <g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(43.2 487.2)">
 <title>MultiHeadAttention</title>
-<polygon fill="#ffffff" stroke="none" points="-28.8,28.8 -28.8,-472.8 444.96,-472.8 444.96,28.8 -28.8,28.8"/>
 <text xml:space="preserve" text-anchor="start" x="67.78" y="-429.3" font-family="Helvetica,sans-Serif" font-size="13.00"><tspan font-weight="bold">Split the columns into n</tspan><tspan font-weight="bold" baseline-shift="sub" font-size="9.75">h</tspan><tspan font-weight="bold"> heads of d</tspan><tspan font-weight="bold" baseline-shift="sub" font-size="9.75">k</tspan><tspan font-weight="bold"> = d / n</tspan><tspan font-weight="bold" baseline-shift="sub" font-size="9.75">h</tspan></text>
 <!-- x -->
 <g id="node1" class="node">
