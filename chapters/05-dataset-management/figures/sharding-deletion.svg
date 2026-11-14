@@ -8,7 +8,6 @@
  viewBox="14.00 14.00 559.00 558.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
 <g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(43.2 528.8)">
 <title>sharding_deletion</title>
-<polygon fill="#ffffff" stroke="none" points="-28.8,28.8 -28.8,-514.4 515.8,-514.4 515.8,28.8 -28.8,28.8"/>
 <g id="clust1" class="cluster">
 <title>cluster_count</title>
 <path fill="#edf2f7" stroke="#4a5568" d="M20,-277C20,-277 438,-277 438,-277 444,-277 450,-283 450,-289 450,-289 450,-465.6 450,-465.6 450,-471.6 444,-477.6 438,-477.6 438,-477.6 20,-477.6 20,-477.6 14,-477.6 8,-471.6 8,-465.6 8,-465.6 8,-289 8,-289 8,-283 14,-277 20,-277"/>

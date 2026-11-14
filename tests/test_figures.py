@@ -206,6 +206,21 @@ def test_figures(chapter_dir):
     chapter_check("figures")(chapter_dir, figure_failures(chapter_dir, chapter_constants(chapter_dir).MIN_FIGURES))
 
 
+# Graphviz draws a background as the graph's first shape: a filled polygon over the padded canvas, so it alone
+# starts left of the origin. A legend table drawn as the graph label is also a first polygon, but starts inside.
+CANVAS = re.compile(r'<g id="graph0" class="graph"[^>]*>\s*<title>[^<]*</title>\s*'
+                    r'<polygon fill="(?!none"|transparent")[^"]*" stroke="none" points="-')
+
+
+@pytest.mark.parametrize("chapter_dir", CHAPTER_DIRS, ids=CHAPTER_IDS)
+def test_schematics_have_a_transparent_background(chapter_dir):
+    """A schematic is rendered with `--transparent`: the page behind it (white in the book, a light plate on the
+    site, a white backing in the book's dark mode) shows through, so it never sits on a mismatched white box."""
+    filled = [svg.name for svg in sorted((chapter_dir / "figures").glob("*.svg"))
+              if svg.with_suffix(".dot").exists() and CANVAS.search(svg.read_text(encoding="utf-8"))]
+    assert not filled, f"rendered without --transparent: {filled}"
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize("chapter_dir", CHAPTER_DIRS, ids=CHAPTER_IDS)
 def test_figures_regenerate_byte_for_byte(chapter_dir, tmp_path):

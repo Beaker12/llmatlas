@@ -8,7 +8,6 @@
  viewBox="14.00 14.00 664.00 700.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
 <g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(43.2 670.8)">
 <title>ranks</title>
-<polygon fill="#ffffff" stroke="none" points="-28.8,28.8 -28.8,-656.4 620.8,-656.4 620.8,28.8 -28.8,28.8"/>
 <g id="clust1" class="cluster">
 <title>cluster_sa</title>
 <path fill="#edf2f7" stroke="#4a5568" d="M20,-277.8C20,-277.8 572,-277.8 572,-277.8 578,-277.8 584,-283.8 584,-289.8 584,-289.8 584,-584.6 584,-584.6 584,-590.6 578,-596.6 572,-596.6 572,-596.6 20,-596.6 20,-596.6 14,-596.6 8,-590.6 8,-584.6 8,-584.6 8,-289.8 8,-289.8 8,-283.8 14,-277.8 20,-277.8"/>

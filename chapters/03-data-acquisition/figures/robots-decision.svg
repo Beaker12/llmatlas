@@ -8,7 +8,6 @@
  viewBox="14.00 14.00 678.00 795.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
 <g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(43.2 766.6)">
 <title>robots_decision</title>
-<polygon fill="#ffffff" stroke="none" points="-28.8,28.8 -28.8,-752.2 634.3,-752.2 634.3,28.8 -28.8,28.8"/>
 <!-- fetch -->
 <g id="node1" class="node">
 <title>fetch</title>

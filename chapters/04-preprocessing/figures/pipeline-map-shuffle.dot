@@ -6,8 +6,8 @@ digraph pipeline_map_shuffle {
   subgraph cluster_map1 {
     label="Map 1: per document"; fontname="DejaVu Sans"; fontsize=13; fontcolor="#1a202c";
     style="rounded,filled"; fillcolor="#ebf8ff"; color="#2b6cb0";
-    m2 [label="other shards\nsame stages"];
-    m1 [label="shard 1\nextract → language ID\n→ quality rules\n→ MinHash signature"];
+    m2 [label="other shards\nsame stages", style="rounded,filled", fillcolor="#ffffff", color="#2d3748", penwidth=1.4];
+    m1 [label="shard 1\nextract → language ID\n→ quality rules\n→ MinHash signature", style="rounded,filled", fillcolor="#ffffff", color="#2d3748", penwidth=1.4];
   }
 
   subgraph cluster_global {
@@ -19,8 +19,8 @@ digraph pipeline_map_shuffle {
   subgraph cluster_map2 {
     label="Map 2: per document, again"; fontname="DejaVu Sans"; fontsize=13; fontcolor="#1a202c";
     style="rounded,filled"; fillcolor="#f0fff4"; color="#2f855a";
-    f2 [label="other shards\nsame stages"];
-    f1 [label="shard 1\ndrop listed duplicates\n→ PII redaction\n→ decontamination"];
+    f2 [label="other shards\nsame stages", style="rounded,filled", fillcolor="#ffffff", color="#2d3748", penwidth=1.4];
+    f1 [label="shard 1\ndrop listed duplicates\n→ PII redaction\n→ decontamination", style="rounded,filled", fillcolor="#ffffff", color="#2d3748", penwidth=1.4];
   }
 
   m1 -> g; m2 -> g;
