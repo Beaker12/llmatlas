@@ -29,7 +29,8 @@ KNOWN_CHECKS = {"fences", "fences-live", "outputs", "outputs-live", "prose", "sy
                 "spelling", "figures", "structure", "exercises", "citations", "xrefs", "notation", "hygiene"}
 
 # Generator scripts whose string literals are chapter text, by chapter directory name (checked for spelling).
-GENERATORS = {"06-architectures": "tools/build_architecture_notebook.py"}
+GENERATORS = {"06-architectures": "tools/build_architecture_notebook.py",
+              "07-training-objectives": "tools/build_training_notebook.py"}
 
 CHAPTER_DIRS = sorted(p for p in (ROOT / "chapters").iterdir()
                       if p.is_dir() and not p.name.startswith((".", "_")))

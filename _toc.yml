@@ -43,6 +43,11 @@ parts:
         sections:
           - file: chapters/06-architectures/examples/architecture_demo
             title: "Modern Architectures Demo"
+      - file: chapters/07-training-objectives/index
+        title: "Training Objectives and Methodologies"
+        sections:
+          - file: chapters/07-training-objectives/examples/training_objectives_demo
+            title: "Training Objectives Demo"
 
   - caption: "Planned"
     chapters:

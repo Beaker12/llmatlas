@@ -2,7 +2,8 @@
 
 Scanned: chapter prose (every *.md in the chapter directory), notebook markdown cells, string literals in notebook
 code cells and the committed text outputs of those cells, and the string literals of a chapter's generator script
-(tests/_files.py GENERATORS: chapter 6 has tools/build_architecture_notebook.py).
+(tests/_files.py GENERATORS: chapter 6 has tools/build_architecture_notebook.py, chapter 7
+tools/build_training_notebook.py).
 Not scanned: code fences, inline code, math, block quotations, quoted text immediately followed by a citation,
 URLs and link targets, MyST labels and role targets ((label)=, {ref}`..`, {cite}`..`), directive option lines such
 as :name:, and the bibliography files.
@@ -229,7 +230,8 @@ def test_a_chapters_generator_string_literals_are_scanned(tmp_path):
     assert spelling_failures(chapter, pairs=PAIRS, phrases=[], generators=generators, root=tmp_path) == [
         "tools/gen.py:L3: 'normalisation' -> 'normalization'"]
     assert spelling_failures(chapter, pairs=PAIRS, phrases=[], generators={}, root=tmp_path) == []
-    assert GENERATORS == {"06-architectures": "tools/build_architecture_notebook.py"}
+    assert GENERATORS == {"06-architectures": "tools/build_architecture_notebook.py",
+                          "07-training-objectives": "tools/build_training_notebook.py"}
 
 
 @pytest.mark.parametrize("word", ["tokenisation", "tokeniser", "detokenise", "anonymisation", "pseudonymise", "binarise",

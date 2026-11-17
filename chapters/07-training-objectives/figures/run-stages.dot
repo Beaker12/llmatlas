@@ -1,0 +1,18 @@
+digraph run_stages {
+  graph [fontname="DejaVu Sans", fontsize=13, nodesep=0.3, ranksep=0.35, pad=0.2];
+  node [fontname="DejaVu Sans", fontsize=13, fontcolor="#1a202c", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#4a5568", penwidth=1.3];
+  edge [fontname="DejaVu Sans", fontsize=13, fontcolor="#1a202c", color="#4a5568", penwidth=1.2];
+  warmup [label="Warm-up\nrate rises\nto the peak", fillcolor="#edf2f7"];
+  main [label="Main pretraining\nfull mixture,\nstable or slowly\ndecaying rate", fillcolor="#dbeafe"];
+  long [label="Long-context\nextension\n(if any)", fillcolor="#fde7cf"];
+  anneal [label="Annealing /\nmid-training\nbest data, rate\ndecays to zero", fillcolor="#dcfce7"];
+  average [label="Checkpoint\naveraging", fillcolor="#fde7cf"];
+  base [label="Base\nmodel", fillcolor="#ffffff", penwidth=2.0];
+  olmo [label="OLMo 2 7B: 3.90T tokens\nof the main mix, then\nthree 50B-token anneals,\naveraged", shape=note, style=filled, fillcolor="#f7fafc"];
+  llama [label="Llama 3 405B: the final\n40M of 15.6T tokens\nannealed to zero at\n128K context, checkpoints\naveraged during the anneal", shape=note, style=filled, fillcolor="#f7fafc"];
+  warmup -> main -> long -> anneal -> average -> base;
+  main -> olmo [style=dashed, arrowhead=none];
+  anneal -> llama [style=dashed, arrowhead=none];
+  {rank=same; main; olmo}
+  {rank=same; anneal; llama}
+}
