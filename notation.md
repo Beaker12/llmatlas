@@ -319,3 +319,34 @@ layer computes $xW$.
 | $\hat{q}$ | pair i of a query read as a complex number ($\hat{q}_{m,i}$ at position $m$; $\hat{k}$ likewise for a key) | {ref}`sec-ch6-rope-one-paragraph` |
 | $\hat{k}$ | pair i of a key read as a complex number ($\hat{k}_{m',i}$ at position $m'$) | {ref}`sec-ch6-rope-one-paragraph` |
 | $\rho$ | router probability (book-wide; $\rho_i = \mathrm{softmax}(r)_i$); also DeepSeek-V3's sigmoid router score $\rho_i = \sigma(r_i)$ in 6.3, stated there as a score that is not a probability | {ref}`sec-ch6-moe-idea` |
+
+### Chapter 7: Training Objectives and Methodologies
+
+```{tabularcolumns} \X{3}{20}\X{11}{20}\X{6}{20}
+```
+
+| Symbol | Meaning | Introduced in |
+|---|---|---|
+| $n_{acc}$ | number of micro-batches accumulated per optimizer step | {ref}`sec-ch7-what-loss-averages` |
+| $Z$ | softmax normalizer of the output logits ($\log Z$ the log-normalizer) | {ref}`sec-ch7-auxiliary-terms` |
+| $z_v$ | output logit of token v | {ref}`sec-ch7-auxiliary-terms` |
+| $p_v$ | predicted probability of token v | {ref}`sec-ch7-auxiliary-terms` |
+| $\lambda_z$ | weight of the z-loss | {ref}`sec-ch7-auxiliary-terms` |
+| $s_{cap}$ | soft-capping bound of the logits | {ref}`sec-ch7-auxiliary-terms` |
+| $\eta$ | learning rate ($\eta_t$ at step $t$) | {ref}`sec-ch7-adamw-practice` |
+| $\eta_{\max}$ | peak learning rate | {ref}`sec-ch7-wsd` |
+| $t_{dec}$ | step at which the cooldown of a warm-up-stable-decay schedule starts | {ref}`sec-ch7-wsd` |
+| $\eta_{opt}$ | fitted optimal learning rate at a compute budget | {ref}`sec-ch7-choosing-hyperparameters` |
+| $B_{opt}$ | fitted optimal batch size in tokens at a compute budget | {ref}`sec-ch7-choosing-hyperparameters` |
+| $\Omega$ | iterate of Muon's Newton-Schulz orthogonalization | {ref}`sec-ch7-muon` |
+| $R_u$ | left singular vectors of the momentum matrix ($u_t = R_u \Sigma R_v^\top$) | {ref}`sec-ch7-muon` |
+| $R_v$ | right singular vectors of the momentum matrix | {ref}`sec-ch7-muon` |
+| $\mathcal{L}_{\infty}$ | irreducible loss of the Chinchilla parametric fit | {ref}`sec-ch7-fitting-scaling-law` |
+| $c_N$ | scale of the parameter term of the Chinchilla fit | {ref}`sec-ch7-fitting-scaling-law` |
+| $c_D$ | scale of the data term of the Chinchilla fit | {ref}`sec-ch7-fitting-scaling-law` |
+| $\gamma_N$ | exponent of the parameter term of the Chinchilla fit | {ref}`sec-ch7-fitting-scaling-law` |
+| $\gamma_D$ | exponent of the data term of the Chinchilla fit | {ref}`sec-ch7-fitting-scaling-law` |
+| $N_{opt}$ | compute-optimal number of parameters under the fit | {ref}`sec-ch7-fitting-scaling-law` |
+| $D_{opt}$ | compute-optimal number of tokens under the fit | {ref}`sec-ch7-fitting-scaling-law` |
+| $K_{opt}$ | constant of the closed-form compute-optimal size | {ref}`sec-ch7-fitting-scaling-law` |
+| $v_{old}$ | Adam's second moment before a jump in the gradient (exercise 4) | {ref}`sec-ch7-exercises` |

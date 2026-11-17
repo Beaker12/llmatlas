@@ -78,14 +78,14 @@ def test_section_signs_are_reported_and_the_last_chapter_comes_from_the_director
     assert body_text_failures(chapter) == ["index.md:L1: literal '§ 3.1'; use {ref}",
                                            "index.md:L1: literal '§§ 4.2'; use {ref}",
                                            "index.md:L1: literal '§§ 4.3'; use {ref}"]
-    assert LAST_CHAPTER == len(CHAPTER_DIRS) == 6
+    assert LAST_CHAPTER == len(CHAPTER_DIRS) == 7
 
 
-def test_a_chapter_above_six_is_reported(tmp_path):
-    chapter = _page(tmp_path, "As Chapter 10 shows, and Chapters 3 and 7, but Chapter 6 is fine.\n")
+def test_a_chapter_above_seven_is_reported(tmp_path):
+    chapter = _page(tmp_path, "As Chapter 10 shows, and Chapters 3 and 8, but Chapter 7 is fine.\n")
     assert body_text_failures(chapter) == [
         "index.md:L1: 'Chapter 10' names an unwritten chapter",
-        "index.md:L1: 'Chapters 3 and 7' names an unwritten chapter"]
+        "index.md:L1: 'Chapters 3 and 8' names an unwritten chapter"]
 
 
 def test_roles_code_and_math_are_exempt(tmp_path):
@@ -114,7 +114,7 @@ INTERFACE_LABEL_NAMES = {
 }
 HEADING = re.compile(r"^#{2,4} (.*?)\s*$")
 TARGET = re.compile(r"^\(([A-Za-z0-9_.:-]+)\)=$")
-LABEL_FORM = re.compile(r"sec-(ch[1-6]|tdd)-[a-z0-9]+(-[a-z0-9]+)*")
+LABEL_FORM = re.compile(r"sec-(ch[1-7]|tdd)-[a-z0-9]+(-[a-z0-9]+)*")
 
 
 def labels_above(lines, i):
@@ -216,7 +216,7 @@ def heading_label_failures(chapter_dirs):
                 for label in labels:
                     where = f"{page.name}:L{i + 1}: label {label!r}"
                     if not LABEL_FORM.fullmatch(label):
-                        bad.append(f"{where} does not match sec-(ch1-6|tdd)-words")
+                        bad.append(f"{where} does not match sec-(ch1-7|tdd)-words")
                     if not label.startswith(prefix):
                         bad.append(f"{where} lacks the prefix {prefix!r}")
                     if FURTHER_READING.fullmatch(heading.group(1).strip()):

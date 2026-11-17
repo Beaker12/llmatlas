@@ -17,9 +17,9 @@ def test_tracked_finds_chapter_pages():
     assert names == {"index.md"} and len(tracked("chapters/*/index.md")) == len(CHAPTER_DIRS)
 
 
-def test_chapter_dirs_are_the_six_chapters():
+def test_chapter_dirs_are_the_seven_chapters():
     assert [p.name for p in CHAPTER_DIRS] == sorted(p.name for p in CHAPTER_DIRS)
-    assert len(CHAPTER_DIRS) == 6
+    assert len(CHAPTER_DIRS) == 7
 
 
 def test_pending_ignores_blank_lines_and_comments(tmp_path):

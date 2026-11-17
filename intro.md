@@ -4,7 +4,7 @@ LLM Atlas is a Jupyter Book about how large language models work, from tokenizat
 
 ## Status
 
-Chapters 1 to 6 are written. The remaining chapters are planned and not yet written; see the [Roadmap](roadmap.md).
+Chapters 1 to 7 are written. The remaining chapters are planned and not yet written; see the [Roadmap](roadmap.md).
 
 **Chapter 1: LLM Foundations**
 
@@ -56,6 +56,15 @@ Chapters 1 to 6 are written. The remaining chapters are planned and not yet writ
 - Sliding-window attention, RoPE scaling and what a context length promises
 - Mixture of experts: routing, load balancing, total versus active parameters
 - Exact parameter counts from real model configurations, validated against checkpoints
+
+**Chapter 7: Training Objectives and Methodologies**
+
+- What the loss averages, gradient accumulation done right, the z-loss and soft-capping
+- Span corruption, prefix language models, fill-in-the-middle and multi-token prediction
+- AdamW as published runs set it, and Adafactor, Lion and Muon
+- Learning-rate schedules: why the final decay matters, warm-up-stable-decay, batch-size ramps
+- Compute-optimal sizes from two fits of the Chinchilla data, and training past the optimum
+- Loss spikes, logit growth, annealing, checkpoint averaging and GPU-hour budgets
 
 ## How to use this book
 

@@ -1,11 +1,10 @@
 # Roadmap
 
-LLM Atlas is a work in progress. Chapters 1 to 6 are written; everything below is planned and not yet written. Part and chapter titles follow the original outline and may change.
+LLM Atlas is a work in progress. Chapters 1 to 7 are written; everything below is planned and not yet written. Part and chapter titles follow the original outline and may change.
 
 (roadmap-model-architectures-and-training)=
 ## Model Architectures and Training
 
-- Training Objectives and Methodologies
 - Distributed and Efficient Training
 - Specialized Training Regimes
 
